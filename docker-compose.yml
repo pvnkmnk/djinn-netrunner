@@ -29,6 +29,8 @@ services:
       SLSKD_URL: http://slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
       GONIC_URL: http://gonic:4747
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
     volumes:
       - ./ops/web:/app
       - download-staging:/downloads
@@ -52,6 +54,8 @@ services:
       DOWNLOAD_STAGING: /downloads
       MUSIC_LIBRARY: /music
       WORKER_ID: ${HOSTNAME:-worker-1}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
     volumes:
       - ./ops/worker:/app
       - download-staging:/downloads

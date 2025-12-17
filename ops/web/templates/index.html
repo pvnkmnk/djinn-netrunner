@@ -12,6 +12,23 @@
     <div class="container">
         <header>
             <h1>NETRUNNER OPERATIONS CONSOLE</h1>
+            <div style="float:right; margin-top:-2.2rem;">
+                {% if user %}
+                  <span>Signed in as {{ user.email }} ({{ user.role }})</span>
+                  <button class="btn-secondary"
+                          hx-post="/api/auth/logout"
+                          hx-swap="none"
+                          hx-on="htmx:afterRequest: location.reload()">Logout</button>
+                {% else %}
+                  <form hx-post="/api/auth/login" hx-swap="none"
+                        hx-on="htmx:afterRequest: if(event.detail.successful) location.reload()"
+                        style="display:inline;">
+                      <input type="email" name="email" placeholder="email" required>
+                      <input type="password" name="password" placeholder="password" required>
+                      <button class="btn-secondary" type="submit">Login</button>
+                  </form>
+                {% endif %}
+            </div>
         </header>
 
         <div class="main-content">
@@ -136,15 +153,15 @@
                     <label for="source-type">Source Type</label>
                     <select id="source-type" name="source_type" required>
                         <option value="file_list">File List</option>
-                        <option value="spotify_playlist">Spotify Playlist (coming soon)</option>
+                        <option value="spotify_playlist">Spotify Playlist</option>
                     </select>
                 </div>
 
                 <div class="form-group">
                     <label for="source-uri">Source URI</label>
                     <input type="text" id="source-uri" name="source_uri" required
-                           placeholder="/data/playlists/favorites.txt">
-                    <small>File path for file_list type</small>
+                           placeholder="/data/playlists/favorites.txt or https://open.spotify.com/playlist/…">
+                    <small>File path for file_list; Spotify playlist URL/URI for spotify_playlist</small>
                 </div>
 
                 <div class="form-group">

@@ -4,6 +4,7 @@ Implements specific logic for each job type: sync, acquisition, import, index_re
 """
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -13,6 +14,12 @@ from slskd_client import SlskdClient, DownloadState
 from import_pipeline import ImportPipeline, MetadataEnricher
 from metadata_extractor import MetadataExtractor
 from gonic_client import GonicClient
+try:
+    import spotipy
+    from spotipy.oauth2 import SpotifyClientCredentials
+except Exception:  # pragma: no cover - optional at import time
+    spotipy = None
+    SpotifyClientCredentials = None
 
 
 class BaseJobHandler:
@@ -144,13 +151,109 @@ class SyncJobHandler(BaseJobHandler):
         return tracks
 
     async def _parse_spotify_playlist(self, playlist_uri: str, job_id: int) -> List[Dict[str, str]]:
-        """Parse Spotify playlist (placeholder - requires Spotify API)"""
-        await self.log(job_id, "INFO", "Spotify integration not yet implemented")
-        # TODO: Implement Spotify API integration
-        # - Use spotipy library
-        # - Authenticate with client credentials
-        # - Fetch playlist tracks
-        return []
+        """Parse Spotify playlist via Spotify Web API.
+
+        Supports URIs like:
+          - spotify:playlist:PLAYLIST_ID
+          - https://open.spotify.com/playlist/PLAYLIST_ID?si=...
+        Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in environment.
+        """
+        tracks: List[Dict[str, str]] = []
+
+        if spotipy is None or SpotifyClientCredentials is None:
+            await self.log(job_id, "ERR", "spotipy not available. Install dependency in worker image.")
+            return tracks
+
+        client_id = os.getenv("SPOTIFY_CLIENT_ID")
+        client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            await self.log(job_id, "ERR", "Missing SPOTIFY_CLIENT_ID/SECRET environment variables")
+            return tracks
+
+        # Extract playlist ID
+        playlist_id = self._extract_spotify_playlist_id(playlist_uri)
+        if not playlist_id:
+            await self.log(job_id, "ERR", f"Invalid Spotify playlist URI: {playlist_uri}")
+            return tracks
+
+        await self.log(job_id, "INFO", f"Fetching Spotify playlist: {playlist_id}")
+
+        try:
+            auth_mgr = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
+            sp = spotipy.Spotify(auth_manager=auth_mgr)
+
+            # Fetch playlist metadata (for logging + snapshot)
+            playlist_meta = sp.playlist(playlist_id=playlist_id, fields="name,tracks.total,snapshot_id,owner(display_name)")
+            name = playlist_meta.get("name")
+            total = playlist_meta.get("tracks", {}).get("total", 0)
+            snapshot_id = playlist_meta.get("snapshot_id")
+            owner = (playlist_meta.get("owner") or {}).get("display_name")
+
+            await self.log(job_id, "OK", f"Playlist '{name}' by {owner or 'unknown'} — {total} tracks (snapshot {snapshot_id})")
+
+            # Paginate items
+            limit = 100
+            offset = 0
+            fetched = 0
+
+            while True:
+                page = sp.playlist_items(
+                    playlist_id=playlist_id,
+                    fields="items(track(name,album(name),artists(name))),next,total",
+                    additional_types=("track",),
+                    limit=limit,
+                    offset=offset
+                )
+
+                items = page.get("items", [])
+                for it in items:
+                    t = it.get("track") or {}
+                    if not t:
+                        continue
+                    artist_list = t.get("artists") or []
+                    artist_name = artist_list[0]["name"] if artist_list else None
+                    title = t.get("name")
+                    album = (t.get("album") or {}).get("name")
+                    if artist_name and title:
+                        tracks.append({
+                            "artist": artist_name,
+                            "title": title,
+                            "album": album
+                        })
+                fetched += len(items)
+                await self.log(job_id, "INFO", f"Fetched {fetched}/{total} tracks...")
+
+                if not page.get("next") or len(items) == 0:
+                    break
+                offset += limit
+
+            await self.log(job_id, "OK", f"Parsed {len(tracks)} tracks from Spotify playlist")
+
+        except Exception as e:
+            await self.log(job_id, "ERR", f"Spotify API error: {e}")
+
+        return tracks
+
+    def _extract_spotify_playlist_id(self, uri: str) -> Optional[str]:
+        """Extract playlist ID from a Spotify URI or URL."""
+        try:
+            if not uri:
+                return None
+            uri = uri.strip()
+            if uri.startswith("spotify:playlist:"):
+                return uri.split(":")[-1]
+            if "open.spotify.com/playlist/" in uri:
+                # e.g., https://open.spotify.com/playlist/{id}?si=...
+                part = uri.split("/playlist/")[-1]
+                part = part.split("?")[0]
+                part = part.split("#")[0]
+                return part
+            # Accept raw ID (22 chars usually)
+            if "/" not in uri and ":" not in uri and len(uri) >= 16:
+                return uri
+            return None
+        except Exception:
+            return None
 
     async def _create_acquisition_job(
         self,
@@ -160,12 +263,14 @@ class SyncJobHandler(BaseJobHandler):
     ) -> int:
         """Create acquisition job with job items"""
         async with self.db.acquire() as conn:
+            # Determine owner from parent job
+            owner_user_id = await conn.fetchval("SELECT owner_user_id FROM jobs WHERE id = $1", parent_job_id)
             # Create acquisition job
             job_id = await conn.fetchval("""
-                INSERT INTO jobs(jobtype, scope_type, scope_id, params)
-                VALUES ('acquisition', 'source', $1, $2)
+                INSERT INTO jobs(jobtype, scope_type, scope_id, params, owner_user_id)
+                VALUES ('acquisition', 'source', $1, $2, $3)
                 RETURNING id
-            """, str(source_id), json.dumps({"parent_job_id": parent_job_id}))
+            """, str(source_id), json.dumps({"parent_job_id": parent_job_id}), owner_user_id)
 
             # Create job items
             for idx, track in enumerate(tracks):
@@ -174,11 +279,12 @@ class SyncJobHandler(BaseJobHandler):
                 await conn.execute("""
                     INSERT INTO jobitems(
                         job_id, sequence, normalized_query,
-                        artist, album, track_title, status
+                        artist, album, track_title, status,
+                        owner_user_id
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, 'queued')
+                    VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7)
                 """, job_id, idx, normalized_query,
-                    track['artist'], track.get('album'), track['title'])
+                    track['artist'], track.get('album'), track['title'], owner_user_id)
 
             return job_id
 
@@ -285,6 +391,23 @@ class AcquisitionJobHandler(BaseJobHandler):
             await self._fail_item(job_id, item_id, f"Import failed: {error}")
             return
 
+        # Optional: metadata enrichment via MusicBrainz
+        enrichment = {}
+        try:
+            enrichment = await self.enricher.enrich(metadata) if self.enricher else {}
+            if enrichment:
+                await self.log(job_id, "INFO", f"Enriched via MusicBrainz (confidence {enrichment.get('enrichment_confidence', 0.0):.2f})", item_id)
+                # Update in-memory metadata for better library paths in future steps
+                metadata.artist = enrichment.get('artist', metadata.artist)
+                metadata.album = enrichment.get('album', metadata.album)
+                metadata.title = enrichment.get('title', metadata.title)
+                if enrichment.get('enriched_year'):
+                    metadata.year = enrichment.get('enriched_year')
+                if enrichment.get('enriched_genre'):
+                    metadata.genre = enrichment.get('enriched_genre')
+        except Exception as e:
+            await self.log(job_id, "ERR", f"Enrichment failed: {e}", item_id)
+
         # Update item as imported
         async with self.db.acquire() as conn:
             await conn.execute("""
@@ -296,21 +419,66 @@ class AcquisitionJobHandler(BaseJobHandler):
             """, item_id, str(final_path))
 
             # Create acquisition record
-            await conn.execute("""
+            # Look up job owner for ownership propagation
+            owner_user_id = await conn.fetchval("SELECT owner_user_id FROM jobs WHERE id = $1", job_id)
+
+            acq_id = await conn.fetchval("""
                 INSERT INTO acquisitions(
                     job_id, jobitem_id, artist, album, track_title,
-                    original_path, final_path, file_size, file_hash
+                    original_path, final_path, file_size, file_hash,
+                    mb_recording_id, mb_release_id, mb_artist_id,
+                    enrichment_confidence, enriched_year, enriched_genre,
+                    owner_user_id
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                        $10, $11, $12, $13, $14, $15, $16)
+                RETURNING id
             """, job_id, item_id,
                 metadata.artist, metadata.album, metadata.title,
                 str(source_path), str(final_path),
-                metadata.file_size, None)
+                metadata.file_size, None,
+                enrichment.get('mb_recording_id'),
+                enrichment.get('mb_release_id'),
+                enrichment.get('mb_artist_id'),
+                enrichment.get('enrichment_confidence'),
+                enrichment.get('enriched_year'),
+                enrichment.get('enriched_genre'),
+                owner_user_id)
 
         await self.log(job_id, "OK", f"Imported: {final_path}", item_id)
 
         # Cleanup staging file
         self.import_pipeline.cleanup_staging_file(source_path)
+
+        # Attempt cover art fetch (post-insert so we can update acquisition record)
+        try:
+            cover = await self.enricher.fetch_cover_art_by_musicbrainz(
+                enrichment.get('mb_release_id'),
+                metadata.artist,
+                metadata.album,
+                self.import_pipeline.library_dir
+            ) if self.enricher else None
+
+            if cover:
+                async with self.db.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE acquisitions
+                        SET cover_art_url = $2,
+                            cover_art_path = $3,
+                            cover_art_etag = $4,
+                            image_hash = $5,
+                            cover_last_checked = NOW()
+                        WHERE id = $1
+                    """, acq_id,
+                        cover.get('cover_art_url'),
+                        cover.get('cover_art_path'),
+                        cover.get('cover_art_etag'),
+                        cover.get('image_hash'))
+                await self.log(job_id, "OK", "Cover art saved", item_id)
+            else:
+                await self.log(job_id, "INFO", "No cover art available", item_id)
+        except Exception as e:
+            await self.log(job_id, "ERR", f"Cover art fetch failed: {e}", item_id)
 
     async def _fail_item(self, job_id: int, item_id: int, reason: str):
         """Mark item as failed"""

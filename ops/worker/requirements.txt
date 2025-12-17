@@ -3,3 +3,7 @@ httpx==0.26.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
 mutagen==1.47.0
+spotipy==2.23.0
+musicbrainzngs==0.7.1
+httpx==0.26.0
+croniter==2.0.3
