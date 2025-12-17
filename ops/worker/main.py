@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Optional, List, Dict
 from pydantic_settings import BaseSettings
+from datetime import datetime, timezone
+from croniter import croniter
 
 from slskd_client import SlskdClient
 from gonic_client import GonicClient
@@ -48,6 +50,7 @@ class WorkerOrchestrator:
         self.lock_conn: Optional[asyncpg.Connection] = None
         self.active_jobs: Dict[int, dict] = {}
         self.running = False
+        self.scheduler_task: Optional[asyncio.Task] = None
 
         # External service clients
         self.slskd_client: Optional[SlskdClient] = None
@@ -120,6 +123,9 @@ class WorkerOrchestrator:
                 self.metadata_enricher
             )
         }
+
+        # Start background scheduler
+        self.scheduler_task = asyncio.create_task(self.scheduler_loop())
 
         # Health checks
         print("[WORKER] Running health checks...")
@@ -277,6 +283,89 @@ class WorkerOrchestrator:
             print(f"[WORKER] Error processing job {job_id}: {e}")
             import traceback
             traceback.print_exc()
+
+    async def scheduler_loop(self):
+        """Background loop that enqueues sync jobs based on schedules table."""
+        await asyncio.sleep(1.0)  # give connections time to initialize
+        print("[WORKER] Scheduler loop started")
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+                async with self.db_pool.acquire() as conn:
+                    # Initialize next_run_at if NULL
+                    rows = await conn.fetch(
+                        """
+                        UPDATE schedules s
+                        SET next_run_at = CASE
+                            WHEN next_run_at IS NULL THEN NOW()
+                            ELSE next_run_at
+                        END,
+                            updated_at = NOW()
+                        WHERE enabled = TRUE AND (next_run_at IS NULL)
+                        RETURNING id
+                        """
+                    )
+                    if rows:
+                        print(f"[WORKER] Initialized next_run_at for {len(rows)} schedules")
+
+                    # Find due schedules (use SKIP LOCKED pattern)
+                    due = await conn.fetch(
+                        """
+                        SELECT id, source_id, cron_expr, timezone, next_run_at
+                        FROM schedules
+                        WHERE enabled = TRUE AND next_run_at <= NOW()
+                        ORDER BY next_run_at ASC
+                        LIMIT 50
+                        """
+                    )
+
+                    for s in due:
+                        sid = s['id']
+                        tz = s['timezone'] or 'UTC'
+                        expr = s['cron_expr']
+                        # Compute next occurrence safely
+                        try:
+                            base = now
+                            itr = croniter(expr, base)
+                            nxt = itr.get_next(datetime)
+                        except Exception:
+                            # Disable invalid schedule to avoid tight loop
+                            await conn.execute("UPDATE schedules SET enabled = FALSE, updated_at = NOW() WHERE id = $1", sid)
+                            await self._notify(f"schedule_invalid:{sid}")
+                            continue
+
+                        # Enqueue sync job for the source
+                        job_id = await conn.fetchval(
+                            """
+                            INSERT INTO jobs(jobtype, state, scope_type, scope_id, requested_at, owner_user_id)
+                            VALUES ('sync', 'queued', 'source', $1, NOW(), (SELECT owner_user_id FROM sources WHERE id = $1))
+                            RETURNING id
+                            """,
+                            str(s['source_id'])
+                        )
+
+                        # Update schedule times
+                        await conn.execute(
+                            "UPDATE schedules SET last_run_at = NOW(), next_run_at = $2, updated_at = NOW() WHERE id = $1",
+                            sid, nxt
+                        )
+
+                        # Wake worker(s)
+                        await self._notify("opswakeup")
+                        print(f"[WORKER] Scheduled sync job {job_id} for source {s['source_id']} (next at {nxt})")
+
+            except Exception as e:
+                print(f"[WORKER] Scheduler error: {e}")
+
+            # Sleep between ticks
+            await asyncio.sleep(30)
+
+    async def _notify(self, channel: str):
+        try:
+            if self.notify_conn:
+                await self.notify_conn.execute(f"NOTIFY {channel}")
+        except Exception:
+            pass
 
     async def finish_job(self, job_id: int, failed: bool = False):
         """Finish a job and release locks"""
