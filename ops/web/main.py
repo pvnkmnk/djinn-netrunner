@@ -3,8 +3,8 @@ Djinn NETRUNNER ops-web service
 FastAPI application with HTMX templates and WebSocket console streaming
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import asyncpg
@@ -12,6 +12,12 @@ import asyncio
 import json
 from typing import Optional, List
 from pydantic_settings import BaseSettings
+from auth import (
+    login_user,
+    logout_user,
+    register_user,
+    get_current_user_optional,
+)
 
 
 class Settings(BaseSettings):
@@ -146,6 +152,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Main dashboard page"""
+    # Optional user to scope data in the future; for now show all
+    current_user = await get_current_user_optional(request)
     async with db_pool.acquire() as conn:
         # Get job stats
         stats = await conn.fetchrow("""
@@ -166,18 +174,21 @@ async def index(request: Request):
             LIMIT 20
         """)
 
-        # Get sources
-        sources = await conn.fetch("""
+        # Get sources (admin-like view for now; could scope by current_user)
+        sources = await conn.fetch(
+            """
             SELECT id, source_type, display_name, last_synced_at, sync_enabled
             FROM sources
             ORDER BY display_name
-        """)
+            """
+        )
 
     return templates.TemplateResponse("index.html", {
         "request": request,
         "stats": dict(stats),
         "jobs": [dict(j) for j in jobs],
-        "sources": [dict(s) for s in sources]
+        "sources": [dict(s) for s in sources],
+        "user": current_user
     })
 
 
@@ -256,7 +267,7 @@ async def websocket_console(websocket: WebSocket, job_id: int, tail: Optional[in
 
 
 @app.post("/api/jobs/sync")
-async def create_sync_job(source_id: int):
+async def create_sync_job(source_id: int, request: Request):
     """Create a new sync job for a source"""
     async with db_pool.acquire() as conn:
         # Get source
@@ -266,10 +277,10 @@ async def create_sync_job(source_id: int):
 
         # Create job
         job_id = await conn.fetchval("""
-            INSERT INTO jobs(jobtype, scope_type, scope_id, params)
-            VALUES ('sync', $1, $2, $3)
+            INSERT INTO jobs(jobtype, scope_type, scope_id, params, owner_user_id)
+            VALUES ('sync', $1, $2, $3, $4)
             RETURNING id
-        """, source['source_type'], str(source_id), json.dumps({"source_uri": source['source_uri']}))
+        """, source['source_type'], str(source_id), json.dumps({"source_uri": source['source_uri']}), source.get('owner_user_id'))
 
     return {"job_id": job_id}
 
@@ -294,6 +305,39 @@ async def cancel_job(job_id: int):
 async def health():
     """Health check endpoint"""
     return {"status": "ok"}
+
+
+# ---- Auth endpoints ----
+
+@app.post("/api/auth/register")
+async def api_register(request: Request, payload: dict):
+    email = payload.get("email")
+    password = payload.get("password")
+    role = payload.get("role", "user")
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="email and password are required")
+    user_id = await register_user(request, email, password, role)
+    return {"user_id": user_id}
+
+
+@app.post("/api/auth/login")
+async def api_login(request: Request, payload: dict):
+    email = payload.get("email")
+    password = payload.get("password")
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="email and password are required")
+    session_id = await login_user(request, email, password)
+    resp = JSONResponse({"status": "ok"})
+    resp.set_cookie(key="session_id", value=session_id, httponly=True, samesite="lax")
+    return resp
+
+
+@app.post("/api/auth/logout")
+async def api_logout(request: Request):
+    await logout_user(request)
+    resp = JSONResponse({"status": "ok"})
+    resp.delete_cookie("session_id")
+    return resp
 
 
 if __name__ == "__main__":
