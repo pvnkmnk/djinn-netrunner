@@ -1,114 +1,3 @@
-# Djinn NETRUNNER - Feature Implementation Summary
-
-## Completed Features
-
-### Core Infrastructure ✓
-
-- **Docker Compose Stack**
-  - Caddy (edge proxy + TLS)
-  - PostgreSQL (system of record)
-  - ops-web (FastAPI + HTMX UI)
-  - ops-worker (asyncio orchestrator)
-  - slskd (Soulseek acquisition)
-  - Gonic (Subsonic streaming)
-
-- **Database Schema**
-  - `jobs` table with state machine
-  - `jobitems` table for deterministic work plans
-  - `joblogs` table for append-only console output
-  - `acquisitions` table for provenance tracking
-  - `sources` table for playlist/source management
-  - PostgreSQL functions for claiming, logging, notifications
-  - Advisory lock namespace (1001) for scope exclusivity
-
-### Job Orchestration ✓
-
-- **Worker Features**
-  - Round-robin fairness scheduler (one item per job per turn)
-  - FOR UPDATE SKIP LOCKED for contention-safe claiming
-  - Advisory locks on dedicated `lockconn` for scope exclusivity
-  - Heartbeat loop (5s cadence) for liveness proof
-  - Reaper on short-lived maintenance connection (60s cadence)
-  - NOTIFY listener on dedicated `notifyconn` for event-driven wakeup
-  - Support for 5 concurrent jobs with fairness guarantee
-
-- **Job Types**
-  1. **sync** - Parse playlists/sources and create acquisition jobs
-  2. **acquisition** - Search slskd, download, validate, import to library
-  3. **index_refresh** - Trigger Gonic library scan
-  4. **import** - Metadata enrichment (placeholder for future expansion)
-
-### slskd Integration ✓
-
-- **SlskdClient** (`slskd_client.py`)
-  - Search with timeout and quality filtering
-  - Result ranking by score (bitrate, speed, queue length)
-  - Download queue management
-  - Download slot limiting (max concurrent downloads)
-  - Download status monitoring and completion waiting
-  - Health check endpoint
-  - Async/await support throughout
-
-### Import Pipeline ✓
-
-- **MetadataExtractor** (`metadata_extractor.py`)
-  - Supports MP3, FLAC, M4A, OGG, Opus, WMA
-  - Extracts: artist, album, title, track number, year, genre, duration, bitrate, codec
-  - Normalizes filenames from metadata
-  - Generates organized library paths (Artist/Album/Track - Title.ext)
-  - Sanitizes filenames for filesystem safety
-
-- **FileValidator**
-  - Size validation (100 KB - 500 MB)
-  - Format validation
-  - Metadata completeness check
-
-- **ImportPipeline** (`import_pipeline.py`)
-  - Validates downloaded files
-  - Extracts and validates metadata
-  - Generates organized library structure
-  - Duplicate detection via size + MD5 hash
-  - Atomic copy to library with automatic cleanup
-  - Library statistics (file count, size, format breakdown)
-
-- **MetadataEnricher** (placeholder for future)
-  - Ready for MusicBrainz integration
-  - Ready for cover art fetching
-
-### Gonic Integration ✓
-
-- **GonicClient** (`gonic_client.py`)
-  - Trigger full library scan via Subsonic API
-  - Monitor scan status and progress
-  - Wait for scan completion with timeout
-  - Get music folders configuration
-  - Library statistics (artist count, album count)
-  - Health check via ping endpoint
-
-### Operations UI ✓
-
-- **Console-First Web Interface**
-  - Server-rendered HTMX templates (no SPA)
-  - Single CSS file with terminal aesthetics
-  - Real-time stats dashboard
-  - Job list with state badges
-  - Source list with sync triggers
-
-- **WebSocket Console Streaming**
-  - Live log streaming via PostgreSQL NOTIFY fanout
-  - Two attach modes:
-    - STARTED: tail last N lines (for new jobs)
-    - ATTACHED: since last seen ID (for existing jobs)
-  - Connection manager for broadcasting to multiple clients
-
-- **Console Controls** (minimal JS)
-  - Auto-scroll with pause on user scroll
-  - Resume live button to force follow mode
-  - Filter: ALL / OK / INFO / ERR
-  - Copy last 200 lines to clipboard
-  - Clear viewport (doesn't mutate DB)
-
-- **Source Management UI** ✨ NEW
   - Modal-based add/edit interface
   - Visual source list with status indicators
   - Enable/disable toggle per source
@@ -292,3 +181,27 @@ NETRUNNER is **production-ready** for self-hosted deployment with:
 - Subsonic-compatible streaming
 
 The system prioritizes **correctness** and **observability** over performance, making it ideal for home media server deployments where reliability is more important than throughput.
+
+### New Integrations (this iteration)
+
+- Spotify Playlist Integration
+  - Add sources of type `spotify_playlist` via UI/API
+  - Public playlists supported with client-credentials flow
+  - Parser fetches tracks and creates acquisition job plans
+
+- MusicBrainz Metadata Enrichment
+  - Look up MBIDs for recordings/releases/artists using `musicbrainzngs`
+  - Confidence scoring; non-blocking on failures
+
+- Cover Art Downloading
+  - Fetch from Cover Art Archive based on MB release IDs
+  - Local caching under `MUSIC_LIBRARY/cover_art/...` with dedupe
+
+- Automatic Scheduling (cron-like)
+  - `schedules` table with `cron_expr`, `next_run_at`, `enabled`
+  - Worker background loop enqueues due sync jobs (uses `croniter`)
+
+- Multi-user Support with Auth
+  - Session-based auth (`/api/auth/register`, `/api/auth/login`, `/api/auth/logout`)
+  - Ownership scoping: `owner_user_id` on sources/jobs/items/acquisitions/logs
+  - Admin role can view/manage all

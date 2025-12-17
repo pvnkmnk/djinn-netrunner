@@ -106,6 +106,11 @@ See `SOURCE_MANAGEMENT_UI.md` for detailed UI documentation.
 - **Round-robin fairness**: Multiple jobs progress simultaneously
 - **WebSocket streaming**: Live console output with attach modes
 - **Crash-safe**: Advisory locks + heartbeats + reaper
+- **Spotify Playlist Integration**: Add Spotify playlists as sources; public playlists supported via client credentials
+- **MusicBrainz Enrichment**: Best-effort MBID lookups for recordings/releases/artists with confidence scoring
+- **Cover Art Downloading**: Pull album art from the Cover Art Archive and cache locally
+- **Automatic Scheduling**: Cron-like schedules to auto-enqueue sync jobs per source
+- **Multi-user Auth**: Session-based login; scoped sources/jobs by owner with admin override
 
 ## Troubleshooting
 
@@ -134,6 +139,23 @@ WHERE state = 'running';
 - `docs/UIIMPLEMENTATION.md` - Console patterns and HTMX contracts
 - `docs/RUNBOOK.md` - Operational procedures
 - `AGENTS.md` - Development guidelines
+
+### Authentication quickstart
+
+1. Register an admin (one-time):
+   - `POST /api/auth/register` with `{ "email": "admin@example.com", "password": "…", "role": "admin" }`
+2. Login via the header form or `POST /api/auth/login`.
+3. Create sources; ownership is set to the logged-in user.
+
+### Scheduling quickstart
+
+- Create a schedule via API: `POST /api/sources/schedules` with `{ "source_id": 1, "cron_expr": "0 * * * *", "timezone": "UTC" }`.
+
+### Spotify quickstart
+
+1. Set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `docker-compose.yml`.
+2. Add a source with type `spotify_playlist` and a playlist URL/URI.
+3. Click SYNC and watch logs.
 
 ## Job Types
 
