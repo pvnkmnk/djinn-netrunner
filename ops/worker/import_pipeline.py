@@ -6,9 +6,14 @@ import os
 import shutil
 import hashlib
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 from datetime import datetime
 from metadata_extractor import MetadataExtractor, FileValidator, AudioMetadata
+import mimetypes
+try:
+    import httpx
+except Exception:  # pragma: no cover
+    httpx = None
 
 
 class ImportPipeline:
@@ -155,28 +160,142 @@ class ImportPipeline:
 
 
 class MetadataEnricher:
-    """Enrich metadata from external sources (future: MusicBrainz, LastFM, etc.)"""
+    """Enrich metadata using MusicBrainz.
 
-    def __init__(self):
-        pass
+    Provides a simple lookup by artist + title (+ optional duration) and returns
+    enrichment fields including MBIDs and normalized text values with a
+    confidence score. Designed to be optional and fail-safe.
+    """
 
-    async def enrich(self, metadata: AudioMetadata) -> AudioMetadata:
+    def __init__(self, user_agent: Optional[str] = None):
+        self.user_agent = user_agent or "netrunner/0.1 (https://example.local)"
+        try:
+            import musicbrainzngs
+            self.mb = musicbrainzngs
+            # Configure user agent as required by MB policy
+            self.mb.set_useragent(self.user_agent)
+        except Exception:
+            self.mb = None
+
+    async def enrich(self, metadata: AudioMetadata) -> Dict[str, Any]:
+        """Attempt MusicBrainz enrichment; returns a dict of extra fields.
+
+        Returns keys may include: mb_recording_id, mb_release_id, mb_artist_id,
+        enrichment_confidence, enriched_year, enriched_genre, artist, album, title.
+        If enrichment cannot be performed, returns {}.
         """
-        Enrich metadata with information from external sources
+        if self.mb is None or not metadata or not metadata.artist or not metadata.title:
+            return {}
 
-        Args:
-            metadata: Existing metadata
+        artist = metadata.artist
+        title = metadata.title
+        duration = metadata.duration
 
-        Returns:
-            Enriched metadata
+        # Basic throttling courtesy sleep; real rate-limiting can be added later by caller
+        try:
+            # MusicBrainz: search recordings by artist and track, include releases and artists
+            result = await self._mb_search_recordings(artist, title, duration)
+            if not result:
+                return {}
+
+            rec = result.get("recording")
+            rel = result.get("release")
+            art = result.get("artist")
+
+            confidence = result.get("confidence", 0.0)
+            out: Dict[str, Any] = {
+                "mb_recording_id": rec.get("id") if rec else None,
+                "mb_release_id": rel.get("id") if rel else None,
+                "mb_artist_id": art.get("id") if art else None,
+                "enrichment_confidence": round(float(confidence), 2)
+            }
+
+            # Prefer canonical names from MB if present
+            out["artist"] = (art or {}).get("name") or artist
+            out["title"] = (rec or {}).get("title") or title
+            if rel:
+                out["album"] = rel.get("title") or metadata.album
+                # Year if available
+                date = rel.get("date") or ""
+                if len(date) >= 4 and date[:4].isdigit():
+                    out["enriched_year"] = int(date[:4])
+
+            # Genre tags (MB tags are optional)
+            tags = ((rec or {}).get("tag-list") or []) or ((rel or {}).get("tag-list") or [])
+            if tags:
+                # Pick the highest count tag name if present
+                best_tag = None
+                try:
+                    best_tag = max(tags, key=lambda t: int(t.get("count", 0))).get("name")
+                except Exception:
+                    # Fallback: first tag name
+                    if isinstance(tags, list) and len(tags) > 0:
+                        best_tag = tags[0].get("name")
+                if best_tag:
+                    out["enriched_genre"] = best_tag
+
+            return {k: v for k, v in out.items() if v is not None}
+
+        except Exception:
+            # Silent failure by design; caller logs if needed
+            return {}
+
+    async def _mb_search_recordings(self, artist: str, title: str, duration: Optional[float]) -> Optional[Dict[str, Any]]:
+        """Search MusicBrainz recordings and pick best candidate.
+
+        Uses synchronous client under the hood; keep async signature for API
+        uniformity and future async IO implementations.
         """
-        # TODO: Implement external metadata lookups
-        # - MusicBrainz for canonical artist/album/track info
-        # - LastFM for tags, similar artists
-        # - Cover art downloads
+        if self.mb is None:
+            return None
 
-        # For now, return metadata as-is
-        return metadata
+        # Synchronous call; MB client is blocking. Keep lightweight.
+        try:
+            # Build query string
+            query = f"recording:{title} AND artist:{artist}"
+            resp = self.mb.search_recordings(query=query, limit=5, offset=0)
+            recs = resp.get("recording-list", [])
+            if not recs:
+                return None
+
+            def score(rec: Dict[str, Any]) -> float:
+                s = float(rec.get("ext:score", 0.0)) / 100.0
+                # Duration proximity bonus (if available)
+                try:
+                    if duration and "length" in rec:
+                        mb_ms = float(rec["length"])  # milliseconds
+                        delta = abs((duration * 1000.0) - mb_ms)
+                        # Within 5s = +0.2, within 10s = +0.1
+                        if delta <= 5000:
+                            s += 0.2
+                        elif delta <= 10000:
+                            s += 0.1
+                except Exception:
+                    pass
+                return s
+
+            # Choose best rec by score
+            best = max(recs, key=score)
+
+            # Pick a representative release and artist if present
+            rel_list = best.get("release-list", [])
+            rel = rel_list[0] if rel_list else None
+            art_list = best.get("artist-credit", [])
+            art = None
+            if art_list:
+                # artist-credit may contain names and joins; pick first credited artist
+                a = art_list[0].get("artist") if isinstance(art_list[0], dict) else None
+                if isinstance(a, dict):
+                    art = a
+
+            return {
+                "recording": {"id": best.get("id"), "title": best.get("title"), "tag-list": best.get("tag-list")},
+                "release": {"id": (rel or {}).get("id"), "title": (rel or {}).get("title"), "date": (rel or {}).get("date"), "tag-list": (rel or {}).get("tag-list")},
+                "artist": {"id": (art or {}).get("id"), "name": (art or {}).get("name")},
+                "confidence": score(best)
+            }
+        except Exception:
+            return None
 
     async def fetch_cover_art(
         self,
@@ -195,9 +314,64 @@ class MetadataEnricher:
         Returns:
             Path to saved cover art or None
         """
-        # TODO: Implement cover art fetching
-        # - Try MusicBrainz Cover Art Archive
-        # - Fallback to LastFM
-        # - Embed in audio files if desired
+        # Placeholder (kept for API compatibility). Real implementation uses
+        # MusicBrainz release IDs via fetch_cover_art_by_musicbrainz.
+        return None
+
+    async def fetch_cover_art_by_musicbrainz(
+        self,
+        mb_release_id: Optional[str],
+        artist: Optional[str],
+        album: Optional[str],
+        base_dir: Path
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch cover art from Cover Art Archive using a MusicBrainz release ID.
+
+        Returns dict with keys: cover_art_path, cover_art_url, cover_art_etag, image_hash,
+        or None if not available. Images are stored under base_dir/cover_art/Artist/Album.
+        """
+        if not mb_release_id or httpx is None:
+            return None
+
+        # Candidates: specific size first, then generic front
+        url_candidates = [
+            f"https://coverartarchive.org/release/{mb_release_id}/front-500.jpg",
+            f"https://coverartarchive.org/release/{mb_release_id}/front",
+        ]
+
+        headers = {"User-Agent": getattr(self, 'user_agent', 'netrunner/0.1')}
+
+        async with httpx.AsyncClient(headers=headers, timeout=20) as client:
+            for url in url_candidates:
+                try:
+                    resp = await client.get(url, follow_redirects=True)
+                    if resp.status_code == 200 and resp.content:
+                        mime = resp.headers.get("Content-Type", "image/jpeg")
+                        ext = mimetypes.guess_extension(mime.split(";")[0].strip()) or ".jpg"
+
+                        # Compute a short hash for dedupe-friendly filenames
+                        import hashlib as _hash
+                        h = _hash.sha256(resp.content).hexdigest()[:16]
+
+                        safe_artist = (artist or "Unknown Artist").replace('/', '_').strip()
+                        safe_album = (album or "Unknown Album").replace('/', '_').strip()
+                        target_dir = base_dir / "cover_art" / safe_artist / safe_album
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        fname = f"cover_{h}{ext}"
+                        path = target_dir / fname
+
+                        if not path.exists():
+                            with open(path, 'wb') as f:
+                                f.write(resp.content)
+
+                        return {
+                            "cover_art_path": str(path),
+                            "cover_art_url": str(resp.url),
+                            "cover_art_etag": resp.headers.get("ETag"),
+                            "image_hash": h,
+                        }
+                except Exception:
+                    # try next candidate
+                    continue
 
         return None
