@@ -1,0 +1,23 @@
+---
+description: Repo-wide rules and non-negotiables for Djinn NETRUNNER.
+globs: ""**/*""
+alwaysApply: true
+---
+
+# Djinn NETRUNNER (Cursor Rules)
+
+Core identity: console-first, operator-centric appliance; logs are the primary progress visualization.
+
+Non-negotiable constraints:
+- Keep HTMX server-rendered UI; do not introduce a SPA framework.
+- Keep styling in a single CSS file and minimal JS; do not split into component systems.
+- Keep PostgreSQL as the system-of-record; avoid introducing external queues/caches.
+- Preserve deterministic work: jobitems are durable plans created before execution; requeues resume and never regenerate.
+- Preserve event-driven updates via LISTEN/NOTIFY; avoid UI polling loops.
+
+Docs to read before making changes:
+- docs/MANIFEST.md
+- docs/WHITEPAPER.md
+- docs/ARCHITECTURE.md
+- docs/UIIMPLEMENTATION.md
+- docs/RUNBOOK.md
