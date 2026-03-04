@@ -28,19 +28,13 @@ Port the FastAPI-based management console to Go Fiber. The migration focuses on 
 - [x] Task: Conductor - User Manual Verification 'HTMX Templates & Source Management' (Protocol in workflow.md) (e064700)
 
 ## Phase 3: Real-time WebSocket Console
-
-Port the log streaming functionality.
-
-### Tasks
-
-- [~] Task 3.1: **NOTIFY Channel Listener**: Implement a background listener for the `opsevents` channel using `lib/pq`.
-- [ ] Task 3.2: **WebSocket Broadcaster**: Implement a connection manager to fan out logs to connected WebSocket clients.
-- [ ] Task 3.3: **Console Endpoint**: Port the `/ws/jobs/{job_id}` endpoint.
-    - Handle backlog retrieval (`tail` and `since_id` parameters).
+- [x] Task 3.1: **NOTIFY Channel Listener**: Implement a background listener for the `opsevents` channel using `lib/pq`. (248be16)
+- [x] Task 3.2: **WebSocket Broadcaster**: Implement a connection manager to fan out logs to connected WebSocket clients. (248be16)
+- [x] Task 3.3: **Console Endpoint**: Port the `/ws/jobs/{job_id}` endpoint. (248be16)
 
 ### Verification
 
-- [ ] Task: Conductor - User Manual Verification 'Real-time WebSocket Console' (Protocol in workflow.md)
+- [~] Task: Conductor - User Manual Verification 'Real-time WebSocket Console' (Protocol in workflow.md)
 
 ## Phase 4: Integration & Cleanup
 
