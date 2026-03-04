@@ -19,7 +19,7 @@
 - [x] Task: Conductor - User Manual Verification 'Task Orchestration Migration' (Protocol in workflow.md) (aec2470)
 
 ## Phase 3: Integration and Verification
-- [ ] Task: Setup integration tests for Go-Python interop
+- [~] Task: Setup integration tests for Go-Python interop
     - [ ] Verify LISTEN/NOTIFY communication between ops-web (Python) and Go worker
 - [ ] Task: Performance benchmarking and optimization
     - [ ] Compare Go worker performance against legacy Python implementation

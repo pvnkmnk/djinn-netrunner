@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -43,6 +44,9 @@ type WorkerOrchestrator struct {
 	jobMutex   sync.Mutex
 	running    bool
 	wg         sync.WaitGroup
+	
+	// Notify
+	wakeupChan chan bool
 }
 
 type jobContext struct {
@@ -75,6 +79,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		syncHandler: services.NewSyncHandler(db, spotify),
 		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata),
 		activeJobs:  make(map[uint64]*jobContext),
+		wakeupChan:  make(chan bool, 1),
 	}
 }
 
@@ -85,12 +90,53 @@ func (w *WorkerOrchestrator) Start() {
 	// Start background tasks
 	go w.heartbeatLoop()
 	go w.schedulerLoop()
+	go w.listenForWakeup()
 
 	// Main job loop with round-robin item processing
 	for w.running {
 		w.claimAndProcess()
 		w.processActiveJobsRoundRobin()
-		time.Sleep(500 * time.Millisecond)
+		
+		// Wait for next tick OR wakeup notification
+		select {
+		case <-time.After(5 * time.Second):
+			// Regular poll
+		case <-w.wakeupChan:
+			log.Println("[WORKER] Received wakeup notification")
+		}
+	}
+}
+
+func (w *WorkerOrchestrator) listenForWakeup() {
+	reportProblem := func(ev pq.ListenerEventType, err error) {
+		if err != nil {
+			log.Printf("[NOTIFY] Listener error: %v", err)
+		}
+	}
+
+	listener := pq.NewListener(w.cfg.DatabaseURL, 10*time.Second, time.Minute, reportProblem)
+	err := listener.Listen("opswakeup")
+	if err != nil {
+		log.Fatalf("[NOTIFY] Failed to listen: %v", err)
+	}
+
+	log.Println("[NOTIFY] Listening for 'opswakeup' events")
+
+	for {
+		if !w.running {
+			return
+		}
+
+		select {
+		case <-listener.Notify:
+			// Non-blocking send to wakeupChan
+			select {
+			case w.wakeupChan <- true:
+			default:
+			}
+		case <-time.After(1 * time.Minute):
+			go listener.Ping()
+		}
 	}
 }
 
