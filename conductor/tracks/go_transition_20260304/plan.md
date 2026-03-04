@@ -4,9 +4,9 @@
 - [x] Task: Initialize Go worker environment and dependencies (b9ed9fa)
     - [x] Setup project structure in `backend/cmd/worker`
     - [x] Configure environment variable loading and logging
-- [ ] Task: Implement PostgreSQL connection and advisory lock management in Go
-    - [ ] Port connection pooling logic
-    - [ ] Port advisory lock acquisition and release patterns
+- [x] Task: Implement PostgreSQL connection and advisory lock management in Go (0838c61)
+    - [x] Port connection pooling logic
+    - [x] Port advisory lock acquisition and release patterns
 - [ ] Task: Conductor - User Manual Verification 'Core Go Worker Setup' (Protocol in workflow.md)
 
 ## Phase 2: Task Orchestration Migration
