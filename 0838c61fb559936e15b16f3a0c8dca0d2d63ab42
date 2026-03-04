@@ -1,0 +1,4 @@
+Task: Implement PostgreSQL connection and advisory lock management in Go
+Summary: Implemented LockManager to handle session-level advisory locks using a dedicated PostgreSQL connection. Integrated LockManager into WorkerOrchestrator to ensure exclusive processing of job scopes.
+Files: backend/internal/database/locks.go, backend/internal/database/locks_test.go, backend/cmd/worker/main.go
+Why: Maintain system invariants and prevent concurrent processing conflicts during music acquisition.
