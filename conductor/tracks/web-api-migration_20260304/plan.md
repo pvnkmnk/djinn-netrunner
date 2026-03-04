@@ -15,7 +15,7 @@ Establish the web server core and ensure users can securely log in and maintain 
 
 ### Tasks
 
-- [ ] Task 1.1: **Server Scaffolding**: Setup Fiber application, environment configuration, and core middleware (Recover, Logger, CORS).
+- [~] Task 1.1: **Server Scaffolding**: Setup Fiber application, environment configuration, and core middleware (Recover, Logger, CORS).
 - [ ] Task 1.2: **Authentication Port**: Port the session-based authentication logic.
     - Implement bcrypt password verification (parity with Python `passlib`).
     - Implement session cookie management and database-backed session resolution.

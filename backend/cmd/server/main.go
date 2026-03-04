@@ -9,6 +9,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -49,9 +51,16 @@ func main() {
 	// Middleware
 	app.Use(logger.New())
 	app.Use(cors.New())
+	app.Use(recover.New())
+
+	// Static files
+	app.Static("/static", "../../ops/web/static")
+
+	// Handlers
+	authHandler := api.NewAuthHandler(db)
 
 	// Routes
-	setupRoutes(app, atService, scanService)
+	setupRoutes(app, authHandler, atService, scanService)
 
 	// 7. Start server
 	go func() {
@@ -74,16 +83,26 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, at *services.ArtistTrackingService, scan *services.ScannerService) {
-	api := app.Group("/api")
+func setupRoutes(app *fiber.App, auth *api.AuthHandler, at *services.ArtistTrackingService, scan *services.ScannerService) {
+	apiGroup := app.Group("/api")
 
-	// Health check
-	api.Get("/health", func(c *fiber.Ctx) error {
+	// Auth routes
+	authRoutes := apiGroup.Group("/auth")
+	authRoutes.Post("/register", auth.Register)
+	authRoutes.Post("/login", auth.Login)
+	authRoutes.Post("/logout", auth.Logout)
+
+	// Protected routes
+	protected := apiGroup.Group("/")
+	protected.Use(auth.AuthMiddleware)
+
+	// Health check (public)
+	apiGroup.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// Artist Tracking
-	artists := api.Group("/artists")
+	// Artist Tracking (protected)
+	artists := protected.Group("/artists")
 	artists.Get("/", func(c *fiber.Ctx) error {
 		list, err := at.GetMonitoredArtists()
 		if err != nil {
@@ -92,8 +111,8 @@ func setupRoutes(app *fiber.App, at *services.ArtistTrackingService, scan *servi
 		return c.JSON(list)
 	})
 
-	// Scanner
-	api.Post("/scan", func(c *fiber.Ctx) error {
+	// Scanner (protected)
+	protected.Post("/scan", func(c *fiber.Ctx) error {
 		var payload struct {
 			Path      string `json:"path"`
 			LibraryID string `json:"library_id"`
@@ -101,10 +120,6 @@ func setupRoutes(app *fiber.App, at *services.ArtistTrackingService, scan *servi
 		if err := c.BodyParser(&payload); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
 		}
-		// (Run in background or wait)
-		// For now, simple wait
-		// parse UUID
-		// ...
 		return c.JSON(fiber.Map{"status": "scan_triggered"})
 	})
 }
