@@ -8,3 +8,5 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/go_transition_20260304/](./tracks/go_transition_20260304/)*
 - [ ] **Track: Web API Migration to Go**
   *Link: [./tracks/web-api-migration_20260304/](./tracks/web-api-migration_20260304/)*
+- [ ] **Track: Architecture Evolution & Optimization**
+  *Link: [./tracks/architecture-evolution_20260304/](./tracks/architecture-evolution_20260304/)*
