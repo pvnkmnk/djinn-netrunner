@@ -41,8 +41,11 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 
 	// Get sources
 	var sources []database.Source
-	// For now, simpler scoping or admin view
-	h.db.Order("display_name").Find(&sources)
+	query := h.db.Order("display_name")
+	if u, ok := user.(database.User); ok && u.Role != "admin" {
+		query = query.Where("owner_user_id = ?", u.ID)
+	}
+	query.Find(&sources)
 
 	return c.Render("index", fiber.Map{
 		"stats":   stats,

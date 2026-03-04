@@ -93,9 +93,20 @@ func (h *SourceHandler) DeleteSource(c *fiber.Ctx) error {
 // Schedules
 
 func (h *SourceHandler) ListSchedules(c *fiber.Ctx) error {
+	user := c.Locals("user").(database.User)
 	sourceID, _ := strconv.ParseUint(c.Params("source_id"), 10, 64)
-	var schedules []database.Schedule
 
+	// Verify source ownership
+	var source database.Source
+	sourceQuery := h.db.Where("id = ?", sourceID)
+	if user.Role != "admin" {
+		sourceQuery = sourceQuery.Where("owner_user_id = ?", user.ID)
+	}
+	if err := sourceQuery.First(&source).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "source not found"})
+	}
+
+	var schedules []database.Schedule
 	if err := h.db.Where("source_id = ?", sourceID).Find(&schedules).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -104,9 +115,20 @@ func (h *SourceHandler) ListSchedules(c *fiber.Ctx) error {
 }
 
 func (h *SourceHandler) CreateSchedule(c *fiber.Ctx) error {
+	user := c.Locals("user").(database.User)
 	var schedule database.Schedule
 	if err := c.BodyParser(&schedule); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	// Verify source ownership
+	var source database.Source
+	sourceQuery := h.db.Where("id = ?", schedule.SourceID)
+	if user.Role != "admin" {
+		sourceQuery = sourceQuery.Where("owner_user_id = ?", user.ID)
+	}
+	if err := sourceQuery.First(&source).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "source not found"})
 	}
 
 	if err := h.db.Create(&schedule).Error; err != nil {

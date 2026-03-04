@@ -19,22 +19,13 @@ Port the FastAPI-based management console to Go Fiber. The migration focuses on 
 - [x] Task: Conductor - User Manual Verification 'Foundation & Authentication' (Protocol in workflow.md) (9e2f74c)
 
 ## Phase 2: HTMX Templates & Source Management
-
-Port the UI views and the REST API for managing music sources.
-
-### Tasks
-
-- [~] Task 2.1: **Template Engine Integration**: Setup Fiber's `html` engine.
-    - Implement custom template functions for date formatting (parity with Jinja2 `strftime`).
-- [ ] Task 2.2: **Dashboard View**: Port the main `/` route logic.
-    - Fetch and display job statistics and recent jobs.
-    - Render the sidebar with the sources list.
-- [ ] Task 2.3: **Source & Schedule API**: Port all `Source` and `Schedule` CRUD endpoints.
-    - Support HTMX modal interactions for adding/editing sources.
+- [x] Task 2.1: **Template Engine Integration**: Setup Fiber's `html` engine. (cb1a8e5)
+- [x] Task 2.2: **Dashboard View**: Port the main `/` route logic. (cb1a8e5)
+- [x] Task 2.3: **Source & Schedule API**: Port all `Source` and `Schedule` CRUD endpoints. (cb1a8e5)
 
 ### Verification
 
-- [ ] Task: Conductor - User Manual Verification 'HTMX Templates & Source Management' (Protocol in workflow.md)
+- [~] Task: Conductor - User Manual Verification 'HTMX Templates & Source Management' (Protocol in workflow.md)
 
 ## Phase 3: Real-time WebSocket Console
 
