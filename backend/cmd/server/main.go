@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -94,9 +95,13 @@ func main() {
 	authHandler := api.NewAuthHandler(db)
 	dashHandler := api.NewDashboardHandler(db)
 	sourceHandler := api.NewSourceHandler(db)
+	wsManager := api.NewWebSocketManager()
+
+	// Start log listener
+	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, authHandler, dashHandler, sourceHandler, atService, scanService)
+	setupRoutes(app, authHandler, dashHandler, sourceHandler, wsManager, atService, scanService)
 
 	// 7. Start server
 	go func() {
@@ -139,29 +144,35 @@ func convertStrftimeToGo(format string) string {
 	return replacer.Replace(format)
 }
 
-func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandler, source *api.SourceHandler, at *services.ArtistTrackingService, scan *services.ScannerService) {
-	apiGroup := app.Group("/api")
-
-	// Public health check
-	apiGroup.Get("/health", func(c *fiber.Ctx) error {
+func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandler, source *api.SourceHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
+	// Public API routes
+	apiPublic := app.Group("/api")
+	
+	// Health check
+	apiPublic.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// Auth routes (public)
-	authRoutes := apiGroup.Group("/auth")
+	// Auth routes
+	authRoutes := apiPublic.Group("/auth")
 	authRoutes.Post("/register", auth.Register)
 	authRoutes.Post("/login", auth.Login)
 	authRoutes.Post("/logout", auth.Logout)
 
-	// Protected routes (UI)
+	// UI routes (protected)
 	app.Get("/", auth.AuthMiddleware, dash.RenderIndex)
 
+	// WebSocket Console (protected via session cookie)
+	app.Get("/ws/jobs/:job_id", auth.AuthMiddleware, websocket.New(func(c *websocket.Conn) {
+		ws.HandleConsole(c, auth.GetDB())
+	}))
+
 	// Protected API routes
-	protected := apiGroup.Group("/")
-	protected.Use(auth.AuthMiddleware)
+	apiProtected := app.Group("/api")
+	apiProtected.Use(auth.AuthMiddleware)
 
 	// Sources API
-	sources := protected.Group("/sources")
+	sources := apiProtected.Group("/sources")
 	sources.Get("/", source.ListSources)
 	sources.Post("/", source.CreateSource)
 	sources.Patch("/:id", source.UpdateSource)
@@ -170,7 +181,7 @@ func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandl
 	sources.Post("/schedules", source.CreateSchedule)
 
 	// Artist Tracking
-	artists := protected.Group("/artists")
+	artists := apiProtected.Group("/artists")
 	artists.Get("/", func(c *fiber.Ctx) error {
 		list, err := at.GetMonitoredArtists()
 		if err != nil {
@@ -180,7 +191,7 @@ func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandl
 	})
 
 	// Scanner
-	protected.Post("/scan", func(c *fiber.Ctx) error {
+	apiProtected.Post("/scan", func(c *fiber.Ctx) error {
 		var payload struct {
 			Path      string `json:"path"`
 			LibraryID string `json:"library_id"`

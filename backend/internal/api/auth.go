@@ -136,6 +136,10 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
+func (h *AuthHandler) GetDB() *gorm.DB {
+	return h.db
+}
+
 // AuthMiddleware protects routes
 func (h *AuthHandler) AuthMiddleware(c *fiber.Ctx) error {
 	sessionID := c.Cookies(SessionCookie)

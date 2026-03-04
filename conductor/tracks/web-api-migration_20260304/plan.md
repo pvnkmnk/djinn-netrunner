@@ -18,14 +18,14 @@ Port the FastAPI-based management console to Go Fiber. The migration focuses on 
 
 - [x] Task: Conductor - User Manual Verification 'Foundation & Authentication' (Protocol in workflow.md) (9e2f74c)
 
-## Phase 2: HTMX Templates & Source Management
+## Phase 2: HTMX Templates & Source Management [checkpoint: e064700]
 - [x] Task 2.1: **Template Engine Integration**: Setup Fiber's `html` engine. (cb1a8e5)
 - [x] Task 2.2: **Dashboard View**: Port the main `/` route logic. (cb1a8e5)
 - [x] Task 2.3: **Source & Schedule API**: Port all `Source` and `Schedule` CRUD endpoints. (cb1a8e5)
 
 ### Verification
 
-- [~] Task: Conductor - User Manual Verification 'HTMX Templates & Source Management' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'HTMX Templates & Source Management' (Protocol in workflow.md) (e064700)
 
 ## Phase 3: Real-time WebSocket Console
 
@@ -33,7 +33,7 @@ Port the log streaming functionality.
 
 ### Tasks
 
-- [ ] Task 3.1: **NOTIFY Channel Listener**: Implement a background listener for the `opsevents` channel using `lib/pq`.
+- [~] Task 3.1: **NOTIFY Channel Listener**: Implement a background listener for the `opsevents` channel using `lib/pq`.
 - [ ] Task 3.2: **WebSocket Broadcaster**: Implement a connection manager to fan out logs to connected WebSocket clients.
 - [ ] Task 3.3: **Console Endpoint**: Port the `/ws/jobs/{job_id}` endpoint.
     - Handle backlog retrieval (`tail` and `since_id` parameters).

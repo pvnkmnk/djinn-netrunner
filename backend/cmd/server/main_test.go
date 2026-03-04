@@ -13,7 +13,7 @@ import (
 func TestHealthCheck(t *testing.T) {
 	app := fiber.New()
 	// Mock services and handlers for route setup
-	setupRoutes(app, &api.AuthHandler{}, &api.DashboardHandler{}, &api.SourceHandler{}, &services.ArtistTrackingService{}, &services.ScannerService{})
+	setupRoutes(app, &api.AuthHandler{}, &api.DashboardHandler{}, &api.SourceHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{})
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
 
