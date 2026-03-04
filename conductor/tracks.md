@@ -4,5 +4,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Complete and Verify Transition from Python to Go**
+- [~] **Track: Complete and Verify Transition from Python to Go**
   *Link: [./tracks/go_transition_20260304/](./tracks/go_transition_20260304/)*
