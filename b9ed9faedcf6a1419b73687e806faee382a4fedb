@@ -1,0 +1,4 @@
+Task: Initialize Go worker environment and dependencies
+Summary: Added MusicBrainzAPIKey to Config and made Load function testable by accepting optional filenames for godotenv. Added unit tests for configuration loading.
+Files: backend/internal/config/config.go, backend/internal/config/config_test.go
+Why: Enable metadata enrichment via MusicBrainz and ensure robust configuration management.
