@@ -1,0 +1,4 @@
+Task: Core Go Worker Setup
+Summary: Completed the foundational Go worker setup including GORM models, database connection pooling, advisory lock management, and initial service implementations (ArtistTracking, MusicBrainz, Slskd, Scanner).
+Files: backend/internal/database/*, backend/internal/services/*, backend/cmd/server/main.go
+Why: Establish a robust and scalable Go backend to replace legacy Python worker logic.
