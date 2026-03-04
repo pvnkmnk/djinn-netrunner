@@ -22,6 +22,7 @@ func Migrate(db *gorm.DB) error {
 		&TrackedRelease{},
 		&Source{},
 		&Job{},
+		&JobLog{},
 		&JobItem{},
 		&Acquisition{},
 		&Library{},

@@ -43,30 +43,50 @@ func (s *SpotifyService) GetPlaylistTracks(ctx context.Context, playlistID strin
 	}
 
 	id := spotify.ID(playlistID)
-	items, err := s.client.GetPlaylistItems(ctx, id)
-	if err != nil {
-		return nil, err
+	
+	var allTracks []map[string]string
+	limit := 100
+	offset := 0
+
+	for {
+		options := []spotify.RequestOption{
+			spotify.Limit(limit),
+			spotify.Offset(offset),
+		}
+		
+		items, err := s.client.GetPlaylistItems(ctx, id, options...)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(items.Items) == 0 {
+			break
+		}
+
+		for _, item := range items.Items {
+			if item.Track.Track == nil {
+				continue
+			}
+			t := item.Track.Track
+			artistName := ""
+			if len(t.Artists) > 0 {
+				artistName = t.Artists[0].Name
+			}
+
+			allTracks = append(allTracks, map[string]string{
+				"artist": artistName,
+				"title":  t.Name,
+				"album":  t.Album.Name,
+			})
+		}
+
+		offset += len(items.Items)
+		if offset >= int(items.Total) {
+			break
+		}
 	}
 
-	var tracks []map[string]string
-	for _, item := range items.Items {
-		if item.Track.Track == nil {
-			continue
-		}
-		t := item.Track.Track
-		artistName := ""
-		if len(t.Artists) > 0 {
-			artistName = t.Artists[0].Name
-		}
-
-		tracks = append(tracks, map[string]string{
-			"artist": artistName,
-			"title":  t.Name,
-			"album":  t.Album.Name,
-		})
-	}
-
-	return tracks, nil
+	return allTracks, nil
 }
 
 func (s *SpotifyService) ExtractPlaylistID(uri string) string {

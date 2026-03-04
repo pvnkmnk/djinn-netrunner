@@ -213,9 +213,9 @@ func (s *SlskdService) EnqueueDownload(username, filename string) (string, error
 }
 
 func (s *SlskdService) GetDownload(username, filename string) (*Download, error) {
-	url := fmt.Sprintf("%s/api/v0/downloads/%s/%s", s.cfg.SlskdURL, username, url.PathEscape(filename))
+	u := fmt.Sprintf("%s/api/v0/downloads/%s/%s", s.cfg.SlskdURL, username, url.PathEscape(filename))
 	
-	req, _ := http.NewRequest("GET", url, nil)
+	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 
 	resp, err := s.httpClient.Do(req)
@@ -234,6 +234,36 @@ func (s *SlskdService) GetDownload(username, filename string) (*Download, error)
 	}
 
 	return &d, nil
+}
+
+func (s *SlskdService) WaitForDownload(username, filename string, timeout time.Duration) (*Download, error) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	
+	start := time.Now()
+	for {
+		select {
+		case <-ticker.C:
+			if time.Since(start) > timeout {
+				return nil, fmt.Errorf("download timeout")
+			}
+			
+			d, err := s.GetDownload(username, filename)
+			if err != nil {
+				return nil, err
+			}
+			if d == nil {
+				return nil, fmt.Errorf("download not found")
+			}
+			
+			if d.State == DownloadStateCompleted {
+				return d, nil
+			}
+			if d.State == DownloadStateCancelled || d.State == DownloadStateErrored {
+				return nil, fmt.Errorf("download failed: %s", d.State)
+			}
+		}
+	}
 }
 
 func (s *SlskdService) HealthCheck() bool {

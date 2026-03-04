@@ -181,6 +181,16 @@ type Job struct {
 	OwnerUserID *uint64         `gorm:"index"`
 }
 
+// JobLog represents a log entry for a job
+type JobLog struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement"`
+	JobID     uint64    `gorm:"not null;index"`
+	JobItemID *uint64   `gorm:"index"`
+	Level     string    `gorm:"not null"`
+	Message   string    `gorm:"not null"`
+	CreatedAt time.Time `gorm:"default:NOW()"`
+}
+
 // JobItem represents a unit of work within a job
 type JobItem struct {
 	ID              uint64    `gorm:"primaryKey;autoIncrement"`

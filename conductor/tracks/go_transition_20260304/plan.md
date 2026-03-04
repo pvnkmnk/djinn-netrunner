@@ -13,10 +13,10 @@
 - [x] Task: Port job queue and scheduler to Go (49b2c57)
     - [x] Implement round-robin job selection logic
     - [x] Setup Asynq or native Go concurrent task processing
-- [~] Task: Implement core job handlers (sync, acquisition) in Go
-    - [ ] Port slskd and Gonic client logic to Go
-    - [ ] Implement metadata extraction and file organization in Go
-- [ ] Task: Conductor - User Manual Verification 'Task Orchestration Migration' (Protocol in workflow.md)
+- [x] Task: Implement core job handlers (sync, acquisition) in Go (193fdf5)
+    - [x] Port slskd and Gonic client logic to Go
+    - [x] Implement metadata extraction and file organization in Go
+- [~] Task: Conductor - User Manual Verification 'Task Orchestration Migration' (Protocol in workflow.md)
 
 ## Phase 3: Integration and Verification
 - [ ] Task: Setup integration tests for Go-Python interop

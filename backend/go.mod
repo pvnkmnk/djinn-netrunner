@@ -8,6 +8,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/zmb3/spotify/v2 v2.4.3
+	golang.org/x/oauth2 v0.0.0-20210810183815-faf39c7919d5
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
 )
@@ -29,10 +31,8 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
-	github.com/zmb3/spotify/v2 v2.4.3 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/net v0.23.0 // indirect
-	golang.org/x/oauth2 v0.0.0-20210810183815-faf39c7919d5 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
