@@ -54,7 +54,8 @@ func main() {
 	app.Use(recover.New())
 
 	// Static files
-	app.Static("/static", "../../ops/web/static")
+	staticPath := getEnv("STATIC_FILES_PATH", "../../ops/web/static")
+	app.Static("/static", staticPath)
 
 	// Handlers
 	authHandler := api.NewAuthHandler(db)
@@ -81,6 +82,13 @@ func main() {
 	if err := app.Shutdown(); err != nil {
 		log.Fatalf("failed to shutdown server: %v", err)
 	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
 func setupRoutes(app *fiber.App, auth *api.AuthHandler, at *services.ArtistTrackingService, scan *services.ScannerService) {
