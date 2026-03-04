@@ -4,12 +4,15 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/template/html/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -43,9 +46,39 @@ func main() {
 	// 5. Start background tasks
 	rmService.StartBackgroundTask()
 
-	// 6. Initialize Fiber app
+	// 6. Initialize Template engine
+	engine := html.New("../../ops/web/templates", ".html")
+	engine.AddFunc("strftime", func(t interface{}, format string) string {
+		if t == nil {
+			return "Never"
+		}
+		
+		var timeVal time.Time
+		switch v := t.(type) {
+		case time.Time:
+			timeVal = v
+		case *time.Time:
+			if v == nil {
+				return "Never"
+			}
+			timeVal = *v
+		default:
+			return "Invalid"
+		}
+
+		// Convert Python strftime format to Go layout
+		goLayout := convertStrftimeToGo(format)
+		return timeVal.Format(goLayout)
+	})
+	
+	engine.AddFunc("upper", func(s string) string {
+		return strings.ToUpper(s)
+	})
+
+	// Initialize Fiber app
 	app := fiber.New(fiber.Config{
 		AppName: "NetRunner API",
+		Views:   engine,
 	})
 
 	// Middleware
@@ -59,9 +92,11 @@ func main() {
 
 	// Handlers
 	authHandler := api.NewAuthHandler(db)
+	dashHandler := api.NewDashboardHandler(db)
+	sourceHandler := api.NewSourceHandler(db)
 
 	// Routes
-	setupRoutes(app, authHandler, atService, scanService)
+	setupRoutes(app, authHandler, dashHandler, sourceHandler, atService, scanService)
 
 	// 7. Start server
 	go func() {
@@ -91,25 +126,50 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-func setupRoutes(app *fiber.App, auth *api.AuthHandler, at *services.ArtistTrackingService, scan *services.ScannerService) {
+func convertStrftimeToGo(format string) string {
+	// Simple mapping for common formats used in templates
+	replacer := strings.NewReplacer(
+		"%Y", "2006",
+		"%m", "01",
+		"%d", "02",
+		"%H", "15",
+		"%M", "04",
+		"%S", "05",
+	)
+	return replacer.Replace(format)
+}
+
+func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandler, source *api.SourceHandler, at *services.ArtistTrackingService, scan *services.ScannerService) {
 	apiGroup := app.Group("/api")
 
-	// Auth routes
+	// Public health check
+	apiGroup.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+
+	// Auth routes (public)
 	authRoutes := apiGroup.Group("/auth")
 	authRoutes.Post("/register", auth.Register)
 	authRoutes.Post("/login", auth.Login)
 	authRoutes.Post("/logout", auth.Logout)
 
-	// Protected routes
+	// Protected routes (UI)
+	app.Get("/", auth.AuthMiddleware, dash.RenderIndex)
+
+	// Protected API routes
 	protected := apiGroup.Group("/")
 	protected.Use(auth.AuthMiddleware)
 
-	// Health check (public)
-	apiGroup.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
-	})
+	// Sources API
+	sources := protected.Group("/sources")
+	sources.Get("/", source.ListSources)
+	sources.Post("/", source.CreateSource)
+	sources.Patch("/:id", source.UpdateSource)
+	sources.Delete("/:id", source.DeleteSource)
+	sources.Get("/:source_id/schedules", source.ListSchedules)
+	sources.Post("/schedules", source.CreateSchedule)
 
-	// Artist Tracking (protected)
+	// Artist Tracking
 	artists := protected.Group("/artists")
 	artists.Get("/", func(c *fiber.Ctx) error {
 		list, err := at.GetMonitoredArtists()
@@ -119,7 +179,7 @@ func setupRoutes(app *fiber.App, auth *api.AuthHandler, at *services.ArtistTrack
 		return c.JSON(list)
 	})
 
-	// Scanner (protected)
+	// Scanner
 	protected.Post("/scan", func(c *fiber.Ctx) error {
 		var payload struct {
 			Path      string `json:"path"`

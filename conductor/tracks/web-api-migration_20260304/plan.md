@@ -9,14 +9,14 @@
 
 Port the FastAPI-based management console to Go Fiber. The migration focuses on preserving the existing HTMX workflow and ensuring authentication compatibility. We will leverage the database models and connection logic already established in the Go worker.
 
-## Phase 1: Foundation & Authentication
+## Phase 1: Foundation & Authentication [checkpoint: 9e2f74c]
 - [x] Task 1.1: **Server Scaffolding**: Setup Fiber application, environment configuration, and core middleware (Recover, Logger, CORS). (50bdbf7)
 - [x] Task 1.2: **Authentication Port**: Port the session-based authentication logic. (50bdbf7)
 - [x] Task 1.3: **Static Files**: Configure serving of the existing CSS and JS assets from `ops/web/static`. (50bdbf7)
 
 ### Verification
 
-- [~] Task: Conductor - User Manual Verification 'Foundation & Authentication' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Foundation & Authentication' (Protocol in workflow.md) (9e2f74c)
 
 ## Phase 2: HTMX Templates & Source Management
 
@@ -24,7 +24,7 @@ Port the UI views and the REST API for managing music sources.
 
 ### Tasks
 
-- [ ] Task 2.1: **Template Engine Integration**: Setup Fiber's `html` engine.
+- [~] Task 2.1: **Template Engine Integration**: Setup Fiber's `html` engine.
     - Implement custom template functions for date formatting (parity with Jinja2 `strftime`).
 - [ ] Task 2.2: **Dashboard View**: Port the main `/` route logic.
     - Fetch and display job statistics and recent jobs.

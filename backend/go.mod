@@ -9,7 +9,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.11.2
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.10.0
 	github.com/zmb3/spotify/v2 v2.4.3
 	golang.org/x/oauth2 v0.0.0-20210810183815-faf39c7919d5
 	gorm.io/driver/postgres v1.6.0
@@ -19,6 +19,9 @@ require (
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/gofiber/template v1.8.3 // indirect
+	github.com/gofiber/template/html/v2 v2.1.3 // indirect
+	github.com/gofiber/utils v1.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
