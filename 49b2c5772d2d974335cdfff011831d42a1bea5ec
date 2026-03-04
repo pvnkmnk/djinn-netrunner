@@ -1,0 +1,4 @@
+Task: Port job queue and scheduler to Go
+Summary: Implemented a robust round-robin job scheduler and concurrent processing loop. Added Schedule model, background schedulerLoop for recurring sync jobs, and a WorkerOrchestrator that handles multiple active jobs with item-level round-robin processing for acquisition jobs.
+Files: backend/cmd/worker/main.go, backend/internal/database/models.go, backend/internal/database/migrate.go
+Why: Ensure fair resource distribution across different scopes and enable automated recurring synchronization tasks.
