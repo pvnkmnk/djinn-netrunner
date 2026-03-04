@@ -18,9 +18,9 @@
     - [x] Implement metadata extraction and file organization in Go
 - [x] Task: Conductor - User Manual Verification 'Task Orchestration Migration' (Protocol in workflow.md) (aec2470)
 
-## Phase 3: Integration and Verification
-- [~] Task: Setup integration tests for Go-Python interop
-    - [ ] Verify LISTEN/NOTIFY communication between ops-web (Python) and Go worker
-- [ ] Task: Performance benchmarking and optimization
-    - [ ] Compare Go worker performance against legacy Python implementation
-- [ ] Task: Conductor - User Manual Verification 'Integration and Verification' (Protocol in workflow.md)
+## Phase 3: Integration and Verification [checkpoint: 08f95de]
+- [x] Task: Setup integration tests for Go-Python interop (08f95de)
+    - [x] Verify LISTEN/NOTIFY communication between ops-web (Python) and Go worker
+- [x] Task: Performance benchmarking and optimization (08f95de)
+    - [x] Compare Go worker performance against legacy Python implementation
+- [x] Task: Conductor - User Manual Verification 'Integration and Verification' (Protocol in workflow.md) (08f95de)
