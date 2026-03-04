@@ -86,34 +86,19 @@ All tasks follow a strict lifecycle:
     -   Execute the announced command.
     -   If tests fail, you **must** inform the user and begin debugging. You may attempt to propose a fix a **maximum of two times**. If the tests still fail after your second proposed fix, you **must stop**, report the persistent failure, and ask the user for guidance.
 
-4.  **Propose a Detailed, Actionable Manual Verification Plan:**
-    -   **CRITICAL:** To generate the plan, first analyze `product.md`, `product-guidelines.md`, and `plan.md` to determine the user-facing goals of the completed phase.
-    -   You **must** generate a step-by-step plan that walks the user through the verification process, including any necessary commands and specific, expected outcomes.
-    -   The plan you present to the user **must** follow this format:
+4.  **Delegate Autonomous Verification to Sub-Agent:**
+    -   **CRITICAL:** Instead of manual verification, you **must** delegate the verification task to a specialized sub-agent (e.g., `generalist`).
+    -   Provide the sub-agent with the `product.md`, `plan.md`, and the specific goals of the phase.
+    -   Instruct the sub-agent to:
+        1.  Setup any necessary environment (e.g., mock services, temporary databases).
+        2.  Execute the implementation code (e.g., `go run cmd/worker/main.go`).
+        3.  Verify the side effects (e.g., database changes, API responses, log output).
+        4.  Provide a structured **Verification Report** detailing what was tested and the results.
 
-        **For a Frontend Change:**
-        ```
-        The automated tests have passed. For manual verification, please follow these steps:
-
-        **Manual Verification Steps:**
-        1.  **Start the development server with the command:** `npm run dev`
-        2.  **Open your browser to:** `http://localhost:3000`
-        3.  **Confirm that you see:** The new user profile page, with the user's name and email displayed correctly.
-        ```
-
-        **For a Backend Change:**
-        ```
-        The automated tests have passed. For manual verification, please follow these steps:
-
-        **Manual Verification Steps:**
-        1.  **Ensure the server is running.**
-        2.  **Execute the following command in your terminal:** `curl -X POST http://localhost:8080/api/v1/users -d '{"name": "test"}'`
-        3.  **Confirm that you receive:** A JSON response with a status of `201 Created`.
-        ```
-
-5.  **Await Explicit User Feedback:**
-    -   After presenting the detailed plan, ask the user for confirmation: "**Does this meet your expectations? Please confirm with yes or provide feedback on what needs to be changed.**"
-    -   **PAUSE** and await the user's response. Do not proceed without an explicit yes or confirmation.
+5.  **Review and Present Verification Report:**
+    -   Review the sub-agent's report for completeness and accuracy.
+    -   Present the final report to the user and ask: "**The autonomous verification worker has completed its checks. Does this report meet your expectations for Phase completion?**"
+    -   **PAUSE** and await the user's response. Do not proceed without explicit confirmation.
 
 6.  **Create Checkpoint Commit:**
     -   Stage all changes. If no changes occurred in this step, proceed with an empty commit.

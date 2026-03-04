@@ -162,6 +162,7 @@ type Job struct {
 	Params      json.RawMessage `gorm:"type:jsonb"`
 	Summary     string
 	ErrorDetail string          `gorm:"column:error_detail"`
+	CreatedBy   string          `gorm:"column:created_by"`
 	OwnerUserID *uint64         `gorm:"index"`
 }
 
