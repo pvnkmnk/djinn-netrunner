@@ -1,0 +1,4 @@
+Task: Implement core job handlers (sync, acquisition) in Go
+Summary: Ported essential job handlers and external service clients to Go. Implemented SyncHandler with Spotify playlist support, AcquisitionHandler with slskd integration, and MetadataExtractor using the 'tag' library. Added robust GonicClient and SlskdService for interaction with core infrastructure.
+Files: backend/internal/services/job_handlers.go, backend/internal/services/slskd_service.go, backend/internal/services/gonic_client.go, backend/internal/services/metadata_extractor.go, backend/internal/services/spotify_service.go
+Why: Core functional migration of background worker logic to Go for performance and scalability.
