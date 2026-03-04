@@ -145,6 +145,21 @@ type Source struct {
 	OwnerUserID *uint64   `gorm:"index"`
 }
 
+// Schedule represents a recurring sync schedule
+type Schedule struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement"`
+	SourceID   uint64    `gorm:"not null;index"`
+	CronExpr   string    `gorm:"not null"`
+	Timezone   string    `gorm:"not null;default:'UTC'"`
+	NextRunAt  *time.Time `gorm:"index"`
+	LastRunAt  *time.Time
+	Enabled    bool      `gorm:"not null;default:true;index"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+
+	Source Source `gorm:"foreignKey:SourceID"`
+}
+
 // Job represents a background job
 type Job struct {
 	ID          uint64          `gorm:"primaryKey;autoIncrement"`
