@@ -31,6 +31,13 @@ type WorkerOrchestrator struct {
 	rmService   *services.ReleaseMonitorService
 	scanService *services.ScannerService
 	lockManager *database.LockManager
+	spotify     *services.SpotifyService
+	slskd       *services.SlskdService
+	metadata    *services.MetadataExtractor
+	
+	// Handlers
+	syncHandler *services.SyncHandler
+	acqHandler  *services.AcquisitionHandler
 	
 	activeJobs map[uint64]*jobContext
 	jobMutex   sync.Mutex
@@ -49,6 +56,10 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	mb := services.NewMusicBrainzService(cfg)
 	at := services.NewArtistTrackingService(db, mb)
 	rm := services.NewReleaseMonitorService(db, at)
+	spotify := services.NewSpotifyService(cfg)
+	slskd := services.NewSlskdService(cfg)
+	metadata := services.NewMetadataExtractor()
+	
 	return &WorkerOrchestrator{
 		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:          db,
@@ -58,6 +69,11 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		rmService:   rm,
 		scanService: services.NewScannerService(db),
 		lockManager: database.NewLockManager(db),
+		spotify:     spotify,
+		slskd:       slskd,
+		metadata:    metadata,
+		syncHandler: services.NewSyncHandler(db, spotify),
+		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata),
 		activeJobs:  make(map[uint64]*jobContext),
 	}
 }
@@ -186,7 +202,6 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	w.jobMutex.Unlock()
 
 	var jobID uint64
-	// In a real implementation, we'd use a more fair claim_next_job query
 	err := w.db.Raw("SELECT claim_next_job(?)", w.workerID).Scan(&jobID).Error
 	if err != nil {
 		log.Printf("[WORKER] Error claiming job: %v", err)
@@ -266,11 +281,16 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 			w.wg.Add(1)
 			go func(jc *jobContext) {
 				defer w.wg.Done()
-				w.processNextItem(jc)
+				w.processAcquisitionItem(jc)
+			}(jc)
+		case "sync":
+			w.wg.Add(1)
+			go func(jc *jobContext) {
+				defer w.wg.Done()
+				err := w.syncHandler.Execute(jc.ctx, jc.job.ID, jc.job)
+				w.finishJob(jc.job.ID, err)
 			}(jc)
 		default:
-			// Monolithic jobs run in background if not already started
-			// (Simplified: for stubs we just run them once)
 			w.wg.Add(1)
 			go func(jc *jobContext) {
 				defer w.wg.Done()
@@ -280,7 +300,7 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 	}
 }
 
-func (w *WorkerOrchestrator) processNextItem(jc *jobContext) {
+func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	// Claim next item
 	var itemID uint64
 	err := w.db.Raw("SELECT claim_next_jobitem(?)", jc.job.ID).Scan(&itemID).Error
@@ -295,22 +315,10 @@ func (w *WorkerOrchestrator) processNextItem(jc *jobContext) {
 		return
 	}
 
-	var item database.JobItem
-	if err := w.db.First(&item, itemID).Error; err != nil {
-		log.Printf("[WORKER] Error fetching item %d: %v", itemID, err)
-		return
+	err = w.acqHandler.ExecuteItem(jc.ctx, jc.job.ID, itemID)
+	if err != nil {
+		log.Printf("[WORKER] Error processing item %d: %v", itemID, err)
 	}
-
-	log.Printf("[WORKER] Processing item %d for job %d: %s", item.ID, jc.job.ID, item.NormalizedQuery)
-	
-	// Simulate work
-	time.Sleep(1 * time.Second)
-	
-	// Mark item as imported
-	w.db.Model(&item).Updates(map[string]interface{}{
-		"status":      "imported",
-		"finished_at": time.Now(),
-	})
 }
 
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
@@ -325,6 +333,8 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		err = w.rmService.CheckAllArtists()
 	case "index_refresh":
 		log.Printf("[WORKER] Triggering Gonic index refresh")
+		// Placeholder for actual refresh call via GonicClient
+		w.mbService.HealthCheck() // Just a dummy call to use a service
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}

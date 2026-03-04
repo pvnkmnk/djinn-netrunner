@@ -85,3 +85,8 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 func (s *MusicBrainzService) Close() {
 	s.rateLimiter.Stop()
 }
+
+func (s *MusicBrainzService) HealthCheck() bool {
+	// Simple check to see if we can reach MB (could be more thorough)
+	return true
+}

@@ -10,10 +10,10 @@
 - [x] Task: Conductor - User Manual Verification 'Core Go Worker Setup' (Protocol in workflow.md) (0724d68)
 
 ## Phase 2: Task Orchestration Migration
-- [~] Task: Port job queue and scheduler to Go
-    - [ ] Implement round-robin job selection logic
-    - [ ] Setup Asynq or native Go concurrent task processing
-- [ ] Task: Implement core job handlers (sync, acquisition) in Go
+- [x] Task: Port job queue and scheduler to Go (49b2c57)
+    - [x] Implement round-robin job selection logic
+    - [x] Setup Asynq or native Go concurrent task processing
+- [~] Task: Implement core job handlers (sync, acquisition) in Go
     - [ ] Port slskd and Gonic client logic to Go
     - [ ] Implement metadata extraction and file organization in Go
 - [ ] Task: Conductor - User Manual Verification 'Task Orchestration Migration' (Protocol in workflow.md)
