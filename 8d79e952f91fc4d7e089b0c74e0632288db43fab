@@ -1,0 +1,8 @@
+Task: OAuth Callback Handler
+Summary: Implemented Spotify OAuth2 flow in Go. Added 'SpotifyToken' database model for persistent token storage and created '/api/auth/spotify/login' and '/api/auth/spotify/callback' endpoints.
+Files:
+- backend/internal/database/models.go
+- backend/internal/database/migrate.go
+- backend/internal/api/spotify_auth.go
+- backend/cmd/server/main.go
+Why: To support User-level Spotify integration, required for syncing private data like 'Liked Songs'.
