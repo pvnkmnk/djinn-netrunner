@@ -250,20 +250,30 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	}
 	w.jobMutex.Unlock()
 
-	var jobID uint64
-	err := w.db.Raw("SELECT claim_next_job(?)", w.workerID).Scan(&jobID).Error
-	if err != nil {
-		log.Printf("[WORKER] Error claiming job: %v", err)
-		return
-	}
-
-	if jobID == 0 {
-		return
-	}
-
 	var job database.Job
-	if err := w.db.First(&job, jobID).Error; err != nil {
-		log.Printf("[WORKER] Error fetching job %d: %v", jobID, err)
+	
+	// Start an immediate transaction to "lock" the row for SQLite
+	err := w.db.Transaction(func(tx *gorm.DB) error {
+		// 1. Find next queued job
+		err := tx.Where("state = ?", "queued").Order("requested_at ASC").First(&job).Error
+		if err != nil {
+			return err // Will rollback and we'll try again next tick
+		}
+
+		// 2. Mark as running
+		now := time.Now()
+		return tx.Model(&job).Updates(map[string]interface{}{
+			"state":        "running",
+			"worker_id":    w.workerID,
+			"started_at":   &now,
+			"heartbeat_at": &now,
+		}).Error
+	})
+
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			log.Printf("[WORKER] Error claiming job: %v", err)
+		}
 		return
 	}
 

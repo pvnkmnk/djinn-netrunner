@@ -19,16 +19,14 @@ Transform NetRunner into a standalone, resilient application. We will replace th
 - [x] Task: Conductor - User Manual Verification 'Standalone Persistence' (Protocol in workflow.md) (6b8229d)
 - [x] All data persists across restarts in a local `.db` file. (6b8229d)
 
-## Phase 2: Metadata Resilience & Caching
-- [~] Task 2.1: **Cache Schema**: Design a `metadata_cache` table (key, value, ttl, source).
-- [ ] Task 2.2: **Service Middleware**: Wrap `MusicBrainzService` and `SpotifyService` with a caching layer.
-    - Check local DB before hitting API.
-    - Implement background refresh for expired cache entries.
+## Phase 2: Metadata Resilience & Caching [checkpoint: 27c413d]
+- [x] Task 2.1: **Cache Schema**: Design a `metadata_cache` table (key, value, ttl, source). (27c413d)
+- [x] Task 2.2: **Service Middleware**: Wrap `MusicBrainzService` and `SpotifyService` with a caching layer. (27c413d)
 
 ### Verification
 
-- [ ] Worker continues processing using cached data even when internet is disconnected.
-- [ ] API rate limits are respected aggressively.
+- [x] Worker continues processing using cached data even when internet is disconnected. (27c413d)
+- [x] API rate limits are respected aggressively. (27c413d)
 
 ## Phase 3: High-Performance Concurrency
 
@@ -36,7 +34,7 @@ Fix the "queue as a database table" bottleneck and parallelize IO.
 
 ### Tasks
 
-- [ ] Task 3.1: **Optimized Job Queue**: Refactor `WorkerOrchestrator` to use an efficient polling query with `SKIP LOCKED` equivalent in SQLite (or a dedicated in-memory queue persisted to DB).
+- [~] Task 3.1: **Optimized Job Queue**: Refactor `WorkerOrchestrator` to use an efficient polling query with `SKIP LOCKED` equivalent in SQLite (or a dedicated in-memory queue persisted to DB).
 - [ ] Task 3.2: **IO Worker Pool**: Implement a `ScannerPool` for metadata extraction.
     - Decouple file discovery (fast) from tag reading/hashing (slow).
     - Pipeline: Discovery -> Channel -> Workers -> DB.
