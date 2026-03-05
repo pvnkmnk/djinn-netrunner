@@ -281,7 +281,18 @@ input:focus {
 }
 
 .status-queued { background: var(--bg-tertiary); color: var(--text-low); }
-.status-running { background: rgba(0, 217, 255, 0.1); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); }
+.status-running { 
+    background: rgba(0, 217, 255, 0.1); 
+    color: var(--accent-cyan); 
+    border: 1px solid var(--accent-cyan); 
+    animation: status-pulse 2s infinite;
+}
+
+@keyframes status-pulse {
+    0% { box-shadow: 0 0 5px rgba(0, 217, 255, 0.2); }
+    50% { box-shadow: 0 0 15px rgba(0, 217, 255, 0.6); }
+    100% { box-shadow: 0 0 5px rgba(0, 217, 255, 0.2); }
+}
 .status-succeeded { background: rgba(0, 255, 159, 0.1); color: var(--accent-green); }
 .status-failed { background: rgba(255, 51, 102, 0.1); color: var(--accent-red); }
 

@@ -9,22 +9,17 @@
 
 Modernize the NetRunner frontend using HTMX and Vanilla CSS. We will implement a responsive Bento Grid layout, enhance the "Cyberpunk" aesthetic, and add interactive polish to every component.
 
-## Phase 1: Design Tokens & Foundation
+## Phase 1: Design Tokens & Foundation [checkpoint: 0cf848d]
 - [x] Task 1.1: **Design Tokens**: Update `style.css` with a refined color palette, typography (Orbitron/Inter), and reusable variables for glows and glassmorphism. (04bd387)
 - [x] Task 1.2: **Layout Refactor**: Transition the layout from a fixed sidebar to a responsive Bento Grid using CSS Grid/Flexbox. (04bd387)
 - [x] Task 1.3: **Base Components**: Refactor core components (buttons, inputs, cards) to use the new visual style. (04bd387)
 
 ### Verification
 
-- [~] Task: Conductor - User Manual Verification 'Design Foundation' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Design Foundation' (Protocol in workflow.md) (0cf848d)
 
 ## Phase 2: Interactive Bento Dashboard
-
-Enhance the dashboard elements with real-time feedback and polish.
-
-### Tasks
-
-- [ ] Task 2.1: **Stat Micro-animations**: Add pulsing animations for active jobs and count-up effects for stats.
+- [~] Task 2.1: **Stat Micro-animations**: Add pulsing animations for active jobs and count-up effects for stats.
 - [ ] Task 2.2: **Job/Source Cards**: Redesign list items as interactive cards with subtle hover glows and better data density.
 - [ ] Task 2.3: **Modal & Notification System**: Implement a custom, high-fidelity modal system with smooth entry/exit transitions.
 

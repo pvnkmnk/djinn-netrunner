@@ -117,10 +117,70 @@ class ConsoleController {
     }
 }
 
-// Initialize console controller
+class UIController {
+    constructor() {
+        this.stats = {};
+        this.init();
+    }
+
+    init() {
+        // Intercept HTMX beforeSwap to animate stat changes
+        document.body.addEventListener('htmx:beforeSwap', (event) => {
+            if (event.detail.target.classList.contains('stats-grid')) {
+                this.captureStats();
+            }
+        });
+
+        document.body.addEventListener('htmx:afterSwap', (event) => {
+            if (event.detail.target.classList.contains('stats-grid')) {
+                this.animateStats();
+            }
+        });
+    }
+
+    captureStats() {
+        document.querySelectorAll('.stat-value').forEach(el => {
+            const label = el.previousElementSibling.textContent;
+            this.stats[label] = parseInt(el.textContent) || 0;
+        });
+    }
+
+    animateStats() {
+        document.querySelectorAll('.stat-value').forEach(el => {
+            const label = el.previousElementSibling.textContent;
+            const newValue = parseInt(el.textContent) || 0;
+            const oldValue = this.stats[label] || 0;
+
+            if (newValue !== oldValue) {
+                this.countUp(el, oldValue, newValue, 1000);
+                el.classList.add('stat-changed');
+                setTimeout(() => el.classList.remove('stat-changed'), 1000);
+            }
+        });
+    }
+
+    countUp(el, start, end, duration) {
+        let current = start;
+        const range = end - start;
+        const increment = end > start ? 1 : -1;
+        const stepTime = Math.abs(Math.floor(duration / range));
+        
+        const timer = setInterval(() => {
+            current += increment;
+            el.textContent = current;
+            if (current === end) {
+                clearInterval(timer);
+            }
+        }, stepTime || 10);
+    }
+}
+
+// Initialize controllers
 let consoleController;
+let uiController;
 document.addEventListener('DOMContentLoaded', () => {
     consoleController = new ConsoleController();
+    uiController = new UIController();
 });
 
 // Setup HTMX WebSocket afterSwap handler
