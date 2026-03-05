@@ -1,0 +1,5 @@
+Task: Snapshot Comparison
+Summary: Implemented 'GetNewTracks' in 'WatchlistService'. This method performs a delta check by comparing current Spotify tracks against previously acquired items in the local database.
+Files:
+- backend/internal/services/watchlist_service.go
+Why: To identify new additions to a playlist or 'Liked Songs' list since the last sync, enabling incremental updates.
