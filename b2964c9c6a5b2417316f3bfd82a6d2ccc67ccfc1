@@ -1,0 +1,6 @@
+Task: Quality Profile Logic
+Summary: Implemented 'IsMatch' and 'GetSearchSuffix' methods for the QualityProfile model to handle file validation and search refinement.
+Files:
+- backend/internal/database/models_helper.go
+- backend/internal/database/models_helper_test.go
+Why: To enable automated decision-making for track acquisition based on user-defined quality preferences.
