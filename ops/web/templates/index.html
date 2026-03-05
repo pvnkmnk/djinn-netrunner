@@ -105,13 +105,13 @@
                             </div>
                         </div>
                         <div class="source-actions">
-                            <button class="btn-icon {{ 'active' if source.SyncEnabled else 'inactive' }}" 
+                            <button class="btn-icon {{ 'active' if source.SyncEnabled else 'inactive' }}"
                                     onclick="toggleSource({{ source.ID }}, {{ 'false' if source.SyncEnabled else 'true' }})"
                                     title="{{ 'Disable' if source.SyncEnabled else 'Enable' }}">
                                 {{ '●' if source.SyncEnabled else '○' }}
                             </button>
-                            <button class="btn-icon btn-action" 
-                                    hx-post="/api/jobs/sync?source_id={{ source.ID }}" 
+                            <button class="btn-icon btn-action"
+                                    hx-post="/api/jobs/sync?source_id={{ source.ID }}"
                                     hx-swap="none"
                                     title="Force Sync">
                                 ⟳
@@ -122,6 +122,44 @@
                     {% endfor %}
                 </div>
             </section>
+
+            <!-- Watchlists Bento -->
+            <section class="bento-section">
+                <div class="section-header">
+                    <div class="section-title">Active Watchlists</div>
+                    <button class="btn-add" onclick="showAddWatchlistModal()">+ New</button>
+                </div>
+                <div class="sources-list" id="watchlists-list">
+                    {% for watchlist in watchlists %}
+                    <div class="source-card glass-card" id="watchlist-{{ watchlist.ID }}">
+                        <div class="source-main">
+                            <div class="source-name">{{ watchlist.Name }}</div>
+                            <div class="source-meta">
+                                <span class="source-type-tag">{{ watchlist.SourceType }}</span>
+                                {% if watchlist.LastSyncedAt %}
+                                <span class="source-last-sync">Last: {{ strftime(watchlist.LastSyncedAt, '%m/%d %H:%M') }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="source-actions">
+                            <button class="btn-icon {{ 'active' if watchlist.Enabled else 'inactive' }}"
+                                    onclick="toggleWatchlist('{{ watchlist.ID }}', {{ 'false' if watchlist.Enabled else 'true' }})"
+                                    title="{{ 'Disable' if watchlist.Enabled else 'Enable' }}">
+                                {{ '●' if watchlist.Enabled else '○' }}
+                            </button>
+                            <button class="btn-icon btn-action"
+                                    hx-post="/api/jobs/sync?watchlist_id={{ watchlist.ID }}"
+                                    hx-swap="none"
+                                    title="Force Sync">
+                                ⟳
+                            </button>
+                            <button class="btn-icon" onclick="deleteWatchlist('{{ watchlist.ID }}')" title="Delete">🗑</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
         </aside>
 
         <main class="console-area">
