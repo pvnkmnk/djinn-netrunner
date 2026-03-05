@@ -1,0 +1,38 @@
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache gcc musl-dev
+
+# Copy go.mod and go.sum
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN go build -o netrunner-api ./cmd/server/main.go
+
+# Run stage
+FROM alpine:latest
+
+WORKDIR /app
+
+# Copy binary from builder
+COPY --from=builder /app/netrunner-api .
+
+# Copy wait-for-it or similar if needed, but we'll assume DB is ready or app retries
+# Expose port
+EXPOSE 8000
+
+# Set environment variables
+ENV PORT=8000
+ENV STATIC_FILES_PATH=/app/static
+
+# Note: We need to mount the templates and static files in docker-compose
+# OR copy them here. Since we are in backend/, we'd need to go up.
+# For a production build, it's better to copy them.
+
+CMD ["./netrunner-api"]

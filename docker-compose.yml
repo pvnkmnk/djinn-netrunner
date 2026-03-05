@@ -21,9 +21,9 @@ services:
 
   ops-web:
     build:
-      context: ./ops/web
-      dockerfile: Dockerfile
-    container_name: netrunner-ops-web
+      context: ./backend
+      dockerfile: Dockerfile.api
+    container_name: netrunner-api
     environment:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops
       SLSKD_URL: http://slskd:5030
@@ -31,8 +31,11 @@ services:
       GONIC_URL: http://gonic:4747
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
+      STATIC_FILES_PATH: /app/static
+      TEMPLATES_PATH: /app/templates
     volumes:
-      - ./ops/web:/app
+      - ./ops/web/static:/app/static:ro
+      - ./ops/web/templates:/app/templates:ro
       - download-staging:/downloads
       - music-library:/music
     ports:
@@ -44,9 +47,9 @@ services:
 
   ops-worker:
     build:
-      context: ./ops/worker
-      dockerfile: Dockerfile
-    container_name: netrunner-ops-worker
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: netrunner-worker
     environment:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops
       SLSKD_URL: http://slskd:5030
@@ -57,7 +60,6 @@ services:
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
     volumes:
-      - ./ops/worker:/app
       - download-staging:/downloads
       - music-library:/music
     depends_on:

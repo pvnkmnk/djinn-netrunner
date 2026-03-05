@@ -27,14 +27,14 @@ Port the FastAPI-based management console to Go Fiber. The migration focuses on 
 
 - [x] Task: Conductor - User Manual Verification 'HTMX Templates & Source Management' (Protocol in workflow.md) (e064700)
 
-## Phase 3: Real-time WebSocket Console
+## Phase 3: Real-time WebSocket Console [checkpoint: ee0f1d2]
 - [x] Task 3.1: **NOTIFY Channel Listener**: Implement a background listener for the `opsevents` channel using `lib/pq`. (248be16)
 - [x] Task 3.2: **WebSocket Broadcaster**: Implement a connection manager to fan out logs to connected WebSocket clients. (248be16)
 - [x] Task 3.3: **Console Endpoint**: Port the `/ws/jobs/{job_id}` endpoint. (248be16)
 
 ### Verification
 
-- [~] Task: Conductor - User Manual Verification 'Real-time WebSocket Console' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Real-time WebSocket Console' (Protocol in workflow.md) (ee0f1d2)
 
 ## Phase 4: Integration & Cleanup
 
@@ -42,7 +42,7 @@ Final deployment and removal of legacy code.
 
 ### Tasks
 
-- [ ] Task 4.1: **Infrastructure Update**: Update `docker-compose.yml` and create a new `Dockerfile` for the Go Web API.
+- [~] Task 4.1: **Infrastructure Update**: Update `docker-compose.yml` and create a new `Dockerfile` for the Go Web API.
 - [ ] Task 4.2: **Routing Update**: Update `Caddyfile` to route traffic to the new Go service.
 - [ ] Task 4.3: **Deprecation**: Remove the `ops/web/` Python code once the Go version is fully verified in production.
 
