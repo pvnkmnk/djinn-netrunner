@@ -37,6 +37,9 @@ type Config struct {
 
 	// Gonic
 	GonicURL string
+
+	// Proxy
+	ProxyURL string
 }
 
 // Load reads configuration from environment variables
@@ -67,6 +70,8 @@ func Load(filenames ...string) (*Config, error) {
 		SlskdAPIKey: getEnv("SLSKD_API_KEY", ""),
 
 		GonicURL: getEnv("GONIC_URL", "http://localhost:4747"),
+
+		ProxyURL: getEnv("PROXY_URL", ""),
 	}
 
 	// Validate required fields

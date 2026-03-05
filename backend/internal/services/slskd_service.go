@@ -90,11 +90,22 @@ type SlskdService struct {
 }
 
 func NewSlskdService(cfg *config.Config) *SlskdService {
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+
+	if cfg.ProxyURL != "" {
+		proxyURL, err := url.Parse(cfg.ProxyURL)
+		if err == nil {
+			client.Transport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
+		}
+	}
+
 	return &SlskdService{
-		cfg: cfg,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+		cfg:        cfg,
+		httpClient: client,
 	}
 }
 

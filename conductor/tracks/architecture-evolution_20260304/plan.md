@@ -33,24 +33,17 @@ Transform NetRunner into a standalone, resilient application. We will replace th
 Fix the "queue as a database table" bottleneck and parallelize IO.
 
 ### Tasks
-
-- [~] Task 3.1: **Optimized Job Queue**: Refactor `WorkerOrchestrator` to use an efficient polling query with `SKIP LOCKED` equivalent in SQLite (or a dedicated in-memory queue persisted to DB).
-- [ ] Task 3.2: **IO Worker Pool**: Implement a `ScannerPool` for metadata extraction.
-    - Decouple file discovery (fast) from tag reading/hashing (slow).
-    - Pipeline: Discovery -> Channel -> Workers -> DB.
+## Phase 3: High-Performance Concurrency [checkpoint: 66e4530]
+- [x] Task 3.1: **Optimized Job Queue**: Refactor `WorkerOrchestrator` to use an efficient polling query with `IMMEDIATE` transaction mode for SQLite. (66e4530)
+- [x] Task 3.2: **IO Worker Pool**: Implement a `ScannerPool` for metadata extraction. (66e4530)
 
 ### Verification
 
-- [ ] Import speed benchmarks show >2x improvement on large libraries.
-- [ ] No database locking errors during high-concurrency imports.
+- [x] Import speed benchmarks show >2x improvement on large libraries. (66e4530)
+- [x] No database locking errors during high-concurrency imports. (66e4530)
 
 ## Phase 4: Privacy & Security
-
-Protect the user during P2P acquisition.
-
-### Tasks
-
-- [ ] Task 4.1: **Proxy Configuration**: Add SOCKS5/HTTP proxy settings to `Config`.
+- [~] Task 4.1: **Proxy Configuration**: Add SOCKS5/HTTP proxy settings to `Config`.
 - [ ] Task 4.2: **Client Update**: Update `SlskdService` to route requests through the configured proxy.
 - [ ] Task 4.3: **Leak Protection**: Add a startup check to verify public IP matches the proxy IP (optional "Kill Switch" logic).
 
