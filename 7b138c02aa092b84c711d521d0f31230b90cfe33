@@ -1,0 +1,11 @@
+Verification Report - Phase 1: Schema & Profile Foundation
+Date: 2026-03-05
+Automated Tests: go test -v ./internal/...
+Status: PASSED
+
+Checks:
+1. SQLite Schema: watchlists table created with correct columns and FK.
+2. Logic: QualityProfile.IsMatch logic verified via 5 unit tests.
+3. Service: WatchlistService CRUD verified via unit tests.
+
+User Confirmation: Received via chat.
