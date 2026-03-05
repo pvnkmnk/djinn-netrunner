@@ -30,6 +30,7 @@ type WorkerOrchestrator struct {
 	mbService   *services.MusicBrainzService
 	atService   *services.ArtistTrackingService
 	rmService   *services.ReleaseMonitorService
+	watchlist   *services.WatchlistService
 	scanService *services.ScannerService
 	lockManager database.LockManager
 	spotify     *services.SpotifyService
@@ -63,6 +64,8 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	mb.SetCache(cache)
 	at := services.NewArtistTrackingService(db, mb)
 	rm := services.NewReleaseMonitorService(db, at)
+	spotifyAuth := api.NewSpotifyAuthHandler(db)
+	watchlist := services.NewWatchlistService(db, spotifyAuth)
 	spotify := services.NewSpotifyService(cfg)
 	spotify.SetCache(cache)
 	slskd := services.NewSlskdService(cfg)
@@ -74,6 +77,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		mbService:   mb,
 		atService:   at,
 		rmService:   rm,
+		watchlist:   watchlist,
 		scanService: services.NewScannerService(db),
 		lockManager: database.NewLockManager(db),
 		spotify:     spotify,
@@ -93,6 +97,7 @@ func (w *WorkerOrchestrator) Start() {
 	// Start background tasks
 	go w.heartbeatLoop()
 	go w.schedulerLoop()
+	go w.watchlistPollingLoop()
 	go w.listenForWakeup()
 
 	// Main job loop with round-robin item processing
@@ -106,6 +111,53 @@ func (w *WorkerOrchestrator) Start() {
 			// Regular poll
 		case <-w.wakeupChan:
 			log.Println("[WORKER] Received wakeup notification")
+		}
+	}
+}
+
+func (w *WorkerOrchestrator) watchlistPollingLoop() {
+	log.Println("[WATCHLIST] Starting watchlist polling loop")
+	// Poll every 4 hours by default, or use config if available
+	ticker := time.NewTicker(4 * time.Hour)
+	
+	// Run once at startup
+	w.triggerWatchlistSyncs()
+
+	for range ticker.C {
+		if !w.running {
+			return
+		}
+		w.triggerWatchlistSyncs()
+	}
+}
+
+func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
+	lists, err := w.watchlist.GetWatchlists()
+	if err != nil {
+		log.Printf("[WATCHLIST] Error fetching watchlists: %v", err)
+		return
+	}
+
+	for _, l := range lists {
+		if !l.Enabled {
+			continue
+		}
+
+		log.Printf("[WATCHLIST] Triggering sync for %s", l.Name)
+		
+		// Enqueue sync job for watchlist
+		job := database.Job{
+			Type:        "sync",
+			State:       "queued",
+			ScopeType:   "watchlist",
+			ScopeID:     l.ID.String(),
+			RequestedAt: time.Now(),
+			OwnerUserID: l.OwnerUserID,
+			CreatedBy:   "watchlist_poller",
+		}
+
+		if err := w.db.Create(&job).Error; err != nil {
+			log.Printf("[WATCHLIST] Error enqueuing job: %v", err)
 		}
 	}
 }
