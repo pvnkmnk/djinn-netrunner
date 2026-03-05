@@ -4,6 +4,8 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
+- [x] **Track: Spotify-to-Soulseek Watchlist Automation** (da0fcf1)
+  *Link: [./tracks/spotify-watchlist_20260305/](./tracks/spotify-watchlist_20260305/)*
 - [x] **Track: Complete and Verify Transition from Python to Go** (057066b)
   *Link: [./tracks/go_transition_20260304/](./tracks/go_transition_20260304/)*
 - [x] **Track: Web API Migration to Go** (6126f6c)
