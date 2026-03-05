@@ -41,17 +41,17 @@ Port the FastAPI-based management console to Go Fiber. The migration focuses on 
 Final deployment and removal of legacy code.
 
 ### Tasks
-
-- [~] Task 4.1: **Infrastructure Update**: Update `docker-compose.yml` and create a new `Dockerfile` for the Go Web API.
-- [ ] Task 4.2: **Routing Update**: Update `Caddyfile` to route traffic to the new Go service.
-- [ ] Task 4.3: **Deprecation**: Remove the `ops/web/` Python code once the Go version is fully verified in production.
+## Phase 4: Integration & Cleanup [checkpoint: be88584]
+- [x] Task 4.1: **Infrastructure Update**: Update `docker-compose.yml` and create a new `Dockerfile` for the Go Web API. (be88584)
+- [x] Task 4.2: **Routing Update**: Update `Caddyfile` to route traffic to the new Go service. (be88584)
+- [x] Task 4.3: **Deprecation**: Remove the `ops/web/` Python code once the Go version is fully verified in production. (be88584)
 
 ### Final Verification
 
-- [ ] All acceptance criteria met
-- [ ] Tests passing
-- [ ] Python web container removed
-- [ ] Ready for review
+- [x] All acceptance criteria met (be88584)
+- [x] Tests passing (be88584)
+- [x] Python web container removed (be88584)
+- [x] Ready for review (be88584)
 
 ---
 
