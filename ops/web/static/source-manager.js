@@ -281,3 +281,16 @@ document.addEventListener('keydown', (e) => {
         closeWatchlistModal();
     }
 });
+
+// Event Handling for real-time updates
+document.body.addEventListener('htmx:wsBeforeMessage', (e) => {
+    const data = e.detail.message;
+    
+    // We can parse the HTML if we need to extract specific IDs
+    // but usually we just let HTMX handle the swap if it's targeted.
+    // For general "system" events that should trigger a reload:
+    if (data.includes('watchlist_sync_triggered') || data.includes('job_log')) {
+        // Optionally refresh specific elements
+        // htmx.trigger('#watchlists-list', 'refresh');
+    }
+});

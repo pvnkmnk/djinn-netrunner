@@ -53,14 +53,22 @@ func (m *WebSocketManager) Broadcast(jobID uint64, message string) {
 	conns, ok := m.connections[jobID]
 	m.mutex.RUnlock()
 
-	if !ok {
-		return
+	if ok {
+		for _, conn := range conns {
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
+				log.Printf("[WS] broadcast error to job %d: %v", jobID, err)
+			}
+		}
 	}
 
-	for _, conn := range conns {
-		if err := conn.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
-			log.Printf("[WS] broadcast error to job %d: %v", jobID, err)
-			// Connection will be cleaned up by the handler's read loop
+	// Also broadcast to "system" subscribers (jobID 0)
+	m.mutex.RLock()
+	sysConns, ok := m.connections[0]
+	m.mutex.RUnlock()
+
+	if ok {
+		for _, conn := range sysConns {
+			conn.WriteMessage(websocket.TextMessage, []byte(message))
 		}
 	}
 }
