@@ -73,7 +73,7 @@ The user-facing management interface.
 
 ### Tasks
 
-- [ ] Task 5.1: **Dashboard View**: Create a new Bento card for "Active Watchlists" using HTMX partials.
+- [x] Task 5.1: **Dashboard View**: Create a new Bento card for "Active Watchlists" using HTMX partials. (8407f0f)
 - [ ] Task 5.2: **Watchlist Modal**: Build the "Add Watchlist" modal with profile selection and URL validation.
 - [ ] Task 5.3: **Sync Status UI**: Implement real-time progress indicators for active polling tasks using existing WebSockets.
 
