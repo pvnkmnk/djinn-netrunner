@@ -1,0 +1,8 @@
+Task: Dashboard View
+Summary: Integrated automated watchlists into the Bento dashboard. Added 'Watchlist Bento' section to the sidebar, implemented 'WatchlistHandler' for CRUD operations, and updated the main dashboard to fetch watchlists and quality profiles.
+Files:
+- ops/web/templates/index.html
+- backend/internal/api/dashboard.go
+- backend/internal/api/watchlists.go
+- backend/cmd/server/main.go
+Why: To provide users with a centralized view of their automated music acquisition sources and their current status.
