@@ -4,47 +4,49 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
+	oauthspotify "golang.org/x/oauth2/spotify"
 	"gorm.io/gorm"
 )
 
 type SpotifyAuthHandler struct {
-	db   *gorm.DB
-	auth *spotifyauth.Authenticator
+	db     *gorm.DB
+	config *oauth2.Config
 }
 
 func NewSpotifyAuthHandler(db *gorm.DB) *SpotifyAuthHandler {
 	redirectURL := os.Getenv("SPOTIFY_REDIRECT_URI")
 	if redirectURL == "" {
-		// Default for local development
 		redirectURL = "http://localhost:8080/api/auth/spotify/callback"
 	}
 
-	auth := spotifyauth.New(
-		spotifyauth.WithRedirectURL(redirectURL),
-		spotifyauth.WithScopes(
+	config := &oauth2.Config{
+		ClientID:     os.Getenv("SPOTIFY_CLIENT_ID"),
+		ClientSecret: os.Getenv("SPOTIFY_CLIENT_SECRET"),
+		RedirectURL:  redirectURL,
+		Endpoint:     oauthspotify.Endpoint,
+		Scopes: []string{
 			spotifyauth.ScopeUserLibraryRead,
 			spotifyauth.ScopePlaylistReadPrivate,
 			spotifyauth.ScopePlaylistReadCollaborative,
-		),
-	)
+		},
+	}
 
 	return &SpotifyAuthHandler{
-		db:   db,
-		auth: auth,
+		db:     db,
+		config: config,
 	}
 }
 
 // Login redirects the user to Spotify for authentication
 func (h *SpotifyAuthHandler) Login(c *fiber.Ctx) error {
-	state := "netrunner-spotify-state" // In production, use a secure random state
-	url := h.auth.AuthURL(state)
+	state := "netrunner-spotify-state"
+	url := h.config.AuthCodeURL(state)
 	return c.Redirect(url)
 }
 
@@ -60,24 +62,21 @@ func (h *SpotifyAuthHandler) Callback(c *fiber.Ctx) error {
 		return c.Status(400).SendString("Code missing")
 	}
 
-	token, err := h.auth.Exchange(context.Background(), code)
+	token, err := h.config.Exchange(context.Background(), code)
 	if err != nil {
 		return c.Status(500).SendString(fmt.Sprintf("Token exchange failed: %v", err))
 	}
 
-	// Get user from context (set by AuthMiddleware)
 	u := c.Locals("user")
 	if u == nil {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 	user := u.(database.User)
 
-	// Save or update token
 	var spotifyToken database.SpotifyToken
 	err = h.db.Where("user_id = ?", user.ID).First(&spotifyToken).Error
 
 	if err != nil {
-		// Create new
 		spotifyToken = database.SpotifyToken{
 			UserID:       user.ID,
 			AccessToken:  token.AccessToken,
@@ -89,7 +88,6 @@ func (h *SpotifyAuthHandler) Callback(c *fiber.Ctx) error {
 			return c.Status(500).JSON(fiber.Map{"error": "failed to save token"})
 		}
 	} else {
-		// Update existing
 		spotifyToken.AccessToken = token.AccessToken
 		if token.RefreshToken != "" {
 			spotifyToken.RefreshToken = token.RefreshToken
@@ -101,7 +99,6 @@ func (h *SpotifyAuthHandler) Callback(c *fiber.Ctx) error {
 		}
 	}
 
-	// Redirect back to dashboard or source manager
 	return c.Redirect("/#sources")
 }
 
@@ -119,16 +116,12 @@ func (h *SpotifyAuthHandler) GetClient(ctx context.Context, userID uint64) (*spo
 		Expiry:       token.Expiry,
 	}
 
-	// Create a token source that automatically refreshes
-	ts := h.auth.TokenSource(ctx, oauthToken)
-	
-	// Get current token from source (might be refreshed)
+	ts := h.config.TokenSource(ctx, oauthToken)
 	newToken, err := ts.Token()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get valid token: %w", err)
 	}
 
-	// If token was refreshed, update database
 	if newToken.AccessToken != token.AccessToken {
 		token.AccessToken = newToken.AccessToken
 		if newToken.RefreshToken != "" {
@@ -138,7 +131,9 @@ func (h *SpotifyAuthHandler) GetClient(ctx context.Context, userID uint64) (*spo
 		h.db.Save(&token)
 	}
 
-	return spotify.New(h.auth.Client(ctx, newToken)), nil
+	// Use the token to create a client
+	httpClient := h.config.Client(ctx, newToken)
+	return spotify.New(httpClient), nil
 }
 
 // IsLinked checks if a user has linked their Spotify account

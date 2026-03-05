@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
+	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
@@ -25,7 +26,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 func TestWatchlistService(t *testing.T) {
 	db := setupTestDB(t)
-	service := NewWatchlistService(db)
+	auth := api.NewSpotifyAuthHandler(db)
+	service := NewWatchlistService(db, auth)
 
 	// Create a profile first
 	profile := database.QualityProfile{
