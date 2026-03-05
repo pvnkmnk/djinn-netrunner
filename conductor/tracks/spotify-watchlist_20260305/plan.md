@@ -60,8 +60,8 @@ Linking the discovery engine to the downloader with quality awareness.
 
 ### Tasks
 
-- [ ] Task 4.1: **Profile-Aware Search**: Update `SlskdService` to prioritize results matching the watchlist's quality profile.
-- [ ] Task 4.2: **Job Enqueueing**: Automatically create `acquisition` jobs for discovered tracks with the correct quality metadata.
+- [x] Task 4.1: **Profile-Aware Search**: Update `SlskdService` to prioritize results matching the watchlist's quality profile. (a746412)
+- [x] Task 4.2: **Job Enqueueing**: Automatically create `acquisition` jobs for discovered tracks with the correct quality metadata. (a746412)
 
 ### Verification
 
