@@ -24,15 +24,15 @@ Setup the data structures for quality-based acquisition and persistent watchlist
 - [ ] Verify SQLite schema updates persist via `test_standalone.db`.
 - [ ] Unit test quality profile comparison logic.
 
-## Phase 2: Spotify User Integration (Liked Songs)
+## Phase 2: Spotify User Integration (Liked Songs) [checkpoint: cb2240b]
 
 Implement User OAuth flow to support the "Liked Songs" sync, which requires user-level permissions.
 
 ### Tasks
 
-- [ ] Task 2.1: **OAuth Callback Handler**: Implement a simple OAuth2 callback in the Go API (`/api/auth/spotify/callback`).
-- [ ] Task 2.2: **Token Management**: Securely store and rotate Spotify Refresh Tokens in the database.
-- [ ] Task 2.3: **"Liked Songs" Client**: Port track extraction logic to Go, adding support for the `me/tracks` endpoint.
+- [x] Task 2.1: **OAuth Callback Handler**: Implement a simple OAuth2 callback in the Go API (`/api/auth/spotify/callback`). (8d79e95)
+- [x] Task 2.2: **Token Management**: Securely store and rotate Spotify Refresh Tokens in the database. (298ae78)
+- [x] Task 2.3: **"Liked Songs" Client**: Port track extraction logic to Go, adding support for the `me/tracks` endpoint. (91873b7)
 
 ### Verification
 
