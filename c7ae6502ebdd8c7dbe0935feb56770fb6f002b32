@@ -1,0 +1,5 @@
+Task: Polling Engine
+Summary: Added 'watchlistPollingLoop' to 'WorkerOrchestrator'. The loop triggers a 'sync' job for every enabled watchlist every 4 hours.
+Files:
+- backend/cmd/worker/main.go
+Why: To automate the discovery of new tracks from external sources without manual user interaction.
