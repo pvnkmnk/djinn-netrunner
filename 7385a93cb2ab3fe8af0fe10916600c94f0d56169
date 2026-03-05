@@ -1,0 +1,6 @@
+Task: Watchlist Modal
+Summary: Implemented the 'Add Automated Watchlist' modal in the UI. Added support for selecting Quality Profiles, toggling autonomous polling, and automatic URI placeholder handling for 'Liked Songs'.
+Files:
+- ops/web/templates/index.html
+- ops/web/static/source-manager.js
+Why: To allow users to easily configure and manage their automated music acquisition sources directly from the dashboard.
