@@ -224,6 +224,33 @@ func (s *WatchlistService) GetNewTracks(ctx context.Context, watchlist *database
 	return newTracks
 }
 
+// FilterExistingTracks removes tracks that are already in the library or active queue
+func (s *WatchlistService) FilterExistingTracks(ctx context.Context, tracks []map[string]string) []map[string]string {
+	var filtered []map[string]string
+
+	for _, t := range tracks {
+		artist := t["artist"]
+		title := t["title"]
+
+		// 1. Check Library
+		var count int64
+		s.db.Model(&database.Track{}).Where("LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?)", artist, title).Count(&count)
+		if count > 0 {
+			continue
+		}
+
+		// 2. Check active JobItems (not failed)
+		s.db.Model(&database.JobItem{}).Where("LOWER(artist) = LOWER(?) AND LOWER(track_title) = LOWER(?) AND status != 'failed'", artist, title).Count(&count)
+		if count > 0 {
+			continue
+		}
+
+		filtered = append(filtered, t)
+	}
+
+	return filtered
+}
+
 // UpdateLastSynced updates the last synced timestamp and snapshot ID
 func (s *WatchlistService) UpdateLastSynced(id uuid.UUID, snapshotID string) error {
 	now := time.Now()
