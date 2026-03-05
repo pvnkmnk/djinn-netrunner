@@ -9,15 +9,15 @@
 
 We will implement a high-performance polling engine in Go that bridge's the gap between Spotify's discovery and Soulseek's acquisition. The system will leverage the new SQLite architecture for persistent snapshots and deduplication logic to ensure library integrity.
 
-## Phase 1: Schema & Profile Foundation
+## Phase 1: Schema & Profile Foundation [checkpoint: 7b138c0]
 
 Setup the data structures for quality-based acquisition and persistent watchlist tracking.
 
 ### Tasks
 
-- [ ] Task 1.1: **Database Migration**: Add `watchlists` and `quality_profiles` tables to the SQLite schema.
-- [ ] Task 1.2: **Quality Profile Logic**: Define bit-rate and format constraints (e.g., `FLAC > 320kbps > V0`) in `backend/internal/models`.
-- [ ] Task 1.3: **Service Scaffolding**: Create `WatchlistService` in Go to handle CRUD for watched sources.
+- [x] Task 1.1: **Database Migration**: Add `watchlists` and `quality_profiles` tables to the SQLite schema. (a021631)
+- [x] Task 1.2: **Quality Profile Logic**: Define bit-rate and format constraints (e.g., `FLAC > 320kbps > V0`) in `backend/internal/models`. (b2964c9)
+- [x] Task 1.3: **Service Scaffolding**: Create `WatchlistService` in Go to handle CRUD for watched sources. (3a879be)
 
 ### Verification
 
