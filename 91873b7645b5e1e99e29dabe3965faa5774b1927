@@ -1,0 +1,5 @@
+Task: Liked Songs Client
+Summary: Integrated 'FetchWatchlistTracks' into 'WatchlistService'. Added support for fetching tracks from private 'Liked Songs' and public/private playlists using User OAuth. Implemented snapshot ID extraction for delta syncs.
+Files:
+- backend/internal/services/watchlist_service.go
+Why: To provide the core track discovery mechanism for automated Spotify syncing.
