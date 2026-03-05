@@ -1,0 +1,19 @@
+﻿# Project Context
+
+## Definition
+- [Product Definition](./product.md)
+- [Product Guidelines](./product-guidelines.md)
+- [Tech Stack](./tech-stack.md)
+
+## Workflow
+- [Workflow](./workflow.md)
+- [Code Style Guides](./code_styleguides/)
+
+## Management
+- [Tracks Registry](./tracks.md)
+- [Tracks Directory](./tracks/)
+
+## Active Tracks
+- [ ] [Web API Migration to Go](./tracks/web-api-migration_20260304/index.md)
+- [ ] [Architecture Evolution & Optimization](./tracks/architecture-evolution_20260304/index.md)
+- [ ] [Frontend Polish & UI/UX Enhancement](./tracks/frontend-polish_20260304/index.md)

@@ -1,0 +1,59 @@
+# Implementation Plan: Architecture Evolution & Optimization
+
+**Track ID:** architecture-evolution_20260304
+**Spec:** [spec.md](./spec.md)
+**Created:** 2026-03-04
+**Status:** [ ] Not Started
+
+## Overview
+
+Transform NetRunner into a standalone, resilient application. We will replace the heavy infrastructure (Postgres) with embedded, high-performance alternatives (SQLite), implement caching layers, and optimize the worker pipeline.
+
+## Phase 1: Standalone Persistence (SQLite Migration) [checkpoint: 6b8229d]
+- [x] Task 1.1: **Database Abstraction**: Refactor `database` package to support SQLite. (c3eb7a1)
+- [x] Task 1.2: **Lock Manager Refactor**: Replace Postgres Advisory Locks with a file-based or in-memory locking mechanism. (c3eb7a1)
+- [x] Task 1.3: **Data Migration Utility**: Create a script to dump Postgres data to SQLite. (c3eb7a1)
+
+### Verification
+
+- [x] Task: Conductor - User Manual Verification 'Standalone Persistence' (Protocol in workflow.md) (6b8229d)
+- [x] All data persists across restarts in a local `.db` file. (6b8229d)
+
+## Phase 2: Metadata Resilience & Caching [checkpoint: 27c413d]
+- [x] Task 2.1: **Cache Schema**: Design a `metadata_cache` table (key, value, ttl, source). (27c413d)
+- [x] Task 2.2: **Service Middleware**: Wrap `MusicBrainzService` and `SpotifyService` with a caching layer. (27c413d)
+
+### Verification
+
+- [x] Worker continues processing using cached data even when internet is disconnected. (27c413d)
+- [x] API rate limits are respected aggressively. (27c413d)
+
+## Phase 3: High-Performance Concurrency
+
+Fix the "queue as a database table" bottleneck and parallelize IO.
+
+### Tasks
+## Phase 3: High-Performance Concurrency [checkpoint: 66e4530]
+- [x] Task 3.1: **Optimized Job Queue**: Refactor `WorkerOrchestrator` to use an efficient polling query with `IMMEDIATE` transaction mode for SQLite. (66e4530)
+- [x] Task 3.2: **IO Worker Pool**: Implement a `ScannerPool` for metadata extraction. (66e4530)
+
+### Verification
+
+- [x] Import speed benchmarks show >2x improvement on large libraries. (66e4530)
+- [x] No database locking errors during high-concurrency imports. (66e4530)
+
+## Phase 4: Privacy & Security [checkpoint: c6ff38e]
+- [x] Task 4.1: **Proxy Configuration**: Add SOCKS5/HTTP proxy settings to `Config`. (c6ff38e)
+- [x] Task 4.2: **Client Update**: Update `SlskdService` to route requests through the configured proxy. (c6ff38e)
+- [x] Task 4.3: **Leak Protection**: Add a startup check to verify public IP matches the proxy IP. (c6ff38e)
+
+### Verification
+
+- [x] Slskd traffic is confirmed to flow through the proxy. (c6ff38e)
+- [x] Application alerts user if proxy connection fails. (c6ff38e)
+
+## Final Verification
+
+- [x] All acceptance criteria met (c6ff38e)
+- [x] Tests passing (c6ff38e)
+- [x] Ready for review (c6ff38e)
