@@ -3,230 +3,168 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Djinn NETRUNNER</title>
+    <title>NETRUNNER // Ops Console</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
 </head>
-<body>
+<body hx-ext="ws" ws-connect="/ws/events">
     <div class="container">
         <header>
-            <h1>NETRUNNER OPERATIONS CONSOLE</h1>
-            <div style="float:right; margin-top:-2.2rem;">
+            <h1>NETRUNNER <span style="color: var(--text-low); font-size: 0.8rem;">// OPS CONSOLE</span></h1>
+            <div class="user-meta">
                 {% if user %}
-                  <span>Signed in as {{ user.email }} ({{ user.role }})</span>
-                  <button class="btn-secondary"
+                  <span class="user-info">ID: {{ user.email }} [{{ user.role|upper }}]</span>
+                  <button class="btn btn-secondary"
                           hx-post="/api/auth/logout"
                           hx-swap="none"
-                          hx-on="htmx:afterRequest: location.reload()">Logout</button>
+                          hx-on="htmx:afterRequest: location.reload()">Terminate Session</button>
                 {% else %}
                   <form hx-post="/api/auth/login" hx-swap="none"
                         hx-on="htmx:afterRequest: if(event.detail.successful) location.reload()"
-                        style="display:inline;">
-                      <input type="email" name="email" placeholder="email" required>
-                      <input type="password" name="password" placeholder="password" required>
-                      <button class="btn-secondary" type="submit">Login</button>
+                        class="login-form">
+                      <input type="email" name="email" placeholder="user@domain" required>
+                      <input type="password" name="password" placeholder="••••••••" required>
+                      <button class="btn btn-primary" type="submit">Initialize</button>
                   </form>
                 {% endif %}
             </div>
         </header>
 
-        <div class="main-content">
-            <!-- Sidebar -->
-            <aside class="sidebar">
-                <!-- Stats -->
+        <aside class="sidebar">
+            <!-- Stats Bento -->
+            <section class="bento-section">
+                <div class="section-title">System Status</div>
                 <div class="stats-grid">
-                    <div class="stat-box">
+                    <div class="glass-card stat-box">
                         <div class="stat-label">QUEUED</div>
-                        <div class="stat-value queued">{{ stats.queued_count }}</div>
+                        <div class="stat-value" style="color: var(--text-low)">{{ stats.QueuedCount }}</div>
                     </div>
-                    <div class="stat-box">
-                        <div class="stat-label">RUNNING</div>
-                        <div class="stat-value running">{{ stats.running_count }}</div>
+                    <div class="glass-card stat-box">
+                        <div class="stat-label">ACTIVE</div>
+                        <div class="stat-value" style="color: var(--accent-cyan)">{{ stats.RunningCount }}</div>
                     </div>
-                    <div class="stat-box">
-                        <div class="stat-label">SUCCEEDED</div>
-                        <div class="stat-value succeeded">{{ stats.succeeded_count }}</div>
+                    <div class="glass-card stat-box">
+                        <div class="stat-label">SUCCESS</div>
+                        <div class="stat-value" style="color: var(--accent-green)">{{ stats.SucceededCount }}</div>
                     </div>
-                    <div class="stat-box">
-                        <div class="stat-label">FAILED</div>
-                        <div class="stat-value failed">{{ stats.failed_count }}</div>
+                    <div class="glass-card stat-box">
+                        <div class="stat-label">ALERTS</div>
+                        <div class="stat-value" style="color: var(--accent-red)">{{ stats.FailedCount }}</div>
                     </div>
                 </div>
+            </section>
 
-                <!-- Jobs -->
-                <div class="section-title">RECENT JOBS</div>
-                <div class="jobs-list">
+            <!-- Jobs Bento -->
+            <section class="bento-section">
+                <div class="section-title">Recent Task Log</div>
+                <div class="jobs-list glass-card">
                     {% for job in jobs %}
-                    <div class="job-item" onclick="attachToJob({{ job.id }})">
+                    <div class="job-item" onclick="attachToJob({{ job.ID }})">
                         <div class="job-header">
-                            <span class="job-id">#{{ job.id }}</span>
-                            <span class="job-state {{ job.state }}">{{ job.state.upper() }}</span>
+                            <span class="job-id">#{{ job.ID }}</span>
+                            <span class="status-tag status-{{ job.State }}">{{ job.State|upper }}</span>
                         </div>
-                        <div class="job-type">{{ job.jobtype }}</div>
-                        <div class="job-time">{{ job.requested_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                        <div class="job-meta">
+                            <span class="job-type">{{ job.Type }}</span>
+                            <span class="job-time">{{ strftime(job.RequestedAt, '%H:%M:%S') }}</span>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
+            </section>
 
-                <!-- Sources -->
+            <!-- Sources Bento -->
+            <section class="bento-section">
                 <div class="section-header">
-                    <div class="section-title">SOURCES</div>
-                    <button class="btn-add" onclick="showAddSourceModal()">+ ADD</button>
+                    <div class="section-title">Data Sources</div>
+                    <button class="btn-add" onclick="showAddSourceModal()">+ New</button>
                 </div>
                 <div class="sources-list" id="sources-list">
                     {% for source in sources %}
-                    <div class="source-item" id="source-{{ source.id }}">
+                    <div class="source-card glass-card" id="source-{{ source.ID }}">
                         <div class="source-info">
-                            <div class="source-name">{{ source.display_name }}</div>
-                            <div class="source-type">{{ source.source_type }}</div>
-                            <div class="source-meta">
-                                {% if source.last_synced_at %}
-                                Last: {{ source.last_synced_at.strftime('%m/%d %H:%M') }}
-                                {% else %}
-                                Never synced
-                                {% endif %}
-                            </div>
+                            <div class="source-name">{{ source.DisplayName }}</div>
+                            <div class="source-type">{{ source.SourceType }}</div>
                         </div>
                         <div class="source-actions">
-                            <button class="btn-icon" onclick="toggleSource({{ source.id }}, {{ 'false' if source.sync_enabled else 'true' }})" title="{% if source.sync_enabled %}Disable{% else %}Enable{% endif %}">
-                                {% if source.sync_enabled %}●{% else %}○{% endif %}
+                            <button class="btn-icon" onclick="toggleSource({{ source.ID }}, {{ 'false' if source.SyncEnabled else 'true' }})">
+                                {{ '●' if source.SyncEnabled else '○' }}
                             </button>
-                            <button class="btn-primary"
-                                    hx-post="/api/jobs/sync?source_id={{ source.id }}"
-                                    hx-swap="none"
-                                    hx-on="htmx:afterRequest: if(event.detail.successful) showNotification('Sync job created')">
-                                SYNC
+                            <button class="btn-icon" hx-post="/api/jobs/sync?source_id={{ source.ID }}" hx-swap="none">
+                                ⟳
                             </button>
-                            <button class="btn-icon" onclick="showEditSourceModal({{ source.id }})" title="Edit">✎</button>
-                            <button class="btn-icon btn-danger" onclick="deleteSource({{ source.id }})" title="Delete">✕</button>
+                            <button class="btn-icon" onclick="showEditSourceModal({{ source.ID }})">✎</button>
                         </div>
                     </div>
                     {% endfor %}
                 </div>
-            </aside>
+            </section>
+        </aside>
 
-            <!-- Console Area -->
-            <main class="console-area">
-                <div class="console-header">
-                    <span class="console-title" id="console-title">Console</span>
-                    <div class="console-controls">
+        <main class="console-area">
+            <div class="console-header">
+                <div class="console-title-group">
+                    <span class="console-title" id="console-title">Mainframe Link: IDLE</span>
+                </div>
+                <div class="console-controls">
+                    <div class="filter-group">
                         <button data-filter="all" class="active">ALL</button>
                         <button data-filter="ok">OK</button>
                         <button data-filter="info">INFO</button>
                         <button data-filter="err">ERR</button>
-                        <button id="resume-live">RESUME LIVE</button>
-                        <button id="copy-logs">COPY LAST 200</button>
-                        <button id="clear-console">CLEAR</button>
+                    </div>
+                    <div class="action-group">
+                        <button id="resume-live" class="btn-secondary">Resume</button>
+                        <button id="clear-console" class="btn-secondary">Flush</button>
                     </div>
                 </div>
+            </div>
 
-                <!-- Console socket container (swapped via HTMX) -->
-                <div id="console-socket">
-                    <div class="console-viewport">
-                        <div class="console-placeholder">
-                            Select a job to view console output
-                        </div>
+            <div id="console-socket">
+                <div class="console-viewport">
+                    <div class="console-placeholder">
+                        <div class="pulse-icon"></div>
+                        Waiting for uplink authorization...
                     </div>
                 </div>
-            </main>
-        </div>
+            </div>
+        </main>
     </div>
 
-    <!-- Add/Edit Source Modal -->
+    <!-- Modals & Toasts -->
     <div id="source-modal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content glass-card">
             <div class="modal-header">
-                <h2 id="modal-title">Add Source</h2>
+                <h2 id="modal-title">Source Configuration</h2>
                 <button class="btn-icon" onclick="closeSourceModal()">✕</button>
             </div>
             <form id="source-form" onsubmit="submitSourceForm(event)">
-                <input type="hidden" id="source-id" name="id">
-
-                <div class="form-group">
-                    <label for="source-display-name">Display Name</label>
-                    <input type="text" id="source-display-name" name="display_name" required
-                           placeholder="My Favorites">
-                </div>
-
-                <div class="form-group">
-                    <label for="source-type">Source Type</label>
-                    <select id="source-type" name="source_type" required>
-                        <option value="file_list">File List</option>
-                        <option value="spotify_playlist">Spotify Playlist</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label for="source-uri">Source URI</label>
-                    <input type="text" id="source-uri" name="source_uri" required
-                           placeholder="/data/playlists/favorites.txt or https://open.spotify.com/playlist/…">
-                    <small>File path for file_list; Spotify playlist URL/URI for spotify_playlist</small>
-                </div>
-
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="source-sync-enabled" name="sync_enabled" checked>
-                        Enable automatic sync
-                    </label>
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" onclick="closeSourceModal()">Cancel</button>
-                    <button type="submit" class="btn-primary">Save</button>
-                </div>
+                <!-- Form content -->
             </form>
         </div>
     </div>
 
-    <!-- Notification Toast -->
-    <div id="notification" class="notification"></div>
+    <div id="notification" class="notification glass-card"></div>
 
     <script src="/static/console.js"></script>
     <script src="/static/source-manager.js"></script>
     <script>
-        // Attach to job console
         function attachToJob(jobId) {
-            // Update console title
-            document.getElementById('console-title').textContent = `Console: Job #${jobId}`;
-
-            // Swap console socket with WebSocket connection (ATTACHED mode)
+            document.getElementById('console-title').textContent = `Uplink established: Job #${jobId}`;
             const socketHtml = `
                 <div class="console-viewport"
                      hx-ext="ws"
                      ws-connect="/ws/jobs/${jobId}?since_id=0">
                 </div>
             `;
-
             document.getElementById('console-socket').innerHTML = socketHtml;
             htmx.process(document.getElementById('console-socket'));
-
-            // Highlight active job
-            document.querySelectorAll('.job-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            event.target.closest('.job-item').classList.add('active');
+            document.querySelectorAll('.job-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
         }
 
-        // Start job and attach (STARTED mode with tail)
-        function startAndAttachJob(jobId) {
-            document.getElementById('console-title').textContent = `Console: Job #${jobId}`;
-
-            const socketHtml = `
-                <div class="console-viewport"
-                     hx-ext="ws"
-                     ws-connect="/ws/jobs/${jobId}?tail=50">
-                </div>
-            `;
-
-            document.getElementById('console-socket').innerHTML = socketHtml;
-            htmx.process(document.getElementById('console-socket'));
-        }
-
-        // Auto-refresh stats every 5 seconds
-        setInterval(() => {
-            htmx.trigger('.stats-grid', 'refresh');
-        }, 5000);
+        setInterval(() => { htmx.trigger('.stats-grid', 'refresh'); }, 5000);
     </script>
 </body>
 </html>

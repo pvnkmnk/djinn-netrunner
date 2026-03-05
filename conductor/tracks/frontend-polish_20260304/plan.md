@@ -15,7 +15,7 @@ Establish the "Netrunner" visual language.
 
 ### Tasks
 
-- [ ] Task 1.1: **Design Tokens**: Update `style.css` with a refined color palette, typography (Orbitron/Inter), and reusable variables for glows and glassmorphism.
+- [~] Task 1.1: **Design Tokens**: Update `style.css` with a refined color palette, typography (Orbitron/Inter), and reusable variables for glows and glassmorphism.
 - [ ] Task 1.2: **Layout Refactor**: Transition the layout from a fixed sidebar to a responsive Bento Grid using CSS Grid/Flexbox.
 - [ ] Task 1.3: **Base Components**: Refactor core components (buttons, inputs, cards) to use the new visual style.
 
