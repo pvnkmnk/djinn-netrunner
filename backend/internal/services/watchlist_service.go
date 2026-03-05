@@ -58,6 +58,7 @@ func (s *WatchlistService) FetchWatchlistTracks(ctx context.Context, watchlist *
 					artistName = item.Artists[0].Name
 				}
 				allTracks = append(allTracks, map[string]string{
+					"id":     string(item.ID),
 					"artist": artistName,
 					"title":  item.Name,
 					"album":  item.Album.Name,
@@ -102,6 +103,7 @@ func (s *WatchlistService) FetchWatchlistTracks(ctx context.Context, watchlist *
 					artistName = t.Artists[0].Name
 				}
 				allTracks = append(allTracks, map[string]string{
+					"id":     string(t.ID),
 					"artist": artistName,
 					"title":  t.Name,
 					"album":  t.Album.Name,
@@ -188,6 +190,38 @@ func (s *WatchlistService) UpdateWatchlistStatus(id uuid.UUID, enabled bool) err
 // DeleteWatchlist removes a watchlist
 func (s *WatchlistService) DeleteWatchlist(id uuid.UUID) error {
 	return s.db.Delete(&database.Watchlist{}, "id = ?", id).Error
+}
+
+// GetNewTracks compares current tracks with last known snapshot and returns new additions
+func (s *WatchlistService) GetNewTracks(ctx context.Context, watchlist *database.Watchlist, currentTracks []map[string]string) []map[string]string {
+	if watchlist.LastSnapshotID == "" {
+		// First sync, all tracks are "new"
+		return currentTracks
+	}
+
+	// For a more robust implementation, we would store the previous track IDs in the DB
+	// or in a cache. Given our architecture, we'll use a simple approach:
+	// We'll fetch the tracks already acquired for this watchlist scope from the acquisitions table.
+	
+	var acquired []database.Acquisition
+	s.db.Where("owner_user_id = ?", watchlist.OwnerUserID).Find(&acquired)
+	
+	existingMap := make(map[string]bool)
+	for _, a := range acquired {
+		// Create a unique key for comparison (Artist - Title)
+		key := strings.ToLower(fmt.Sprintf("%s-%s", a.Artist, a.TrackTitle))
+		existingMap[key] = true
+	}
+
+	var newTracks []map[string]string
+	for _, t := range currentTracks {
+		key := strings.ToLower(fmt.Sprintf("%s-%s", t["artist"], t["title"]))
+		if !existingMap[key] {
+			newTracks = append(newTracks, t)
+		}
+	}
+
+	return newTracks
 }
 
 // UpdateLastSynced updates the last synced timestamp and snapshot ID
