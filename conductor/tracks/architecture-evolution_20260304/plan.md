@@ -10,20 +10,13 @@
 Transform NetRunner into a standalone, resilient application. We will replace the heavy infrastructure (Postgres) with embedded, high-performance alternatives (SQLite), implement caching layers, and optimize the worker pipeline.
 
 ## Phase 1: Standalone Persistence (SQLite Migration)
-
-Remove the PostgreSQL dependency to enable "single binary" deployment.
-
-### Tasks
-
-- [~] Task 1.1: **Database Abstraction**: Refactor `database` package to support SQLite.
-    - Configure GORM for SQLite with WAL mode, foreign keys, and busy timeouts.
-    - Verify all existing models and migrations are compatible with SQLite.
-- [ ] Task 1.2: **Lock Manager Refactor**: Replace Postgres Advisory Locks with a file-based or in-memory locking mechanism compatible with multiple worker goroutines.
-- [ ] Task 1.3: **Data Migration Utility**: Create a script to dump Postgres data to SQLite (for existing dev envs).
+- [x] Task 1.1: **Database Abstraction**: Refactor `database` package to support SQLite. (c3eb7a1)
+- [x] Task 1.2: **Lock Manager Refactor**: Replace Postgres Advisory Locks with a file-based or in-memory locking mechanism. (c3eb7a1)
+- [x] Task 1.3: **Data Migration Utility**: Create a script to dump Postgres data to SQLite. (c3eb7a1)
 
 ### Verification
 
-- [ ] Application starts without a running Postgres container.
+- [~] Task: Conductor - User Manual Verification 'Standalone Persistence' (Protocol in workflow.md)
 - [ ] All data persists across restarts in a local `.db` file.
 
 ## Phase 2: Metadata Resilience & Caching

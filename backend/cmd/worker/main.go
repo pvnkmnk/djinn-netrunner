@@ -31,7 +31,7 @@ type WorkerOrchestrator struct {
 	atService   *services.ArtistTrackingService
 	rmService   *services.ReleaseMonitorService
 	scanService *services.ScannerService
-	lockManager *database.LockManager
+	lockManager database.LockManager
 	spotify     *services.SpotifyService
 	slskd       *services.SlskdService
 	metadata    *services.MetadataExtractor
