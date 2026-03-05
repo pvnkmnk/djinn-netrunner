@@ -1,0 +1,6 @@
+Task: Database Migration
+Summary: Added 'Watchlist' model to the SQLite schema and updated the AutoMigrate function.
+Files:
+- backend/internal/database/models.go
+- backend/internal/database/migrate.go
+Why: To provide persistent storage for Spotify playlists and 'Liked Songs' sync snapshots and status.
