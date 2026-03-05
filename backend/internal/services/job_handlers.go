@@ -8,8 +8,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
@@ -31,34 +33,71 @@ func (h *BaseHandler) Log(jobID uint64, level, message string, itemID *uint64) {
 
 type SyncHandler struct {
 	BaseHandler
-	spotify *SpotifyService
+	spotify   *SpotifyService
+	watchlist *WatchlistService
 }
 
-func NewSyncHandler(db *gorm.DB, spotify *SpotifyService) *SyncHandler {
-	return &SyncHandler{BaseHandler: BaseHandler{db: db}, spotify: spotify}
+func NewSyncHandler(db *gorm.DB, spotify *SpotifyService, watchlist *WatchlistService) *SyncHandler {
+	return &SyncHandler{
+		BaseHandler: BaseHandler{db: db},
+		spotify:     spotify,
+		watchlist:   watchlist,
+	}
 }
 
 func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
 	h.Log(jobID, "INFO", "Starting sync job", nil)
-	
-	var source database.Source
-	if err := h.db.First(&source, job.ScopeID).Error; err != nil {
-		h.Log(jobID, "ERR", fmt.Sprintf("Source not found: %v", err), nil)
-		return fmt.Errorf("source not found: %w", err)
-	}
-
-	h.Log(jobID, "INFO", fmt.Sprintf("Syncing %s: %s", source.SourceType, source.SourceURI), nil)
 
 	var tracks []map[string]string
 	var err error
+	var snapshotID string
+	var ownerUserID *uint64
+	var profileID *uuid.UUID
 
-	switch source.SourceType {
-	case "spotify_playlist":
-		id := h.spotify.ExtractPlaylistID(source.SourceURI)
-		tracks, err = h.spotify.GetPlaylistTracks(ctx, id)
-	default:
-		h.Log(jobID, "ERR", fmt.Sprintf("Unsupported source type: %s", source.SourceType), nil)
-		return fmt.Errorf("unsupported source type: %s", source.SourceType)
+	if job.ScopeType == "watchlist" {
+		// Syncing a specific watchlist
+		id, _ := uuid.Parse(job.ScopeID)
+		watchlist, err := h.watchlist.GetWatchlist(id)
+		if err != nil {
+			h.Log(jobID, "ERR", fmt.Sprintf("Watchlist not found: %v", err), nil)
+			return err
+		}
+		ownerUserID = watchlist.OwnerUserID
+		profileID = &watchlist.QualityProfileID
+
+		h.Log(jobID, "INFO", fmt.Sprintf("Syncing watchlist: %s", watchlist.Name), nil)
+		currentTracks, snap, err := h.watchlist.FetchWatchlistTracks(ctx, watchlist)
+		if err != nil {
+			h.Log(jobID, "ERR", fmt.Sprintf("Watchlist fetch failed: %v", err), nil)
+			return err
+		}
+		snapshotID = snap
+
+		// Discovery logic: find new tracks
+		tracks = h.watchlist.GetNewTracks(ctx, watchlist, currentTracks)
+		
+		// Deduplication logic: check library and active queue
+		tracks = h.watchlist.FilterExistingTracks(ctx, tracks)
+
+	} else if job.ScopeType == "source" {
+		// Legacy Source sync
+		var source database.Source
+		if err := h.db.First(&source, job.ScopeID).Error; err != nil {
+			h.Log(jobID, "ERR", fmt.Sprintf("Source not found: %v", err), nil)
+			return fmt.Errorf("source not found: %w", err)
+		}
+		ownerUserID = source.OwnerUserID
+
+		h.Log(jobID, "INFO", fmt.Sprintf("Syncing %s: %s", source.SourceType, source.SourceURI), nil)
+
+		switch source.SourceType {
+		case "spotify_playlist":
+			id := h.spotify.ExtractPlaylistID(source.SourceURI)
+			tracks, err = h.spotify.GetPlaylistTracks(ctx, id)
+		default:
+			h.Log(jobID, "ERR", fmt.Sprintf("Unsupported source type: %s", source.SourceType), nil)
+			return fmt.Errorf("unsupported source type: %s", source.SourceType)
+		}
 	}
 
 	if err != nil {
@@ -66,17 +105,31 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 		return err
 	}
 
-	h.Log(jobID, "OK", fmt.Sprintf("Found %d tracks", len(tracks)), nil)
+	if len(tracks) == 0 {
+		h.Log(jobID, "OK", "No new tracks found", nil)
+		if job.ScopeType == "watchlist" {
+			id, _ := uuid.Parse(job.ScopeID)
+			h.watchlist.UpdateLastSynced(id, snapshotID)
+		}
+		return nil
+	}
+
+	h.Log(jobID, "OK", fmt.Sprintf("Found %d tracks to acquire", len(tracks)), nil)
 
 	// Create acquisition job
-	params, _ := json.Marshal(map[string]interface{}{"parent_job_id": jobID})
+	paramsMap := map[string]interface{}{"parent_job_id": jobID}
+	if profileID != nil {
+		paramsMap["quality_profile_id"] = profileID.String()
+	}
+	params, _ := json.Marshal(paramsMap)
+
 	acqJob := database.Job{
 		Type:        "acquisition",
 		State:       "queued",
-		ScopeType:   "source",
-		ScopeID:     fmt.Sprintf("%d", source.ID),
+		ScopeType:   job.ScopeType,
+		ScopeID:     job.ScopeID,
 		RequestedAt: time.Now(),
-		OwnerUserID: source.OwnerUserID,
+		OwnerUserID: ownerUserID,
 		Params:      params,
 		CreatedBy:   "sync_handler",
 	}
@@ -98,14 +151,19 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 			Album:           t["album"],
 			TrackTitle:      t["title"],
 			Status:          "queued",
-			OwnerUserID:     source.OwnerUserID,
+			OwnerUserID:     ownerUserID,
 		}
 		h.db.Create(&item)
 	}
 
-	// Update source last_synced_at
-	now := time.Now()
-	h.db.Model(&source).Update("last_synced_at", &now)
+	// Update sync status
+	if job.ScopeType == "watchlist" {
+		id, _ := uuid.Parse(job.ScopeID)
+		h.watchlist.UpdateLastSynced(id, snapshotID)
+	} else if job.ScopeType == "source" {
+		now := time.Now()
+		h.db.Model(&database.Source{}).Where("id = ?", job.ScopeID).Update("last_synced_at", &now)
+	}
 
 	return nil
 }
@@ -130,10 +188,30 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 		return err
 	}
 
+	var job database.Job
+	if err := h.db.First(&job, item.JobID).Error; err != nil {
+		return err
+	}
+
+	// 0. Load Quality Profile if specified in params
+	var profile *database.QualityProfile
+	if job.Params != nil {
+		var params struct {
+			ProfileID string `json:"quality_profile_id"`
+		}
+		if err := json.Unmarshal(job.Params, &params); err == nil && params.ProfileID != "" {
+			id, _ := uuid.Parse(params.ProfileID)
+			var p database.QualityProfile
+			if err := h.db.First(&p, "id = ?", id).Error; err == nil {
+				profile = &p
+			}
+		}
+	}
+
 	h.Log(jobID, "INFO", fmt.Sprintf("Searching: %s", item.NormalizedQuery), &itemID)
 
-	// 1. Search
-	results, err := h.slskd.Search(item.NormalizedQuery, 30)
+	// 1. Search with Profile awareness
+	results, err := h.slskd.Search(item.NormalizedQuery, 30, profile)
 	if err != nil || len(results) == 0 {
 		h.failItem(jobID, itemID, "No results found")
 		return nil
@@ -141,8 +219,26 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 
 	h.Log(jobID, "OK", fmt.Sprintf("Found %d results", len(results)), &itemID)
 	best := results[0]
-	h.Log(jobID, "INFO", fmt.Sprintf("Selected: %s (score: %.1f)", best.Filename, best.Score), &itemID)
 	
+	// Check if the best result actually matches the profile (if strictly required)
+	if profile != nil {
+		format := ""
+		if dotIndex := strings.LastIndex(best.Filename, "."); dotIndex != -1 {
+			format = strings.ToLower(best.Filename[dotIndex+1:])
+		}
+		bitrate := 0
+		if best.Bitrate != nil {
+			bitrate = *best.Bitrate
+		}
+		
+		if !profile.IsMatch(format, bitrate) {
+			h.Log(jobID, "WARN", fmt.Sprintf("Best result doesn't match profile requirements: %s", best.Filename), &itemID)
+			// For now, we continue but we could fail here if "strict mode" was enabled
+		}
+	}
+
+	h.Log(jobID, "INFO", fmt.Sprintf("Selected: %s (score: %.1f)", best.Filename, best.Score), &itemID)
+
 	// 2. Queue Download
 	h.db.Model(&item).Updates(map[string]interface{}{
 		"status":            "downloading",
@@ -194,7 +290,7 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 	// Determine library path (stub for library selection)
 	libraryRoot := "./music_library" // Placeholder
 	os.MkdirAll(libraryRoot, 0755)
-	
+
 	finalPath := h.ext.GenerateLibraryPath(metadata, libraryRoot)
 	os.MkdirAll(filepath.Dir(finalPath), 0755)
 
