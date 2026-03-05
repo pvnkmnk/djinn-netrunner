@@ -1,0 +1,7 @@
+Task: Sync Status UI
+Summary: Implemented real-time synchronization for watchlists. Updated 'WebSocketManager' to broadcast system-wide events and enhanced 'source-manager.js' to handle live status updates. Added 'Establish Link' and status toggles for automated sources.
+Files:
+- backend/internal/api/websocket.go
+- ops/web/static/source-manager.js
+- ops/web/templates/index.html
+Why: To provide a reactive and transparent user interface for monitoring automated music acquisition.
