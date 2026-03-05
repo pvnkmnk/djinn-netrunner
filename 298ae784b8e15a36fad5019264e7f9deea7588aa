@@ -1,0 +1,5 @@
+Task: Token Management
+Summary: Implemented token rotation and refresh logic in 'SpotifyAuthHandler'. Added 'IsLinked' method to check user connection status.
+Files:
+- backend/internal/api/spotify_auth.go
+Why: To ensure persistent, long-term access to Spotify data without requiring repeated manual logins.
