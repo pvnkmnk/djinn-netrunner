@@ -102,13 +102,14 @@ func main() {
 	authHandler := api.NewAuthHandler(db)
 	dashHandler := api.NewDashboardHandler(db)
 	sourceHandler := api.NewSourceHandler(db)
+	spotifyAuthHandler := api.NewSpotifyAuthHandler(db)
 	wsManager := api.NewWebSocketManager()
 
 	// Start log listener
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, authHandler, dashHandler, sourceHandler, wsManager, atService, scanService)
+	setupRoutes(app, authHandler, dashHandler, sourceHandler, spotifyAuthHandler, wsManager, atService, scanService)
 
 	// 7. Start server
 	go func() {
@@ -151,7 +152,7 @@ func convertStrftimeToGo(format string) string {
 	return replacer.Replace(format)
 }
 
-func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandler, source *api.SourceHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
+func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandler, source *api.SourceHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 	
@@ -165,6 +166,10 @@ func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandl
 	authRoutes.Post("/register", auth.Register)
 	authRoutes.Post("/login", auth.Login)
 	authRoutes.Post("/logout", auth.Logout)
+
+	// Spotify Auth (OAuth Callback is public, but redirected to with user session)
+	authRoutes.Get("/spotify/login", auth.AuthMiddleware, spotifyAuth.Login)
+	authRoutes.Get("/spotify/callback", auth.AuthMiddleware, spotifyAuth.Callback)
 
 	// UI routes (protected)
 	app.Get("/", auth.AuthMiddleware, dash.RenderIndex)

@@ -205,6 +205,20 @@ func (m *Watchlist) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// SpotifyToken stores User OAuth tokens
+type SpotifyToken struct {
+	ID           uint64 `gorm:"primaryKey;autoIncrement"`
+	UserID       uint64 `gorm:"uniqueIndex;not null"`
+	AccessToken  string `gorm:"not null"`
+	RefreshToken string `gorm:"not null"`
+	TokenType    string
+	Expiry       time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+
+	User User `gorm:"foreignKey:UserID"`
+}
+
 // Schedule represents a recurring sync schedule
 type Schedule struct {
 	ID        uint64     `gorm:"primaryKey;autoIncrement"`
