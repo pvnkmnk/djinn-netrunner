@@ -1,0 +1,6 @@
+Task: Service Scaffolding
+Summary: Created 'WatchlistService' in Go to handle CRUD operations for Spotify watchlists. Includes support for preloading quality profiles and updating sync status.
+Files:
+- backend/internal/services/watchlist_service.go
+- backend/internal/services/watchlist_service_test.go
+Why: To provide a service layer for managing automated monitoring sources and their associated metadata.
