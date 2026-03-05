@@ -8,9 +8,11 @@ import (
 
 // Migrate runs all database migrations
 func Migrate(db *gorm.DB) error {
-	// Enable UUID extension
-	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"").Error; err != nil {
-		return fmt.Errorf("failed to enable uuid-ossp extension: %w", err)
+	// Enable UUID extension for Postgres
+	if db.Dialector.Name() == "postgres" {
+		if err := db.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"").Error; err != nil {
+			return fmt.Errorf("failed to enable uuid-ossp extension: %w", err)
+		}
 	}
 
 	// Auto-migrate all models

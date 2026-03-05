@@ -2,105 +2,107 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+	"log"
 	"sync"
 
 	"gorm.io/gorm"
 )
 
-// LockManager manages session-level advisory locks
-type LockManager struct {
-	db       *gorm.DB
-	conn     *sql.Conn
-	connMu   sync.Mutex
-	locks    map[int64]bool
-	locksMu  sync.Mutex
+// LockManager defines the interface for acquiring and releasing locks
+type LockManager interface {
+	AcquireTryLock(ctx context.Context, key int64) (bool, error)
+	ReleaseLock(ctx context.Context, key int64) error
+	GetScopeLockKey(ctx context.Context, scopeType, scopeID string) (int64, error)
+	Close() error
 }
 
-// NewLockManager creates a new LockManager
-func NewLockManager(db *gorm.DB) *LockManager {
-	return &LockManager{
-		db:    db,
-		locks: make(map[int64]bool),
+// NewLockManager returns the appropriate LockManager based on the database type
+func NewLockManager(db *gorm.DB) LockManager {
+	dbType := db.Dialector.Name()
+	if dbType == "postgres" {
+		return &PostgresLockManager{db: db}
+	}
+	log.Println("[LOCK] Using in-memory lock manager for SQLite")
+	return &InMemoryLockManager{
+		activeLocks: make(map[int64]bool),
 	}
 }
 
-// AcquireTryLock attempts to acquire a session-level advisory lock
-func (m *LockManager) AcquireTryLock(ctx context.Context, lockKey int64) (bool, error) {
-	m.connMu.Lock()
-	defer m.connMu.Unlock()
+// PostgresLockManager handles session-level advisory locks in PostgreSQL
+type PostgresLockManager struct {
+	db *gorm.DB
+}
 
-	if m.conn == nil {
-		sqlDB, err := m.db.DB()
-		if err != nil {
-			return false, fmt.Errorf("failed to get sql.DB: %w", err)
-		}
-		conn, err := sqlDB.Conn(ctx)
-		if err != nil {
-			return false, fmt.Errorf("failed to get dedicated connection: %w", err)
-		}
-		m.conn = conn
-	}
-
+func (m *PostgresLockManager) AcquireTryLock(ctx context.Context, key int64) (bool, error) {
 	var acquired bool
-	err := m.conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", lockKey).Scan(&acquired)
+	err := m.db.WithContext(ctx).Raw("SELECT pg_try_advisory_lock(?)", key).Scan(&acquired).Error
 	if err != nil {
-		return false, fmt.Errorf("failed to try advisory lock: %w", err)
+		return false, fmt.Errorf("failed to acquire advisory lock: %w", err)
 	}
-
-	if acquired {
-		m.locksMu.Lock()
-		m.locks[lockKey] = true
-		m.locksMu.Unlock()
-	}
-
 	return acquired, nil
 }
 
-// ReleaseLock releases a session-level advisory lock
-func (m *LockManager) ReleaseLock(ctx context.Context, lockKey int64) error {
-	m.connMu.Lock()
-	defer m.connMu.Unlock()
-
-	if m.conn == nil {
-		return nil // No connection, no locks held
-	}
-
-	var released bool
-	err := m.conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", lockKey).Scan(&released)
+func (m *PostgresLockManager) ReleaseLock(ctx context.Context, key int64) error {
+	err := m.db.WithContext(ctx).Exec("SELECT pg_advisory_unlock(?)", key).Error
 	if err != nil {
 		return fmt.Errorf("failed to release advisory lock: %w", err)
 	}
-
-	m.locksMu.Lock()
-	delete(m.locks, lockKey)
-	m.locksMu.Unlock()
-
 	return nil
 }
 
-// Close releases all locks and closes the dedicated connection
-func (m *LockManager) Close() error {
-	m.connMu.Lock()
-	defer m.connMu.Unlock()
-
-	if m.conn == nil {
-		return nil
-	}
-
-	// Session-level locks are automatically released when the connection is closed
-	err := m.conn.Close()
-	m.conn = nil
-	return err
-}
-
-// GetScopeLockKey computes the advisory lock key for a given scope
-func (m *LockManager) GetScopeLockKey(ctx context.Context, scopeType, scopeID string) (int64, error) {
+func (m *PostgresLockManager) GetScopeLockKey(ctx context.Context, scopeType, scopeID string) (int64, error) {
 	var lockKey int64
-	err := m.db.Raw("SELECT scope_lock_key(?, ?)", scopeType, scopeID).Scan(&lockKey).Error
+	err := m.db.WithContext(ctx).Raw("SELECT scope_lock_key(?, ?)", scopeType, scopeID).Scan(&lockKey).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to compute scope lock key: %w", err)
 	}
 	return lockKey, nil
+}
+
+func (m *PostgresLockManager) Close() error {
+	return nil
+}
+
+// InMemoryLockManager handles locks in memory for standalone SQLite deployments
+type InMemoryLockManager struct {
+	activeLocks map[int64]bool
+	mutex       sync.Mutex
+}
+
+func (m *InMemoryLockManager) AcquireTryLock(ctx context.Context, key int64) (bool, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.activeLocks[key] {
+		return false, nil
+	}
+
+	m.activeLocks[key] = true
+	return true, nil
+}
+
+func (m *InMemoryLockManager) ReleaseLock(ctx context.Context, key int64) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	delete(m.activeLocks, key)
+	return nil
+}
+
+func (m *InMemoryLockManager) GetScopeLockKey(ctx context.Context, scopeType, scopeID string) (int64, error) {
+	// Replicate the logic from the SQL function:
+	// 1001 * 1000000000 + (hash of scope_type:scopeID)
+	// For now, a simple hash using sum of characters or similar
+	hash := int64(0)
+	combined := fmt.Sprintf("%s:%s", scopeType, scopeID)
+	for _, char := range combined {
+		hash = 31*hash + int64(char)
+	}
+	// Keep it within 32-bit for consistency if needed, but int64 is fine
+	return 1001*1000000000 + (hash & 0x7FFFFFFF), nil
+}
+
+func (m *InMemoryLockManager) Close() error {
+	return nil
 }

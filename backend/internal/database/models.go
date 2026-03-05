@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // User represents a user in the system
@@ -12,7 +13,7 @@ type User struct {
 	ID           uint64    `gorm:"primaryKey;autoIncrement"`
 	Email        string    `gorm:"uniqueIndex;not null"`
 	PasswordHash string    `gorm:"not null"`
-	Role         string    `gorm:"type:userrole;default:'user'"`
+	Role         string    `gorm:"default:'user'"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	LastLoginAt  *time.Time
@@ -33,11 +34,11 @@ type Session struct {
 
 // QualityProfile defines download preferences
 type QualityProfile struct {
-	ID                  uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	ID                  uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Name                string    `gorm:"uniqueIndex;not null"`
 	Description         string
 	PreferLossless      bool     `gorm:"default:true"`
-	AllowedFormats      []string `gorm:"type:text[]"`
+	AllowedFormats      string   `gorm:"type:text"` // Store as comma-separated or JSON for portability
 	MinBitrate          int      `gorm:"default:320"`
 	PreferBitrate       *int
 	PreferSceneReleases bool `gorm:"default:false"`
@@ -47,9 +48,16 @@ type QualityProfile struct {
 	UpdatedAt           time.Time
 }
 
+func (m *QualityProfile) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
+}
+
 // MonitoredArtist represents an artist being tracked
 type MonitoredArtist struct {
-	ID            uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
 	MusicBrainzID string    `gorm:"uniqueIndex;not null"`
 	Name          string    `gorm:"not null"`
 	SortName      string
@@ -78,9 +86,16 @@ type MonitoredArtist struct {
 	Releases       []TrackedRelease `gorm:"foreignKey:ArtistID"`
 }
 
+func (m *MonitoredArtist) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
+}
+
 // TrackedRelease represents a release we are monitoring
 type TrackedRelease struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
 	ArtistID  uuid.UUID `gorm:"type:uuid;not null;index"`
 	
 	ReleaseGroupID string `gorm:"column:musicbrainz_release_group_id;not null"`
@@ -104,18 +119,32 @@ type TrackedRelease struct {
 	UpdatedAt time.Time
 }
 
+func (m *TrackedRelease) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
+}
+
 // Library represents a collection of music files
 type Library struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Name      string    `gorm:"not null"`
 	Path      string    `gorm:"uniqueIndex;not null"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
+func (m *Library) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
+}
+
 // Track represents a single audio file in the library
 type Track struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
 	LibraryID uuid.UUID `gorm:"type:uuid;not null;index"`
 	Title     string    `gorm:"not null"`
 	Artist    string    `gorm:"index"`
@@ -129,6 +158,13 @@ type Track struct {
 	UpdatedAt time.Time
 
 	Library Library `gorm:"foreignKey:LibraryID"`
+}
+
+func (m *Track) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
 }
 
 // Source represents a music source
@@ -163,9 +199,9 @@ type Schedule struct {
 // Job represents a background job
 type Job struct {
 	ID          uint64          `gorm:"primaryKey;autoIncrement"`
-	Type        string          `gorm:"column:jobtype;not null;index"`
+	Type        string          `gorm:"column:job_type;not null;index"`
 	State       string          `gorm:"column:state;not null;index;default:'queued'"`
-	RequestedAt time.Time       `gorm:"default:NOW()"`
+	RequestedAt time.Time       `gorm:"index"`
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
 	HeartbeatAt *time.Time
@@ -181,6 +217,13 @@ type Job struct {
 	OwnerUserID *uint64         `gorm:"index"`
 }
 
+func (m *Job) BeforeCreate(tx *gorm.DB) error {
+	if m.RequestedAt.IsZero() {
+		m.RequestedAt = time.Now()
+	}
+	return nil
+}
+
 // JobLog represents a log entry for a job
 type JobLog struct {
 	ID        uint64    `gorm:"primaryKey;autoIncrement"`
@@ -188,14 +231,21 @@ type JobLog struct {
 	JobItemID *uint64   `gorm:"index"`
 	Level     string    `gorm:"not null"`
 	Message   string    `gorm:"not null"`
-	CreatedAt time.Time `gorm:"default:NOW()"`
+	CreatedAt time.Time
+}
+
+func (m *JobLog) BeforeCreate(tx *gorm.DB) error {
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now()
+	}
+	return nil
 }
 
 // JobItem represents a unit of work within a job
 type JobItem struct {
 	ID              uint64    `gorm:"primaryKey;autoIncrement"`
 	JobID           uint64    `gorm:"not null;index"`
-	Status          string    `gorm:"type:jobitemstatus;default:'queued'"`
+	Status          string    `gorm:"default:'queued'"`
 	NormalizedQuery string    `gorm:"not null"`
 	Artist          string
 	Album           string
@@ -224,8 +274,8 @@ type Acquisition struct {
 	FinalPath     string    `gorm:"not null;index"`
 	FileSize      int64
 	FileHash      string
-	AcquiredAt    time.Time `gorm:"default:NOW()"`
-	ImportedAt    time.Time `gorm:"default:NOW()"`
+	AcquiredAt    time.Time
+	ImportedAt    time.Time
 	SourceUser    string
 	SourceIP      string
 	OwnerUserID   *uint64   `gorm:"index"`
@@ -234,6 +284,17 @@ type Acquisition struct {
 	MBRecordingID string `gorm:"column:mb_recording_id"`
 	MBReleaseID   string `gorm:"column:mb_release_id"`
 	MBArtistID    string `gorm:"column:mb_artist_id"`
+}
+
+func (m *Acquisition) BeforeCreate(tx *gorm.DB) error {
+	now := time.Now()
+	if m.AcquiredAt.IsZero() {
+		m.AcquiredAt = now
+	}
+	if m.ImportedAt.IsZero() {
+		m.ImportedAt = now
+	}
+	return nil
 }
 
 // TableName overrides for GORM

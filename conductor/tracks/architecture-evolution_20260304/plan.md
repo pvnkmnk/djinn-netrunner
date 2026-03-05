@@ -15,7 +15,7 @@ Remove the PostgreSQL dependency to enable "single binary" deployment.
 
 ### Tasks
 
-- [ ] Task 1.1: **Database Abstraction**: Refactor `database` package to support SQLite.
+- [~] Task 1.1: **Database Abstraction**: Refactor `database` package to support SQLite.
     - Configure GORM for SQLite with WAL mode, foreign keys, and busy timeouts.
     - Verify all existing models and migrations are compatible with SQLite.
 - [ ] Task 1.2: **Lock Manager Refactor**: Replace Postgres Advisory Locks with a file-based or in-memory locking mechanism compatible with multiple worker goroutines.
