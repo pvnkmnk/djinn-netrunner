@@ -169,29 +169,53 @@ func (m *Track) BeforeCreate(tx *gorm.DB) error {
 
 // Source represents a music source
 type Source struct {
-	ID          uint64    `gorm:"primaryKey;autoIncrement"`
-	SourceType  string    `gorm:"not null"`
-	SourceURI   string    `gorm:"uniqueIndex;not null"`
-	DisplayName string    `gorm:"not null"`
+	ID           uint64          `gorm:"primaryKey;autoIncrement"`
+	SourceType   string          `gorm:"not null"`
+	SourceURI    string          `gorm:"uniqueIndex;not null"`
+	DisplayName  string          `gorm:"not null"`
 	LastSyncedAt *time.Time
-	SyncEnabled bool      `gorm:"default:true"`
-	Config      json.RawMessage `gorm:"type:jsonb"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	OwnerUserID *uint64   `gorm:"index"`
+	SyncEnabled  bool            `gorm:"default:true"`
+	Config       json.RawMessage `gorm:"type:jsonb"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	OwnerUserID  *uint64 `gorm:"index"`
+}
+
+// Watchlist represents an automated monitoring source (Spotify playlist/Liked Songs)
+type Watchlist struct {
+	ID               uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Name             string    `gorm:"not null"`
+	SourceType       string    `gorm:"not null"` // e.g., "spotify_playlist", "spotify_liked"
+	SourceURI        string    `gorm:"uniqueIndex;not null"`
+	QualityProfileID uuid.UUID `gorm:"type:uuid;not null;index"`
+	LastSnapshotID   string    // Used for Spotify delta checks
+	LastSyncedAt     *time.Time
+	Enabled          bool      `gorm:"default:true"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	OwnerUserID      *uint64 `gorm:"index"`
+
+	QualityProfile QualityProfile `gorm:"foreignKey:QualityProfileID"`
+}
+
+func (m *Watchlist) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
 }
 
 // Schedule represents a recurring sync schedule
 type Schedule struct {
-	ID         uint64    `gorm:"primaryKey;autoIncrement"`
-	SourceID   uint64    `gorm:"not null;index"`
-	CronExpr   string    `gorm:"not null"`
-	Timezone   string    `gorm:"not null;default:'UTC'"`
-	NextRunAt  *time.Time `gorm:"index"`
-	LastRunAt  *time.Time
-	Enabled    bool      `gorm:"not null;default:true;index"`
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID        uint64     `gorm:"primaryKey;autoIncrement"`
+	SourceID  uint64     `gorm:"not null;index"`
+	CronExpr  string     `gorm:"not null"`
+	Timezone  string     `gorm:"not null;default:'UTC'"`
+	NextRunAt *time.Time `gorm:"index"`
+	LastRunAt *time.Time
+	Enabled   bool      `gorm:"not null;default:true;index"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 
 	Source Source `gorm:"foreignKey:SourceID"`
 }

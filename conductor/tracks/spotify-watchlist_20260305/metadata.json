@@ -1,0 +1,16 @@
+{
+  "id": "spotify-watchlist_20260305",
+  "title": "Spotify-to-Soulseek Watchlist Automation",
+  "type": "feature",
+  "status": "pending",
+  "created": "2026-03-05T08:00:00Z",
+  "updated": "2026-03-05T08:00:00Z",
+  "phases": {
+    "total": 5,
+    "completed": 0
+  },
+  "tasks": {
+    "total": 14,
+    "completed": 0
+  }
+}
