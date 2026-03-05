@@ -534,6 +534,73 @@ input:focus {
     color: var(--bg-deep);
 }
 
+.job-body {
+    margin: 0.5rem 0;
+}
+
+.job-type {
+    font-weight: 600;
+    color: var(--text-high);
+    font-size: 0.8rem;
+}
+
+.job-summary {
+    font-size: 0.75rem;
+    color: var(--text-mid);
+    margin-top: 0.25rem;
+}
+
+.job-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--text-low);
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border-dim);
+    padding-top: 0.4rem;
+}
+
+.job-worker {
+    color: var(--accent-cyan);
+    font-family: var(--font-mono);
+}
+
+.source-main {
+    flex: 1;
+}
+
+.source-meta {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-top: 0.25rem;
+}
+
+.source-type-tag {
+    font-size: 0.6rem;
+    background: var(--bg-tertiary);
+    color: var(--text-low);
+    padding: 1px 4px;
+    border-radius: 2px;
+    text-transform: uppercase;
+}
+
+.source-last-sync {
+    font-size: 0.65rem;
+    color: var(--text-low);
+}
+
+.btn-icon.active { color: var(--accent-green); border-color: var(--accent-green); }
+.btn-icon.inactive { color: var(--text-low); opacity: 0.5; }
+
+.empty-state {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-low);
+    font-style: italic;
+    font-size: 0.8rem;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
     width: 4px;

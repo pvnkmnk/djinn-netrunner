@@ -59,18 +59,30 @@
             <section class="bento-section">
                 <div class="section-title">Recent Task Log</div>
                 <div class="jobs-list glass-card">
-                    {% for job in jobs %}
-                    <div class="job-item" onclick="attachToJob({{ job.ID }})">
-                        <div class="job-header">
-                            <span class="job-id">#{{ job.ID }}</span>
-                            <span class="status-tag status-{{ job.State }}">{{ job.State|upper }}</span>
+                    {% if jobs %}
+                        {% for job in jobs %}
+                        <div class="job-item" onclick="attachToJob({{ job.ID }})">
+                            <div class="job-header">
+                                <span class="job-id">#{{ job.ID }}</span>
+                                <span class="status-tag status-{{ job.State }}">{{ job.State|upper }}</span>
+                            </div>
+                            <div class="job-body">
+                                <div class="job-type">{{ job.Type }}</div>
+                                {% if job.Summary %}
+                                <div class="job-summary">{{ job.Summary }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="job-footer">
+                                <span class="job-time">{{ strftime(job.RequestedAt, '%H:%M:%S') }}</span>
+                                {% if job.WorkerID %}
+                                <span class="job-worker">NODE: {{ job.WorkerID }}</span>
+                                {% endif %}
+                            </div>
                         </div>
-                        <div class="job-meta">
-                            <span class="job-type">{{ job.Type }}</span>
-                            <span class="job-time">{{ strftime(job.RequestedAt, '%H:%M:%S') }}</span>
-                        </div>
-                    </div>
-                    {% endfor %}
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state">No recent tasks detected.</div>
+                    {% endif %}
                 </div>
             </section>
 
@@ -83,18 +95,28 @@
                 <div class="sources-list" id="sources-list">
                     {% for source in sources %}
                     <div class="source-card glass-card" id="source-{{ source.ID }}">
-                        <div class="source-info">
+                        <div class="source-main">
                             <div class="source-name">{{ source.DisplayName }}</div>
-                            <div class="source-type">{{ source.SourceType }}</div>
+                            <div class="source-meta">
+                                <span class="source-type-tag">{{ source.SourceType }}</span>
+                                {% if source.LastSyncedAt %}
+                                <span class="source-last-sync">Last: {{ strftime(source.LastSyncedAt, '%m/%d %H:%M') }}</span>
+                                {% endif %}
+                            </div>
                         </div>
                         <div class="source-actions">
-                            <button class="btn-icon" onclick="toggleSource({{ source.ID }}, {{ 'false' if source.SyncEnabled else 'true' }})">
+                            <button class="btn-icon {{ 'active' if source.SyncEnabled else 'inactive' }}" 
+                                    onclick="toggleSource({{ source.ID }}, {{ 'false' if source.SyncEnabled else 'true' }})"
+                                    title="{{ 'Disable' if source.SyncEnabled else 'Enable' }}">
                                 {{ '●' if source.SyncEnabled else '○' }}
                             </button>
-                            <button class="btn-icon" hx-post="/api/jobs/sync?source_id={{ source.ID }}" hx-swap="none">
+                            <button class="btn-icon btn-action" 
+                                    hx-post="/api/jobs/sync?source_id={{ source.ID }}" 
+                                    hx-swap="none"
+                                    title="Force Sync">
                                 ⟳
                             </button>
-                            <button class="btn-icon" onclick="showEditSourceModal({{ source.ID }})">✎</button>
+                            <button class="btn-icon" onclick="showEditSourceModal({{ source.ID }})" title="Edit">✎</button>
                         </div>
                     </div>
                     {% endfor %}
@@ -140,7 +162,40 @@
                 <button class="btn-icon" onclick="closeSourceModal()">✕</button>
             </div>
             <form id="source-form" onsubmit="submitSourceForm(event)">
-                <!-- Form content -->
+                <input type="hidden" id="source-id" name="id">
+
+                <div class="form-group">
+                    <label for="source-display-name">Identity</label>
+                    <input type="text" id="source-display-name" name="display_name" required
+                           placeholder="Primary Archive">
+                </div>
+
+                <div class="form-group">
+                    <label for="source-type">Protocol</label>
+                    <select id="source-type" name="source_type" required>
+                        <option value="file_list">Local Registry</option>
+                        <option value="spotify_playlist">Spotify Uplink</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="source-uri">Data URI</label>
+                    <input type="text" id="source-uri" name="source_uri" required
+                           placeholder="Path or URL">
+                    <small>Specify local path or Spotify playlist ID/URL</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="source-sync-enabled" name="sync_enabled" checked>
+                        Maintain Synchronous Connection
+                    </label>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeSourceModal()">Abort</button>
+                    <button type="submit" class="btn btn-primary">Establish Link</button>
+                </div>
             </form>
         </div>
     </div>
