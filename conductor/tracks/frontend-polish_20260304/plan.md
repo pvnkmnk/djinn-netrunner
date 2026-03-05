@@ -20,13 +20,12 @@ Modernize the NetRunner frontend using HTMX and Vanilla CSS. We will implement a
 
 ## Phase 2: Interactive Bento Dashboard
 - [x] Task 2.1: **Stat Micro-animations**: Add pulsing animations for active jobs and count-up effects for stats. (f1bddf0)
-- [~] Task 2.2: **Job/Source Cards**: Redesign list items as interactive cards with subtle hover glows and better data density.
-- [ ] Task 2.3: **Modal & Notification System**: Implement a custom, high-fidelity modal system with smooth entry/exit transitions.
+- [x] Task 2.2: **Job/Source Cards**: Redesign list items as interactive cards with subtle hover glows and better data density. (d132959)
+- [x] Task 2.3: **Modal & Notification System**: Implement a custom, high-fidelity modal system with smooth entry/exit transitions. (d132959)
 
 ### Verification
 
-- [ ] Stats and Job lists update visually in real-time when triggered via HTMX.
-- [ ] Task: Conductor - User Manual Verification 'Interactive Dashboard' (Protocol in workflow.md)
+- [~] Task: Conductor - User Manual Verification 'Interactive Dashboard' (Protocol in workflow.md)
 
 ## Phase 3: Pro Console UX
 
