@@ -1,0 +1,7 @@
+Task: Acquisition Integration
+Summary: Updated 'SlskdService' to support QualityProfile-aware searches and scoring. Integrated watchlist discovery into 'SyncHandler' and ensured 'AcquisitionHandler' respects per-job quality preferences.
+Files:
+- backend/internal/services/slskd_service.go
+- backend/internal/services/job_handlers.go
+- backend/internal/services/job_handlers_test.go
+Why: To complete the automation loop by automatically enqueuing discovered tracks with user-defined quality constraints.
