@@ -39,15 +39,15 @@ Implement User OAuth flow to support the "Liked Songs" sync, which requires user
 - [ ] Successfully retrieve track list from a test Spotify account's Liked Songs.
 - [ ] Confirm tokens are encrypted/stored correctly.
 
-## Phase 3: Automated Polling & Discovery
+## Phase 3: Automated Polling & Discovery [checkpoint: baab2d2]
 
 The core background worker that identifies new music.
 
 ### Tasks
 
-- [ ] Task 3.1: **Polling Engine**: Implement a ticker-based service in `WorkerOrchestrator` that triggers syncs every X hours.
-- [ ] Task 3.2: **Snapshot Comparison**: Implement logic to compare the current Spotify snapshot with the last recorded state to find new additions.
-- [ ] Task 3.3: **Deduplication Filter**: Implement a "Library Check" that skips tracks already found in the SQLite `tracks` table or current `slskd` queue.
+- [x] Task 3.1: **Polling Engine**: Implement a ticker-based service in `WorkerOrchestrator` that triggers syncs every X hours. (c7ae650)
+- [x] Task 3.2: **Snapshot Comparison**: Implement logic to compare the current Spotify snapshot with the last recorded state to find new additions. (1a3d1ae)
+- [x] Task 3.3: **Deduplication Filter**: Implement a "Library Check" that skips tracks already found in the SQLite `tracks` table or current `slskd` queue. (1112583)
 
 ### Verification
 
