@@ -57,13 +57,16 @@ type jobContext struct {
 }
 
 func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator {
+	// 4. Initialize services
+	cache := services.NewCacheService(db)
 	mb := services.NewMusicBrainzService(cfg)
+	mb.SetCache(cache)
 	at := services.NewArtistTrackingService(db, mb)
 	rm := services.NewReleaseMonitorService(db, at)
 	spotify := services.NewSpotifyService(cfg)
+	spotify.SetCache(cache)
 	slskd := services.NewSlskdService(cfg)
 	metadata := services.NewMetadataExtractor()
-	
 	return &WorkerOrchestrator{
 		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:          db,

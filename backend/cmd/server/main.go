@@ -39,10 +39,17 @@ func main() {
 	}
 
 	// 4. Initialize services
+	cache := services.NewCacheService(db)
+	
 	mbService := services.NewMusicBrainzService(cfg)
+	mbService.SetCache(cache)
+	
 	atService := services.NewArtistTrackingService(db, mbService)
 	rmService := services.NewReleaseMonitorService(db, atService)
 	scanService := services.NewScannerService(db)
+	
+	spotify := services.NewSpotifyService(cfg)
+	spotify.SetCache(cache)
 
 	// 5. Start background tasks
 	rmService.StartBackgroundTask()

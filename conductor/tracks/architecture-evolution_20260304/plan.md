@@ -9,23 +9,18 @@
 
 Transform NetRunner into a standalone, resilient application. We will replace the heavy infrastructure (Postgres) with embedded, high-performance alternatives (SQLite), implement caching layers, and optimize the worker pipeline.
 
-## Phase 1: Standalone Persistence (SQLite Migration)
+## Phase 1: Standalone Persistence (SQLite Migration) [checkpoint: 6b8229d]
 - [x] Task 1.1: **Database Abstraction**: Refactor `database` package to support SQLite. (c3eb7a1)
 - [x] Task 1.2: **Lock Manager Refactor**: Replace Postgres Advisory Locks with a file-based or in-memory locking mechanism. (c3eb7a1)
 - [x] Task 1.3: **Data Migration Utility**: Create a script to dump Postgres data to SQLite. (c3eb7a1)
 
 ### Verification
 
-- [~] Task: Conductor - User Manual Verification 'Standalone Persistence' (Protocol in workflow.md)
-- [ ] All data persists across restarts in a local `.db` file.
+- [x] Task: Conductor - User Manual Verification 'Standalone Persistence' (Protocol in workflow.md) (6b8229d)
+- [x] All data persists across restarts in a local `.db` file. (6b8229d)
 
 ## Phase 2: Metadata Resilience & Caching
-
-Stop the worker from stalling when external APIs are slow or down.
-
-### Tasks
-
-- [ ] Task 2.1: **Cache Schema**: Design a `metadata_cache` table (key, value, ttl, source).
+- [~] Task 2.1: **Cache Schema**: Design a `metadata_cache` table (key, value, ttl, source).
 - [ ] Task 2.2: **Service Middleware**: Wrap `MusicBrainzService` and `SpotifyService` with a caching layer.
     - Check local DB before hitting API.
     - Implement background refresh for expired cache entries.

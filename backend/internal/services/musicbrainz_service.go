@@ -12,9 +12,10 @@ import (
 
 // MusicBrainzService handles interaction with the MusicBrainz API
 type MusicBrainzService struct {
-	cfg        *config.Config
-	httpClient *http.Client
+	cfg         *config.Config
+	httpClient  *http.Client
 	rateLimiter *time.Ticker
+	cache       *CacheService
 }
 
 // NewMusicBrainzService creates a new MusicBrainz service
@@ -29,24 +30,62 @@ func NewMusicBrainzService(cfg *config.Config) *MusicBrainzService {
 	}
 }
 
+func (s *MusicBrainzService) SetCache(cache *CacheService) {
+	s.cache = cache
+}
+
 // SearchArtists searches for artists on MusicBrainz
 func (s *MusicBrainzService) SearchArtists(query string, limit int) (map[string]interface{}, error) {
+	cacheKey := fmt.Sprintf("search:artist:%s:%d", query, limit)
+	if s.cache != nil {
+		var cached map[string]interface{}
+		if found, _ := s.cache.Get("musicbrainz", cacheKey, &cached); found {
+			return cached, nil
+		}
+	}
+
 	params := url.Values{}
 	params.Add("query", query)
 	params.Add("limit", fmt.Sprintf("%d", limit))
 	params.Add("fmt", "json")
 
-	return s.doRequest("artist", params)
+	result, err := s.doRequest("artist", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.cache != nil {
+		s.cache.Set("musicbrainz", cacheKey, result, 24*time.Hour)
+	}
+
+	return result, nil
 }
 
 // GetArtistDiscography gets all release groups for an artist
 func (s *MusicBrainzService) GetArtistDiscography(artistID string) (map[string]interface{}, error) {
+	cacheKey := fmt.Sprintf("discography:%s", artistID)
+	if s.cache != nil {
+		var cached map[string]interface{}
+		if found, _ := s.cache.Get("musicbrainz", cacheKey, &cached); found {
+			return cached, nil
+		}
+	}
+
 	params := url.Values{}
 	params.Add("artist", artistID)
 	params.Add("inc", "release-groups")
 	params.Add("fmt", "json")
 
-	return s.doRequest("release-group", params)
+	result, err := s.doRequest("release-group", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.cache != nil {
+		s.cache.Set("musicbrainz", cacheKey, result, 12*time.Hour)
+	}
+
+	return result, nil
 }
 
 func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[string]interface{}, error) {

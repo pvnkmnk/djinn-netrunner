@@ -30,6 +30,7 @@ func Migrate(db *gorm.DB) error {
 		&Library{},
 		&Track{},
 		&Schedule{},
+		&MetadataCache{},
 	); err != nil {
 		return fmt.Errorf("failed to auto-migrate: %w", err)
 	}

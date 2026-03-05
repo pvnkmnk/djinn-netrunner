@@ -297,6 +297,23 @@ func (m *Acquisition) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// MetadataCache stores cached API responses
+type MetadataCache struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement"`
+	Source    string    `gorm:"index:idx_cache_lookup,priority:1;not null"` // e.g., "musicbrainz", "spotify"
+	Key       string    `gorm:"index:idx_cache_lookup,priority:2;not null"` // e.g., artist ID, search query hash
+	Value     []byte    `gorm:"type:blob;not null"`
+	ExpiresAt time.Time `gorm:"index"`
+	CreatedAt time.Time
+}
+
+func (m *MetadataCache) BeforeCreate(tx *gorm.DB) error {
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now()
+	}
+	return nil
+}
+
 // TableName overrides for GORM
 func (Job) TableName() string { return "jobs" }
 func (JobItem) TableName() string { return "jobitems" }

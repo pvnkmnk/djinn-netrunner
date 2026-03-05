@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/zmb3/spotify/v2"
@@ -14,6 +15,7 @@ import (
 type SpotifyService struct {
 	cfg    *config.Config
 	client *spotify.Client
+	cache  *CacheService
 }
 
 func NewSpotifyService(cfg *config.Config) *SpotifyService {
@@ -37,7 +39,19 @@ func NewSpotifyService(cfg *config.Config) *SpotifyService {
 	}
 }
 
+func (s *SpotifyService) SetCache(cache *CacheService) {
+	s.cache = cache
+}
+
 func (s *SpotifyService) GetPlaylistTracks(ctx context.Context, playlistID string) ([]map[string]string, error) {
+	cacheKey := fmt.Sprintf("playlist:%s", playlistID)
+	if s.cache != nil {
+		var cached []map[string]string
+		if found, _ := s.cache.Get("spotify", cacheKey, &cached); found {
+			return cached, nil
+		}
+	}
+
 	if s.client == nil {
 		return nil, fmt.Errorf("spotify client not initialized")
 	}
@@ -84,6 +98,10 @@ func (s *SpotifyService) GetPlaylistTracks(ctx context.Context, playlistID strin
 		if offset >= int(items.Total) {
 			break
 		}
+	}
+
+	if s.cache != nil {
+		s.cache.Set("spotify", cacheKey, allTracks, 1*time.Hour)
 	}
 
 	return allTracks, nil
