@@ -1,0 +1,5 @@
+Task: Deduplication Filter
+Summary: Implemented 'FilterExistingTracks' in 'WatchlistService'. This method cross-references identified Spotify tracks with the local library ('tracks' table) and the active processing queue ('jobitems' table) to prevent redundant acquisitions.
+Files:
+- backend/internal/services/watchlist_service.go
+Why: To ensure that the automation loop remains efficient and doesn't waste resources or bandwidth on items already present or being processed.
