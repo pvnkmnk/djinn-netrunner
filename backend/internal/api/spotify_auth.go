@@ -140,3 +140,10 @@ func (h *SpotifyAuthHandler) GetClient(ctx context.Context, userID uint64) (*spo
 
 	return spotify.New(h.auth.Client(ctx, newToken)), nil
 }
+
+// IsLinked checks if a user has linked their Spotify account
+func (h *SpotifyAuthHandler) IsLinked(userID uint64) bool {
+	var token database.SpotifyToken
+	err := h.db.Where("user_id = ?", userID).First(&token).Error
+	return err == nil
+}
