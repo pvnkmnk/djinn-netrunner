@@ -18,14 +18,14 @@ Modernize the NetRunner frontend using HTMX and Vanilla CSS. We will implement a
 
 - [x] Task: Conductor - User Manual Verification 'Design Foundation' (Protocol in workflow.md) (0cf848d)
 
-## Phase 2: Interactive Bento Dashboard
+## Phase 2: Interactive Bento Dashboard [checkpoint: 0a44ab0]
 - [x] Task 2.1: **Stat Micro-animations**: Add pulsing animations for active jobs and count-up effects for stats. (f1bddf0)
 - [x] Task 2.2: **Job/Source Cards**: Redesign list items as interactive cards with subtle hover glows and better data density. (d132959)
 - [x] Task 2.3: **Modal & Notification System**: Implement a custom, high-fidelity modal system with smooth entry/exit transitions. (d132959)
 
 ### Verification
 
-- [~] Task: Conductor - User Manual Verification 'Interactive Dashboard' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Interactive Dashboard' (Protocol in workflow.md) (0a44ab0)
 
 ## Phase 3: Pro Console UX
 
@@ -33,7 +33,7 @@ Transform the console into a powerful log management tool.
 
 ### Tasks
 
-- [ ] Task 3.1: **Log Syntax Highlighting**: Add CSS-based highlighting for common log patterns (paths, IDs, success/error states).
+- [~] Task 3.1: **Log Syntax Highlighting**: Add CSS-based highlighting for common log patterns (paths, IDs, success/error states).
 - [ ] Task 3.2: **"Jump to Error"**: Add a persistent UI indicator when an error is logged and a button to scroll directly to it.
 - [ ] Task 3.3: **Enhanced Filtering**: Improve the JS controller to support multi-level filtering and search within the console viewport.
 
