@@ -162,3 +162,122 @@ document.getElementById('source-modal')?.addEventListener('click', (e) => {
         closeSourceModal();
     }
 });
+
+// Watchlist Management
+
+function showAddWatchlistModal() {
+    document.getElementById('watchlist-modal-title').textContent = 'Add Automated Watchlist';
+    document.getElementById('watchlist-id').value = '';
+    document.getElementById('watchlist-form').reset();
+    updateWatchlistUriLabel();
+    document.getElementById('watchlist-modal').classList.add('active');
+}
+
+function closeWatchlistModal() {
+    document.getElementById('watchlist-modal').classList.remove('active');
+}
+
+function updateWatchlistUriLabel() {
+    const type = document.getElementById('watchlist-type').value;
+    const uriGroup = document.getElementById('watchlist-uri-group');
+    const uriInput = document.getElementById('watchlist-uri');
+
+    if (type === 'spotify_liked') {
+        uriGroup.style.display = 'none';
+        uriInput.required = false;
+        uriInput.value = 'spotify:liked'; // Internal placeholder
+    } else {
+        uriGroup.style.display = 'block';
+        uriInput.required = true;
+        if (uriInput.value === 'spotify:liked') uriInput.value = '';
+    }
+}
+
+async function submitWatchlistForm(event) {
+    event.preventDefault();
+
+    const formData = new FormData(event.target);
+    const watchlistId = formData.get('id');
+
+    const data = {
+        name: formData.get('name'),
+        source_type: formData.get('source_type'),
+        source_uri: formData.get('source_uri'),
+        quality_profile_id: formData.get('quality_profile_id'),
+        enabled: formData.get('enabled') === 'on'
+    };
+
+    try {
+        let response;
+        if (watchlistId) {
+            response = await fetch(`/api/watchlists/${watchlistId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        } else {
+            response = await fetch('/api/watchlists', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        }
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Operation failed');
+        }
+
+        showNotification(watchlistId ? 'Watchlist updated' : 'Watchlist created', 'success');
+        closeWatchlistModal();
+        setTimeout(() => window.location.reload(), 1000);
+
+    } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+    }
+}
+
+async function toggleWatchlist(id, enabled) {
+    try {
+        const response = await fetch(`/api/watchlists/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
+        });
+
+        if (!response.ok) throw new Error('Failed to update watchlist');
+
+        showNotification(enabled ? 'Watchlist enabled' : 'Watchlist disabled', 'success');
+        setTimeout(() => window.location.reload(), 1000);
+
+    } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+    }
+}
+
+async function deleteWatchlist(id) {
+    if (!confirm('Are you sure you want to delete this automated watchlist?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/watchlists/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) throw new Error('Failed to delete watchlist');
+
+        showNotification('Watchlist removed', 'success');
+        document.getElementById(`watchlist-${id}`)?.remove();
+
+    } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+    }
+}
+
+// Close watchlist modal on escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeWatchlistModal();
+    }
+});
