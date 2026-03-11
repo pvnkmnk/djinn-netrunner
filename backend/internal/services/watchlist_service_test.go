@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -75,5 +76,26 @@ func TestWatchlistService(t *testing.T) {
 
 		lists, _ = service.GetWatchlists()
 		assert.Len(t, lists, 0)
+	})
+
+	t.Run("Register and Fetch from Mock Provider", func(t *testing.T) {
+		mock := &MockProvider{
+			tracks: []map[string]string{
+				{"artist": "Mock Artist", "title": "Mock Track"},
+			},
+			snapID: "mock-snap",
+		}
+		service.RegisterProvider("mock_source", mock)
+
+		watchlist := &database.Watchlist{
+			SourceType: "mock_source",
+			SourceURI:  "mock:uri",
+		}
+
+		tracks, snap, err := service.FetchWatchlistTracks(context.Background(), watchlist)
+		assert.NoError(t, err)
+		assert.Equal(t, "mock-snap", snap)
+		assert.Len(t, tracks, 1)
+		assert.Equal(t, "Mock Artist", tracks[0]["artist"])
 	})
 }

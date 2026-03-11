@@ -14,10 +14,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// WatchlistService manages Spotify watchlists
+// WatchlistService manages music watchlists across different providers
 type WatchlistService struct {
 	db          *gorm.DB
 	spotifyAuth *api.SpotifyAuthHandler
+	providers   map[string]WatchlistProvider
 }
 
 // NewWatchlistService creates a new watchlist service
@@ -25,11 +26,31 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth *api.SpotifyAuthHandler) *Watc
 	return &WatchlistService{
 		db:          db,
 		spotifyAuth: spotifyAuth,
+		providers:   make(map[string]WatchlistProvider),
 	}
 }
 
-// FetchWatchlistTracks retrieves tracks from a Spotify source (Playlist or Liked Songs)
+// RegisterProvider registers a new watchlist provider handler
+func (s *WatchlistService) RegisterProvider(sourceType string, provider WatchlistProvider) {
+	s.providers[sourceType] = provider
+}
+
+// FetchWatchlistTracks retrieves tracks from a source
 func (s *WatchlistService) FetchWatchlistTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
+	// Check for registered providers first
+	if provider, ok := s.providers[watchlist.SourceType]; ok {
+		return provider.FetchTracks(ctx, watchlist)
+	}
+
+	// Legacy Spotify logic (will be moved to SpotifyProvider in Task 1.3)
+	if strings.HasPrefix(watchlist.SourceType, "spotify_") {
+		return s.fetchSpotifyTracks(ctx, watchlist)
+	}
+
+	return nil, "", fmt.Errorf("unsupported source type: %s", watchlist.SourceType)
+}
+
+func (s *WatchlistService) fetchSpotifyTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
 	if watchlist.OwnerUserID == nil {
 		return nil, "", errors.New("watchlist has no owner user")
 	}
@@ -43,6 +64,7 @@ func (s *WatchlistService) FetchWatchlistTracks(ctx context.Context, watchlist *
 	var snapshotID string
 
 	if watchlist.SourceType == "spotify_liked" {
+
 		// Fetch Liked Songs (Saved Tracks)
 		limit := 50
 		offset := 0
