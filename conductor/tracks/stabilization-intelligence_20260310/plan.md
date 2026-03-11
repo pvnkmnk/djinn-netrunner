@@ -44,9 +44,9 @@ Heavily research and prototype the multi-node coordination strategy.
 
 ### Tasks
 
-- [ ] Task 3.1: **Coordination Prototyping**: Run side-by-side tests of LiteFS (WAL shipping) vs. rqlite (Statement replication).
-- [ ] Task 3.2: **Locking Assessment**: Evaluate if current file-based locking is sufficient for multi-node NFS/EFS mounts or if a dedicated DLM (Distributed Lock Manager) is needed.
-- [ ] Task 3.3: **Final Schema Design**: Finalize the "Production Version" of the database schema, ensuring all migration paths are clear.
+- [x] Task 3.1: **Coordination Prototyping** (7e364d4): Run side-by-side tests of LiteFS (WAL shipping) vs. rqlite (Statement replication). Finalized choice: LiteFS.
+- [x] Task 3.2: **Locking Assessment** (9511dd8): Evaluate if current file-based locking is sufficient for multi-node NFS/EFS mounts or if a dedicated DLM (Distributed Lock Manager) is needed. Result: Implemented Table-based Locking.
+- [~] Task 3.3: **Final Schema Design**: Finalize the "Production Version" of the database schema, ensuring all migration paths are clear.
 
 ### Verification
 
