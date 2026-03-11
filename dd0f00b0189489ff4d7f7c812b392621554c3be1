@@ -1,0 +1,7 @@
+Task 1.3: OAuth2 Update
+
+Summary: Upgraded golang.org/x/oauth2 from v0.0.0-20210810183815-faf39c7919d5 to v0.27.0 to resolve a high-severity vulnerability (GO-2025-3488) involving unexpected memory consumption during token parsing.
+
+Files:
+- backend/go.mod
+- backend/go.sum
