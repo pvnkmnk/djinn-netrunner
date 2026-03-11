@@ -37,6 +37,7 @@ type WorkerOrchestrator struct {
 	spotify     *services.SpotifyService
 	slskd       *services.SlskdService
 	metadata    *services.MetadataExtractor
+	litefs      *database.LiteFSGuard
 	
 	// Handlers
 	syncHandler *services.SyncHandler
@@ -85,6 +86,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		spotify:     spotify,
 		slskd:       slskd,
 		metadata:    metadata,
+		litefs:      database.NewLiteFSGuard(cfg.DatabaseURL),
 		syncHandler: services.NewSyncHandler(db, spotify, watchlist),
 		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata, gonic),
 		activeJobs:  make(map[uint64]*jobContext),
@@ -98,9 +100,18 @@ func (w *WorkerOrchestrator) Start() {
 
 	// Start background tasks
 	go w.heartbeatLoop()
-	go w.schedulerLoop()
-	go w.watchlistPollingLoop()
-	go w.listenForWakeup()
+
+	if w.litefs.IsPrimary() {
+		go w.schedulerLoop()
+		go w.watchlistPollingLoop()
+	} else {
+		log.Println("[WORKER] Running in replica mode. Skipping scheduler and watchlist poller.")
+	}
+
+	// listenForWakeup only works for Postgres, for SQLite we rely on polling
+	if w.db.Dialector.Name() == "postgres" {
+		go w.listenForWakeup()
+	}
 
 	// Main job loop with round-robin item processing
 	for w.running {
