@@ -2,9 +2,24 @@ package database
 
 import (
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
+
+// CalculateBackoff returns the duration to wait before retrying based on attempt count
+func CalculateBackoff(retryCount int) time.Duration {
+	switch retryCount {
+	case 0:
+		return 1 * time.Minute
+	case 1:
+		return 5 * time.Minute
+	case 2:
+		return 1 * time.Hour
+	default:
+		return 24 * time.Hour
+	}
+}
 
 // AppendJobLog appends a log entry to a job
 func AppendJobLog(db *gorm.DB, jobID uint64, level, message string, itemID *uint64) error {

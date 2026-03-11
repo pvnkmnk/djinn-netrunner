@@ -348,9 +348,21 @@ func (h *AcquisitionHandler) moveFile(src, dst string) error {
 
 func (h *AcquisitionHandler) failItem(jobID uint64, itemID uint64, reason string) {
 	h.Log(jobID, "ERR", reason, &itemID)
+
+	var item database.JobItem
+	if err := h.db.First(&item, itemID).Error; err != nil {
+		log.Printf("[HANDLER] Failed to find item %d for failure update: %v", itemID, err)
+		return
+	}
+
+	backoff := database.CalculateBackoff(item.RetryCount)
+	nextAttempt := time.Now().Add(backoff)
+
 	h.db.Model(&database.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
-		"status":         "failed",
-		"failure_reason": reason,
-		"finished_at":    time.Now(),
+		"status":          "failed",
+		"failure_reason":  reason,
+		"retry_count":     item.RetryCount + 1,
+		"next_attempt_at": &nextAttempt,
+		"finished_at":     time.Now(),
 	})
 }

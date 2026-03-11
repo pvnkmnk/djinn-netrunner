@@ -295,8 +295,9 @@ type JobItem struct {
 	StartedAt       *time.Time
 	FinishedAt      *time.Time
 	FailureReason   string
-	RetryCount      int       `gorm:"default:0"`
-	Sequence        int       `gorm:"not null"`
+	RetryCount      int        `gorm:"default:0"`
+	NextAttemptAt   *time.Time `gorm:"index"`
+	Sequence        int        `gorm:"not null"`
 	OwnerUserID     *uint64   `gorm:"index"`
 }
 

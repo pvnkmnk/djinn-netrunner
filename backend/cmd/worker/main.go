@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -83,7 +84,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		spotify:     spotify,
 		slskd:       slskd,
 		metadata:    metadata,
-		syncHandler: services.NewSyncHandler(db, spotify),
+		syncHandler: services.NewSyncHandler(db, spotify, watchlist),
 		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata),
 		activeJobs:  make(map[uint64]*jobContext),
 		wakeupChan:  make(chan bool, 1),
@@ -413,8 +414,7 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 
 func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	// Claim next item
-	var itemID uint64
-	err := w.db.Raw("SELECT claim_next_jobitem(?)", jc.job.ID).Scan(&itemID).Error
+	itemID, err := w.claimNextJobItem(jc.job.ID)
 	if err != nil {
 		log.Printf("[WORKER] Error claiming item for job %d: %v", jc.job.ID, err)
 		return
@@ -430,6 +430,39 @@ func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	if err != nil {
 		log.Printf("[WORKER] Error processing item %d: %v", itemID, err)
 	}
+}
+
+func (w *WorkerOrchestrator) claimNextJobItem(jobID uint64) (uint64, error) {
+	var itemID uint64
+	err := w.db.Transaction(func(tx *gorm.DB) error {
+		var item database.JobItem
+		// Find next queued item or failed item whose next_attempt_at has passed
+		err := tx.Where("job_id = ? AND (status = 'queued' OR (status = 'failed' AND next_attempt_at <= ?))", jobID, time.Now()).
+			Order("sequence ASC").
+			First(&item).Error
+
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil // No items found
+			}
+			return err
+		}
+
+		// Mark as running
+		now := time.Now()
+		err = tx.Model(&item).Updates(map[string]interface{}{
+			"status":     "running",
+			"started_at": &now,
+		}).Error
+		if err != nil {
+			return err
+		}
+
+		itemID = item.ID
+		return nil
+	})
+
+	return itemID, err
 }
 
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
