@@ -58,7 +58,7 @@ Execute the migration to the finalized production data layer.
 
 ### Tasks
 
-- [ ] Task 4.1: **Migration Execution**: Implement the chosen distributed pattern (e.g., LiteFS configuration).
+- [x] Task 4.1: **Migration Execution** (af8a176): Implement the chosen distributed pattern (e.g., LiteFS configuration). Implemented LiteFSGuard and integrated into WorkerOrchestrator.
 - [ ] Task 4.2: **Multi-node Verification**: Spin up 2+ worker nodes and verify they do not double-claim jobs or corrupt the SQLite file.
 
 ### Final Verification
