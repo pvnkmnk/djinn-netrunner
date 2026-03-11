@@ -32,7 +32,7 @@ Ensure acquired music meets modern library standards by embedding visual metadat
 
 - [x] Task 2.1: **Tag Writer Integration** (0ca6f11): Evaluate and integrate a Go library for writing tags (e.g., `bogem/id3v2` or `go-flac`).
 - [x] Task 2.2: **Embedding Logic** (3f4b193): Implement `EmbedCoverArt(filePath string, artData []byte)` in `MetadataExtractor`.
-- [~] Task 2.3: **Import Pipeline Update**: Update `AcquisitionHandler.importFile` to fetch cover art (if available) and embed it before moving to the final library location.
+- [x] Task 2.3: **Import Pipeline Update** (67bc32d): Update `AcquisitionHandler.importFile` to fetch cover art (if available) and embed it before moving to the final library location.
 
 ### Verification
 
