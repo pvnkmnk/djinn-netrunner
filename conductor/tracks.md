@@ -14,3 +14,5 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/architecture-evolution_20260304/](./tracks/architecture-evolution_20260304/)*
 - [x] **Track: Frontend Polish & UI/UX Enhancement** (58092eb)
   *Link: [./tracks/frontend-polish_20260304/](./tracks/frontend-polish_20260304/)*
+- [x] **Track: Security Hardening** (034f868)
+  *Link: [./tracks/security-hardening_20260310/](./tracks/security-hardening_20260310/)*
