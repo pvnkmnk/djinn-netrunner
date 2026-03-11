@@ -1,0 +1,10 @@
+Task 1.1: Exponential Backoff
+
+Summary: Implemented exponential backoff for job item retries. Updated database schema to include retry_count and next_attempt_at. Implemented Go-based claimNextJobItem to replace Postgres-specific function and respect backoff times.
+
+Files:
+- backend/internal/database/models.go
+- backend/internal/database/models_helper.go
+- backend/internal/services/job_handlers.go
+- backend/cmd/worker/main.go
+- backend/internal/api/watchlists.go
