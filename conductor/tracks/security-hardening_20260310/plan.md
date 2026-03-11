@@ -30,7 +30,7 @@ Remediate vulnerabilities in the legacy/companion worker environment.
 
 ### Tasks
 
-- [ ] Task 2.1: **Spotipy Upgrade**: Update `ops/worker/requirements.txt` to `spotipy==2.25.2` to fix token exposure (GHSA-pwhh-q4h6-w599) and XSS (GHSA-r77h-rpp9-w2xm).
+- [x] Task 2.1: **Spotipy Upgrade** (5543703): Update `ops/worker/requirements.txt` to `spotipy==2.25.2` to fix token exposure (GHSA-pwhh-q4h6-w599) and XSS (GHSA-r77h-rpp9-w2xm).
 
 ### Verification
 
