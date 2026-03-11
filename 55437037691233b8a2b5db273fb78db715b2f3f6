@@ -1,0 +1,6 @@
+Task 2.1: Spotipy Upgrade
+
+Summary: Upgraded spotipy from 2.23.0 to 2.25.2 in ops/worker/requirements.txt to resolve a high-severity token exposure vulnerability (GHSA-pwhh-q4h6-w599) and a low-severity XSS vulnerability (GHSA-r77h-rpp9-w2xm).
+
+Files:
+- ops/worker/requirements.txt
