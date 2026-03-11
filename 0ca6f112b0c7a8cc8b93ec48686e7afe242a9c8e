@@ -1,0 +1,8 @@
+Task 1.3: Smart Skip
+
+Summary: Implemented pre-flight indexing check against Gonic API. If a track is already present in the library, the worker skips acquisition and marks the job item as 'completed (already indexed)'. This prevents redundant downloads from Soulseek.
+
+Files:
+- backend/internal/services/job_handlers.go
+- backend/cmd/worker/main.go
+- backend/internal/config/config.go
