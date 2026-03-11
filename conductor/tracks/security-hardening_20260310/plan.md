@@ -16,7 +16,7 @@ Update the Go runtime and critical backend dependencies.
 ### Tasks
 
 - [x] Task 1.1: **Go Runtime Upgrade** (ce5ede4): Update `go.mod` to use version `1.25.8` to patch 20 stdlib vulnerabilities.
-- [ ] Task 1.2: **Fiber Utils Update**: Bump `github.com/gofiber/utils` to `v1.2.0` to fix the critical UUID predictability flaw (GO-2025-4208).
+- [x] Task 1.2: **Fiber Utils Update** (e21fb46): Bump `github.com/gofiber/utils` to `v1.2.0` to fix the critical UUID predictability flaw (GO-2025-4208).
 - [ ] Task 1.3: **OAuth2 Update**: Bump `golang.org/x/oauth2` to `v0.27.0` to fix the high-severity memory consumption issue (GO-2025-3488).
 
 ### Verification
