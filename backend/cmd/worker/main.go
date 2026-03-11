@@ -71,6 +71,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	spotify.SetCache(cache)
 	slskd := services.NewSlskdService(cfg)
 	metadata := services.NewMetadataExtractor()
+	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
 	return &WorkerOrchestrator{
 		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:          db,
@@ -85,7 +86,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		slskd:       slskd,
 		metadata:    metadata,
 		syncHandler: services.NewSyncHandler(db, spotify, watchlist),
-		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata),
+		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata, gonic),
 		activeJobs:  make(map[uint64]*jobContext),
 		wakeupChan:  make(chan bool, 1),
 	}

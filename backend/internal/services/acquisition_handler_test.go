@@ -16,7 +16,7 @@ func TestAcquisitionHandler_FailItem(t *testing.T) {
 	}
 	database.Migrate(db)
 
-	handler := NewAcquisitionHandler(db, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil)
 
 	// 2. Create job and item
 	job := database.Job{Type: "acquisition"}

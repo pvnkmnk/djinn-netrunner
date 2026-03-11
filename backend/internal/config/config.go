@@ -36,7 +36,9 @@ type Config struct {
 	SlskdAPIKey string
 
 	// Gonic
-	GonicURL string
+	GonicURL  string
+	GonicUser string
+	GonicPass string
 
 	// Proxy
 	ProxyURL string
@@ -69,7 +71,9 @@ func Load(filenames ...string) (*Config, error) {
 		SlskdURL:    getEnv("SLSKD_URL", "http://localhost:5030"),
 		SlskdAPIKey: getEnv("SLSKD_API_KEY", ""),
 
-		GonicURL: getEnv("GONIC_URL", "http://localhost:4747"),
+		GonicURL:  getEnv("GONIC_URL", "http://localhost:4747"),
+		GonicUser: getEnv("GONIC_USER", "admin"),
+		GonicPass: getEnv("GONIC_PASS", "admin"),
 
 		ProxyURL: getEnv("PROXY_URL", ""),
 	}

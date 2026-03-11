@@ -172,10 +172,11 @@ type AcquisitionHandler struct {
 	BaseHandler
 	slskd *SlskdService
 	ext   *MetadataExtractor
+	gonic *GonicClient
 }
 
-func NewAcquisitionHandler(db *gorm.DB, slskd *SlskdService, ext *MetadataExtractor) *AcquisitionHandler {
-	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, slskd: slskd, ext: ext}
+func NewAcquisitionHandler(db *gorm.DB, slskd *SlskdService, ext *MetadataExtractor, gonic *GonicClient) *AcquisitionHandler {
+	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, slskd: slskd, ext: ext, gonic: gonic}
 }
 
 func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
@@ -208,7 +209,29 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 		}
 	}
 
-	h.Log(jobID, "INFO", fmt.Sprintf("Searching: %s", item.NormalizedQuery), &itemID)
+	h.Log(jobID, "INFO", fmt.Sprintf("Processing: %s", item.NormalizedQuery), &itemID)
+
+	// 0.5 Pre-flight check with Gonic
+	if h.gonic != nil {
+		h.Log(jobID, "INFO", "Checking Gonic index...", &itemID)
+		songs, err := h.gonic.Search3(item.NormalizedQuery)
+		if err == nil && len(songs) > 0 {
+			for _, s := range songs {
+				// Basic heuristic match
+				if (strings.EqualFold(s.Artist, item.Artist) || item.Artist == "") &&
+					strings.EqualFold(s.Title, item.TrackTitle) {
+					h.Log(jobID, "OK", fmt.Sprintf("Found in Gonic (ID: %s). Skipping.", s.ID), &itemID)
+					h.db.Model(&item).Updates(map[string]interface{}{
+						"status":      "completed (already indexed)",
+						"finished_at": time.Now(),
+					})
+					return nil
+				}
+			}
+		}
+	}
+
+	h.Log(jobID, "INFO", "Searching Soulseek...", &itemID)
 
 	// 1. Search with Profile awareness
 	results, err := h.slskd.Search(item.NormalizedQuery, 30, profile)
