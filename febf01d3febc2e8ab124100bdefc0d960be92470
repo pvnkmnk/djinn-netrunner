@@ -1,0 +1,7 @@
+Task 3.3: Final Schema Design
+
+Summary: Finalized the production-grade database schema. Added a 'settings' table for global application configuration and a 'locks' table for multi-node coordination. This schema is now considered the base for the 1.0.0 release.
+
+Files:
+- backend/internal/database/models.go
+- backend/internal/database/migrate.go
