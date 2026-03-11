@@ -316,3 +316,11 @@ A task is complete when:
 - Document lessons learned
 - Optimize for user happiness
 - Keep things simple and maintainable
+
+### Track Archival Protocol
+**Trigger:** This protocol is executed when a Track is marked as [x] COMPLETED in `tracks.md`.
+
+1. **Verify Obsidian Connection:** Ensure the Obsidian vault is accessible.
+2. **Duplicate Documentation:** Copy the track's directory (`conductor/tracks/<track_id>/`) to the target Obsidian project folder:
+   - Path: `30 Areas/Development/Projects/NetRunner/Archived Tracks/<track_id>/`
+3. **Sync Meta-data:** Ensure the `spec.md` and `plan.md` (with completion SHAs) are identical in both locations.
