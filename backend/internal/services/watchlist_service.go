@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
-	"github.com/zmb3/spotify/v2"
 	"gorm.io/gorm"
 )
 
@@ -23,11 +22,17 @@ type WatchlistService struct {
 
 // NewWatchlistService creates a new watchlist service
 func NewWatchlistService(db *gorm.DB, spotifyAuth *api.SpotifyAuthHandler) *WatchlistService {
-	return &WatchlistService{
+	s := &WatchlistService{
 		db:          db,
 		spotifyAuth: spotifyAuth,
 		providers:   make(map[string]WatchlistProvider),
 	}
+
+	// Register default providers
+	s.RegisterProvider("spotify_liked", NewSpotifyProvider(spotifyAuth))
+	s.RegisterProvider("spotify_playlist", NewSpotifyProvider(spotifyAuth))
+
+	return s
 }
 
 // RegisterProvider registers a new watchlist provider handler
@@ -37,136 +42,12 @@ func (s *WatchlistService) RegisterProvider(sourceType string, provider Watchlis
 
 // FetchWatchlistTracks retrieves tracks from a source
 func (s *WatchlistService) FetchWatchlistTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
-	// Check for registered providers first
+	// Check for registered providers
 	if provider, ok := s.providers[watchlist.SourceType]; ok {
 		return provider.FetchTracks(ctx, watchlist)
 	}
 
-	// Legacy Spotify logic (will be moved to SpotifyProvider in Task 1.3)
-	if strings.HasPrefix(watchlist.SourceType, "spotify_") {
-		return s.fetchSpotifyTracks(ctx, watchlist)
-	}
-
 	return nil, "", fmt.Errorf("unsupported source type: %s", watchlist.SourceType)
-}
-
-func (s *WatchlistService) fetchSpotifyTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
-	if watchlist.OwnerUserID == nil {
-		return nil, "", errors.New("watchlist has no owner user")
-	}
-
-	client, err := s.spotifyAuth.GetClient(ctx, *watchlist.OwnerUserID)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get spotify client: %w", err)
-	}
-
-	var allTracks []map[string]string
-	var snapshotID string
-
-	if watchlist.SourceType == "spotify_liked" {
-
-		// Fetch Liked Songs (Saved Tracks)
-		limit := 50
-		offset := 0
-		for {
-			page, err := client.CurrentUsersTracks(ctx, spotify.Limit(limit), spotify.Offset(offset))
-			if err != nil {
-				return nil, "", err
-			}
-
-			for _, item := range page.Tracks {
-				artistName := ""
-				if len(item.Artists) > 0 {
-					artistName = item.Artists[0].Name
-				}
-				coverURL := ""
-				if len(item.Album.Images) > 0 {
-					coverURL = item.Album.Images[0].URL
-				}
-				allTracks = append(allTracks, map[string]string{
-					"id":            string(item.ID),
-					"artist":        artistName,
-					"title":         item.Name,
-					"album":         item.Album.Name,
-					"cover_art_url": coverURL,
-				})
-			}
-
-			offset += len(page.Tracks)
-			if offset >= int(page.Total) {
-				break
-			}
-		}
-		// Liked songs don't have a snapshot ID in the same way, we use total count or timestamp
-		snapshotID = fmt.Sprintf("liked:%d", len(allTracks))
-
-	} else if watchlist.SourceType == "spotify_playlist" {
-		// Fetch Playlist tracks
-		playlistID := s.ExtractPlaylistID(watchlist.SourceURI)
-		id := spotify.ID(playlistID)
-
-		// Get playlist metadata for snapshot ID
-		playlist, err := client.GetPlaylist(ctx, id, spotify.Fields("snapshot_id"))
-		if err != nil {
-			return nil, "", err
-		}
-		snapshotID = playlist.SnapshotID
-
-		limit := 100
-		offset := 0
-		for {
-			page, err := client.GetPlaylistItems(ctx, id, spotify.Limit(limit), spotify.Offset(offset))
-			if err != nil {
-				return nil, "", err
-			}
-
-			for _, item := range page.Items {
-				if item.Track.Track == nil {
-					continue
-				}
-				t := item.Track.Track
-				artistName := ""
-				if len(t.Artists) > 0 {
-					artistName = t.Artists[0].Name
-				}
-				coverURL := ""
-				if len(t.Album.Images) > 0 {
-					coverURL = t.Album.Images[0].URL
-				}
-				allTracks = append(allTracks, map[string]string{
-					"id":            string(t.ID),
-					"artist":        artistName,
-					"title":         t.Name,
-					"album":         t.Album.Name,
-					"cover_art_url": coverURL,
-				})
-			}
-
-			offset += len(page.Items)
-			if offset >= int(page.Total) {
-				break
-			}
-		}
-	} else {
-		return nil, "", fmt.Errorf("unsupported source type: %s", watchlist.SourceType)
-	}
-
-	return allTracks, snapshotID, nil
-}
-
-// ExtractPlaylistID extracts the ID from a Spotify URI or URL
-func (s *WatchlistService) ExtractPlaylistID(uri string) string {
-	if strings.HasPrefix(uri, "spotify:playlist:") {
-		return strings.TrimPrefix(uri, "spotify:playlist:")
-	}
-	if strings.Contains(uri, "open.spotify.com/playlist/") {
-		parts := strings.Split(uri, "/playlist/")
-		if len(parts) > 1 {
-			id := strings.Split(parts[1], "?")[0]
-			return strings.Split(id, "#")[0]
-		}
-	}
-	return uri
 }
 
 // CreateWatchlist adds a new watchlist to the database
