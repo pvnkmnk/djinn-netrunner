@@ -1,0 +1,8 @@
+Task 3.2: Locking Assessment & Table-based Locking
+
+Summary: Evaluated the existing in-memory lock manager and determined it was unsuitable for multi-node SQLite deployments. Implemented a TableLockManager that uses a 'locks' table in the database to coordinate work across multiple NetRunner nodes (e.g., when running under LiteFS).
+
+Files:
+- backend/internal/database/locks.go
+- backend/internal/database/models.go
+- backend/internal/database/migrate.go
