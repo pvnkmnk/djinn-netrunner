@@ -354,6 +354,12 @@ func (m *MetadataCache) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// Lock represents a distributed lock
+type Lock struct {
+	Key       int64     `gorm:"primaryKey"`
+	ExpiresAt time.Time `gorm:"index"`
+}
+
 // TableName overrides for GORM
 func (Job) TableName() string { return "jobs" }
 func (JobItem) TableName() string { return "jobitems" }
@@ -364,3 +370,4 @@ func (Session) TableName() string { return "sessions" }
 func (QualityProfile) TableName() string { return "quality_profiles" }
 func (MonitoredArtist) TableName() string { return "monitored_artists" }
 func (TrackedRelease) TableName() string { return "tracked_releases" }
+func (Lock) TableName() string { return "locks" }
