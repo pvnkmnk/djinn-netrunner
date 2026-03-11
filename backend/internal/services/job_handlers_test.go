@@ -16,7 +16,7 @@ func TestJobHandlers(t *testing.T) {
 
 	slskd := &SlskdService{}
 	metadata := &MetadataExtractor{}
-	acq := NewAcquisitionHandler(db, slskd, metadata)
+	acq := NewAcquisitionHandler(db, slskd, metadata, nil)
 	if acq == nil {
 		t.Fatal("Expected AcquisitionHandler to be initialized")
 	}
