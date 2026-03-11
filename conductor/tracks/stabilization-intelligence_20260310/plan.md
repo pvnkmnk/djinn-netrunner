@@ -17,7 +17,7 @@ Enhance the worker logic to be "smarter" about when and how it attempts acquisit
 
 - [x] Task 1.1: **Exponential Backoff** (0d5feaa): Update `database.JobItem` schema to include `retry_count` and `next_attempt_at`. Implement backoff calculation logic.
 - [x] Task 1.2: **Gonic "Online" Check** (ef283fe)
-- [ ] Task 1.3: **Smart Skip**: Update `AcquisitionHandler` to perform a pre-flight check against Gonic; if the track is found and "Online", mark the item as `completed (already indexed)`.
+- [x] Task 1.3: **Smart Skip** (0ca6f11)
 
 ### Verification
 
