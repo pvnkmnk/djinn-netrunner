@@ -23,10 +23,14 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/bogem/id3v2/v2 v2.1.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fasthttp/websocket v1.5.8 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
+	github.com/go-flac/flacpicture/v2 v2.0.2 // indirect
+	github.com/go-flac/flacvorbis/v2 v2.0.2 // indirect
+	github.com/go-flac/go-flac/v2 v2.0.4 // indirect
 	github.com/gofiber/template v1.8.3 // indirect
 	github.com/gofiber/utils v1.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
