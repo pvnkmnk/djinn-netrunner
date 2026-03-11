@@ -360,6 +360,14 @@ type Lock struct {
 	ExpiresAt time.Time `gorm:"index"`
 }
 
+// Setting represents a global application setting
+type Setting struct {
+	Key       string `gorm:"primaryKey"`
+	Value     string
+	Type      string `gorm:"default:'string'"`
+	UpdatedAt time.Time
+}
+
 // TableName overrides for GORM
 func (Job) TableName() string { return "jobs" }
 func (JobItem) TableName() string { return "jobitems" }
@@ -371,3 +379,4 @@ func (QualityProfile) TableName() string { return "quality_profiles" }
 func (MonitoredArtist) TableName() string { return "monitored_artists" }
 func (TrackedRelease) TableName() string { return "tracked_releases" }
 func (Lock) TableName() string { return "locks" }
+func (Setting) TableName() string { return "settings" }
