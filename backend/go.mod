@@ -1,10 +1,13 @@
 module github.com/pvnkmnk/netrunner/backend
 
-go 1.25.0
+go 1.25.8
 
 require (
+	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8
 	github.com/glebarez/sqlite v1.11.0
+	github.com/go-flac/flacpicture/v2 v2.0.2
+	github.com/go-flac/go-flac/v2 v2.0.4
 	github.com/gofiber/contrib/websocket v1.3.4
 	github.com/gofiber/fiber/v2 v2.52.12
 	github.com/gofiber/template/html/v2 v2.1.3
@@ -17,20 +20,15 @@ require (
 	golang.org/x/crypto v0.48.0
 	golang.org/x/oauth2 v0.0.0-20210810183815-faf39c7919d5
 	gorm.io/driver/postgres v1.6.0
-	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
-	github.com/bogem/id3v2/v2 v2.1.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fasthttp/websocket v1.5.8 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
-	github.com/go-flac/flacpicture/v2 v2.0.2 // indirect
-	github.com/go-flac/flacvorbis/v2 v2.0.2 // indirect
-	github.com/go-flac/go-flac/v2 v2.0.4 // indirect
 	github.com/gofiber/template v1.8.3 // indirect
 	github.com/gofiber/utils v1.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -44,7 +42,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
-	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
