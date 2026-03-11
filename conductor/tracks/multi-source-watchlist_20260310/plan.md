@@ -17,7 +17,7 @@ Refactor the core `WatchlistService` to support a pluggable architecture.
 
 - [x] Task 1.1: **Provider Interface** (6c3e5e0): Define a `WatchlistProvider` interface in Go with methods for `FetchTracks` and `ValidateConfig`.
 - [x] Task 1.2: **Refactor Service** (86ae888): Update `WatchlistService` to use a map of registered providers instead of hardcoded Spotify logic.
-- [ ] Task 1.3: **Legacy Support**: Move existing Spotify logic into a `SpotifyProvider` module (keeping it as an optional source).
+- [x] Task 1.3: **Legacy Support** (8bae932): Move existing Spotify logic into a `SpotifyProvider` module (keeping it as an optional source).
 
 ### Verification
 
