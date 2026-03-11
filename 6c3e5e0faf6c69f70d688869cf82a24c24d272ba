@@ -1,0 +1,4 @@
+Task: Provider Interface
+Summary: Defined the WatchlistProvider interface to enable pluggable music discovery sources.
+Files: backend/internal/services/watchlist_provider.go, backend/internal/services/watchlist_provider_test.go
+Why: Decouple WatchlistService from Spotify-specific logic.
