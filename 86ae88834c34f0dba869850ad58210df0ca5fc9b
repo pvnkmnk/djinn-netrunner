@@ -1,0 +1,4 @@
+Task: Refactor Service
+Summary: Updated WatchlistService to support a registry of providers. FetchWatchlistTracks now dispatches to the appropriate provider module.
+Files: backend/internal/services/watchlist_service.go, backend/internal/services/watchlist_service_test.go
+Why: Prepare for non-Spotify discovery sources.
