@@ -57,11 +57,16 @@ func (s *WatchlistService) FetchWatchlistTracks(ctx context.Context, watchlist *
 				if len(item.Artists) > 0 {
 					artistName = item.Artists[0].Name
 				}
+				coverURL := ""
+				if len(item.Album.Images) > 0 {
+					coverURL = item.Album.Images[0].URL
+				}
 				allTracks = append(allTracks, map[string]string{
-					"id":     string(item.ID),
-					"artist": artistName,
-					"title":  item.Name,
-					"album":  item.Album.Name,
+					"id":            string(item.ID),
+					"artist":        artistName,
+					"title":         item.Name,
+					"album":         item.Album.Name,
+					"cover_art_url": coverURL,
 				})
 			}
 
@@ -102,11 +107,16 @@ func (s *WatchlistService) FetchWatchlistTracks(ctx context.Context, watchlist *
 				if len(t.Artists) > 0 {
 					artistName = t.Artists[0].Name
 				}
+				coverURL := ""
+				if len(t.Album.Images) > 0 {
+					coverURL = t.Album.Images[0].URL
+				}
 				allTracks = append(allTracks, map[string]string{
-					"id":     string(t.ID),
-					"artist": artistName,
-					"title":  t.Name,
-					"album":  t.Album.Name,
+					"id":            string(t.ID),
+					"artist":        artistName,
+					"title":         t.Name,
+					"album":         t.Album.Name,
+					"cover_art_url": coverURL,
 				})
 			}
 

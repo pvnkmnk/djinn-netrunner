@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,6 +151,7 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 			Artist:          t["artist"],
 			Album:           t["album"],
 			TrackTitle:      t["title"],
+			CoverArtURL:     t["cover_art_url"],
 			Status:          "queued",
 			OwnerUserID:     ownerUserID,
 		}
@@ -321,6 +323,26 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 	if err := h.moveFile(downloadPath, finalPath); err != nil {
 		h.failItem(jobID, itemID, fmt.Sprintf("Failed to move file: %v", err))
 		return nil
+	}
+
+	// Embed cover art if available
+	if item.CoverArtURL != "" {
+		h.Log(jobID, "INFO", "Fetching cover art...", &itemID)
+		resp, err := http.Get(item.CoverArtURL)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			artData, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err == nil {
+				h.Log(jobID, "INFO", "Embedding cover art...", &itemID)
+				if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
+					h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed cover art: %v", err), &itemID)
+				} else {
+					h.Log(jobID, "OK", "Cover art embedded successfully", &itemID)
+				}
+			}
+		} else if err != nil {
+			h.Log(jobID, "WARN", fmt.Sprintf("Failed to fetch cover art: %v", err), &itemID)
+		}
 	}
 
 	// Update DB

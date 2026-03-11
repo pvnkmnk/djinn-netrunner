@@ -297,6 +297,7 @@ type JobItem struct {
 	FailureReason   string
 	RetryCount      int        `gorm:"default:0"`
 	NextAttemptAt   *time.Time `gorm:"index"`
+	CoverArtURL     string
 	Sequence        int        `gorm:"not null"`
 	OwnerUserID     *uint64   `gorm:"index"`
 }
