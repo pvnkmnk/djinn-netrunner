@@ -1,4 +1,4 @@
-﻿# Initial Concept
+# Initial Concept
 Djinn NETRUNNER: Console-first, self-hosted music acquisition and streaming appliance.
 
 # Product Guide: Djinn NETRUNNER
@@ -12,7 +12,8 @@ The project aims to provide a robust, self-hosted music pipeline that automates 
 ## Key Features
 - **Automated Watchlists:** Sync Spotify playlists and "Liked Songs" with automated polling and discovery.
 - **Intelligent Search:** Quality-based ranking, custom quality profiles, and concurrent download management via slskd.
-- **Library Organization:** Smart metadata extraction and automatic directory structuring.
+- **Library Integrity:** Smart indexing skip via Gonic API and automated cover art embedding (ID3/FLAC).
+- **Multi-node Coordination:** Production-grade data layer supporting distributed workers via LiteFS.
 - **Operations Console:** Real-time log streaming with WebSockets and terminal-inspired UI.
 - **Job Orchestration:** Crash-safe job scheduling with deterministic work plans and state machines.
 - **Privacy Proxy:** Integrated proxy support for secure acquisition.
