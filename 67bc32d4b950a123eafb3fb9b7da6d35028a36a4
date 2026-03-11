@@ -1,0 +1,9 @@
+Task 2.3: Import Pipeline Update
+
+Summary: Integrated cover art embedding into the import pipeline. The system now carries cover art URLs from Spotify/Watchlists into the job items and fetches/embeds the image data into the acquired files (MP3/FLAC) during the import phase.
+
+Files:
+- backend/internal/database/models.go
+- backend/internal/services/spotify_service.go
+- backend/internal/services/watchlist_service.go
+- backend/internal/services/job_handlers.go
