@@ -1,0 +1,6 @@
+Task 2.2: Embedding Logic
+
+Summary: Implemented EmbedCoverArt in MetadataExtractor using id3v2 for MP3s and go-flac for FLACs. This allows surgical embedding of cover art data into audio files without re-encoding the audio stream.
+
+Files:
+- backend/internal/services/metadata_extractor.go
