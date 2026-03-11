@@ -1,0 +1,4 @@
+Task: Legacy Support
+Summary: Refactored existing Spotify logic into a dedicated SpotifyProvider module. WatchlistService now uses the provider registry for Spotify sources.
+Files: backend/internal/services/watchlist_service.go, backend/internal/services/spotify_provider.go
+Why: Clean up service and allow for alternative discovery providers.
