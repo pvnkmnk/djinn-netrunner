@@ -1,0 +1,7 @@
+Task 4.1: LiteFS Worker Coordination
+
+Summary: Implemented LiteFSGuard to detect the primary node in a replicated SQLite environment. Updated WorkerOrchestrator to ensure that cluster-wide tasks (scheduling, watchlist polling) only run on the primary node, while job processing remains distributed across all nodes using the TableLockManager.
+
+Files:
+- backend/internal/database/litefs.go
+- backend/cmd/worker/main.go
