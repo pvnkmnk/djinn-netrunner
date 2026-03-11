@@ -1,0 +1,7 @@
+Task 1.2: Fiber Utils Update
+
+Summary: Upgraded github.com/gofiber/utils from v1.1.0 to v1.2.0 to resolve a critical vulnerability (GO-2025-4208) where UUID v4 generation was predictable due to silent fallback.
+
+Files:
+- backend/go.mod
+- backend/go.sum
