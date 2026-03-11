@@ -1,0 +1,6 @@
+Task 1.2: Gonic Online Check
+
+Summary: Implemented search3 and getSong methods in GonicClient to support pre-flight indexing checks. Verified with a mock Subsonic server test suite.
+
+Files:
+- backend/internal/services/gonic_client.go
