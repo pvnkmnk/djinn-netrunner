@@ -1,0 +1,4 @@
+Task: Discogs Module
+Summary: Implemented DiscogsProvider to fetch user wantlists using personal access tokens. Registered in WatchlistService and updated Config.
+Files: backend/internal/services/discogs_provider.go, backend/internal/services/watchlist_service.go, backend/internal/config/config.go
+Why: Enable acquisition discovery based on Discogs community metadata.
