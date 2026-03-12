@@ -9,7 +9,7 @@
 
 We will transform the `WatchlistService` into a modular provider system. Each source type will be isolated into its own handler, enabling easy addition of new discovery sources.
 
-## Phase 1: Modular Service Refactor
+## Phase 1: Modular Service Refactor [checkpoint: c2ae4ab]
 
 Refactor the core `WatchlistService` to support a pluggable architecture.
 
