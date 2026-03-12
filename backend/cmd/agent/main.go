@@ -174,11 +174,34 @@ func main() {
 			return mcp.NewToolResultError(fmt.Sprintf("Failed to get job logs: %v", err)), nil
 		}
 
-		out := fmt.Sprintf("Logs for Job %d:\n", jobID)
+		out := ""
 		for _, l := range logs {
 			out += fmt.Sprintf("[%s] %s: %s\n", l.CreatedAt.Format("15:04:05"), l.Level, l.Message)
 		}
-		return mcp.NewToolResultText(out), nil
+		return mcp.NewToolResultText(fmt.Sprintf("Logs for Job %d:\n", jobID) + out), nil
+	})
+
+	// Register enqueue_acquisition tool
+	s.AddTool(mcp.NewTool("enqueue_acquisition",
+		mcp.WithDescription("Manually trigger a new acquisition job for a specific artist/track"),
+		mcp.WithString("artist", mcp.Description("The artist name"), mcp.Required()),
+		mcp.WithString("album", mcp.Description("The album name")),
+		mcp.WithString("title", mcp.Description("The track title"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		artist := mcp.ParseString(request, "artist", "")
+		album := mcp.ParseString(request, "album", "")
+		title := mcp.ParseString(request, "title", "")
+
+		if artist == "" || title == "" {
+			return mcp.NewToolResultError("Missing required 'artist' or 'title' argument"), nil
+		}
+
+		job, err := agent.EnqueueAcquisition(db, artist, album, title, nil)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to enqueue acquisition: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Acquisition job #%d enqueued for: %s - %s", job.ID, artist, title)), nil
 	})
 
 	// Run the server on stdio

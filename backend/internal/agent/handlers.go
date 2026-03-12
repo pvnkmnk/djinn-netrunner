@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -111,4 +112,35 @@ func GetJobLogs(db *gorm.DB, jobID uint64) ([]database.JobLog, error) {
 	var logs []database.JobLog
 	err := db.Where("job_id = ?", jobID).Order("created_at ASC").Find(&logs).Error
 	return logs, err
+}
+
+// EnqueueAcquisition manually triggers a new acquisition job
+func EnqueueAcquisition(db *gorm.DB, artist, album, title string, userID *uint64) (*database.Job, error) {
+	job := database.Job{
+		Type:        "acquisition",
+		State:       "queued",
+		RequestedAt: time.Now(),
+		OwnerUserID: userID,
+		CreatedBy:   "agent_interface",
+	}
+
+	if err := db.Create(&job).Error; err != nil {
+		return nil, err
+	}
+
+	item := database.JobItem{
+		JobID:           job.ID,
+		Artist:          artist,
+		Album:           album,
+		TrackTitle:      title,
+		NormalizedQuery: fmt.Sprintf("%s %s", artist, title),
+		Status:          "queued",
+		OwnerUserID:     userID,
+	}
+
+	if err := db.Create(&item).Error; err != nil {
+		return nil, err
+	}
+
+	return &job, nil
 }

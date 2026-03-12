@@ -83,7 +83,10 @@ func TestJobMonitoringTools(t *testing.T) {
 	// Setup in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&database.Job{}, &database.JobLog{})
+	db.AutoMigrate(&database.Job{}, &database.JobLog{}, &database.User{}, &database.JobItem{})
+
+	user := database.User{Email: "job@test.com", PasswordHash: "xxx"}
+	db.Create(&user)
 
 	// Create a test job and log
 	job := database.Job{Type: "acquisition", State: "running"}
@@ -101,4 +104,14 @@ func TestJobMonitoringTools(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, logs, 1)
 	assert.Equal(t, "Starting test job", logs[0].Message)
+
+	// Test EnqueueAcquisition
+	newJob, err := EnqueueAcquisition(db, "New Artist", "New Album", "New Track", &user.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, "acquisition", newJob.Type)
+
+	var newItem database.JobItem
+	err = db.Where("job_id = ?", newJob.ID).First(&newItem).Error
+	assert.NoError(t, err)
+	assert.Equal(t, "New Artist", newItem.Artist)
 }
