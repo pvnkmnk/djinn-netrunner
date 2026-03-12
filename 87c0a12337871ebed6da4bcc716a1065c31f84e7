@@ -1,0 +1,4 @@
+Task: Last.fm & ListenBrainz Modules
+Summary: Implemented LastFMProvider and ListenBrainzProvider modules. Updated Config to handle required API keys/tokens. Registered new providers in WatchlistService.
+Files: backend/internal/services/lastfm_provider.go, backend/internal/services/listenbrainz_provider.go, backend/internal/services/watchlist_service.go, backend/internal/config/config.go
+Why: Enable discovery via open community platforms.
