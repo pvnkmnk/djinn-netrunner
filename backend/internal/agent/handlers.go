@@ -196,6 +196,11 @@ func Bootstrap(db *gorm.DB, cfg *config.Config) (map[string]string, error) {
 	return results, nil
 }
 
+// RegisterWebhook registers a callback URL for agent notifications
+func RegisterWebhook(db *gorm.DB, url string) error {
+	return UpdateConfig(db, "agent_notification_webhook", url)
+}
+
 // SearchLibrary queries the local DB and Gonic for tracks matching the query
 func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, query string) ([]map[string]string, error) {
 	var results []map[string]string

@@ -247,6 +247,23 @@ func main() {
 		return mcp.NewToolResultText(out), nil
 	})
 
+	// Register register_webhook tool
+	s.AddTool(mcp.NewTool("register_webhook",
+		mcp.WithDescription("Register a webhook URL for autonomous agent notifications"),
+		mcp.WithString("url", mcp.Description("The callback URL"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		webhookURL := mcp.ParseString(request, "url", "")
+		if webhookURL == "" {
+			return mcp.NewToolResultError("Missing required 'url' argument"), nil
+		}
+
+		if err := agent.RegisterWebhook(db, webhookURL); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to register webhook: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Webhook '%s' registered successfully.", webhookURL)), nil
+	})
+
 	// Run the server on stdio
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "Error serving MCP: %v\n", err)

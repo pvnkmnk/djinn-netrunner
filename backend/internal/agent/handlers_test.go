@@ -151,3 +151,20 @@ func TestSearchLibrary(t *testing.T) {
 	assert.Len(t, results, 1)
 	assert.Equal(t, "Local Artist", results[0]["artist"])
 }
+
+func TestAgentNotification(t *testing.T) {
+	// Setup in-memory DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	db.AutoMigrate(&database.Setting{})
+
+	// Test RegisterWebhook
+	err = RegisterWebhook(db, "http://agent-callback.com/webhook")
+	assert.NoError(t, err)
+
+	// Verify setting
+	var setting database.Setting
+	err = db.First(&setting, "key = ?", "agent_notification_webhook").Error
+	assert.NoError(t, err)
+	assert.Equal(t, "http://agent-callback.com/webhook", setting.Value)
+}
