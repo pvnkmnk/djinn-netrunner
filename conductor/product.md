@@ -17,6 +17,7 @@ The project aims to provide a robust, self-hosted music pipeline that automates 
 - **Operations Console:** Real-time log streaming with WebSockets and terminal-inspired UI.
 - **Job Orchestration:** Crash-safe job scheduling with deterministic work plans and state machines.
 - **Privacy Proxy:** Integrated proxy support for secure acquisition.
+- **Agentic Interface:** Embedded MCP server and JSON-native CLI for autonomous management by AI assistants.
 
 ## Target Audience
 Music enthusiasts and self-hosters who want a reliable, automated, and visually unique (terminal-aesthetic) music library management system.

@@ -11,6 +11,8 @@
 - **id3v2 & go-flac:** For high-fidelity metadata and cover art embedding.
 - **Music Discovery APIs:** Spotify, Last.fm, ListenBrainz, and Discogs integrations for automated acquisition.
 - **gofeed:** For high-performance RSS/Atom feed parsing.
+- **MCP Go SDK:** For the embedded Model Context Protocol server.
+- **Cobra & Pflag:** For the agent-native CLI implementation.
 
 ## Data Layer
 - **SQLite 3:** Primary database for standalone and distributed deployments.
