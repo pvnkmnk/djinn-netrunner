@@ -14,7 +14,7 @@ Establish the communication layer and basic health monitoring.
 ### Tasks
 - [x] Task 1.1: **Entry Point** (549d9f0): Create `backend/cmd/agent` for the standalone MCP server launcher.
 - [x] Task 1.2: **Health Tools** (6daeb01): Implement `probe_system` tool (checks DB, slskd, Gonic connectivity, and disk space).
-- [ ] Task 1.3: **Config Tool**: Implement `read_config` and `update_config` tools.
+- [x] Task 1.3: **Config Tool** (232c696): Implement `read_config` and `update_config` tools.
 
 ### Verification
 - [ ] MCP server starts and responds to inspector queries.
