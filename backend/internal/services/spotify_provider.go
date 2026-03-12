@@ -6,18 +6,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/interfaces"
 	"github.com/zmb3/spotify/v2"
 )
 
 // SpotifyProvider implements WatchlistProvider for Spotify sources
 type SpotifyProvider struct {
-	auth *api.SpotifyAuthHandler
+	auth interfaces.SpotifyClientProvider
 }
 
 // NewSpotifyProvider creates a new Spotify provider
-func NewSpotifyProvider(auth *api.SpotifyAuthHandler) *SpotifyProvider {
+func NewSpotifyProvider(auth interfaces.SpotifyClientProvider) *SpotifyProvider {
 	return &SpotifyProvider{
 		auth: auth,
 	}

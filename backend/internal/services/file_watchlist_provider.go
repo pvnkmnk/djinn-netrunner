@@ -195,3 +195,62 @@ func (p *FileWatchlistProvider) parseLine(line string) map[string]string {
 func (p *FileWatchlistProvider) ValidateConfig(config string) error {
 	return nil
 }
+
+// DirectoryWatchlistProvider implements WatchlistProvider for a directory of files
+type DirectoryWatchlistProvider struct {
+	fileProvider *FileWatchlistProvider
+}
+
+// NewDirectoryWatchlistProvider creates a new directory provider
+func NewDirectoryWatchlistProvider() *DirectoryWatchlistProvider {
+	return &DirectoryWatchlistProvider{
+		fileProvider: NewFileWatchlistProvider(),
+	}
+}
+
+func (p *DirectoryWatchlistProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
+	dirPath := watchlist.SourceURI
+	files, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	var allTracks []map[string]string
+	var totalModTime int64
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+
+		filePath := filepath.Join(dirPath, f.Name())
+		ext := strings.ToLower(filepath.Ext(filePath))
+		if ext != ".csv" && ext != ".m3u" && ext != ".m3u8" && ext != ".txt" {
+			continue
+		}
+
+		// Delegate to file provider
+		subWatchlist := &database.Watchlist{
+			SourceURI: filePath,
+		}
+		tracks, _, err := p.fileProvider.FetchTracks(ctx, subWatchlist)
+		if err != nil {
+			// Log error but continue with other files
+			continue
+		}
+		allTracks = append(allTracks, tracks...)
+
+		// Aggregate mod time for snapshot
+		info, err := f.Info()
+		if err == nil {
+			totalModTime += info.ModTime().Unix()
+		}
+	}
+
+	snapshotID := fmt.Sprintf("dir:%d:%d", len(files), totalModTime)
+	return allTracks, snapshotID, nil
+}
+
+func (p *DirectoryWatchlistProvider) ValidateConfig(config string) error {
+	return nil
+}

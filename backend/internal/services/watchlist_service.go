@@ -8,25 +8,25 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/interfaces"
 	"gorm.io/gorm"
 )
 
 // WatchlistService manages music watchlists across different providers
 type WatchlistService struct {
 	db          *gorm.DB
-	spotifyAuth *api.SpotifyAuthHandler
-	providers   map[string]WatchlistProvider
+	spotifyAuth interfaces.SpotifyClientProvider
+	providers   map[string]interfaces.WatchlistProvider
 }
 
 // NewWatchlistService creates a new watchlist service
-func NewWatchlistService(db *gorm.DB, spotifyAuth *api.SpotifyAuthHandler, cfg *config.Config) *WatchlistService {
+func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvider, cfg *config.Config) *WatchlistService {
 	s := &WatchlistService{
 		db:          db,
 		spotifyAuth: spotifyAuth,
-		providers:   make(map[string]WatchlistProvider),
+		providers:   make(map[string]interfaces.WatchlistProvider),
 	}
 
 	// Register default providers
@@ -38,12 +38,13 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth *api.SpotifyAuthHandler, cfg *
 	s.RegisterProvider("rss_feed", NewRSSProvider())
 	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken))
 	s.RegisterProvider("local_file", NewFileWatchlistProvider())
+	s.RegisterProvider("local_directory", NewDirectoryWatchlistProvider())
 
 	return s
 }
 
 // RegisterProvider registers a new watchlist provider handler
-func (s *WatchlistService) RegisterProvider(sourceType string, provider WatchlistProvider) {
+func (s *WatchlistService) RegisterProvider(sourceType string, provider interfaces.WatchlistProvider) {
 	s.providers[sourceType] = provider
 }
 

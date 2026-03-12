@@ -3,15 +3,20 @@ package api
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"gorm.io/gorm"
 )
 
 type WatchlistHandler struct {
-	db *gorm.DB
+	db      *gorm.DB
+	service *services.WatchlistService
 }
 
-func NewWatchlistHandler(db *gorm.DB) *WatchlistHandler {
-	return &WatchlistHandler{db: db}
+func NewWatchlistHandler(db *gorm.DB, service *services.WatchlistService) *WatchlistHandler {
+	return &WatchlistHandler{
+		db:      db,
+		service: service,
+	}
 }
 
 // ListWatchlists returns all watchlists for the current user

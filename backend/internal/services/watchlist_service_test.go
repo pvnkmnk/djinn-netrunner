@@ -5,11 +5,20 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/pvnkmnk/netrunner/backend/internal/api"
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/zmb3/spotify/v2"
 	"gorm.io/gorm"
 )
+
+type MockSpotifyAuth struct {
+	client *spotify.Client
+}
+
+func (m *MockSpotifyAuth) GetClient(ctx context.Context, userID uint64) (*spotify.Client, error) {
+	return m.client, nil
+}
 
 func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -27,8 +36,9 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 func TestWatchlistService(t *testing.T) {
 	db := setupTestDB(t)
-	auth := api.NewSpotifyAuthHandler(db)
-	service := NewWatchlistService(db, auth)
+	auth := &MockSpotifyAuth{}
+	cfg := &config.Config{LastFMApiKey: "test-key"}
+	service := NewWatchlistService(db, auth, cfg)
 
 	// Create a profile first
 	profile := database.QualityProfile{

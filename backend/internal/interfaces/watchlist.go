@@ -1,8 +1,7 @@
-package services
+package interfaces
 
 import (
 	"context"
-
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 

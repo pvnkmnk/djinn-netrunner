@@ -131,6 +131,19 @@ func stringsToLower(s string) string {
 	return strings.ToLower(s)
 }
 
+func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
+	// JobID 0 is for general system events
+	m.Register(0, c)
+	defer m.Unregister(0, c)
+
+	// Read loop to keep connection alive
+	for {
+		if _, _, err := c.ReadMessage(); err != nil {
+			break
+		}
+	}
+}
+
 func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 	jobIDStr := c.Params("job_id")
 	jobID, _ := strconv.ParseUint(jobIDStr, 10, 64)

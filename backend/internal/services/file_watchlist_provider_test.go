@@ -70,4 +70,34 @@ func TestFileWatchlistProvider_FetchTracks(t *testing.T) {
 		assert.Equal(t, "Artist Six", tracks[2]["artist"])
 		assert.Equal(t, "Track Six", tracks[2]["title"])
 	})
+
+	t.Run("Directory Aggregation", func(t *testing.T) {
+		subDir := filepath.Join(tempDir, "playlists")
+		os.Mkdir(subDir, 0755)
+		
+		os.WriteFile(filepath.Join(subDir, "one.txt"), []byte("Artist A - Track A"), 0644)
+		os.WriteFile(filepath.Join(subDir, "two.csv"), []byte("Artist,Title\nArtist B,Track B"), 0644)
+
+		provider := &DirectoryWatchlistProvider{
+			fileProvider: &FileWatchlistProvider{},
+		}
+		watchlist := &database.Watchlist{
+			SourceType: "local_directory",
+			SourceURI:  subDir,
+		}
+
+		tracks, snap, err := provider.FetchTracks(context.Background(), watchlist)
+		assert.NoError(t, err)
+		assert.Len(t, tracks, 2)
+		assert.Contains(t, snap, "dir:")
+		
+		// Order might vary, check content
+		foundA, foundB := false, false
+		for _, tr := range tracks {
+			if tr["artist"] == "Artist A" { foundA = true }
+			if tr["artist"] == "Artist B" { foundB = true }
+		}
+		assert.True(t, foundA)
+		assert.True(t, foundB)
+	})
 }

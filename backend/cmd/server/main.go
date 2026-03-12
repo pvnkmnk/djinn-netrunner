@@ -17,6 +17,7 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -56,15 +57,16 @@ func main() {
 	authHandler := api.NewAuthHandler(db)
 	dashHandler := api.NewDashboardHandler(db)
 	sourceHandler := api.NewSourceHandler(db)
-	watchlistHandler := api.NewWatchlistHandler(db)
 	spotifyAuthHandler := api.NewSpotifyAuthHandler(db)
+	watchlistService := services.NewWatchlistService(db, spotifyAuthHandler, cfg)
+	watchlistHandler := api.NewWatchlistHandler(db, watchlistService)
 	wsManager := api.NewWebSocketManager()
 
 	// Start log listener
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, authHandler, dashHandler, sourceHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService)
+	setupRoutes(app, db, authHandler, dashHandler, sourceHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService)
 
 	// Start server
 	go func() {
@@ -82,7 +84,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandler, source *api.SourceHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
+func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, source *api.SourceHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 	
@@ -140,7 +142,9 @@ func setupRoutes(app *fiber.App, auth *api.AuthHandler, dash *api.DashboardHandl
 
 	// WebSockets
 	app.Get("/ws/events", websocket.New(ws.HandleEvents))
-	app.Get("/ws/jobs/:id", websocket.New(ws.HandleJobLogs))
+	app.Get("/ws/jobs/:job_id", websocket.New(func(c *websocket.Conn) {
+		ws.HandleConsole(c, db)
+	}))
 
 	// Artist Tracking
 	apiProtected.Post("/artists/track", func(c *fiber.Ctx) error {

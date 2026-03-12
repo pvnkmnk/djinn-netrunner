@@ -67,7 +67,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	at := services.NewArtistTrackingService(db, mb)
 	rm := services.NewReleaseMonitorService(db, at)
 	spotifyAuth := api.NewSpotifyAuthHandler(db)
-	watchlist := services.NewWatchlistService(db, spotifyAuth)
+	watchlist := services.NewWatchlistService(db, spotifyAuth, cfg)
 	spotify := services.NewSpotifyService(cfg)
 	spotify.SetCache(cache)
 	slskd := services.NewSlskdService(cfg)

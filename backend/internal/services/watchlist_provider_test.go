@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/interfaces"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +25,7 @@ func (m *MockProvider) ValidateConfig(config string) error {
 
 func TestProviderInterface(t *testing.T) {
 	// This test simply ensures the interface is usable as expected
-	var provider WatchlistProvider = &MockProvider{
+	var provider interfaces.WatchlistProvider = &MockProvider{
 		tracks: []map[string]string{
 			{"artist": "Test Artist", "title": "Test Track"},
 		},
