@@ -14,5 +14,3 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/architecture-evolution_20260304/](./tracks/architecture-evolution_20260304/)*
 - [x] **Track: Frontend Polish & UI/UX Enhancement** (58092eb)
   *Link: [./tracks/frontend-polish_20260304/](./tracks/frontend-polish_20260304/)*
-- [x] **Track: Agentic Interface (MCP & CLI)** (58e6571)
-  *Link: [./tracks/agent-interface_20260311/](./tracks/agent-interface_20260311/)*
