@@ -98,3 +98,17 @@ func ListWatchlists(s *services.WatchlistService) ([]database.Watchlist, error) 
 func AddWatchlist(s *services.WatchlistService, name, sourceType, uri string, profileID uuid.UUID, userID *uint64) (*database.Watchlist, error) {
 	return s.CreateWatchlist(name, sourceType, uri, profileID, userID)
 }
+
+// ListJobs returns recent and active background jobs
+func ListJobs(db *gorm.DB, limit int) ([]database.Job, error) {
+	var jobs []database.Job
+	err := db.Order("requested_at DESC").Limit(limit).Find(&jobs).Error
+	return jobs, err
+}
+
+// GetJobLogs returns structured logs for a specific job
+func GetJobLogs(db *gorm.DB, jobID uint64) ([]database.JobLog, error) {
+	var logs []database.JobLog
+	err := db.Where("job_id = ?", jobID).Order("created_at ASC").Find(&logs).Error
+	return logs, err
+}

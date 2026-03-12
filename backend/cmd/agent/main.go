@@ -141,6 +141,46 @@ func main() {
 		return mcp.NewToolResultText(fmt.Sprintf("Watchlist '%s' created successfully with ID %s.", wl.Name, wl.ID)), nil
 	})
 
+	// Register list_jobs tool
+	s.AddTool(mcp.NewTool("list_jobs",
+		mcp.WithDescription("List recent and active background jobs"),
+		mcp.WithNumber("limit", mcp.Description("Number of jobs to return (default 10)")),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		limit := int(mcp.ParseFloat64(request, "limit", 10))
+		jobs, err := agent.ListJobs(db, limit)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list jobs: %v", err)), nil
+		}
+
+		out := "Recent Jobs:\n"
+		for _, j := range jobs {
+			out += fmt.Sprintf("- [%s] ID: %d, Type: %s, Started: %s\n", j.State, j.ID, j.Type, j.RequestedAt.Format("15:04:05"))
+		}
+		return mcp.NewToolResultText(out), nil
+	})
+
+	// Register get_job_logs tool
+	s.AddTool(mcp.NewTool("get_job_logs",
+		mcp.WithDescription("Get structured logs for a specific job"),
+		mcp.WithNumber("job_id", mcp.Description("The ID of the job"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		jobID := uint64(mcp.ParseFloat64(request, "job_id", 0))
+		if jobID == 0 {
+			return mcp.NewToolResultError("Missing or invalid 'job_id'"), nil
+		}
+
+		logs, err := agent.GetJobLogs(db, jobID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get job logs: %v", err)), nil
+		}
+
+		out := fmt.Sprintf("Logs for Job %d:\n", jobID)
+		for _, l := range logs {
+			out += fmt.Sprintf("[%s] %s: %s\n", l.CreatedAt.Format("15:04:05"), l.Level, l.Message)
+		}
+		return mcp.NewToolResultText(out), nil
+	})
+
 	// Run the server on stdio
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "Error serving MCP: %v\n", err)

@@ -78,3 +78,27 @@ func TestWatchlistTools(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, lists, 1)
 }
+
+func TestJobMonitoringTools(t *testing.T) {
+	// Setup in-memory DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	db.AutoMigrate(&database.Job{}, &database.JobLog{})
+
+	// Create a test job and log
+	job := database.Job{Type: "acquisition", State: "running"}
+	db.Create(&job)
+	db.Create(&database.JobLog{JobID: job.ID, Level: "info", Message: "Starting test job"})
+
+	// Test ListJobs
+	jobs, err := ListJobs(db, 10)
+	assert.NoError(t, err)
+	assert.Len(t, jobs, 1)
+	assert.Equal(t, "running", jobs[0].State)
+
+	// Test GetJobLogs
+	logs, err := GetJobLogs(db, job.ID)
+	assert.NoError(t, err)
+	assert.Len(t, logs, 1)
+	assert.Equal(t, "Starting test job", logs[0].Message)
+}
