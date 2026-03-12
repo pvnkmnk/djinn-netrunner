@@ -1,0 +1,4 @@
+Task: Entry Point
+Summary: Created the standalone MCP server entry point in backend/cmd/agent using the mark3labs/mcp-go SDK.
+Files: backend/cmd/agent/main.go, backend/cmd/agent/main_test.go, backend/go.mod, backend/go.sum
+Why: Establish the communication layer for AI agents to interact with NetRunner.
