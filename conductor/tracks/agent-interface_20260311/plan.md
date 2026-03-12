@@ -24,7 +24,7 @@ Establish the communication layer and basic health monitoring.
 Expose the "Daily Driver" functions to the agent.
 
 ### Tasks
-- [ ] Task 2.1: **Watchlist Management**: Implement `list_watchlists` and `add_watchlist` tools.
+- [x] Task 2.1: **Watchlist Management** (90e0dc1): Implement `list_watchlists` and `add_watchlist` tools.
 - [ ] Task 2.2: **Job Monitoring**: Implement `list_jobs` and `get_job_logs` tools.
 - [ ] Task 2.3: **Manual Override**: Implement `enqueue_acquisition` tool for direct requests.
 
