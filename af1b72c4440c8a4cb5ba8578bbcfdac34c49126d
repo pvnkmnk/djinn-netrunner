@@ -1,0 +1,4 @@
+Task: UI & Configuration
+Summary: Updated watchlist management console to support Last.fm, ListenBrainz, RSS, Discogs, and Local File/Directory providers. Implemented dynamic labels, placeholders, and a file selection helper.
+Files: ops/web/templates/index.html, ops/web/static/source-manager.js
+Why: Provide a user-friendly way to configure diverse discovery sources without Spotify dependency.
