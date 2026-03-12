@@ -12,7 +12,7 @@ We will transform NetRunner into an agent-operable platform by implementing an e
 Establish the communication layer and basic health monitoring.
 
 ### Tasks
-- [ ] Task 1.1: **Entry Point**: Create `backend/cmd/agent` for the standalone MCP server launcher.
+- [x] Task 1.1: **Entry Point** (549d9f0): Create `backend/cmd/agent` for the standalone MCP server launcher.
 - [ ] Task 1.2: **Health Tools**: Implement `probe_system` tool (checks DB, slskd, Gonic connectivity, and disk space).
 - [ ] Task 1.3: **Config Tool**: Implement `read_config` and `update_config` tools.
 
