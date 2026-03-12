@@ -8,7 +8,7 @@
 ## Overview
 We will transform NetRunner into an agent-operable platform by implementing an embedded MCP server and an agent-native CLI. This allows modern AI assistants to manage the system's discovery and acquisition pipelines autonomously.
 
-## Phase 1: Foundations & MCP Server
+## Phase 1: Foundations & MCP Server [checkpoint: 4d741d6]
 Establish the communication layer and basic health monitoring.
 
 ### Tasks
