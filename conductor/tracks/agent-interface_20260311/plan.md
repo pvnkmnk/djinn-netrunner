@@ -36,7 +36,7 @@ Expose the "Daily Driver" functions to the agent.
 Enable the system setup and smart library logic.
 
 ### Tasks
-- [ ] Task 3.1: **Bootstrap Command**: Create a `bootstrap` tool for environment validation and initial setup.
+- [x] Task 3.1: **Bootstrap Command** (bcbb745): Create a `bootstrap` tool for environment validation and initial setup.
 - [ ] Task 3.2: **Library Search**: Implement `search_library` tool (queries Gonic/local DB).
 - [ ] Task 3.3: **Agent Notification**: Implement a simple webhook/notification mechanism for completed downloads.
 
