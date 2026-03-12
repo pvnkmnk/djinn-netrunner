@@ -37,7 +37,7 @@ Implement support for free, community-driven discovery APIs.
 
 - [ ] Verify successful track extraction from a public Last.fm profile.
 
-## Phase 3: Discovery & Market Providers (RSS & Discogs)
+## Phase 3: Discovery & Market Providers (RSS & Discogs) [checkpoint: 6b19dcc]
 
 Support RSS feeds and public wantlists.
 
