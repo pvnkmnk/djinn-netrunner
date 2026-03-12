@@ -14,3 +14,5 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/architecture-evolution_20260304/](./tracks/architecture-evolution_20260304/)*
 - [x] **Track: Frontend Polish & UI/UX Enhancement** (58092eb)
   *Link: [./tracks/frontend-polish_20260304/](./tracks/frontend-polish_20260304/)*
+- [x] **Track: Multi-Source Watchlist Expansion** (567befd)
+  *Link: [./tracks/multi-source-watchlist_20260310/](./tracks/multi-source-watchlist_20260310/)*
