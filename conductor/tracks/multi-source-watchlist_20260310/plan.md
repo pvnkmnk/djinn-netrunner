@@ -24,7 +24,7 @@ Refactor the core `WatchlistService` to support a pluggable architecture.
 - [ ] Existing Spotify unit tests pass when moved to the new provider structure.
 - [ ] Watchlist poller correctly dispatches to the correct provider based on `SourceType`.
 
-## Phase 2: Open Community Providers (Last.fm & ListenBrainz)
+## Phase 2: Open Community Providers (Last.fm & ListenBrainz) [checkpoint: 26edb87]
 
 Implement support for free, community-driven discovery APIs.
 
