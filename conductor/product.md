@@ -10,7 +10,7 @@ Djinn NETRUNNER is a console-first, self-hosted music acquisition and streaming 
 The project aims to provide a robust, self-hosted music pipeline that automates the acquisition of music from Soulseek, organizes files with smart metadata extraction, and provides a terminal-aesthetic operations console for monitoring and management.
 
 ## Key Features
-- **Automated Watchlists:** Sync Spotify playlists and "Liked Songs" with automated polling and discovery.
+- **Universal Watchlists:** Sync playlists and collections from Spotify, Last.fm, ListenBrainz, RSS feeds, Discogs, and Local Files (M3U, CSV, TXT) with automated polling and discovery.
 - **Intelligent Search:** Quality-based ranking, custom quality profiles, and concurrent download management via slskd.
 - **Library Integrity:** Smart indexing skip via Gonic API and automated cover art embedding (ID3/FLAC).
 - **Multi-node Coordination:** Production-grade data layer supporting distributed workers via LiteFS.

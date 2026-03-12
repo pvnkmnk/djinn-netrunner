@@ -9,7 +9,8 @@
 - **HTMX:** For seamless, server-rendered UI updates.
 - **GORM:** For database ORM and migrations.
 - **id3v2 & go-flac:** For high-fidelity metadata and cover art embedding.
-- **Spotify Web API (Go SDK):** For playlist and liked songs synchronization.
+- **Music Discovery APIs:** Spotify, Last.fm, ListenBrainz, and Discogs integrations for automated acquisition.
+- **gofeed:** For high-performance RSS/Atom feed parsing.
 
 ## Data Layer
 - **SQLite 3:** Primary database for standalone and distributed deployments.
