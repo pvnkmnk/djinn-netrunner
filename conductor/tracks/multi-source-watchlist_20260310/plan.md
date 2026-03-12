@@ -30,8 +30,8 @@ Implement support for free, community-driven discovery APIs.
 
 ### Tasks
 
-- [ ] Task 2.1: **Last.fm Module**: Implement `LastFMProvider` for "Loved Tracks" and "User Top Tracks."
-- [ ] Task 2.2: **ListenBrainz Module**: Implement `ListenBrainzProvider` for user recordings and recommendations.
+- [x] Task 2.1: **Last.fm Module** (8bae932): Implement `LastFMProvider` for "Loved Tracks" and "User Top Tracks."
+- [x] Task 2.2: **ListenBrainz Module** (87c0a12): Implement `ListenBrainzProvider` for user recordings and recommendations.
 
 ### Verification
 
