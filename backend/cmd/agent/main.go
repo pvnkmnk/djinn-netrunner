@@ -1,21 +1,54 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/pvnkmnk/netrunner/backend/internal/agent"
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 func main() {
+	// Load config
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Connect to database
+	db, err := database.Connect(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+
 	// Create a new MCP server
 	s := server.NewMCPServer(
 		"NetRunner Agent Interface",
 		"1.0.0",
 	)
 
-	// In the future, we will register tools here
-	// s.AddTool(server.NewTool("probe_system", ...))
+	// Register probe_system tool
+	s.AddTool(mcp.NewTool("probe_system",
+		mcp.WithDescription("Check the connectivity and health of NetRunner components"),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		status, err := agent.ProbeSystem(db, cfg)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to probe system: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf(
+			"Database: %v\nGonic: %v\nSlskd: %v\n\n%s",
+			status.DatabaseConnected,
+			status.GonicConnected,
+			status.SlskdConnected,
+			status.Message,
+		)), nil
+	})
 
 	// Run the server on stdio
 	if err := server.ServeStdio(s); err != nil {
