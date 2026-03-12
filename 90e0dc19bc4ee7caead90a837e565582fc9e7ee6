@@ -1,0 +1,4 @@
+Task: Watchlist Management
+Summary: Implemented list_watchlists and add_watchlist MCP tools. These tools wrap the WatchlistService to allow agents to discover and curate music sources.
+Files: backend/internal/agent/handlers.go, backend/internal/agent/handlers_test.go, backend/cmd/agent/main.go
+Why: Enable autonomous curation by AI agents.
