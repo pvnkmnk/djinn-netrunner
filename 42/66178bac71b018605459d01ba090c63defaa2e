@@ -1,0 +1,4 @@
+Task: JSON Wrapper
+Summary: Implemented a new agent-native CLI in backend/cmd/cli using spf13/cobra. Added a global --json flag and subcommands for status, config, and watchlist management. Subcommands leverage shared agent handlers.
+Files: backend/cmd/cli/main.go, backend/cmd/cli/main_test.go, backend/go.mod
+Why: Provide a reliable shell-based interface for AI agents that don't use MCP.
