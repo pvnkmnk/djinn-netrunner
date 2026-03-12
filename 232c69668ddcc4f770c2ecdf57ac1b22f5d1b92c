@@ -1,0 +1,4 @@
+Task: Config Tool
+Summary: Implemented ReadConfig and UpdateConfig handlers in backend/internal/agent/handlers.go and registered them as MCP tools in backend/cmd/agent/main.go. Added unit tests in handlers_test.go.
+Files: backend/internal/agent/handlers.go, backend/internal/agent/handlers_test.go, backend/cmd/agent/main.go
+Why: Allow agents to inspect and modify system settings autonomously.
