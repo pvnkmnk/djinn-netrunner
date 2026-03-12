@@ -32,13 +32,13 @@ Expose the "Daily Driver" functions to the agent.
 - [ ] Agent can list and add watchlists via MCP tools.
 - [ ] Agent can retrieve structured logs for a specific job.
 
-## Phase 3: Bootstrap & Autonomous Curation
+## Phase 3: Bootstrap & Autonomous Curation [checkpoint: 20df566]
 Enable the system setup and smart library logic.
 
 ### Tasks
 - [x] Task 3.1: **Bootstrap Command** (bcbb745): Create a `bootstrap` tool for environment validation and initial setup.
 - [x] Task 3.2: **Library Search** (6869f60): Implement `search_library` tool (queries Gonic/local DB).
-- [x] Task 3.3: **Agent Notification** (f4b4c73): Implement a simple webhook/notification mechanism for completed downloads.
+- [x] Task 3.3: **Agent Notification** (3cc6fe6): Implement a simple webhook/notification mechanism for completed downloads.
 
 ### Verification
 - [ ] `bootstrap` correctly identifies missing environment variables.
@@ -48,8 +48,9 @@ Enable the system setup and smart library logic.
 Create the shell-based fallback for standard agents.
 
 ### Tasks
-- [ ] Task 4.1: **JSON Wrapper**: Update `backend/cmd/cli` to support `--json` for all commands.
+- [x] Task 4.1: **JSON Wrapper** (4266178): Update `backend/cmd/cli` to support `--json` for all commands.
 - [ ] Task 4.2: **Input Handling**: Support piping JSON into the CLI for bulk configuration.
+
 
 ### Verification
 - [ ] CLI output is valid JSON when the flag is present.
