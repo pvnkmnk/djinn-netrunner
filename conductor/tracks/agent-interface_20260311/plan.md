@@ -20,7 +20,7 @@ Establish the communication layer and basic health monitoring.
 - [ ] MCP server starts and responds to inspector queries.
 - [ ] `probe_system` correctly reports connectivity failures.
 
-## Phase 2: Operational Control (Discovery & Acquisition)
+## Phase 2: Operational Control (Discovery & Acquisition) [checkpoint: 20df566]
 Expose the "Daily Driver" functions to the agent.
 
 ### Tasks
