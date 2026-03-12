@@ -1,0 +1,4 @@
+Task: File Parser Module
+Summary: Implemented FileWatchlistProvider supporting CSV, M3U, and TXT files. Added robust parsing for headers, EXTM3U metadata, and artist-title delimiters. Registered in WatchlistService.
+Files: backend/internal/services/file_watchlist_provider.go, backend/internal/services/watchlist_service.go
+Why: Enable one-time or recurring imports from local playlist files.
