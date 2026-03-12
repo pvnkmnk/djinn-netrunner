@@ -50,14 +50,14 @@ Support RSS feeds and public wantlists.
 
 - [ ] Verify that a test RSS feed enqueues new items correctly.
 
-## Phase 4: Local File Orchestration (CSV, M3U, TXT)
+## Phase 4: Local File Orchestration (CSV, M3U, TXT) [checkpoint: 0c35cb7]
 
 Implement bulk import and folder monitoring for file-based lists.
 
 ### Tasks
 
 - [x] Task 4.1: **File Parser Module** (01365ff): Implement a universal parser for M3U, CSV, and TXT files.
-- [ ] Task 4.2: **Watched Folder Support**: Add a "Local Directory" source type that enqueues new files added to a specific path.
+- [~] Task 4.2: **Watched Folder Support**: Add a \"Local Directory\" source type that enqueues new files added to a specific path.
 
 ### Verification
 
