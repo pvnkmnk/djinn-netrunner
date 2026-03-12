@@ -40,6 +40,12 @@ type Config struct {
 	GonicUser string
 	GonicPass string
 
+	// Last.fm
+	LastFMApiKey string
+
+	// ListenBrainz
+	ListenBrainzToken string
+
 	// Proxy
 	ProxyURL string
 }
@@ -74,6 +80,9 @@ func Load(filenames ...string) (*Config, error) {
 		GonicURL:  getEnv("GONIC_URL", "http://localhost:4747"),
 		GonicUser: getEnv("GONIC_USER", "admin"),
 		GonicPass: getEnv("GONIC_PASS", "admin"),
+
+		LastFMApiKey:      getEnv("LASTFM_API_KEY", ""),
+		ListenBrainzToken: getEnv("LISTENBRAINZ_TOKEN", ""),
 
 		ProxyURL: getEnv("PROXY_URL", ""),
 	}

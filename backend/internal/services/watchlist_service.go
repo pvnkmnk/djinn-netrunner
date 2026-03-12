@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ type WatchlistService struct {
 }
 
 // NewWatchlistService creates a new watchlist service
-func NewWatchlistService(db *gorm.DB, spotifyAuth *api.SpotifyAuthHandler) *WatchlistService {
+func NewWatchlistService(db *gorm.DB, spotifyAuth *api.SpotifyAuthHandler, cfg *config.Config) *WatchlistService {
 	s := &WatchlistService{
 		db:          db,
 		spotifyAuth: spotifyAuth,
@@ -31,6 +32,9 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth *api.SpotifyAuthHandler) *Watc
 	// Register default providers
 	s.RegisterProvider("spotify_liked", NewSpotifyProvider(spotifyAuth))
 	s.RegisterProvider("spotify_playlist", NewSpotifyProvider(spotifyAuth))
+	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey))
+	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey))
+	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken))
 
 	return s
 }
