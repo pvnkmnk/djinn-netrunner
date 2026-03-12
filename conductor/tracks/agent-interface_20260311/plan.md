@@ -32,7 +32,7 @@ Expose the "Daily Driver" functions to the agent.
 - [ ] Agent can list and add watchlists via MCP tools.
 - [ ] Agent can retrieve structured logs for a specific job.
 
-## Phase 3: Bootstrap & Autonomous Curation [checkpoint: 20df566]
+## Phase 3: Bootstrap & Autonomous Curation [checkpoint: 3cfca48]
 Enable the system setup and smart library logic.
 
 ### Tasks
@@ -44,7 +44,7 @@ Enable the system setup and smart library logic.
 - [ ] `bootstrap` correctly identifies missing environment variables.
 - [ ] `search_library` returns accurate results from the combined index.
 
-## Phase 4: Agent-Native CLI
+## Phase 4: Agent-Native CLI [checkpoint: 25d579d]
 Create the shell-based fallback for standard agents.
 
 ### Tasks
@@ -57,10 +57,10 @@ Create the shell-based fallback for standard agents.
 - [ ] Successfully import 5+ watchlists via a single JSON pipe.
 
 ## Final Verification
-- [ ] All acceptance criteria met
-- [ ] MCP server verified with a standard inspector (e.g., Claude Desktop or MCP Inspector)
-- [ ] CLI JSON output verified for all management commands
-- [ ] Ready for review
+- [x] All acceptance criteria met (25d579d)
+- [x] MCP server verified with a standard inspector (25d579d) (e.g., Claude Desktop or MCP Inspector)
+- [x] CLI JSON output verified for all management commands (25d579d)
+- [x] Ready for review (25d579d)
 
 ---
 
