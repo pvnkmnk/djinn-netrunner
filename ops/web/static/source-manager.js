@@ -180,16 +180,65 @@ function closeWatchlistModal() {
 function updateWatchlistUriLabel() {
     const type = document.getElementById('watchlist-type').value;
     const uriGroup = document.getElementById('watchlist-uri-group');
+    const uriLabel = uriGroup.querySelector('label');
     const uriInput = document.getElementById('watchlist-uri');
+    const fileZone = document.getElementById('file-upload-zone');
 
-    if (type === 'spotify_liked') {
-        uriGroup.style.display = 'none';
-        uriInput.required = false;
-        uriInput.value = 'spotify:liked'; // Internal placeholder
-    } else {
-        uriGroup.style.display = 'block';
-        uriInput.required = true;
-        if (uriInput.value === 'spotify:liked') uriInput.value = '';
+    uriGroup.style.display = 'block';
+    uriInput.required = true;
+    fileZone.style.display = 'none';
+
+    switch (type) {
+        case 'spotify_liked':
+            uriGroup.style.display = 'none';
+            uriInput.required = false;
+            uriInput.value = 'spotify:liked';
+            break;
+        case 'spotify_playlist':
+            uriLabel.textContent = 'Spotify Playlist URL/ID';
+            uriInput.placeholder = 'https://open.spotify.com/playlist/...';
+            break;
+        case 'lastfm_loved':
+        case 'lastfm_top':
+            uriLabel.textContent = 'Last.fm Username';
+            uriInput.placeholder = 'your_username';
+            break;
+        case 'listenbrainz_listens':
+            uriLabel.textContent = 'ListenBrainz Username';
+            uriInput.placeholder = 'your_username';
+            break;
+        case 'rss_feed':
+            uriLabel.textContent = 'RSS/Atom Feed URL';
+            uriInput.placeholder = 'https://bandcamp.com/tag/electronic/feed';
+            break;
+        case 'discogs_wantlist':
+            uriLabel.textContent = 'Discogs Username';
+            uriInput.placeholder = 'your_username';
+            break;
+        case 'local_file':
+            uriLabel.textContent = 'Absolute File Path (CSV, M3U, TXT)';
+            uriInput.placeholder = '/path/to/my/playlist.m3u';
+            fileZone.style.display = 'block';
+            break;
+        case 'local_directory':
+            uriLabel.textContent = 'Absolute Directory Path';
+            uriInput.placeholder = '/path/to/playlists/folder';
+            fileZone.style.display = 'block';
+            break;
+    }
+
+    if (type !== 'spotify_liked' && uriInput.value === 'spotify:liked') {
+        uriInput.value = '';
+    }
+}
+
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        // Browser security prevents getting full path, but we can help the user by showing the filename
+        // and a hint. They might still need to provide the full path manually if the backend is remote.
+        document.getElementById('watchlist-uri').value = file.name;
+        showNotification("Selected: " + file.name + ". Ensure backend has access to this path.", "info");
     }
 }
 
