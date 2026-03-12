@@ -46,6 +46,9 @@ type Config struct {
 	// ListenBrainz
 	ListenBrainzToken string
 
+	// Discogs
+	DiscogsToken string
+
 	// Proxy
 	ProxyURL string
 }
@@ -83,6 +86,7 @@ func Load(filenames ...string) (*Config, error) {
 
 		LastFMApiKey:      getEnv("LASTFM_API_KEY", ""),
 		ListenBrainzToken: getEnv("LISTENBRAINZ_TOKEN", ""),
+		DiscogsToken:      getEnv("DISCOGS_TOKEN", ""),
 
 		ProxyURL: getEnv("PROXY_URL", ""),
 	}
