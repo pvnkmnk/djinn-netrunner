@@ -11,6 +11,7 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 )
@@ -126,6 +127,44 @@ func watchlistCmd() *cobra.Command {
 				for _, l := range lists {
 					fmt.Printf("- %s (%s): %s\n", l.Name, l.SourceType, l.SourceURI)
 				}
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "import",
+		Short: "Import watchlists from JSON array via stdin",
+		Long: `Example: echo '[{"name": "My List", "source_type": "rss_feed", "source_uri": "...", "quality_profile_id": "..."}]' | netrunner-cli watchlist import`,
+		Run: func(cmd *cobra.Command, args []string) {
+			var inputs []struct {
+				Name             string    `json:"name"`
+				SourceType       string    `json:"source_type"`
+				SourceURI        string    `json:"source_uri"`
+				QualityProfileID uuid.UUID `json:"quality_profile_id"`
+			}
+
+			if err := json.NewDecoder(os.Stdin).Decode(&inputs); err != nil {
+				handleError(fmt.Errorf("failed to parse JSON from stdin: %w", err))
+				return
+			}
+
+			spotifyAuth := api.NewSpotifyAuthHandler(db)
+			service := services.NewWatchlistService(db, spotifyAuth, cfg)
+
+			var created []database.Watchlist
+			for _, input := range inputs {
+				wl, err := agent.AddWatchlist(service, input.Name, input.SourceType, input.SourceURI, input.QualityProfileID, nil)
+				if err != nil {
+					handleError(fmt.Errorf("failed to import '%s': %w", input.Name, err))
+					continue
+				}
+				created = append(created, *wl)
+			}
+
+			if jsonOutput {
+				printJSON(created)
+			} else {
+				fmt.Printf("Successfully imported %d watchlists.\n", len(created))
 			}
 		},
 	})
