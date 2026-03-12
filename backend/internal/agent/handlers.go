@@ -186,6 +186,7 @@ func Bootstrap(db *gorm.DB, cfg *config.Config) (map[string]string, error) {
 		&database.JobItem{},
 		&database.JobLog{},
 		&database.Setting{},
+		&database.Acquisition{},
 	)
 	if err != nil {
 		results["MIGRATIONS"] = fmt.Sprintf("FAILED: %v", err)
