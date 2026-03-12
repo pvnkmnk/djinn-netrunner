@@ -193,6 +193,19 @@ func (p *FileWatchlistProvider) parseLine(line string) map[string]string {
 }
 
 func (p *FileWatchlistProvider) ValidateConfig(config string) error {
+	// For local files, the 'config' is actually the SourceURI passed from the service
+	// Check for obviously sensitive paths
+	forbidden := []string{"/etc/", "/proc/", "/sys/", "/dev/", "C:\\Windows\\", "C:\\Users\\"}
+	for _, f := range forbidden {
+		if strings.HasPrefix(config, f) {
+			return fmt.Errorf("access to path %s is restricted", config)
+		}
+	}
+	
+	// Check if path exists
+	if _, err := os.Stat(config); err != nil {
+		return fmt.Errorf("file not found: %w", err)
+	}
 	return nil
 }
 
@@ -252,5 +265,6 @@ func (p *DirectoryWatchlistProvider) FetchTracks(ctx context.Context, watchlist 
 }
 
 func (p *DirectoryWatchlistProvider) ValidateConfig(config string) error {
-	return nil
+	// Reuse file provider logic for base path validation
+	return p.fileProvider.ValidateConfig(config)
 }

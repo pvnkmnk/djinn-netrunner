@@ -58,15 +58,19 @@ func (s *WatchlistService) FetchWatchlistTracks(ctx context.Context, watchlist *
 	return nil, "", fmt.Errorf("unsupported source type: %s", watchlist.SourceType)
 }
 
-// CreateWatchlist adds a new watchlist to the database
-func (s *WatchlistService) CreateWatchlist(name, sourceType, uri string, profileID uuid.UUID, userID *uint64) (*database.Watchlist, error) {
-	// Check if already exists
-	var existing database.Watchlist
-	err := s.db.Where("source_uri = ?", uri).First(&existing).Error
-	if err == nil {
-		return nil, errors.New("watchlist already exists for this URI")
+// ValidateWatchlist validates a watchlist's configuration
+func (s *WatchlistService) ValidateWatchlist(watchlist *database.Watchlist) error {
+	provider, ok := s.providers[watchlist.SourceType]
+	if !ok {
+		return fmt.Errorf("unsupported source type: %s", watchlist.SourceType)
 	}
 
+	// Use SourceURI as the primary config identifier
+	return provider.ValidateConfig(watchlist.SourceURI)
+}
+
+// CreateWatchlist adds a new watchlist to the database
+func (s *WatchlistService) CreateWatchlist(name, sourceType, uri string, profileID uuid.UUID, userID *uint64) (*database.Watchlist, error) {
 	watchlist := database.Watchlist{
 		Name:             name,
 		SourceType:       sourceType,
@@ -74,6 +78,18 @@ func (s *WatchlistService) CreateWatchlist(name, sourceType, uri string, profile
 		QualityProfileID: profileID,
 		Enabled:          true,
 		OwnerUserID:      userID,
+	}
+
+	// Validate configuration/URI
+	if err := s.ValidateWatchlist(&watchlist); err != nil {
+		return nil, err
+	}
+
+	// Check if already exists
+	var existing database.Watchlist
+	err := s.db.Where("source_uri = ?", uri).First(&existing).Error
+	if err == nil {
+		return nil, errors.New("watchlist already exists for this URI")
 	}
 
 	if err := s.db.Create(&watchlist).Error; err != nil {
