@@ -14,6 +14,7 @@
 - [Tracks Directory](./tracks/)
 
 ## Active Tracks
+- [ ] [Agentic Interface (MCP & CLI)](./tracks/agent-interface_20260311/index.md)
 - [ ] [Spotify-to-Soulseek Watchlist Automation](./tracks/spotify-watchlist_20260305/index.md)
 - [x] [Web API Migration to Go](./tracks/web-api-migration_20260304/index.md)
 - [x] [Architecture Evolution & Optimization](./tracks/architecture-evolution_20260304/index.md)
