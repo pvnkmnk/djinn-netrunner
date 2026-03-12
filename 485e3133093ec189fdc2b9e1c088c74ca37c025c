@@ -1,0 +1,4 @@
+Task: RSS/Atom Module
+Summary: Implemented RSSProvider using mmcdole/gofeed. Added support for parsing Artist - Title from entry titles and extracting cover art from media extensions. Registered in WatchlistService.
+Files: backend/internal/services/rss_provider.go, backend/internal/services/watchlist_service.go, backend/go.mod
+Why: Support discovery from open RSS feeds (Bandcamp, etc.).
