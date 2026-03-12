@@ -63,20 +63,20 @@ Implement bulk import and folder monitoring for file-based lists.
 
 - [ ] CSV import successfully enqueues multiple tracks from a single file.
 
-## Phase 5: UI & Configuration
+## Phase 5: UI & Configuration [checkpoint: af1b72c]
 
 Update the management console to handle diverse providers.
 
 ### Tasks
 
-- [ ] Task 5.1: **Dynamic Config UI**: Update the "Add Watchlist" modal to show fields based on the selected provider (e.g., API Key for Last.fm, URL for RSS).
-- [ ] Task 5.2: **Bulk Upload UI**: Add a drag-and-drop zone for CSV/M3U imports.
+- [x] Task 5.1: **Dynamic Config UI** (af1b72c): Update the "Add Watchlist" modal to show fields based on the selected provider (e.g., API Key for Last.fm, URL for RSS).
+- [x] Task 5.2: **Bulk Upload UI** (af1b72c): Add a drag-and-drop zone for CSV/M3U imports.
 
 ### Final Verification
 
-- [ ] All acceptance criteria met
-- [ ] End-to-end flow verified for at least 3 different providers.
-- [ ] Ready for review
+- [x] All acceptance criteria met (af1b72c)
+- [x] End-to-end flow verified for at least 3 different providers. (af1b72c)
+- [x] Ready for review (af1b72c)
 
 ---
 
