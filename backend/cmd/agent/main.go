@@ -32,6 +32,7 @@ func main() {
 	// Initialize services
 	spotifyAuth := api.NewSpotifyAuthHandler(db)
 	watchlistService := services.NewWatchlistService(db, spotifyAuth, cfg)
+	gonicClient := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
 
 	// Create a new MCP server
 	s := server.NewMCPServer(
@@ -216,6 +217,32 @@ func main() {
 		out := "Bootstrap Results:\n"
 		for k, v := range results {
 			out += fmt.Sprintf("- %s: %s\n", k, v)
+		}
+		return mcp.NewToolResultText(out), nil
+	})
+
+	// Register search_library tool
+	s.AddTool(mcp.NewTool("search_library",
+		mcp.WithDescription("Search the local acquisition index and Gonic server for tracks"),
+		mcp.WithString("query", mcp.Description("The search query (artist, title, or album)"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		query := mcp.ParseString(request, "query", "")
+		if query == "" {
+			return mcp.NewToolResultError("Missing required 'query' argument"), nil
+		}
+
+		results, err := agent.SearchLibrary(db, gonicClient, query)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
+		}
+
+		if len(results) == 0 {
+			return mcp.NewToolResultText("No matches found in library."), nil
+		}
+
+		out := fmt.Sprintf("Found %d matches:\n", len(results))
+		for _, r := range results {
+			out += fmt.Sprintf("- [%s] %s - %s (%s)\n", r["source"], r["artist"], r["title"], r["album"])
 		}
 		return mcp.NewToolResultText(out), nil
 	})

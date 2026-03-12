@@ -131,3 +131,23 @@ func TestBootstrap(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, results)
 }
+
+func TestSearchLibrary(t *testing.T) {
+	// Setup in-memory DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	db.AutoMigrate(&database.Acquisition{})
+
+	// Create a test acquisition
+	db.Create(&database.Acquisition{
+		Artist:     "Local Artist",
+		TrackTitle: "Local Track",
+		FinalPath:  "/path/to/music.mp3",
+	})
+
+	// Test SearchLibrary (Local only for now)
+	results, err := SearchLibrary(db, nil, "Local")
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.Equal(t, "Local Artist", results[0]["artist"])
+}

@@ -195,3 +195,44 @@ func Bootstrap(db *gorm.DB, cfg *config.Config) (map[string]string, error) {
 
 	return results, nil
 }
+
+// SearchLibrary queries the local DB and Gonic for tracks matching the query
+func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, query string) ([]map[string]string, error) {
+	var results []map[string]string
+
+	// 1. Search local acquisitions
+	var acquisitions []database.Acquisition
+	searchQuery := "%" + query + "%"
+	err := db.Where("artist LIKE ? OR track_title LIKE ? OR album LIKE ?", searchQuery, searchQuery, searchQuery).
+		Limit(50).Find(&acquisitions).Error
+	
+	if err == nil {
+		for _, a := range acquisitions {
+			results = append(results, map[string]string{
+				"artist": a.Artist,
+				"title":  a.TrackTitle,
+				"album":  a.Album,
+				"source": "local",
+				"path":   a.FinalPath,
+			})
+		}
+	}
+
+	// 2. Search Gonic
+	if gonic != nil {
+		gonicTracks, err := gonic.Search3(query)
+		if err == nil {
+			for _, t := range gonicTracks {
+				results = append(results, map[string]string{
+					"artist": t.Artist,
+					"title":  t.Title,
+					"album":  t.Album,
+					"source": "gonic",
+					"id":     t.ID,
+				})
+			}
+		}
+	}
+
+	return results, nil
+}
