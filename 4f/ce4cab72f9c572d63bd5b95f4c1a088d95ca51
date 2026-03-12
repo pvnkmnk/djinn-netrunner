@@ -1,0 +1,4 @@
+Task: Input Handling
+Summary: Implemented the watchlist import command in the agent-native CLI. This command reads a JSON array from stdin and bulk-creates watchlists using the shared agent handlers.
+Files: backend/cmd/cli/main.go, backend/cmd/cli/main_test.go
+Why: Enable agents to perform bulk configuration and system setup via standard shell piping.
