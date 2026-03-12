@@ -44,7 +44,7 @@ Support RSS feeds and public wantlists.
 ### Tasks
 
 - [x] Task 3.1: **RSS/Atom Module** (485e313): Implement `RSSProvider` to parse feeds (e.g., Bandcamp new releases).
-- [ ] Task 3.2: **Discogs Module**: Implement `DiscogsProvider` for user "Wantlist" synchronization.
+- [x] Task 3.2: **Discogs Module** (b90dd0f): Implement `DiscogsProvider` for user "Wantlist" synchronization.
 
 ### Verification
 
