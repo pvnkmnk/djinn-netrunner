@@ -37,7 +37,7 @@ Enable the system setup and smart library logic.
 
 ### Tasks
 - [x] Task 3.1: **Bootstrap Command** (bcbb745): Create a `bootstrap` tool for environment validation and initial setup.
-- [ ] Task 3.2: **Library Search**: Implement `search_library` tool (queries Gonic/local DB).
+- [x] Task 3.2: **Library Search** (6869f60): Implement `search_library` tool (queries Gonic/local DB).
 - [ ] Task 3.3: **Agent Notification**: Implement a simple webhook/notification mechanism for completed downloads.
 
 ### Verification
