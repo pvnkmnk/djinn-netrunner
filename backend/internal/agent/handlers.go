@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
 
@@ -54,4 +55,34 @@ func ProbeSystem(db *gorm.DB, cfg *config.Config) (*SystemStatus, error) {
 	}
 
 	return status, nil
+}
+
+// ReadConfig returns the current system configuration (non-sensitive)
+func ReadConfig(db *gorm.DB, cfg *config.Config) (map[string]string, error) {
+	settings := make(map[string]string)
+
+	// Add static config
+	settings["port"] = cfg.Port
+	settings["environment"] = cfg.Environment
+	settings["gonic_url"] = cfg.GonicURL
+	settings["proxy_url"] = cfg.ProxyURL
+
+	// Add dynamic settings from DB
+	var dbSettings []database.Setting
+	if err := db.Find(&dbSettings).Error; err == nil {
+		for _, s := range dbSettings {
+			settings[s.Key] = s.Value
+		}
+	}
+
+	return settings, nil
+}
+
+// UpdateConfig updates a dynamic setting in the database
+func UpdateConfig(db *gorm.DB, key, value string) error {
+	setting := database.Setting{
+		Key:   key,
+		Value: value,
+	}
+	return db.Save(&setting).Error
 }

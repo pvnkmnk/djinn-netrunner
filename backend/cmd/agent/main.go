@@ -50,6 +50,44 @@ func main() {
 		)), nil
 	})
 
+	// Register read_config tool
+	s.AddTool(mcp.NewTool("read_config",
+		mcp.WithDescription("Read the current non-sensitive system configuration"),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		settings, err := agent.ReadConfig(db, cfg)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to read config: %v", err)), nil
+		}
+
+		out := "Current Settings:\n"
+		for k, v := range settings {
+			out += fmt.Sprintf("- %s: %s\n", k, v)
+		}
+		return mcp.NewToolResultText(out), nil
+	})
+
+	// Register update_config tool
+	s.AddTool(mcp.NewTool("update_config",
+		mcp.WithDescription("Update a dynamic system setting"),
+		mcp.WithString("key", mcp.Description("The setting key to update"), mcp.Required()),
+		mcp.WithString("value", mcp.Description("The new value for the setting"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		key := mcp.ParseString(request, "key", "")
+		if key == "" {
+			return mcp.NewToolResultError("Missing required 'key' argument"), nil
+		}
+		value := mcp.ParseString(request, "value", "")
+		if value == "" {
+			return mcp.NewToolResultError("Missing required 'value' argument"), nil
+		}
+
+		if err := agent.UpdateConfig(db, key, value); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to update config: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Setting '%s' updated successfully.", key)), nil
+	})
+
 	// Run the server on stdio
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "Error serving MCP: %v\n", err)
