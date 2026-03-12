@@ -204,6 +204,22 @@ func main() {
 		return mcp.NewToolResultText(fmt.Sprintf("Acquisition job #%d enqueued for: %s - %s", job.ID, artist, title)), nil
 	})
 
+	// Register bootstrap tool
+	s.AddTool(mcp.NewTool("bootstrap",
+		mcp.WithDescription("Perform initial environment validation and system setup"),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		results, err := agent.Bootstrap(db, cfg)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Bootstrap process failed: %v", err)), nil
+		}
+
+		out := "Bootstrap Results:\n"
+		for k, v := range results {
+			out += fmt.Sprintf("- %s: %s\n", k, v)
+		}
+		return mcp.NewToolResultText(out), nil
+	})
+
 	// Run the server on stdio
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "Error serving MCP: %v\n", err)

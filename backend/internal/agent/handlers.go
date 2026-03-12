@@ -144,3 +144,54 @@ func EnqueueAcquisition(db *gorm.DB, artist, album, title string, userID *uint64
 
 	return &job, nil
 }
+
+// Bootstrap checks the environment and performs initial system setup
+func Bootstrap(db *gorm.DB, cfg *config.Config) (map[string]string, error) {
+	results := make(map[string]string)
+
+	// 1. Check required Env vars
+	requiredEnv := map[string]string{
+		"DATABASE_URL": cfg.DatabaseURL,
+		"GONIC_URL":    cfg.GonicURL,
+	}
+
+	for key, val := range requiredEnv {
+		if val == "" {
+			results[key] = "MISSING"
+		} else {
+			results[key] = "OK"
+		}
+	}
+
+	// 2. Connectivity check
+	status, _ := ProbeSystem(db, cfg)
+	if status.DatabaseConnected {
+		results["DATABASE_CONN"] = "OK"
+	} else {
+		results["DATABASE_CONN"] = "FAILED"
+	}
+
+	if status.GonicConnected {
+		results["GONIC_CONN"] = "OK"
+	} else {
+		results["GONIC_CONN"] = "FAILED"
+	}
+
+	// 3. Ensure tables exist (Migration check)
+	err := db.AutoMigrate(
+		&database.User{},
+		&database.QualityProfile{},
+		&database.Watchlist{},
+		&database.Job{},
+		&database.JobItem{},
+		&database.JobLog{},
+		&database.Setting{},
+	)
+	if err != nil {
+		results["MIGRATIONS"] = fmt.Sprintf("FAILED: %v", err)
+	} else {
+		results["MIGRATIONS"] = "OK"
+	}
+
+	return results, nil
+}

@@ -115,3 +115,19 @@ func TestJobMonitoringTools(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "New Artist", newItem.Artist)
 }
+
+func TestBootstrap(t *testing.T) {
+	// Setup in-memory DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+
+	// Mock config
+	cfg := &config.Config{
+		GonicURL: "http://localhost:14747",
+	}
+
+	// For now, bootstrap just checks env and returns status
+	results, err := Bootstrap(db, cfg)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, results)
+}
