@@ -1,0 +1,4 @@
+Task: Agent Notification
+Summary: Implemented the register_webhook MCP tool to allow agents to subscribe to system notifications by providing a callback URL. The URL is stored in the dynamic settings table.
+Files: backend/internal/agent/handlers.go, backend/internal/agent/handlers_test.go, backend/cmd/agent/main.go
+Why: Allow agents to be asynchronously notified of system events like completed downloads.
