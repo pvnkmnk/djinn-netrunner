@@ -1,0 +1,4 @@
+Task: Watchlist & Job Management Tools
+Summary: Implemented list_watchlists, add_watchlist, list_jobs, and get_job_logs MCP tools. These tools allow agents to manage music sources and monitor background acquisition processes.
+Files: backend/internal/agent/handlers.go, backend/internal/agent/handlers_test.go, backend/cmd/agent/main.go
+Why: Enable full operational control for AI agents.
