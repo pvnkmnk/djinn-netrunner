@@ -49,7 +49,7 @@ Create the shell-based fallback for standard agents.
 
 ### Tasks
 - [x] Task 4.1: **JSON Wrapper** (4266178): Update `backend/cmd/cli` to support `--json` for all commands.
-- [ ] Task 4.2: **Input Handling**: Support piping JSON into the CLI for bulk configuration.
+- [x] Task 4.2: **Input Handling** (4fce4ca): Support piping JSON into the CLI for bulk configuration.
 
 
 ### Verification
