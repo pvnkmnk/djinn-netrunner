@@ -6,6 +6,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 )
@@ -51,4 +52,29 @@ func TestConfigTools(t *testing.T) {
 	err = db.First(&setting, "key = ?", "custom_setting").Error
 	assert.NoError(t, err)
 	assert.Equal(t, "custom_value", setting.Value)
+}
+
+func TestWatchlistTools(t *testing.T) {
+	// Setup in-memory DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	db.AutoMigrate(&database.Watchlist{}, &database.QualityProfile{}, &database.User{})
+
+	// Create a default profile and user
+	profile := database.QualityProfile{Name: "Standard"}
+	db.Create(&profile)
+	user := database.User{Email: "agent@test.com", PasswordHash: "xxx"}
+	db.Create(&user)
+
+	service := services.NewWatchlistService(db, nil, &config.Config{})
+	
+	// Test AddWatchlist
+	wl, err := AddWatchlist(service, "Test Watchlist", "lastfm_loved", "testuser", profile.ID, &user.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, "Test Watchlist", wl.Name)
+
+	// Test ListWatchlists
+	lists, err := ListWatchlists(service)
+	assert.NoError(t, err)
+	assert.Len(t, lists, 1)
 }

@@ -6,6 +6,8 @@ import (
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -85,4 +87,14 @@ func UpdateConfig(db *gorm.DB, key, value string) error {
 		Value: value,
 	}
 	return db.Save(&setting).Error
+}
+
+// ListWatchlists returns all registered watchlists
+func ListWatchlists(s *services.WatchlistService) ([]database.Watchlist, error) {
+	return s.GetWatchlists()
+}
+
+// AddWatchlist adds a new watchlist using the service
+func AddWatchlist(s *services.WatchlistService, name, sourceType, uri string, profileID uuid.UUID, userID *uint64) (*database.Watchlist, error) {
+	return s.CreateWatchlist(name, sourceType, uri, profileID, userID)
 }
