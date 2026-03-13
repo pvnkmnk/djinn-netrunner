@@ -20,6 +20,8 @@ func TestMultiNodeJobClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to db: %v", err)
 	}
+	sqlDB, _ := db.DB()
+	defer sqlDB.Close()
 	database.Migrate(db)
 
 	// 2. Create multiple jobs with DIFFERENT scopes
