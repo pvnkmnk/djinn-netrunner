@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sync"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -23,10 +23,8 @@ func NewLockManager(db *gorm.DB) LockManager {
 	if dbType == "postgres" {
 		return &PostgresLockManager{db: db}
 	}
-	log.Println("[LOCK] Using in-memory lock manager for SQLite")
-	return &InMemoryLockManager{
-		activeLocks: make(map[int64]bool),
-	}
+	log.Println("[LOCK] Using table-based lock manager for SQLite")
+	return &TableLockManager{db: db}
 }
 
 // PostgresLockManager handles session-level advisory locks in PostgreSQL
@@ -64,45 +62,63 @@ func (m *PostgresLockManager) Close() error {
 	return nil
 }
 
-// InMemoryLockManager handles locks in memory for standalone SQLite deployments
-type InMemoryLockManager struct {
-	activeLocks map[int64]bool
-	mutex       sync.Mutex
+// TableLockManager handles distributed locks via a database table
+type TableLockManager struct {
+	db *gorm.DB
 }
 
-func (m *InMemoryLockManager) AcquireTryLock(ctx context.Context, key int64) (bool, error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
+func (m *TableLockManager) AcquireTryLock(ctx context.Context, key int64) (bool, error) {
+	var acquired bool
+	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Check for existing active lock
+		var count int64
+		err := tx.Model(&Lock{}).Where("key = ? AND expires_at > ?", key, time.Now()).Count(&count).Error
+		if err != nil {
+			return err
+		}
 
-	if m.activeLocks[key] {
-		return false, nil
+		if count > 0 {
+			acquired = false
+			return nil
+		}
+
+		// 2. Upsert lock
+		expires := time.Now().Add(15 * time.Minute) // Default timeout
+		lock := Lock{
+			Key:       key,
+			ExpiresAt: expires,
+		}
+		err = tx.Save(&lock).Error
+		if err != nil {
+			return err
+		}
+
+		acquired = true
+		return nil
+	})
+
+	if err != nil {
+		return false, fmt.Errorf("failed to acquire table lock: %w", err)
 	}
-
-	m.activeLocks[key] = true
-	return true, nil
+	return acquired, nil
 }
 
-func (m *InMemoryLockManager) ReleaseLock(ctx context.Context, key int64) error {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	delete(m.activeLocks, key)
-	return nil
+func (m *TableLockManager) ReleaseLock(ctx context.Context, key int64) error {
+	return m.db.WithContext(ctx).Delete(&Lock{}, "key = ?", key).Error
 }
 
-func (m *InMemoryLockManager) GetScopeLockKey(ctx context.Context, scopeType, scopeID string) (int64, error) {
+func (m *TableLockManager) GetScopeLockKey(ctx context.Context, scopeType, scopeID string) (int64, error) {
 	// Replicate the logic from the SQL function:
 	// 1001 * 1000000000 + (hash of scope_type:scopeID)
-	// For now, a simple hash using sum of characters or similar
 	hash := int64(0)
 	combined := fmt.Sprintf("%s:%s", scopeType, scopeID)
 	for _, char := range combined {
 		hash = 31*hash + int64(char)
 	}
-	// Keep it within 32-bit for consistency if needed, but int64 is fine
 	return 1001*1000000000 + (hash & 0x7FFFFFFF), nil
 }
 
-func (m *InMemoryLockManager) Close() error {
+func (m *TableLockManager) Close() error {
 	return nil
 }
+

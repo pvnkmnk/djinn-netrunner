@@ -1,26 +1,28 @@
-﻿# Technology Stack: Djinn NETRUNNER
+# Technology Stack: Djinn NETRUNNER
 
 ## Languages
-- **Python 3.12+:** Primary language for the web console and background worker.
-- **Go 1.25+:** Used for high-performance core components and task orchestration.
+- **Go 1.25+:** Primary language for the web API, background worker, and task orchestration.
 - **JavaScript (Vanilla):** Minimal client-side logic for HTMX and WebSockets.
 
 ## Frameworks & Libraries
-- **FastAPI:** Python web framework for the management console.
-- **Fiber:** Go web framework for core services.
-- **HTMX:** For seamless, server-rendered UI updates without full page reloads.
-- **asyncio:** Core Python library for concurrent operations in the worker.
-- **Asynq:** Go library for distributed task processing via Redis.
-- **Spotipy:** Python library for Spotify Web API integration.
+- **Fiber:** Go web framework for all backend services.
+- **HTMX:** For seamless, server-rendered UI updates.
+- **GORM:** For database ORM and migrations.
+- **id3v2 & go-flac:** For high-fidelity metadata and cover art embedding.
+- **Music Discovery APIs:** Spotify, Last.fm, ListenBrainz, and Discogs integrations for automated acquisition.
+- **gofeed:** For high-performance RSS/Atom feed parsing.
+- **MCP Go SDK:** For the embedded Model Context Protocol server.
+- **Cobra & Pflag:** For the agent-native CLI implementation.
 
 ## Data Layer
-- **PostgreSQL 16:** Primary database for state storage, job persistence, and locking.
-- **LISTEN/NOTIFY:** PostgreSQL feature for real-time event-driven updates.
-- **Redis:** Used by Asynq for task queue management.
+- **SQLite 3:** Primary database for standalone and distributed deployments.
+- **LiteFS:** Distributed SQLite engine for multi-node coordination.
+- **PostgreSQL 16:** Optional database for large-scale multi-user deployments.
 
 ## Infrastructure
 - **Docker & Docker Compose:** Containerization and orchestration for all services.
 - **Caddy:** Reverse proxy with automatic TLS management.
+- **LiteFS (FUSE):** For transparent database replication across clusters.
 - **Soulseek (slskd):** Daemon for music acquisition integration.
 - **Gonic:** Subsonic-compatible streaming server.
 - **MusicBrainz API:** For enhanced metadata enrichment.

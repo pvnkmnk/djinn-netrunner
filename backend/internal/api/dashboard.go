@@ -41,16 +41,31 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 
 	// Get sources
 	var sources []database.Source
-	query := h.db.Order("display_name")
+	sQuery := h.db.Order("display_name")
 	if u, ok := user.(database.User); ok && u.Role != "admin" {
-		query = query.Where("owner_user_id = ?", u.ID)
+	        sQuery = sQuery.Where("owner_user_id = ?", u.ID)
 	}
-	query.Find(&sources)
+	sQuery.Find(&sources)
+
+	// Get watchlists
+	var watchlists []database.Watchlist
+	wQuery := h.db.Order("name")
+	if u, ok := user.(database.User); ok && u.Role != "admin" {
+	        wQuery = wQuery.Where("owner_user_id = ?", u.ID)
+	}
+	wQuery.Find(&watchlists)
+
+	// Get quality profiles
+	var profiles []database.QualityProfile
+	h.db.Order("name").Find(&profiles)
 
 	return c.Render("index", fiber.Map{
-		"stats":   stats,
-		"jobs":    jobs,
-		"sources": sources,
-		"user":    user,
+	        "stats":      stats,
+	        "jobs":       jobs,
+	        "sources":    sources,
+	        "watchlists": watchlists,
+	        "profiles":   profiles,
+	        "user":       user,
 	})
+
 }

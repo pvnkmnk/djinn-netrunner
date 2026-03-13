@@ -32,3 +32,12 @@ music-library/
 # OS
 .DS_Store
 Thumbs.db
+
+# Binaries
+*.exe
+*.bin
+
+# SQLite temp files
+*.db-shm
+*.db-wal
+

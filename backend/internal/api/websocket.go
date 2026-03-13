@@ -53,14 +53,22 @@ func (m *WebSocketManager) Broadcast(jobID uint64, message string) {
 	conns, ok := m.connections[jobID]
 	m.mutex.RUnlock()
 
-	if !ok {
-		return
+	if ok {
+		for _, conn := range conns {
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
+				log.Printf("[WS] broadcast error to job %d: %v", jobID, err)
+			}
+		}
 	}
 
-	for _, conn := range conns {
-		if err := conn.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
-			log.Printf("[WS] broadcast error to job %d: %v", jobID, err)
-			// Connection will be cleaned up by the handler's read loop
+	// Also broadcast to "system" subscribers (jobID 0)
+	m.mutex.RLock()
+	sysConns, ok := m.connections[0]
+	m.mutex.RUnlock()
+
+	if ok {
+		for _, conn := range sysConns {
+			conn.WriteMessage(websocket.TextMessage, []byte(message))
 		}
 	}
 }
@@ -121,6 +129,19 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 
 func stringsToLower(s string) string {
 	return strings.ToLower(s)
+}
+
+func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
+	// JobID 0 is for general system events
+	m.Register(0, c)
+	defer m.Unregister(0, c)
+
+	// Read loop to keep connection alive
+	for {
+		if _, _, err := c.ReadMessage(); err != nil {
+			break
+		}
+	}
 }
 
 func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {

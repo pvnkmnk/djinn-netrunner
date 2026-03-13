@@ -105,13 +105,13 @@
                             </div>
                         </div>
                         <div class="source-actions">
-                            <button class="btn-icon {{ 'active' if source.SyncEnabled else 'inactive' }}" 
+                            <button class="btn-icon {{ 'active' if source.SyncEnabled else 'inactive' }}"
                                     onclick="toggleSource({{ source.ID }}, {{ 'false' if source.SyncEnabled else 'true' }})"
                                     title="{{ 'Disable' if source.SyncEnabled else 'Enable' }}">
                                 {{ '●' if source.SyncEnabled else '○' }}
                             </button>
-                            <button class="btn-icon btn-action" 
-                                    hx-post="/api/jobs/sync?source_id={{ source.ID }}" 
+                            <button class="btn-icon btn-action"
+                                    hx-post="/api/jobs/sync?source_id={{ source.ID }}"
                                     hx-swap="none"
                                     title="Force Sync">
                                 ⟳
@@ -122,6 +122,44 @@
                     {% endfor %}
                 </div>
             </section>
+
+            <!-- Watchlists Bento -->
+            <section class="bento-section">
+                <div class="section-header">
+                    <div class="section-title">Active Watchlists</div>
+                    <button class="btn-add" onclick="showAddWatchlistModal()">+ New</button>
+                </div>
+                <div class="sources-list" id="watchlists-list">
+                    {% for watchlist in watchlists %}
+                    <div class="source-card glass-card" id="watchlist-{{ watchlist.ID }}">
+                        <div class="source-main">
+                            <div class="source-name">{{ watchlist.Name }}</div>
+                            <div class="source-meta">
+                                <span class="source-type-tag">{{ watchlist.SourceType }}</span>
+                                {% if watchlist.LastSyncedAt %}
+                                <span class="source-last-sync">Last: {{ strftime(watchlist.LastSyncedAt, '%m/%d %H:%M') }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="source-actions">
+                            <button class="btn-icon {{ 'active' if watchlist.Enabled else 'inactive' }}"
+                                    onclick="toggleWatchlist('{{ watchlist.ID }}', {{ 'false' if watchlist.Enabled else 'true' }})"
+                                    title="{{ 'Disable' if watchlist.Enabled else 'Enable' }}">
+                                {{ '●' if watchlist.Enabled else '○' }}
+                            </button>
+                            <button class="btn-icon btn-action"
+                                    hx-post="/api/jobs/sync?watchlist_id={{ watchlist.ID }}"
+                                    hx-swap="none"
+                                    title="Force Sync">
+                                ⟳
+                            </button>
+                            <button class="btn-icon" onclick="deleteWatchlist('{{ watchlist.ID }}')" title="Delete">🗑</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
         </aside>
 
         <main class="console-area">
@@ -160,44 +198,70 @@
 
     <!-- Modals & Toasts -->
     <div id="source-modal" class="modal">
+        <!-- ... existing content ... -->
+    </div>
+
+    <div id="watchlist-modal" class="modal">
         <div class="modal-content glass-card">
             <div class="modal-header">
-                <h2 id="modal-title">Source Configuration</h2>
-                <button class="btn-icon" onclick="closeSourceModal()">✕</button>
+                <h2 id="watchlist-modal-title">Automated Watchlist</h2>
+                <button class="btn-icon" onclick="closeWatchlistModal()">✕</button>
             </div>
-            <form id="source-form" onsubmit="submitSourceForm(event)">
-                <input type="hidden" id="source-id" name="id">
+            <form id="watchlist-form" onsubmit="submitWatchlistForm(event)">
+                <input type="hidden" id="watchlist-id" name="id">
 
                 <div class="form-group">
-                    <label for="source-display-name">Identity</label>
-                    <input type="text" id="source-display-name" name="display_name" required
-                           placeholder="Primary Archive">
+                    <label for="watchlist-name">Identity</label>
+                    <input type="text" id="watchlist-name" name="name" required
+                           placeholder="My Auto-Acquisition">
                 </div>
 
                 <div class="form-group">
-                    <label for="source-type">Protocol</label>
-                    <select id="source-type" name="source_type" required>
-                        <option value="file_list">Local Registry</option>
-                        <option value="spotify_playlist">Spotify Uplink</option>
+                    <label for="watchlist-type">Protocol</label>
+                    <select id="watchlist-type" name="source_type" required onchange="updateWatchlistUriLabel()">
+                        <option value="spotify_playlist">Spotify Playlist URL/ID</option>
+                        <option value="spotify_liked">Spotify Liked Songs (Auto-Link)</option>
+                        <option value="lastfm_loved">Last.fm Loved Tracks</option>
+                        <option value="lastfm_top">Last.fm Top Tracks</option>
+                        <option value="listenbrainz_listens">ListenBrainz Listens</option>
+                        <option value="rss_feed">RSS/Atom Feed URL</option>
+                        <option value="discogs_wantlist">Discogs Wantlist</option>
+                        <option value="local_file">Local File (CSV, M3U, TXT)</option>
+                        <option value="local_directory">Local Directory (Watched)</option>
+                    </select>
+                </div>
+
+                <div id="watchlist-uri-group" class="form-group">
+                    <label for="watchlist-uri">Data URI</label>
+                    <input type="text" id="watchlist-uri" name="source_uri" required
+                           placeholder="https://open.spotify.com/playlist/...">
+                    <div id="file-upload-zone" style="display: none; margin-top: 10px;">
+                        <input type="file" id="watchlist-file" style="display: none;" onchange="handleFileSelect(event)">
+                        <button type="button" class="btn btn-secondary" style="width: 100%; border: 1px dashed var(--text-low);" 
+                                onclick="document.getElementById('watchlist-file').click()">
+                            Browse Local File...
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="watchlist-profile">Quality Profile</label>
+                    <select id="watchlist-profile" name="quality_profile_id" required>
+                        {% for profile in profiles %}
+                        <option value="{{ profile.ID }}">{{ profile.Name }}</option>
+                        {% endfor %}
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label for="source-uri">Data URI</label>
-                    <input type="text" id="source-uri" name="source_uri" required
-                           placeholder="Path or URL">
-                    <small>Specify local path or Spotify playlist ID/URL</small>
-                </div>
-
-                <div class="form-group">
                     <label class="checkbox-container">
-                        <input type="checkbox" id="source-sync-enabled" name="sync_enabled" checked>
-                        Maintain Synchronous Connection
+                        <input type="checkbox" id="watchlist-enabled" name="enabled" checked>
+                        Activate Autonomous Polling
                     </label>
                 </div>
 
                 <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeSourceModal()">Abort</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeWatchlistModal()">Abort</button>
                     <button type="submit" class="btn btn-primary">Establish Link</button>
                 </div>
             </form>

@@ -6,7 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bogem/id3v2/v2"
 	"github.com/dhowden/tag"
+	"github.com/go-flac/flacpicture/v2"
+	"github.com/go-flac/go-flac/v2"
 )
 
 type AudioMetadata struct {
@@ -23,10 +26,69 @@ func (m *AudioMetadata) IsValid() bool {
 	return m.Artist != "" && m.Title != ""
 }
 
-type MetadataExtractor struct {}
+type MetadataExtractor struct{}
 
 func NewMetadataExtractor() *MetadataExtractor {
 	return &MetadataExtractor{}
+}
+
+// EmbedCoverArt embeds image data into the audio file
+func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".mp3":
+		return e.embedMP3(filePath, artData)
+	case ".flac":
+		return e.embedFLAC(filePath, artData)
+	default:
+		return fmt.Errorf("unsupported file format for cover art embedding: %s", ext)
+	}
+}
+
+func (e *MetadataExtractor) embedMP3(filePath string, artData []byte) error {
+	tag, err := id3v2.Open(filePath, id3v2.Options{Parse: true})
+	if err != nil {
+		return fmt.Errorf("failed to open mp3 for tagging: %w", err)
+	}
+	defer tag.Close()
+
+	pic := id3v2.PictureFrame{
+		Encoding:    id3v2.EncodingUTF8,
+		MimeType:    "image/jpeg",
+		PictureType: id3v2.PTFrontCover,
+		Description: "Front Cover",
+		Picture:     artData,
+	}
+	tag.AddAttachedPicture(pic)
+
+	if err := tag.Save(); err != nil {
+		return fmt.Errorf("failed to save mp3 tags: %w", err)
+	}
+	return nil
+}
+
+func (e *MetadataExtractor) embedFLAC(filePath string, artData []byte) error {
+	f, err := flac.ParseFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to parse flac: %w", err)
+	}
+
+	pic, err := flacpicture.NewFromImageData(
+		flacpicture.PictureTypeFrontCover,
+		"Front Cover",
+		artData,
+		"image/jpeg",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create flac picture block: %w", err)
+	}
+
+	block := pic.Marshal()
+	f.Meta = append(f.Meta, &block)
+	if err := f.Save(filePath); err != nil {
+		return fmt.Errorf("failed to save flac: %w", err)
+	}
+	return nil
 }
 
 func (e *MetadataExtractor) Extract(path string) (*AudioMetadata, error) {

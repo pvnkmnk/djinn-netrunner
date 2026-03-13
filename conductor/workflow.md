@@ -7,7 +7,20 @@
 3. **Test-Driven Development:** Write unit tests before implementing functionality
 4. **High Code Coverage:** Aim for >80% code coverage for all modules
 5. **User Experience First:** Every decision should prioritize user experience
-6. **Non-Interactive & CI-Aware:** Prefer non-interactive commands. Use `CI=true` for watch-mode tools (tests, linters) to ensure single execution.
+6. **Agent-Operable by Design:** Every system must expose an "Agentic Surface" (MCP Server + JSON-CLI) for autonomous operation.
+7. **Non-Interactive & CI-Aware:** Prefer non-interactive commands. Use `CI=true` for watch-mode tools (tests, linters) to ensure single execution.
+
+## Architectural Standards
+
+### 1. The Provider Pattern
+**Mandate:** Never couple core business logic to a specific third-party SDK.
+- **Requirement:** For any feature involving an external API (e.g., Spotify, AWS, Stripe), you must first define a **Provider Interface** in a dedicated `interfaces` package.
+- **Benefit:** Switching providers (e.g., Spotify -> Last.fm) becomes a module addition, not a rewrite.
+
+### 2. Coordination Layer Check
+**Mandate:** "Appliance" software must be cluster-aware from day one.
+- **Requirement:** If an app uses a local DB (SQLite), you must immediately decide how it will handle multi-node execution (e.g., LiteFS, Postgres, or Leader Election).
+- **Action:** Document the coordination strategy in `docs/decisions/` before writing worker code.
 
 ## Task Workflow
 
@@ -114,10 +127,11 @@ All tasks follow a strict lifecycle:
     -   **Step 8.3: Write Plan:** Write the updated content back to `plan.md`.
 
 9. **Commit Plan Update:**
-    - **Action:** Stage the modified `plan.md` file.
-    - **Action:** Commit this change with a descriptive message following the format `conductor(plan): Mark phase '<PHASE NAME>' as complete`.
+    -   **Action:** Stage the modified `plan.md` file.
+    -   **Action:** Commit this change with a descriptive message following the format `conductor(plan): Mark phase '<PHASE NAME>' as complete`.
 
 10.  **Announce Completion:** Inform the user that the phase is complete and the checkpoint has been created, with the detailed verification report attached as a git note.
+
 
 ### Quality Gates
 
@@ -316,3 +330,11 @@ A task is complete when:
 - Document lessons learned
 - Optimize for user happiness
 - Keep things simple and maintainable
+
+### Track Archival Protocol
+**Trigger:** This protocol is executed when a Track is marked as [x] COMPLETED in `tracks.md`.
+
+1. **Verify Obsidian Connection:** Ensure the Obsidian vault is accessible.
+2. **Duplicate Documentation:** Copy the track's directory (`conductor/tracks/<track_id>/`) to the target Obsidian project folder:
+   - Path: `30 Areas/Development/Projects/NetRunner/Archived Tracks/<track_id>/`
+3. **Sync Meta-data:** Ensure the `spec.md` and `plan.md` (with completion SHAs) are identical in both locations.

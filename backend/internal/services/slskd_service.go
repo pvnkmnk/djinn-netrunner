@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 type DownloadState string
@@ -35,10 +37,10 @@ type SearchResult struct {
 	Score       float64 `json:"-"`
 }
 
-func (r *SearchResult) CalculateScore() {
+func (r *SearchResult) CalculateScore(profile *database.QualityProfile) {
 	score := 0.0
 
-	// Prefer higher bitrate
+	// 1. Bitrate Scoring
 	if r.Bitrate != nil {
 		if *r.Bitrate >= 320 {
 			score += 10
@@ -49,7 +51,33 @@ func (r *SearchResult) CalculateScore() {
 		}
 	}
 
-	// Prefer faster users
+	// 2. Profile Match Scoring
+	if profile != nil {
+		// Calculate format from filename extension
+		format := ""
+		if dotIndex := strings.LastIndex(r.Filename, "."); dotIndex != -1 {
+			format = strings.ToLower(r.Filename[dotIndex+1:])
+		}
+
+		bitrate := 0
+		if r.Bitrate != nil {
+			bitrate = *r.Bitrate
+		}
+
+		if profile.IsMatch(format, bitrate) {
+			score += 20 // Heavy bonus for matching profile
+		} else {
+			score -= 50 // Penalty for not matching profile
+		}
+
+		// Prefer lossless if profile says so
+		isLossless := strings.EqualFold(format, "flac") || strings.EqualFold(format, "wav")
+		if profile.PreferLossless && isLossless {
+			score += 15
+		}
+	}
+
+	// 3. User Speed
 	if r.Speed > 0 {
 		speedScore := float64(r.Speed) / 1000000.0
 		if speedScore > 5.0 {
@@ -58,14 +86,14 @@ func (r *SearchResult) CalculateScore() {
 		score += speedScore
 	}
 
-	// Penalize queue length
+	// 4. Queue Penalty
 	queuePenalty := float64(r.QueueLength) / 10.0
 	if queuePenalty > 3.0 {
 		queuePenalty = 3.0
 	}
 	score -= queuePenalty
 
-	// Penalize locked files
+	// 5. Locked Penalty
 	if r.Locked {
 		score -= 5
 	}
@@ -109,7 +137,15 @@ func NewSlskdService(cfg *config.Config) *SlskdService {
 	}
 }
 
-func (s *SlskdService) Search(query string, timeout int) ([]SearchResult, error) {
+func (s *SlskdService) Search(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
+	// If profile has a search suffix (e.g., "flac"), append it to query
+	if profile != nil {
+		suffix := profile.GetSearchSuffix()
+		if suffix != "" {
+			query = fmt.Sprintf("%s %s", query, suffix)
+		}
+	}
+
 	url := fmt.Sprintf("%s/api/v0/searches", s.cfg.SlskdURL)
 	payload := map[string]interface{}{
 		"searchText":      query,
@@ -185,7 +221,7 @@ func (s *SlskdService) Search(query string, timeout int) ([]SearchResult, error)
 				Bitrate:     f.BitRate,
 				Length:      f.Length,
 			}
-			sr.CalculateScore()
+			sr.CalculateScore(profile)
 			results = append(results, sr)
 		}
 	}

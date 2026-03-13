@@ -17,22 +17,23 @@ func Migrate(db *gorm.DB) error {
 
 	// Auto-migrate all models
 	if err := db.AutoMigrate(
-		&User{},
-		&Session{},
-		&QualityProfile{},
-		&MonitoredArtist{},
-		&TrackedRelease{},
-		&Source{},
-		&Job{},
-		&JobLog{},
-		&JobItem{},
-		&Acquisition{},
-		&Library{},
-		&Track{},
-		&Schedule{},
-		&MetadataCache{},
-	); err != nil {
-		return fmt.Errorf("failed to auto-migrate: %w", err)
+	        &User{},
+	        &Session{},
+	        &QualityProfile{},
+	        &MonitoredArtist{},
+	        &TrackedRelease{},
+	        &Source{},
+	        &Watchlist{},
+	        &SpotifyToken{},
+	        &Job{},	        &JobLog{},
+	        &JobItem{},
+	        &Acquisition{},	        &Library{},
+	        &Track{},
+	        &Schedule{},
+	        &MetadataCache{},
+	        &Lock{},
+	        &Setting{},
+	); err != nil {		return fmt.Errorf("failed to auto-migrate: %w", err)
 	}
 
 	return nil

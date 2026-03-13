@@ -169,29 +169,67 @@ func (m *Track) BeforeCreate(tx *gorm.DB) error {
 
 // Source represents a music source
 type Source struct {
-	ID          uint64    `gorm:"primaryKey;autoIncrement"`
-	SourceType  string    `gorm:"not null"`
-	SourceURI   string    `gorm:"uniqueIndex;not null"`
-	DisplayName string    `gorm:"not null"`
+	ID           uint64          `gorm:"primaryKey;autoIncrement"`
+	SourceType   string          `gorm:"not null"`
+	SourceURI    string          `gorm:"uniqueIndex;not null"`
+	DisplayName  string          `gorm:"not null"`
 	LastSyncedAt *time.Time
-	SyncEnabled bool      `gorm:"default:true"`
-	Config      json.RawMessage `gorm:"type:jsonb"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	OwnerUserID *uint64   `gorm:"index"`
+	SyncEnabled  bool            `gorm:"default:true"`
+	Config       json.RawMessage `gorm:"type:jsonb"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	OwnerUserID  *uint64 `gorm:"index"`
+}
+
+// Watchlist represents an automated monitoring source (Spotify playlist/Liked Songs)
+type Watchlist struct {
+	ID               uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Name             string    `gorm:"not null"`
+	SourceType       string    `gorm:"not null"` // e.g., "spotify_playlist", "spotify_liked"
+	SourceURI        string    `gorm:"uniqueIndex;not null"`
+	QualityProfileID uuid.UUID `gorm:"type:uuid;not null;index"`
+	LastSnapshotID   string    // Used for Spotify delta checks
+	LastSyncedAt     *time.Time
+	Enabled          bool      `gorm:"default:true"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	OwnerUserID      *uint64 `gorm:"index"`
+
+	QualityProfile QualityProfile `gorm:"foreignKey:QualityProfileID"`
+}
+
+func (m *Watchlist) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
+}
+
+// SpotifyToken stores User OAuth tokens
+type SpotifyToken struct {
+	ID           uint64 `gorm:"primaryKey;autoIncrement"`
+	UserID       uint64 `gorm:"uniqueIndex;not null"`
+	AccessToken  string `gorm:"not null"`
+	RefreshToken string `gorm:"not null"`
+	TokenType    string
+	Expiry       time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+
+	User User `gorm:"foreignKey:UserID"`
 }
 
 // Schedule represents a recurring sync schedule
 type Schedule struct {
-	ID         uint64    `gorm:"primaryKey;autoIncrement"`
-	SourceID   uint64    `gorm:"not null;index"`
-	CronExpr   string    `gorm:"not null"`
-	Timezone   string    `gorm:"not null;default:'UTC'"`
-	NextRunAt  *time.Time `gorm:"index"`
-	LastRunAt  *time.Time
-	Enabled    bool      `gorm:"not null;default:true;index"`
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID        uint64     `gorm:"primaryKey;autoIncrement"`
+	SourceID  uint64     `gorm:"not null;index"`
+	CronExpr  string     `gorm:"not null"`
+	Timezone  string     `gorm:"not null;default:'UTC'"`
+	NextRunAt *time.Time `gorm:"index"`
+	LastRunAt *time.Time
+	Enabled   bool      `gorm:"not null;default:true;index"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 
 	Source Source `gorm:"foreignKey:SourceID"`
 }
@@ -257,8 +295,10 @@ type JobItem struct {
 	StartedAt       *time.Time
 	FinishedAt      *time.Time
 	FailureReason   string
-	RetryCount      int       `gorm:"default:0"`
-	Sequence        int       `gorm:"not null"`
+	RetryCount      int        `gorm:"default:0"`
+	NextAttemptAt   *time.Time `gorm:"index"`
+	CoverArtURL     string
+	Sequence        int        `gorm:"not null"`
 	OwnerUserID     *uint64   `gorm:"index"`
 }
 
@@ -314,6 +354,20 @@ func (m *MetadataCache) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// Lock represents a distributed lock
+type Lock struct {
+	Key       int64     `gorm:"primaryKey"`
+	ExpiresAt time.Time `gorm:"index"`
+}
+
+// Setting represents a global application setting
+type Setting struct {
+	Key       string `gorm:"primaryKey"`
+	Value     string
+	Type      string `gorm:"default:'string'"`
+	UpdatedAt time.Time
+}
+
 // TableName overrides for GORM
 func (Job) TableName() string { return "jobs" }
 func (JobItem) TableName() string { return "jobitems" }
@@ -324,3 +378,5 @@ func (Session) TableName() string { return "sessions" }
 func (QualityProfile) TableName() string { return "quality_profiles" }
 func (MonitoredArtist) TableName() string { return "monitored_artists" }
 func (TrackedRelease) TableName() string { return "tracked_releases" }
+func (Lock) TableName() string { return "locks" }
+func (Setting) TableName() string { return "settings" }

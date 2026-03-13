@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -30,11 +31,13 @@ type WorkerOrchestrator struct {
 	mbService   *services.MusicBrainzService
 	atService   *services.ArtistTrackingService
 	rmService   *services.ReleaseMonitorService
+	watchlist   *services.WatchlistService
 	scanService *services.ScannerService
 	lockManager database.LockManager
 	spotify     *services.SpotifyService
 	slskd       *services.SlskdService
 	metadata    *services.MetadataExtractor
+	litefs      *database.LiteFSGuard
 	
 	// Handlers
 	syncHandler *services.SyncHandler
@@ -63,10 +66,13 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	mb.SetCache(cache)
 	at := services.NewArtistTrackingService(db, mb)
 	rm := services.NewReleaseMonitorService(db, at)
+	spotifyAuth := api.NewSpotifyAuthHandler(db)
+	watchlist := services.NewWatchlistService(db, spotifyAuth, cfg)
 	spotify := services.NewSpotifyService(cfg)
 	spotify.SetCache(cache)
 	slskd := services.NewSlskdService(cfg)
 	metadata := services.NewMetadataExtractor()
+	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
 	return &WorkerOrchestrator{
 		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:          db,
@@ -74,13 +80,15 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		mbService:   mb,
 		atService:   at,
 		rmService:   rm,
+		watchlist:   watchlist,
 		scanService: services.NewScannerService(db),
 		lockManager: database.NewLockManager(db),
 		spotify:     spotify,
 		slskd:       slskd,
 		metadata:    metadata,
-		syncHandler: services.NewSyncHandler(db, spotify),
-		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata),
+		litefs:      database.NewLiteFSGuard(cfg.DatabaseURL),
+		syncHandler: services.NewSyncHandler(db, spotify, watchlist),
+		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata, gonic),
 		activeJobs:  make(map[uint64]*jobContext),
 		wakeupChan:  make(chan bool, 1),
 	}
@@ -92,8 +100,18 @@ func (w *WorkerOrchestrator) Start() {
 
 	// Start background tasks
 	go w.heartbeatLoop()
-	go w.schedulerLoop()
-	go w.listenForWakeup()
+
+	if w.litefs.IsPrimary() {
+		go w.schedulerLoop()
+		go w.watchlistPollingLoop()
+	} else {
+		log.Println("[WORKER] Running in replica mode. Skipping scheduler and watchlist poller.")
+	}
+
+	// listenForWakeup only works for Postgres, for SQLite we rely on polling
+	if w.db.Dialector.Name() == "postgres" {
+		go w.listenForWakeup()
+	}
 
 	// Main job loop with round-robin item processing
 	for w.running {
@@ -106,6 +124,53 @@ func (w *WorkerOrchestrator) Start() {
 			// Regular poll
 		case <-w.wakeupChan:
 			log.Println("[WORKER] Received wakeup notification")
+		}
+	}
+}
+
+func (w *WorkerOrchestrator) watchlistPollingLoop() {
+	log.Println("[WATCHLIST] Starting watchlist polling loop")
+	// Poll every 4 hours by default, or use config if available
+	ticker := time.NewTicker(4 * time.Hour)
+	
+	// Run once at startup
+	w.triggerWatchlistSyncs()
+
+	for range ticker.C {
+		if !w.running {
+			return
+		}
+		w.triggerWatchlistSyncs()
+	}
+}
+
+func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
+	lists, err := w.watchlist.GetWatchlists()
+	if err != nil {
+		log.Printf("[WATCHLIST] Error fetching watchlists: %v", err)
+		return
+	}
+
+	for _, l := range lists {
+		if !l.Enabled {
+			continue
+		}
+
+		log.Printf("[WATCHLIST] Triggering sync for %s", l.Name)
+		
+		// Enqueue sync job for watchlist
+		job := database.Job{
+			Type:        "sync",
+			State:       "queued",
+			ScopeType:   "watchlist",
+			ScopeID:     l.ID.String(),
+			RequestedAt: time.Now(),
+			OwnerUserID: l.OwnerUserID,
+			CreatedBy:   "watchlist_poller",
+		}
+
+		if err := w.db.Create(&job).Error; err != nil {
+			log.Printf("[WATCHLIST] Error enqueuing job: %v", err)
 		}
 	}
 }
@@ -361,8 +426,7 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 
 func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	// Claim next item
-	var itemID uint64
-	err := w.db.Raw("SELECT claim_next_jobitem(?)", jc.job.ID).Scan(&itemID).Error
+	itemID, err := w.claimNextJobItem(jc.job.ID)
 	if err != nil {
 		log.Printf("[WORKER] Error claiming item for job %d: %v", jc.job.ID, err)
 		return
@@ -378,6 +442,39 @@ func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	if err != nil {
 		log.Printf("[WORKER] Error processing item %d: %v", itemID, err)
 	}
+}
+
+func (w *WorkerOrchestrator) claimNextJobItem(jobID uint64) (uint64, error) {
+	var itemID uint64
+	err := w.db.Transaction(func(tx *gorm.DB) error {
+		var item database.JobItem
+		// Find next queued item or failed item whose next_attempt_at has passed
+		err := tx.Where("job_id = ? AND (status = 'queued' OR (status = 'failed' AND next_attempt_at <= ?))", jobID, time.Now()).
+			Order("sequence ASC").
+			First(&item).Error
+
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil // No items found
+			}
+			return err
+		}
+
+		// Mark as running
+		now := time.Now()
+		err = tx.Model(&item).Updates(map[string]interface{}{
+			"status":     "running",
+			"started_at": &now,
+		}).Error
+		if err != nil {
+			return err
+		}
+
+		itemID = item.ID
+		return nil
+	})
+
+	return itemID, err
 }
 
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {

@@ -101,6 +101,62 @@ func (c *GonicClient) GetLibraryStats() (map[string]int, error) {
 	}, nil
 }
 
+// GonicSong represents a track in Gonic
+type GonicSong struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+	Album  string `json:"album"`
+	Path   string `json:"path"`
+}
+
+// Search3 searches for tracks, albums or artists
+func (c *GonicClient) Search3(query string) ([]GonicSong, error) {
+	params := url.Values{}
+	params.Add("query", query)
+	params.Add("songCount", "20")
+
+	var resp struct {
+		SubsonicResponse struct {
+			Status        string `json:"status"`
+			SearchResult3 struct {
+				Song []GonicSong `json:"song"`
+			} `json:"searchResult3"`
+		} `json:"subsonic-response"`
+	}
+
+	err := c.doRequest("search3", params, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.SubsonicResponse.SearchResult3.Song, nil
+}
+
+// GetSong retrieves details for a specific song
+func (c *GonicClient) GetSong(id string) (*GonicSong, error) {
+	params := url.Values{}
+	params.Add("id", id)
+
+	var resp struct {
+		SubsonicResponse struct {
+			Status string    `json:"status"`
+			Song   GonicSong `json:"song"`
+		} `json:"subsonic-response"`
+	}
+
+	err := c.doRequest("getSong", params, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.SubsonicResponse.Status != "ok" {
+		return nil, fmt.Errorf("subsonic error: %s", resp.SubsonicResponse.Status)
+	}
+
+	return &resp.SubsonicResponse.Song, nil
+}
+
 func (c *GonicClient) doRequest(endpoint string, params url.Values, target interface{}) error {
 	if params == nil {
 		params = url.Values{}

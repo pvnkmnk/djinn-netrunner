@@ -162,3 +162,184 @@ document.getElementById('source-modal')?.addEventListener('click', (e) => {
         closeSourceModal();
     }
 });
+
+// Watchlist Management
+
+function showAddWatchlistModal() {
+    document.getElementById('watchlist-modal-title').textContent = 'Add Automated Watchlist';
+    document.getElementById('watchlist-id').value = '';
+    document.getElementById('watchlist-form').reset();
+    updateWatchlistUriLabel();
+    document.getElementById('watchlist-modal').classList.add('active');
+}
+
+function closeWatchlistModal() {
+    document.getElementById('watchlist-modal').classList.remove('active');
+}
+
+function updateWatchlistUriLabel() {
+    const type = document.getElementById('watchlist-type').value;
+    const uriGroup = document.getElementById('watchlist-uri-group');
+    const uriLabel = uriGroup.querySelector('label');
+    const uriInput = document.getElementById('watchlist-uri');
+    const fileZone = document.getElementById('file-upload-zone');
+
+    uriGroup.style.display = 'block';
+    uriInput.required = true;
+    fileZone.style.display = 'none';
+
+    switch (type) {
+        case 'spotify_liked':
+            uriGroup.style.display = 'none';
+            uriInput.required = false;
+            uriInput.value = 'spotify:liked';
+            break;
+        case 'spotify_playlist':
+            uriLabel.textContent = 'Spotify Playlist URL/ID';
+            uriInput.placeholder = 'https://open.spotify.com/playlist/...';
+            break;
+        case 'lastfm_loved':
+        case 'lastfm_top':
+            uriLabel.textContent = 'Last.fm Username';
+            uriInput.placeholder = 'your_username';
+            break;
+        case 'listenbrainz_listens':
+            uriLabel.textContent = 'ListenBrainz Username';
+            uriInput.placeholder = 'your_username';
+            break;
+        case 'rss_feed':
+            uriLabel.textContent = 'RSS/Atom Feed URL';
+            uriInput.placeholder = 'https://bandcamp.com/tag/electronic/feed';
+            break;
+        case 'discogs_wantlist':
+            uriLabel.textContent = 'Discogs Username';
+            uriInput.placeholder = 'your_username';
+            break;
+        case 'local_file':
+            uriLabel.textContent = 'Absolute File Path (CSV, M3U, TXT)';
+            uriInput.placeholder = '/path/to/my/playlist.m3u';
+            fileZone.style.display = 'block';
+            break;
+        case 'local_directory':
+            uriLabel.textContent = 'Absolute Directory Path';
+            uriInput.placeholder = '/path/to/playlists/folder';
+            fileZone.style.display = 'block';
+            break;
+    }
+
+    if (type !== 'spotify_liked' && uriInput.value === 'spotify:liked') {
+        uriInput.value = '';
+    }
+}
+
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        // Browser security prevents getting full path, but we can help the user by showing the filename
+        // and a hint. They might still need to provide the full path manually if the backend is remote.
+        document.getElementById('watchlist-uri').value = file.name;
+        showNotification("Selected: " + file.name + ". Ensure backend has access to this path.", "info");
+    }
+}
+
+async function submitWatchlistForm(event) {
+    event.preventDefault();
+
+    const formData = new FormData(event.target);
+    const watchlistId = formData.get('id');
+
+    const data = {
+        name: formData.get('name'),
+        source_type: formData.get('source_type'),
+        source_uri: formData.get('source_uri'),
+        quality_profile_id: formData.get('quality_profile_id'),
+        enabled: formData.get('enabled') === 'on'
+    };
+
+    try {
+        let response;
+        if (watchlistId) {
+            response = await fetch(`/api/watchlists/${watchlistId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        } else {
+            response = await fetch('/api/watchlists', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        }
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Operation failed');
+        }
+
+        showNotification(watchlistId ? 'Watchlist updated' : 'Watchlist created', 'success');
+        closeWatchlistModal();
+        setTimeout(() => window.location.reload(), 1000);
+
+    } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+    }
+}
+
+async function toggleWatchlist(id, enabled) {
+    try {
+        const response = await fetch(`/api/watchlists/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
+        });
+
+        if (!response.ok) throw new Error('Failed to update watchlist');
+
+        showNotification(enabled ? 'Watchlist enabled' : 'Watchlist disabled', 'success');
+        setTimeout(() => window.location.reload(), 1000);
+
+    } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+    }
+}
+
+async function deleteWatchlist(id) {
+    if (!confirm('Are you sure you want to delete this automated watchlist?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/watchlists/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) throw new Error('Failed to delete watchlist');
+
+        showNotification('Watchlist removed', 'success');
+        document.getElementById(`watchlist-${id}`)?.remove();
+
+    } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+    }
+}
+
+// Close watchlist modal on escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeWatchlistModal();
+    }
+});
+
+// Event Handling for real-time updates
+document.body.addEventListener('htmx:wsBeforeMessage', (e) => {
+    const data = e.detail.message;
+    
+    // We can parse the HTML if we need to extract specific IDs
+    // but usually we just let HTMX handle the swap if it's targeted.
+    // For general "system" events that should trigger a reload:
+    if (data.includes('watchlist_sync_triggered') || data.includes('job_log')) {
+        // Optionally refresh specific elements
+        // htmx.trigger('#watchlists-list', 'refresh');
+    }
+});
