@@ -1,8 +1,12 @@
 package services
 
 import (
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -178,6 +182,40 @@ func (e *MetadataExtractor) GenerateLibraryPath(metadata *AudioMetadata, library
 	}
 
 	return filepath.Join(libraryRoot, artist, album, filename)
+}
+
+func (e *MetadataExtractor) HashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+func (e *MetadataExtractor) Fingerprint(path string) (string, int, error) {
+	cmd := exec.Command("fpcalc", "-json", path)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", 0, fmt.Errorf("fpcalc failed: %w", err)
+	}
+
+	var result struct {
+		Duration    int    `json:"duration"`
+		Fingerprint string `json:"fingerprint"`
+	}
+
+	if err := json.Unmarshal(out, &result); err != nil {
+		return "", 0, fmt.Errorf("failed to parse fpcalc output: %w", err)
+	}
+
+	return result.Fingerprint, result.Duration, nil
 }
 
 func (e *MetadataExtractor) getExt(format string) string {

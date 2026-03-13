@@ -39,14 +39,6 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	var jobs []database.Job
 	h.db.Order("requested_at DESC").Limit(20).Find(&jobs)
 
-	// Get sources
-	var sources []database.Source
-	sQuery := h.db.Order("display_name")
-	if u, ok := user.(database.User); ok && u.Role != "admin" {
-	        sQuery = sQuery.Where("owner_user_id = ?", u.ID)
-	}
-	sQuery.Find(&sources)
-
 	// Get watchlists
 	var watchlists []database.Watchlist
 	wQuery := h.db.Order("name")
@@ -62,7 +54,6 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	return c.Render("index", fiber.Map{
 	        "stats":      stats,
 	        "jobs":       jobs,
-	        "sources":    sources,
 	        "watchlists": watchlists,
 	        "profiles":   profiles,
 	        "user":       user,

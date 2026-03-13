@@ -42,60 +42,85 @@ func (r *SearchResult) CalculateScore(profile *database.QualityProfile) {
 
 	// 1. Bitrate Scoring
 	if r.Bitrate != nil {
-		if *r.Bitrate >= 320 {
+		bitrate := *r.Bitrate
+		if bitrate >= 1000 { // Likely FLAC/Lossless
+			score += 25
+		} else if bitrate >= 320 {
+			score += 15
+		} else if bitrate >= 256 {
 			score += 10
-		} else if *r.Bitrate >= 256 {
-			score += 7
-		} else if *r.Bitrate >= 192 {
+		} else if bitrate >= 128 {
 			score += 5
+		} else {
+			score -= 20 // Low quality penalty
 		}
 	}
 
 	// 2. Profile Match Scoring
-	if profile != nil {
-		// Calculate format from filename extension
-		format := ""
-		if dotIndex := strings.LastIndex(r.Filename, "."); dotIndex != -1 {
-			format = strings.ToLower(r.Filename[dotIndex+1:])
-		}
+	format := ""
+	if dotIndex := strings.LastIndex(r.Filename, "."); dotIndex != -1 {
+		format = strings.ToLower(r.Filename[dotIndex+1:])
+	}
 
+	if profile != nil {
 		bitrate := 0
 		if r.Bitrate != nil {
 			bitrate = *r.Bitrate
 		}
 
 		if profile.IsMatch(format, bitrate) {
-			score += 20 // Heavy bonus for matching profile
+			score += 30 // Heavy bonus for matching profile
 		} else {
-			score -= 50 // Penalty for not matching profile
+			score -= 60 // Heavy penalty for not matching profile
 		}
 
 		// Prefer lossless if profile says so
 		isLossless := strings.EqualFold(format, "flac") || strings.EqualFold(format, "wav")
 		if profile.PreferLossless && isLossless {
-			score += 15
+			score += 20
 		}
 	}
 
-	// 3. User Speed
+	// 3. User Speed & Reliability
 	if r.Speed > 0 {
-		speedScore := float64(r.Speed) / 1000000.0
-		if speedScore > 5.0 {
-			speedScore = 5.0
+		speedMbps := float64(r.Speed) / 1024.0 / 1024.0
+		if speedMbps > 10.0 {
+			score += 10
+		} else if speedMbps > 1.0 {
+			score += 5
+		} else if speedMbps < 0.1 {
+			score -= 10 // Very slow user penalty
 		}
-		score += speedScore
 	}
 
-	// 4. Queue Penalty
-	queuePenalty := float64(r.QueueLength) / 10.0
-	if queuePenalty > 3.0 {
-		queuePenalty = 3.0
+	// 4. Queue Penalty (Non-linear)
+	if r.QueueLength > 0 {
+		if r.QueueLength > 50 {
+			score -= 30
+		} else if r.QueueLength > 10 {
+			score -= 15
+		} else {
+			score -= float64(r.QueueLength)
+		}
+	} else {
+		score += 10 // Empty queue bonus
 	}
-	score -= queuePenalty
 
-	// 5. Locked Penalty
+	// 5. Keyword Analysis
+	filenameLower := strings.ToLower(r.Filename)
+	if strings.Contains(filenameLower, "sample") || strings.Contains(filenameLower, "preview") {
+		score -= 100 // Exclude samples
+	}
+	if strings.Contains(filenameLower, "remix") || strings.Contains(filenameLower, "edit") {
+		score -= 5 // Slight penalty for non-original if looking for canonical
+	}
+	if strings.Contains(filenameLower, "official") || strings.Contains(filenameLower, "digital") {
+		score += 5
+	}
+
+	// 6. Locked Penalty
 	if r.Locked {
-		score -= 5
+		score -= 50 // We usually can't download locked files anyway
 	}
 
 	r.Score = score

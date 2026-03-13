@@ -22,7 +22,6 @@ func Migrate(db *gorm.DB) error {
 	        &QualityProfile{},
 	        &MonitoredArtist{},
 	        &TrackedRelease{},
-	        &Source{},
 	        &Watchlist{},
 	        &SpotifyToken{},
 	        &Job{},	        &JobLog{},

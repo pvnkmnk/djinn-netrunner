@@ -14,3 +14,7 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/architecture-evolution_20260304/](./tracks/architecture-evolution_20260304/)*
 - [x] **Track: Frontend Polish & UI/UX Enhancement** (58092eb)
   *Link: [./tracks/frontend-polish_20260304/](./tracks/frontend-polish_20260304/)*
+- [x] **Track: Migration Parity Core** (25d579d)
+  *Link: [./tracks/migration-parity-core_20260312/](./tracks/migration-parity-core_20260312/)*
+- [x] **Track: Advanced Curation Parity** (25d579d)
+  *Link: [./tracks/advanced-curation-parity_20260312/](./advanced-curation-parity_20260312/)*

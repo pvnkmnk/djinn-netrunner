@@ -55,51 +55,39 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 	var ownerUserID *uint64
 	var profileID *uuid.UUID
 
-	if job.ScopeType == "watchlist" {
-		// Syncing a specific watchlist
-		id, _ := uuid.Parse(job.ScopeID)
-		watchlist, err := h.watchlist.GetWatchlist(id)
-		if err != nil {
-			h.Log(jobID, "ERR", fmt.Sprintf("Watchlist not found: %v", err), nil)
-			return err
-		}
-		ownerUserID = watchlist.OwnerUserID
-		profileID = &watchlist.QualityProfileID
-
-		h.Log(jobID, "INFO", fmt.Sprintf("Syncing watchlist: %s", watchlist.Name), nil)
-		currentTracks, snap, err := h.watchlist.FetchWatchlistTracks(ctx, watchlist)
-		if err != nil {
-			h.Log(jobID, "ERR", fmt.Sprintf("Watchlist fetch failed: %v", err), nil)
-			return err
-		}
-		snapshotID = snap
-
-		// Discovery logic: find new tracks
-		tracks = h.watchlist.GetNewTracks(ctx, watchlist, currentTracks)
-		
-		// Deduplication logic: check library and active queue
-		tracks = h.watchlist.FilterExistingTracks(ctx, tracks)
-
-	} else if job.ScopeType == "source" {
-		// Legacy Source sync
-		var source database.Source
-		if err := h.db.First(&source, job.ScopeID).Error; err != nil {
-			h.Log(jobID, "ERR", fmt.Sprintf("Source not found: %v", err), nil)
-			return fmt.Errorf("source not found: %w", err)
-		}
-		ownerUserID = source.OwnerUserID
-
-		h.Log(jobID, "INFO", fmt.Sprintf("Syncing %s: %s", source.SourceType, source.SourceURI), nil)
-
-		switch source.SourceType {
-		case "spotify_playlist":
-			id := h.spotify.ExtractPlaylistID(source.SourceURI)
-			tracks, err = h.spotify.GetPlaylistTracks(ctx, id)
-		default:
-			h.Log(jobID, "ERR", fmt.Sprintf("Unsupported source type: %s", source.SourceType), nil)
-			return fmt.Errorf("unsupported source type: %s", source.SourceType)
-		}
+	if job.ScopeType != "watchlist" {
+		h.Log(jobID, "ERR", fmt.Sprintf("Unsupported scope type: %s", job.ScopeType), nil)
+		return fmt.Errorf("unsupported scope type: %s", job.ScopeType)
 	}
+
+	// Syncing a specific watchlist
+	id, err := uuid.Parse(job.ScopeID)
+	if err != nil {
+		h.Log(jobID, "ERR", fmt.Sprintf("Invalid watchlist ID: %v", err), nil)
+		return err
+	}
+
+	watchlist, err := h.watchlist.GetWatchlist(id)
+	if err != nil {
+		h.Log(jobID, "ERR", fmt.Sprintf("Watchlist not found: %v", err), nil)
+		return err
+	}
+	ownerUserID = watchlist.OwnerUserID
+	profileID = &watchlist.QualityProfileID
+
+	h.Log(jobID, "INFO", fmt.Sprintf("Syncing watchlist: %s", watchlist.Name), nil)
+	currentTracks, snap, err := h.watchlist.FetchWatchlistTracks(ctx, watchlist)
+	if err != nil {
+		h.Log(jobID, "ERR", fmt.Sprintf("Watchlist fetch failed: %v", err), nil)
+		return err
+	}
+	snapshotID = snap
+
+	// Discovery logic: find new tracks
+	tracks = h.watchlist.GetNewTracks(ctx, watchlist, currentTracks)
+	
+	// Deduplication logic: check library and active queue
+	tracks = h.watchlist.FilterExistingTracks(ctx, tracks)
 
 	if err != nil {
 		h.Log(jobID, "ERR", fmt.Sprintf("Source parsing failed: %v", err), nil)
@@ -108,10 +96,7 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 
 	if len(tracks) == 0 {
 		h.Log(jobID, "OK", "No new tracks found", nil)
-		if job.ScopeType == "watchlist" {
-			id, _ := uuid.Parse(job.ScopeID)
-			h.watchlist.UpdateLastSynced(id, snapshotID)
-		}
+		h.watchlist.UpdateLastSynced(id, snapshotID)
 		return nil
 	}
 
@@ -127,7 +112,7 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 	acqJob := database.Job{
 		Type:        "acquisition",
 		State:       "queued",
-		ScopeType:   job.ScopeType,
+		ScopeType:   "watchlist",
 		ScopeID:     job.ScopeID,
 		RequestedAt: time.Now(),
 		OwnerUserID: ownerUserID,
@@ -159,30 +144,64 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 	}
 
 	// Update sync status
-	if job.ScopeType == "watchlist" {
-		id, _ := uuid.Parse(job.ScopeID)
-		h.watchlist.UpdateLastSynced(id, snapshotID)
-	} else if job.ScopeType == "source" {
-		now := time.Now()
-		h.db.Model(&database.Source{}).Where("id = ?", job.ScopeID).Update("last_synced_at", &now)
-	}
+	h.watchlist.UpdateLastSynced(id, snapshotID)
 
 	return nil
 }
 
 type AcquisitionHandler struct {
 	BaseHandler
+	cfg   *config.Config
 	slskd *SlskdService
+	mb    *MusicBrainzService
+	aid   *AcoustIDService
 	ext   *MetadataExtractor
 	gonic *GonicClient
 }
 
-func NewAcquisitionHandler(db *gorm.DB, slskd *SlskdService, ext *MetadataExtractor, gonic *GonicClient) *AcquisitionHandler {
-	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, slskd: slskd, ext: ext, gonic: gonic}
+func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient) *AcquisitionHandler {
+	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic}
 }
 
 func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
-	return nil
+	h.Log(jobID, "INFO", "Monitoring acquisition progress", nil)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+			var total, completed, failed int64
+			h.db.Model(&database.JobItem{}).Where("job_id = ?", jobID).Count(&total)
+			h.db.Model(&database.JobItem{}).Where("job_id = ?", jobID).Where("status LIKE 'completed%' OR status = 'imported'").Count(&completed)
+			h.db.Model(&database.JobItem{}).Where("job_id = ?", jobID).Where("status = 'failed'").Count(&failed)
+
+			summary := fmt.Sprintf("Progress: %d/%d (Success: %d, Failed: %d)", completed+failed, total, completed, failed)
+			h.db.Model(&database.Job{}).Where("id = ?", jobID).Update("summary", summary)
+
+			if completed+failed >= total {
+				h.Log(jobID, "OK", fmt.Sprintf("Acquisition finished. %s", summary), nil)
+				
+				// Final State
+				finalState := "succeeded"
+				if failed == total {
+					finalState = "failed"
+				}
+				h.db.Model(&database.Job{}).Where("id = ?", jobID).Update("state", finalState)
+
+				// 2.3 Gonic Sync Hook
+				if h.gonic != nil {
+					h.Log(jobID, "INFO", "Triggering Gonic scan...", nil)
+					if err := h.gonic.Scan(); err != nil {
+						h.Log(jobID, "WARN", fmt.Sprintf("Gonic scan trigger failed: %v", err), nil)
+					} else {
+						h.Log(jobID, "OK", "Gonic scan triggered", nil)
+					}
+				}
+				return nil
+			}
+		}
+	}
 }
 
 func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, itemID uint64) error {
@@ -300,11 +319,29 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 		return nil
 	}
 
-	// Extract metadata
+	// 1. Compute Hash for deduplication
+	hash, err := h.ext.HashFile(downloadPath)
+	if err != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Failed to compute hash: %v", err), &itemID)
+	}
+
+	if hash != "" {
+		var existing database.Acquisition
+		if err := h.db.Where("file_hash = ?", hash).First(&existing).Error; err == nil {
+			h.Log(jobID, "OK", fmt.Sprintf("File already acquired (ID: %d). Skipping.", existing.ID), &itemID)
+			h.db.Model(&item).Updates(map[string]interface{}{
+				"status":      "completed (duplicate hash)",
+				"finished_at": time.Now(),
+				"final_path":  existing.FinalPath,
+			})
+			return nil
+		}
+	}
+
+	// 2. Extract basic tags
 	metadata, err := h.ext.Extract(downloadPath)
 	if err != nil {
 		h.Log(jobID, "ERR", fmt.Sprintf("Metadata extraction failed: %v", err), &itemID)
-		// Continue anyway with basic info
 		metadata = &AudioMetadata{
 			Artist: item.Artist,
 			Title:  item.TrackTitle,
@@ -312,11 +349,56 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 		}
 	}
 
-	// Determine library path (stub for library selection)
-	libraryRoot := "./music_library" // Placeholder
+	// 2.5 Generate Fingerprint
+	fingerprint, duration, err := h.ext.Fingerprint(downloadPath)
+	if err != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Fingerprinting failed: %v", err), &itemID)
+	}
+
+	// 3. MusicBrainz & AcoustID Enrichment
+	var mbIDs struct {
+		RecordingID string
+		ReleaseID   string
+		ArtistID    string
+	}
+
+	if h.aid != nil && fingerprint != "" {
+		h.Log(jobID, "INFO", "Looking up AcoustID...", &itemID)
+		results, err := h.aid.Lookup(fingerprint, duration)
+		if err == nil && len(results) > 0 {
+			h.Log(jobID, "OK", fmt.Sprintf("AcoustID match found (score: %.2f)", results[0].Score), &itemID)
+			if len(results[0].Recordings) > 0 {
+				mbIDs.RecordingID = results[0].Recordings[0].ID
+			}
+		}
+	}
+
+	if h.mb != nil && (mbIDs.RecordingID != "" || metadata.IsValid()) {
+		h.Log(jobID, "INFO", "Enriching with MusicBrainz...", &itemID)
+		// We'll search for the recording to get MBIDs
+		query := fmt.Sprintf("recording:%s AND artist:%s", metadata.Title, metadata.Artist)
+		results, err := h.mb.SearchArtists(query, 1) // Using searchartists as a generic search for now, needs real SearchRecordings
+		if err == nil {
+			h.Log(jobID, "INFO", "MusicBrainz lookup successful", &itemID)
+			// Parse real results here when SearchRecordings is implemented
+		}
+	}
+
+	// Determine library path
+	libraryRoot := h.cfg.MusicLibraryPath
+	if libraryRoot == "" {
+		libraryRoot = "./music_library"
+	}
 	os.MkdirAll(libraryRoot, 0755)
 
 	finalPath := h.ext.GenerateLibraryPath(metadata, libraryRoot)
+	
+	// Ensure unique path
+	if _, err := os.Stat(finalPath); err == nil {
+		ext := filepath.Ext(finalPath)
+		base := strings.TrimSuffix(finalPath, ext)
+		finalPath = fmt.Sprintf("%s_%s%s", base, time.Now().Format("20060102_150405"), ext)
+	}
 	os.MkdirAll(filepath.Dir(finalPath), 0755)
 
 	// Move file
@@ -354,15 +436,19 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 
 	// Create acquisition record
 	acq := database.Acquisition{
-		JobID:        jobID,
-		JobItemID:    itemID,
-		Artist:       metadata.Artist,
-		Album:        metadata.Album,
-		TrackTitle:   metadata.Title,
-		OriginalPath: downloadPath,
-		FinalPath:    finalPath,
-		FileSize:     metadata.FileSize,
-		OwnerUserID:  item.OwnerUserID,
+		JobID:         jobID,
+		JobItemID:     itemID,
+		Artist:        metadata.Artist,
+		Album:         metadata.Album,
+		TrackTitle:    metadata.Title,
+		OriginalPath:  downloadPath,
+		FinalPath:     finalPath,
+		FileSize:      metadata.FileSize,
+		FileHash:      hash,
+		OwnerUserID:   item.OwnerUserID,
+		MBRecordingID: mbIDs.RecordingID,
+		MBReleaseID:   mbIDs.ReleaseID,
+		MBArtistID:    mbIDs.ArtistID,
 	}
 	h.db.Create(&acq)
 

@@ -9,6 +9,7 @@
 - **HTMX:** For seamless, server-rendered UI updates.
 - **GORM:** For database ORM and migrations.
 - **id3v2 & go-flac:** For high-fidelity metadata and cover art embedding.
+- **Chromaprint (fpcalc):** (v2.1) For AcoustID audio fingerprinting and verification.
 - **Music Discovery APIs:** Spotify, Last.fm, ListenBrainz, and Discogs integrations for automated acquisition.
 - **gofeed:** For high-performance RSS/Atom feed parsing.
 - **MCP Go SDK:** For the embedded Model Context Protocol server.

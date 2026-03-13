@@ -100,6 +100,25 @@ func AddWatchlist(s *services.WatchlistService, name, sourceType, uri string, pr
 	return s.CreateWatchlist(name, sourceType, uri, profileID, userID)
 }
 
+// SyncWatchlist triggers a sync job for a specific watchlist
+func SyncWatchlist(db *gorm.DB, watchlistID uuid.UUID, userID *uint64) (*database.Job, error) {
+	job := database.Job{
+		Type:        "sync",
+		State:       "queued",
+		ScopeType:   "watchlist",
+		ScopeID:     watchlistID.String(),
+		RequestedAt: time.Now(),
+		OwnerUserID: userID,
+		CreatedBy:   "cli",
+	}
+
+	if err := db.Create(&job).Error; err != nil {
+		return nil, err
+	}
+
+	return &job, nil
+}
+
 // ListJobs returns recent and active background jobs
 func ListJobs(db *gorm.DB, limit int) ([]database.Job, error) {
 	var jobs []database.Job

@@ -31,6 +31,9 @@ type Config struct {
 	MusicBrainzUserAgent string
 	MusicBrainzAPIKey    string
 
+	// AcoustID
+	AcoustIDApiKey string
+
 	// SLSKD
 	SlskdURL    string
 	SlskdAPIKey string
@@ -39,6 +42,9 @@ type Config struct {
 	GonicURL  string
 	GonicUser string
 	GonicPass string
+
+	// Library
+	MusicLibraryPath string
 
 	// Last.fm
 	LastFMApiKey string
@@ -76,6 +82,7 @@ func Load(filenames ...string) (*Config, error) {
 		
 		MusicBrainzUserAgent: getEnv("MUSICBRAINZ_USER_AGENT", "NetRunner/1.0.0 (contact@example.com)"),
 		MusicBrainzAPIKey:    getEnv("MUSICBRAINZ_API_KEY", ""),
+		AcoustIDApiKey:       getEnv("ACOUSTID_API_KEY", ""),
 
 		SlskdURL:    getEnv("SLSKD_URL", "http://localhost:5030"),
 		SlskdAPIKey: getEnv("SLSKD_API_KEY", ""),
@@ -83,6 +90,8 @@ func Load(filenames ...string) (*Config, error) {
 		GonicURL:  getEnv("GONIC_URL", "http://localhost:4747"),
 		GonicUser: getEnv("GONIC_USER", "admin"),
 		GonicPass: getEnv("GONIC_PASS", "admin"),
+
+		MusicLibraryPath: getEnv("MUSIC_LIBRARY", "./music_library"),
 
 		LastFMApiKey:      getEnv("LASTFM_API_KEY", ""),
 		ListenBrainzToken: getEnv("LISTENBRAINZ_TOKEN", ""),

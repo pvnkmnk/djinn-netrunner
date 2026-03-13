@@ -125,8 +125,62 @@ func watchlistCmd() *cobra.Command {
 				printJSON(lists)
 			} else {
 				for _, l := range lists {
-					fmt.Printf("- %s (%s): %s\n", l.Name, l.SourceType, l.SourceURI)
+					fmt.Printf("- %s (%s): %s | ID: %s\n", l.Name, l.SourceType, l.SourceURI, l.ID)
 				}
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "add [name] [type] [uri]",
+		Short: "Add a new watchlist",
+		Args:  cobra.ExactArgs(3),
+		Run: func(cmd *cobra.Command, args []string) {
+			spotifyAuth := api.NewSpotifyAuthHandler(db)
+			service := services.NewWatchlistService(db, spotifyAuth, cfg)
+
+			// Get default profile
+			var profile database.QualityProfile
+			if err := db.Where("is_default = ?", true).First(&profile).Error; err != nil {
+				handleError(fmt.Errorf("no default quality profile found: %w", err))
+				return
+			}
+
+			wl, err := agent.AddWatchlist(service, args[0], args[1], args[2], profile.ID, nil)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(wl)
+			} else {
+				fmt.Printf("Successfully added watchlist: %s (ID: %s)\n", wl.Name, wl.ID)
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "sync [id]",
+		Short: "Trigger synchronization for a watchlist",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid UUID: %w", err))
+				return
+			}
+
+			job, err := agent.SyncWatchlist(db, id, nil)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(job)
+			} else {
+				fmt.Printf("Synchronization job #%d enqueued.\n", job.ID)
 			}
 		},
 	})

@@ -154,6 +154,7 @@ type Track struct {
 	DiscNum   *int
 	Format    string
 	FileSize  int64
+	FileHash  string `gorm:"index"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
@@ -165,20 +166,6 @@ func (m *Track) BeforeCreate(tx *gorm.DB) error {
 		m.ID = uuid.New()
 	}
 	return nil
-}
-
-// Source represents a music source
-type Source struct {
-	ID           uint64          `gorm:"primaryKey;autoIncrement"`
-	SourceType   string          `gorm:"not null"`
-	SourceURI    string          `gorm:"uniqueIndex;not null"`
-	DisplayName  string          `gorm:"not null"`
-	LastSyncedAt *time.Time
-	SyncEnabled  bool            `gorm:"default:true"`
-	Config       json.RawMessage `gorm:"type:jsonb"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	OwnerUserID  *uint64 `gorm:"index"`
 }
 
 // Watchlist represents an automated monitoring source (Spotify playlist/Liked Songs)
@@ -221,17 +208,17 @@ type SpotifyToken struct {
 
 // Schedule represents a recurring sync schedule
 type Schedule struct {
-	ID        uint64     `gorm:"primaryKey;autoIncrement"`
-	SourceID  uint64     `gorm:"not null;index"`
-	CronExpr  string     `gorm:"not null"`
-	Timezone  string     `gorm:"not null;default:'UTC'"`
-	NextRunAt *time.Time `gorm:"index"`
-	LastRunAt *time.Time
-	Enabled   bool      `gorm:"not null;default:true;index"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          uint64     `gorm:"primaryKey;autoIncrement"`
+	WatchlistID uuid.UUID  `gorm:"type:uuid;not null;index"`
+	CronExpr    string     `gorm:"not null"`
+	Timezone    string     `gorm:"not null;default:'UTC'"`
+	NextRunAt   *time.Time `gorm:"index"`
+	LastRunAt   *time.Time
+	Enabled     bool      `gorm:"not null;default:true;index"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 
-	Source Source `gorm:"foreignKey:SourceID"`
+	Watchlist Watchlist `gorm:"foreignKey:WatchlistID"`
 }
 
 // Job represents a background job
@@ -372,7 +359,6 @@ type Setting struct {
 func (Job) TableName() string { return "jobs" }
 func (JobItem) TableName() string { return "jobitems" }
 func (Acquisition) TableName() string { return "acquisitions" }
-func (Source) TableName() string { return "sources" }
 func (User) TableName() string { return "users" }
 func (Session) TableName() string { return "sessions" }
 func (QualityProfile) TableName() string { return "quality_profiles" }

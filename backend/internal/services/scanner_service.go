@@ -77,6 +77,9 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 		return
 	}
 
+	// Compute hash
+	hash, _ := s.metadata.HashFile(path)
+
 	// Create or update track
 	track := database.Track{
 		LibraryID: libraryID,
@@ -99,9 +102,39 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 		}).
 		FirstOrCreate(&track).Error
 
+	if hash != "" {
+		s.db.Model(&track).Update("file_hash", hash)
+	}
+
 	if err != nil {
 		log.Printf("[SCANNER] Error saving track %s: %v", path, err)
 	}
+}
+
+func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) error {
+	log.Printf("[SCANNER] Starting prune for library %s", libraryID)
+
+	var tracks []database.Track
+	if err := s.db.Where("library_id = ?", libraryID).Find(&tracks).Error; err != nil {
+		return err
+	}
+
+	count := 0
+	for _, t := range tracks {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			if _, err := os.Stat(t.Path); os.IsNotExist(err) {
+				log.Printf("[SCANNER] Pruning missing file: %s", t.Path)
+				s.db.Delete(&t)
+				count++
+			}
+		}
+	}
+
+	log.Printf("[SCANNER] Prune complete. Removed %d stale records.", count)
+	return nil
 }
 
 func (s *ScannerService) GetMonitoredArtists() ([]database.MonitoredArtist, error) {

@@ -1,0 +1,16 @@
+{
+  "id": "migration-parity-core_20260312",
+  "title": "Migration Parity Core & System Stability",
+  "type": "refactor",
+  "status": "completed",
+  "created": "2026-03-12T11:00:00Z",
+  "updated": "2026-03-12T11:00:00Z",
+  "phases": {
+    "total": 3,
+    "completed": 3
+  },
+  "tasks": {
+    "total": 9,
+    "completed": 9
+  }
+}

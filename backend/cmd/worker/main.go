@@ -72,6 +72,8 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	spotify.SetCache(cache)
 	slskd := services.NewSlskdService(cfg)
 	metadata := services.NewMetadataExtractor()
+	aid := services.NewAcoustIDService(cfg)
+	aid.SetCache(cache)
 	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
 	return &WorkerOrchestrator{
 		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
@@ -88,7 +90,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		metadata:    metadata,
 		litefs:      database.NewLiteFSGuard(cfg.DatabaseURL),
 		syncHandler: services.NewSyncHandler(db, spotify, watchlist),
-		acqHandler:  services.NewAcquisitionHandler(db, slskd, metadata, gonic),
+		acqHandler:  services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic),
 		activeJobs:  make(map[uint64]*jobContext),
 		wakeupChan:  make(chan bool, 1),
 	}
@@ -104,6 +106,7 @@ func (w *WorkerOrchestrator) Start() {
 	if w.litefs.IsPrimary() {
 		go w.schedulerLoop()
 		go w.watchlistPollingLoop()
+		go w.zombieCleanupLoop()
 	} else {
 		log.Println("[WORKER] Running in replica mode. Skipping scheduler and watchlist poller.")
 	}
@@ -231,6 +234,42 @@ func (w *WorkerOrchestrator) heartbeatLoop() {
 			return
 		}
 		w.updateHeartbeats()
+	}
+}
+
+func (w *WorkerOrchestrator) zombieCleanupLoop() {
+	log.Println("[WORKER] Starting zombie cleanup loop")
+	ticker := time.NewTicker(1 * time.Minute)
+	for range ticker.C {
+		if !w.running {
+			return
+		}
+
+		// Find jobs marked as running but with stale heartbeats (> 2 mins)
+		staleThreshold := time.Now().Add(-2 * time.Minute)
+		var zombieJobs []database.Job
+		err := w.db.Where("state = ? AND heartbeat_at < ?", "running", staleThreshold).Find(&zombieJobs).Error
+		if err != nil {
+			log.Printf("[WORKER] Error searching for zombie jobs: %v", err)
+			continue
+		}
+
+		for _, job := range zombieJobs {
+			log.Printf("[WORKER] Resetting zombie job %d (last heartbeat: %v)", job.ID, job.HeartbeatAt)
+			
+			w.db.Model(&job).Updates(map[string]interface{}{
+				"state":        "queued",
+				"worker_id":    nil,
+				"started_at":   nil,
+				"heartbeat_at": nil,
+			})
+
+			// Attempt to release the advisory lock if it was held
+			lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
+			if err == nil {
+				w.lockManager.ReleaseLock(context.Background(), lockKey)
+			}
+		}
 	}
 }
 

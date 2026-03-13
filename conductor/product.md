@@ -11,8 +11,9 @@ The project aims to provide a robust, self-hosted music pipeline that automates 
 
 ## Key Features
 - **Universal Watchlists:** Sync playlists and collections from Spotify, Last.fm, ListenBrainz, RSS feeds, Discogs, and Local Files (M3U, CSV, TXT) with automated polling and discovery.
-- **Intelligent Search:** Quality-based ranking, custom quality profiles, and concurrent download management via slskd.
-- **Library Integrity:** Smart indexing skip via Gonic API and automated cover art embedding (ID3/FLAC).
+- **Intelligent Search:** Quality-based ranking, custom quality profiles, and concurrent download management via slskd. (v2.1: Enhanced scoring algorithm with bitrate/speed weighting).
+- **Library Integrity:** Smart indexing skip via Gonic API and automated cover art embedding (ID3/FLAC). (v2.1: MD5 hash-based deduplication and AcoustID audio fingerprinting for 100% accurate verification).
+- **Library Maintenance:** (v2.1: Automatic library pruning to keep database in sync with disk state).
 - **Multi-node Coordination:** Production-grade data layer supporting distributed workers via LiteFS.
 - **Operations Console:** Real-time log streaming with WebSockets and terminal-inspired UI.
 - **Job Orchestration:** Crash-safe job scheduling with deterministic work plans and state machines.

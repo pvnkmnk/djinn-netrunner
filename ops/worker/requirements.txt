@@ -1,8 +1,0 @@
-asyncpg==0.30.0
-httpx==0.28.1
-pydantic==2.10.8
-pydantic-settings==2.8.1
-mutagen==1.47.0
-spotipy==2.25.2
-musicbrainzngs==0.7.1
-croniter==6.0.0

@@ -4,7 +4,7 @@
 
 NetRunner is a modern, Go-native system for automated music discovery, download, organization, and streaming. Built for performance and privacy, it transforms your server into a resilient music acquisition terminal.
 
-![Status](https://img.shields.io/badge/status-v2.0--go--native-cyan)
+![Status](https://img.shields.io/badge/status-v2.1--curation--update-cyan)
 ![Architecture](https://img.shields.io/badge/architecture-standalone--sqlite-blue)
 ![UI](https://img.shields.io/badge/ui-htmx--cyberpunk-magenta)
 
@@ -12,7 +12,7 @@ NetRunner is a modern, Go-native system for automated music discovery, download,
 
 ## 🎯 What is NETRUNNER?
 
-NetRunner 2.0 is a complete architectural evolution of the original music pipeline. It provides a "zero-config" standalone experience with a high-fidelity operations console.
+NetRunner 2.1 is a complete architectural evolution of the original music pipeline. It provides a "zero-config" standalone experience with a high-fidelity operations console and intelligent library curation.
 
 - 📥 **Acquisition**: Seamless integration with Soulseek (via `slskd`).
 - 🏗️ **Standalone Architecture**: Single-binary focus with CGO-free SQLite (WAL mode) or PostgreSQL.
@@ -20,21 +20,24 @@ NetRunner 2.0 is a complete architectural evolution of the original music pipeli
 - ⚡ **High-Performance**: Concurrent worker pools and round-robin task orchestration.
 - 🛡️ **Privacy-First**: Native SOCKS5/HTTP proxy support for all P2P and API traffic.
 - 🖥️ **Cyberpunk UI**: A modern, interactive Bento Grid dashboard powered by HTMX and Fiber.
-- 🤖 **Agent-Native**: Built-in MCP (Model Context Protocol) server for autonomous management by AI agents.
+- 🤖 **Agent-Native**: Built-in MCP (Model Context Protocol) server and CLI for autonomous management.
 
 ## ✨ Key Features
 
 ### The Console (UI/UX)
-- **Bento Grid Layout**: Optimized, responsive dashboard for stats, jobs, and sources.
+- **Bento Grid Layout**: Optimized, responsive dashboard for stats, jobs, and watchlists.
 - **Real-time Log Streaming**: High-fidelity WebSocket console with regex syntax highlighting.
 - **Fault Detection**: Automated "Jump to Error" navigation for rapid troubleshooting.
 - **Glassmorphic Aesthetic**: Deep cyberpunk theme with high-quality typography (Orbitron/Inter).
 
 ### Core Pipeline
-- **Watchlist Management**: Support for local file registries and Spotify playlist uplinks.
+- **Unified Watchlists**: Single paradigm for all monitoring sources (Spotify, RSS, Local Files).
 - **Intelligent Search**: Multi-variable quality ranking (bitrate, speed, queue depth).
+- **Smart Deduplication**: MD5 hash-based verification ensures you never download or import the same file twice.
+- **Enhanced Enrichment**: Automatic MusicBrainz integration to fetch recording/release IDs and high-res cover art.
+- **Dynamic Library Routing**: Configurable library paths via the `MUSIC_LIBRARY` environment variable.
 - **Parallel Scanning**: Concurrent IO worker pool for ultra-fast library imports.
-- **Crash-Safe**: Robust heartbeat-driven recovery and persistent job states.
+- **Crash-Safe**: Robust heartbeat-driven recovery and automated zombie job cleanup.
 
 ---
 
@@ -43,7 +46,6 @@ NetRunner 2.0 is a complete architectural evolution of the original music pipeli
 ### Prerequisites
 - [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
 - A [Soulseek](https://www.slsknet.org/) account (configured via `slskd`)
-- (Optional) Spotify API credentials for playlist syncing
 
 ### 1. Clone & Configure
 ```bash
@@ -62,13 +64,39 @@ SLSKD_API_KEY=your_random_api_key
 
 # Database (Defaults to SQLite if empty)
 DATABASE_URL=netrunner.db
+
+# Library Path
+MUSIC_LIBRARY=/music
 ```
 
 ### 3. Launch the Appliance
 ```bash
 docker compose up -d
 ```
-Access the management console at `http://localhost:8000`.
+Access the management console at `http://localhost:8080`.
+
+---
+
+## 🛠️ Management CLI
+
+NetRunner includes a powerful Go-native CLI for manual management and automation.
+
+```bash
+# Enter the API container
+docker exec -it netrunner-api sh
+
+# List all watchlists
+netrunner-cli watchlist list
+
+# Add a new Spotify watchlist
+netrunner-cli watchlist add "My Playlist" "spotify_playlist" "https://open.spotify.com/playlist/..."
+
+# Trigger a sync for a specific watchlist
+netrunner-cli watchlist sync <watchlist-uuid>
+
+# Check system status
+netrunner-cli status
+```
 
 ---
 

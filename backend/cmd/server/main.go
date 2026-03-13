@@ -56,7 +56,6 @@ func main() {
 	// Handlers
 	authHandler := api.NewAuthHandler(db)
 	dashHandler := api.NewDashboardHandler(db)
-	sourceHandler := api.NewSourceHandler(db)
 	spotifyAuthHandler := api.NewSpotifyAuthHandler(db)
 	watchlistService := services.NewWatchlistService(db, spotifyAuthHandler, cfg)
 	watchlistHandler := api.NewWatchlistHandler(db, watchlistService)
@@ -66,7 +65,7 @@ func main() {
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, db, authHandler, dashHandler, sourceHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService)
+	setupRoutes(app, db, authHandler, dashHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService)
 
 	// Start server
 	go func() {
@@ -84,7 +83,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, source *api.SourceHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
+func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 	
@@ -109,14 +108,6 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
 
-	// Sources
-	sourceRoutes := apiProtected.Group("/sources")
-	sourceRoutes.Get("/", source.ListSources)
-	sourceRoutes.Post("/", source.CreateSource)
-	sourceRoutes.Get("/:id", source.UpdateSource)
-	sourceRoutes.Patch("/:id", source.UpdateSource)
-	sourceRoutes.Delete("/:id", source.DeleteSource)
-
 	// Watchlists
 	watchlistRoutes := apiProtected.Group("/watchlists")
 	watchlistRoutes.Get("/", watchlist.ListWatchlists)
@@ -129,11 +120,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	jobRoutes := apiProtected.Group("/jobs")
 	jobRoutes.Get("/", func(c *fiber.Ctx) error { return nil })
 	jobRoutes.Post("/sync", func(c *fiber.Ctx) error {
-		sourceID := c.Query("source_id")
 		watchlistID := c.Query("watchlist_id")
-		if sourceID != "" {
-			return c.JSON(fiber.Map{"status": "source_sync_triggered", "id": sourceID})
-		}
 		if watchlistID != "" {
 			return c.JSON(fiber.Map{"status": "watchlist_sync_triggered", "id": watchlistID})
 		}
