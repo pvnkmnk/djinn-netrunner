@@ -67,6 +67,9 @@ DATABASE_URL=netrunner.db
 
 # Library Path
 MUSIC_LIBRARY=/music
+
+# AcoustID (Optional, for audio fingerprinting)
+ACOUSTID_API_KEY=your_acoustid_api_key
 ```
 
 ### 3. Launch the Appliance

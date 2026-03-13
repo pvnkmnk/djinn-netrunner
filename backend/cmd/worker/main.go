@@ -310,16 +310,16 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 		}
 
 		for _, s := range schedules {
-			log.Printf("[SCHEDULER] Executing schedule %d for source %d", s.ID, s.SourceID)
+			log.Printf("[SCHEDULER] Executing schedule %d for watchlist %s", s.ID, s.WatchlistID)
 			
 			// Enqueue sync job
 			job := database.Job{
 				Type:        "sync",
 				State:       "queued",
-				ScopeType:   "source",
-				ScopeID:     fmt.Sprintf("%d", s.SourceID),
+				ScopeType:   "watchlist",
+				ScopeID:     s.WatchlistID.String(),
 				RequestedAt: time.Now(),
-				OwnerUserID: s.Source.OwnerUserID,
+				OwnerUserID: s.Watchlist.OwnerUserID,
 				CreatedBy:   "scheduler",
 			}
 			

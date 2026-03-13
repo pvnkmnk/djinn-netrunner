@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
@@ -192,7 +193,7 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 				// 2.3 Gonic Sync Hook
 				if h.gonic != nil {
 					h.Log(jobID, "INFO", "Triggering Gonic scan...", nil)
-					if err := h.gonic.Scan(); err != nil {
+					if ok, err := h.gonic.TriggerScan(); err != nil || !ok {
 						h.Log(jobID, "WARN", fmt.Sprintf("Gonic scan trigger failed: %v", err), nil)
 					} else {
 						h.Log(jobID, "OK", "Gonic scan triggered", nil)
@@ -369,18 +370,21 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 			h.Log(jobID, "OK", fmt.Sprintf("AcoustID match found (score: %.2f)", results[0].Score), &itemID)
 			if len(results[0].Recordings) > 0 {
 				mbIDs.RecordingID = results[0].Recordings[0].ID
+				// Try to get artist/release IDs if available in future AcoustID meta enhancements
 			}
 		}
 	}
 
 	if h.mb != nil && (mbIDs.RecordingID != "" || metadata.IsValid()) {
 		h.Log(jobID, "INFO", "Enriching with MusicBrainz...", &itemID)
-		// We'll search for the recording to get MBIDs
-		query := fmt.Sprintf("recording:%s AND artist:%s", metadata.Title, metadata.Artist)
-		results, err := h.mb.SearchArtists(query, 1) // Using searchartists as a generic search for now, needs real SearchRecordings
-		if err == nil {
-			h.Log(jobID, "INFO", "MusicBrainz lookup successful", &itemID)
-			// Parse real results here when SearchRecordings is implemented
+		
+		if mbIDs.RecordingID != "" {
+			// Real MBID from AcoustID!
+			h.Log(jobID, "OK", fmt.Sprintf("Using canonical Recording ID: %s", mbIDs.RecordingID), &itemID)
+		} else {
+			// Fallback to search
+			query := fmt.Sprintf("recording:%s AND artist:%s", metadata.Title, metadata.Artist)
+			h.mb.SearchArtists(query, 1)
 		}
 	}
 
