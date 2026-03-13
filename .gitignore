@@ -37,7 +37,8 @@ Thumbs.db
 *.exe
 *.bin
 
-# SQLite temp files
+# Databases
+*.db
 *.db-shm
 *.db-wal
 
