@@ -1,0 +1,3 @@
+## 2025-05-15 - N+1 query pattern in Watchlist filtering
+**Learning:** Found a classic N+1 query bottleneck in the `WatchlistService.FilterExistingTracks` function. The original implementation was performing two separate database `Count` queries for every track in the input list. For a 100-track watchlist, this resulted in 200 queries, causing significant latency during sync operations.
+**Action:** Replaced the loop-based queries with bulk fetches (`LOWER(artist) IN ?`) and in-memory hash map lookups. This reduced the database roundtrips to 2, regardless of the number of tracks. Also optimized `GetNewTracks` to use a targeted query instead of loading the entire user's acquisition history.
