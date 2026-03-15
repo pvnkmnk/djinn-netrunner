@@ -1,0 +1,3 @@
+## 2025-05-15 - [N+1 Query Bottleneck in SyncDiscography]
+**Learning:** The `SyncDiscography` method in `ArtistTrackingService` was performing individual `First` and `Create`/`Update` calls for every release in an artist's discography. For artists with large discographies (hundreds of releases), this resulted in significant database overhead and slow synchronization.
+**Action:** Always pre-fetch existing records when syncing external data and use batch operations (like GORM's batch create) to minimize database roundtrips. Using a hash map for local existence checks is significantly faster than querying the database in a loop.

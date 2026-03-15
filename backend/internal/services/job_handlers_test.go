@@ -2,6 +2,8 @@ package services
 
 import (
 	"testing"
+
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"gorm.io/gorm"
 )
 
@@ -16,7 +18,7 @@ func TestJobHandlers(t *testing.T) {
 
 	slskd := &SlskdService{}
 	metadata := &MetadataExtractor{}
-	acq := NewAcquisitionHandler(db, slskd, metadata, nil)
+	acq := NewAcquisitionHandler(db, &config.Config{}, slskd, nil, nil, metadata, nil)
 	if acq == nil {
 		t.Fatal("Expected AcquisitionHandler to be initialized")
 	}
