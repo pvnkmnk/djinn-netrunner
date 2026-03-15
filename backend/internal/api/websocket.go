@@ -105,20 +105,7 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 			if event.Event == "job_log" {
 				var jobLog database.JobLog
 				if err := db.First(&jobLog, event.LogID).Error; err == nil {
-					// Format as HTML for HTMX compatibility
-					logHTML := fmt.Sprintf(
-						`<div class="log-line log-%s" data-log-id="%d">`+
-							`<span class="log-ts">%s</span> `+
-							`<span class="log-level">[%s]</span> `+
-							`<span class="log-msg">%s</span>`+
-							`</div>`,
-						stringsToLower(jobLog.Level),
-						jobLog.ID,
-						jobLog.CreatedAt.Format("2006-01-02T15:04:05"),
-						jobLog.Level,
-						jobLog.Message,
-					)
-					m.Broadcast(event.JobID, logHTML)
+					m.Broadcast(event.JobID, formatLogHTML(jobLog))
 				}
 			}
 		case <-time.After(1 * time.Minute):
@@ -129,6 +116,31 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 
 func stringsToLower(s string) string {
 	return strings.ToLower(s)
+}
+
+func formatLogHTML(jobLog database.JobLog) string {
+	levelClass := stringsToLower(jobLog.Level)
+	timestamp := jobLog.CreatedAt.Format("15:04:05")
+	fullDate := jobLog.CreatedAt.Format("2006-01-02 15:04:05")
+	isoDate := jobLog.CreatedAt.Format(time.RFC3339)
+
+	return fmt.Sprintf(
+		`<div class="log-line log-%s" data-log-id="%d" id="log-%d" role="listitem">`+
+			`<span class="log-indicator" aria-hidden="true"></span>`+
+			`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
+			`<span class="log-level" aria-label="Level: %s">[%s]</span> `+
+			`<span class="log-msg">%s</span>`+
+			`</div>`,
+		levelClass,
+		jobLog.ID,
+		jobLog.ID,
+		isoDate,
+		fullDate,
+		timestamp,
+		jobLog.Level,
+		jobLog.Level,
+		jobLog.Message,
+	)
 }
 
 func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
@@ -177,19 +189,7 @@ func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 		}
 
 		for _, jobLog := range logs {
-			logHTML := fmt.Sprintf(
-				`<div class="log-line log-%s" data-log-id="%d">`+
-					`<span class="log-ts">%s</span> `+
-					`<span class="log-level">[%s]</span> `+
-					`<span class="log-msg">%s</span>`+
-					`</div>`,
-				stringsToLower(jobLog.Level),
-				jobLog.ID,
-				jobLog.CreatedAt.Format("2006-01-02T15:04:05"),
-				jobLog.Level,
-				jobLog.Message,
-			)
-			c.WriteMessage(websocket.TextMessage, []byte(logHTML))
+			c.WriteMessage(websocket.TextMessage, []byte(formatLogHTML(jobLog)))
 		}
 	}
 
