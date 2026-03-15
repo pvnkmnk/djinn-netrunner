@@ -128,8 +128,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	})
 
 	// WebSockets
-	app.Get("/ws/events", websocket.New(ws.HandleEvents))
-	app.Get("/ws/jobs/:job_id", websocket.New(func(c *websocket.Conn) {
+	app.Get("/ws/events", auth.AuthMiddleware, websocket.New(ws.HandleEvents))
+	app.Get("/ws/jobs/:job_id", auth.AuthMiddleware, websocket.New(func(c *websocket.Conn) {
 		ws.HandleConsole(c, db)
 	}))
 

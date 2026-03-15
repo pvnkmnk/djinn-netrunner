@@ -42,7 +42,7 @@ func TestAcquisitionHandler_SmartSkip(t *testing.T) {
 	database.Migrate(db)
 
 	gonic := NewGonicClient(ts.URL, "user", "pass")
-	handler := NewAcquisitionHandler(db, nil, nil, gonic)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonic)
 
 	// 3. Create job and item
 	job := database.Job{Type: "acquisition"}
