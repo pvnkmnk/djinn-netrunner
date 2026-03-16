@@ -107,14 +107,18 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 				if err := db.First(&jobLog, event.LogID).Error; err == nil {
 					// Format as HTML for HTMX compatibility
 					logHTML := fmt.Sprintf(
-						`<div class="log-line log-%s" data-log-id="%d">`+
-							`<span class="log-ts">%s</span> `+
-							`<span class="log-level">[%s]</span> `+
+						`<div id="log-%d" class="log-line log-%s" data-log-id="%d">`+
+							`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
+							`<span class="log-level" aria-label="Level: %s">[%s]</span> `+
 							`<span class="log-msg">%s</span>`+
 							`</div>`,
+						jobLog.ID,
 						stringsToLower(jobLog.Level),
 						jobLog.ID,
-						jobLog.CreatedAt.Format("2006-01-02T15:04:05"),
+						jobLog.CreatedAt.Format(time.RFC3339),
+						jobLog.CreatedAt.Format("Jan 02 15:04:05"),
+						jobLog.CreatedAt.Format("15:04:05"),
+						jobLog.Level,
 						jobLog.Level,
 						jobLog.Message,
 					)
@@ -178,14 +182,18 @@ func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 
 		for _, jobLog := range logs {
 			logHTML := fmt.Sprintf(
-				`<div class="log-line log-%s" data-log-id="%d">`+
-					`<span class="log-ts">%s</span> `+
-					`<span class="log-level">[%s]</span> `+
+				`<div id="log-%d" class="log-line log-%s" data-log-id="%d">`+
+					`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
+					`<span class="log-level" aria-label="Level: %s">[%s]</span> `+
 					`<span class="log-msg">%s</span>`+
 					`</div>`,
+				jobLog.ID,
 				stringsToLower(jobLog.Level),
 				jobLog.ID,
-				jobLog.CreatedAt.Format("2006-01-02T15:04:05"),
+				jobLog.CreatedAt.Format(time.RFC3339),
+				jobLog.CreatedAt.Format("Jan 02 15:04:05"),
+				jobLog.CreatedAt.Format("15:04:05"),
+				jobLog.Level,
 				jobLog.Level,
 				jobLog.Message,
 			)

@@ -41,7 +41,7 @@ func main() {
 	// 4. Initialize Fiber
 	engine := html.New("./ops/web/templates", ".html")
 	engine.AddFunc("strftime", func(t time.Time, format string) string {
-		return t.Format("01/02 15:04")
+		return t.Format("Jan 02 15:04")
 	})
 	engine.AddFunc("upper", strings.ToUpper)
 
