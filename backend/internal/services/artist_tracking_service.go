@@ -84,10 +84,24 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 		return nil
 	}
 
+	// Pre-fetch existing releases to avoid N+1 query problem
+	var existingReleases []database.TrackedRelease
+	if err := s.db.Where("artist_id = ?", artist.ID).Find(&existingReleases).Error; err != nil {
+		return err
+	}
+
+	existingMap := make(map[string]database.TrackedRelease)
+	for _, r := range existingReleases {
+		existingMap[r.ReleaseGroupID] = r
+	}
+
+	var newReleases []database.TrackedRelease
+	now := time.Now()
+
 	for _, rg := range releaseGroups {
 		group := rg.(map[string]interface{})
-		rgID := group["id"].(string)
-		title := group["title"].(string)
+		rgID, _ := group["id"].(string)
+		title, _ := group["title"].(string)
 		primaryType := ""
 		if t, ok := group["primary-type"].(string); ok {
 			primaryType = t
@@ -102,16 +116,15 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 			shouldMonitor = artist.MonitorEPs
 		case "Single":
 			shouldMonitor = artist.MonitorSingles
+		case "Compilation":
+			shouldMonitor = artist.MonitorCompilations
+		case "Live":
+			shouldMonitor = artist.MonitorLive
 		}
 
-		// Upsert TrackedRelease
-		var release database.TrackedRelease
-		err := s.db.Where("artist_id = ? AND release_group_id = ?", artist.ID, rgID).First(&release).Error
-		
-		now := time.Now()
-		if err != nil {
-			// Create new
-			release = database.TrackedRelease{
+		if release, exists := existingMap[rgID]; !exists {
+			// Prepare for batch creation
+			newReleases = append(newReleases, database.TrackedRelease{
 				ArtistID:       artist.ID,
 				ReleaseGroupID: rgID,
 				Title:          title,
@@ -120,18 +133,25 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 				Monitored:      shouldMonitor,
 				CreatedAt:      now,
 				UpdatedAt:      now,
-			}
-			s.db.Create(&release)
-		} else {
-			// Update existing if needed
-			s.db.Model(&release).Updates(map[string]interface{}{
-				"title":      title,
-				"updated_at": now,
 			})
+		} else {
+			// Update existing only if title changed to minimize writes
+			if release.Title != title {
+				s.db.Model(&release).Updates(map[string]interface{}{
+					"title":      title,
+					"updated_at": now,
+				})
+			}
+		}
+	}
+
+	// Batch create new releases
+	if len(newReleases) > 0 {
+		if err := s.db.CreateInBatches(newReleases, 100).Error; err != nil {
+			return err
 		}
 	}
 
 	// Update last scan date
-	now := time.Now()
 	return s.db.Model(&artist).Update("last_scan_date", &now).Error
 }

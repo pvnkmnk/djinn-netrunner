@@ -1,0 +1,3 @@
+## 2026-03-16 - [N+1 Query Bottleneck in SyncDiscography]
+**Learning:** In synchronization services like `ArtistTrackingService`, iterating over a list of items (e.g., release groups from MusicBrainz) and performing individual database lookups for each item creates a classic N+1 query problem. This significantly increases database latency and connection overhead, especially with remote databases.
+**Action:** Pre-fetch all relevant existing records into a Hash Map for O(1) lookups and use batch creation (e.g., `GORM`'s `CreateInBatches`) to minimize round trips. Also, always compare state before performing updates to avoid redundant writes.
