@@ -52,10 +52,9 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to hash password"})
 	}
 
-	role := payload.Role
-	if role == "" {
-		role = "user"
-	}
+	// SECURITY: Hardcode role to 'user' to prevent privilege escalation via mass assignment.
+	// Users should never be able to register themselves with elevated privileges.
+	role := "user"
 
 	user := database.User{
 		Email:        payload.Email,
