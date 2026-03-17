@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -16,7 +16,7 @@ import (
 type SystemStatus struct {
 	DatabaseConnected bool   `json:"database_connected"`
 	SlskdConnected    bool   `json:"slskd_connected"`
-	GonicConnected     bool   `json:"gonic_connected"`
+	GonicConnected    bool   `json:"gonic_connected"`
 	Message           string `json:"message"`
 }
 
@@ -109,6 +109,62 @@ func SyncWatchlist(db *gorm.DB, watchlistID uuid.UUID, userID *uint64) (*databas
 		ScopeID:     watchlistID.String(),
 		RequestedAt: time.Now(),
 		OwnerUserID: userID,
+		CreatedBy:   "cli",
+	}
+
+	if err := db.Create(&job).Error; err != nil {
+		return nil, err
+	}
+
+	return &job, nil
+}
+
+// ListLibraries returns all registered libraries
+func ListLibraries(db *gorm.DB) ([]database.Library, error) {
+	var libraries []database.Library
+	err := db.Order("name").Find(&libraries).Error
+	return libraries, err
+}
+
+// AddLibrary adds a new library
+func AddLibrary(db *gorm.DB, name, path string) (*database.Library, error) {
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: name,
+		Path: path,
+	}
+
+	if err := db.Create(&library).Error; err != nil {
+		return nil, err
+	}
+
+	return &library, nil
+}
+
+// DeleteLibrary deletes a library by ID
+func DeleteLibrary(db *gorm.DB, libraryID uuid.UUID) error {
+	// First delete associated tracks
+	if err := db.Delete(&database.Track{}, "library_id = ?", libraryID).Error; err != nil {
+		return err
+	}
+	// Then delete the library
+	return db.Delete(&database.Library{}, "id = ?", libraryID).Error
+}
+
+// ScanLibrary triggers a scan job for a specific library
+func ScanLibrary(db *gorm.DB, libraryID uuid.UUID) (*database.Job, error) {
+	// Verify library exists
+	var library database.Library
+	if err := db.First(&library, "id = ?", libraryID).Error; err != nil {
+		return nil, err
+	}
+
+	job := database.Job{
+		Type:        "scan",
+		State:       "queued",
+		ScopeType:   "library",
+		ScopeID:     libraryID.String(),
+		RequestedAt: time.Now(),
 		CreatedBy:   "cli",
 	}
 
@@ -230,7 +286,7 @@ func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, query string) ([]ma
 	searchQuery := "%" + query + "%"
 	err := db.Where("artist LIKE ? OR track_title LIKE ? OR album LIKE ?", searchQuery, searchQuery, searchQuery).
 		Limit(50).Find(&acquisitions).Error
-	
+
 	if err == nil {
 		for _, a := range acquisitions {
 			results = append(results, map[string]string{
