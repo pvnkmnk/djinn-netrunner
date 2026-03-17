@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -531,6 +532,15 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		log.Printf("[WORKER] Triggering Gonic index refresh")
 		// Placeholder for actual refresh call via GonicClient
 		w.mbService.HealthCheck() // Just a dummy call to use a service
+	case "scan":
+		var scanParams struct {
+			Path string `json:"path"`
+		}
+		if jc.job.Params != nil {
+			json.Unmarshal(jc.job.Params, &scanParams)
+		}
+		libraryID, _ := uuid.Parse(jc.job.ScopeID)
+		err = w.scanService.ScanLibrary(jc.ctx, libraryID, scanParams.Path)
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}
