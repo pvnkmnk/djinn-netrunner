@@ -86,7 +86,7 @@ func main() {
 func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
 	// Public API routes
 	apiPublic := app.Group("/api")
-	
+
 	// Health check
 	apiPublic.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
@@ -153,4 +153,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 		}
 		return c.JSON(fiber.Map{"status": "scan_triggered"})
 	})
+
+	// HTMX partials
+	app.Get("/partials/stats", api.RenderStatsPartial)
+	app.Get("/partials/watchlists", api.RenderWatchlistsPartial)
 }

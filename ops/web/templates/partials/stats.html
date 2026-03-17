@@ -1,0 +1,18 @@
+<div class="stats-region">
+    <div class="stat-card">
+        <div class="stat-value">{{ .stats.QueuedCount }}</div>
+        <div class="stat-label">Queued</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ .stats.RunningCount }}</div>
+        <div class="stat-label">Running</div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-value">{{ .stats.SucceededCount }}</div>
+        <div class="stat-label">Succeeded (24h)</div>
+    </div>
+    <div class="stat-card error">
+        <div class="stat-value">{{ .stats.FailedCount }}</div>
+        <div class="stat-label">Failed (24h)</div>
+    </div>
+</div>
