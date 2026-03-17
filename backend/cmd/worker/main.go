@@ -531,6 +531,22 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		log.Printf("[WORKER] Triggering Gonic index refresh | worker_id=%s | job_id=%d", w.workerID, jc.job.ID)
 		// Placeholder for actual refresh call via GonicClient
 		w.mbService.HealthCheck() // Just a dummy call to use a service
+	case "scan":
+		// ScopeID contains the Library UUID
+		libraryID, err := uuid.Parse(jc.job.ScopeID)
+		if err != nil {
+			err = fmt.Errorf("invalid library UUID: %w", err)
+			w.finishJob(jc.job.ID, err)
+			return
+		}
+		// Look up the library path from the database
+		var library database.Library
+		if err := w.db.First(&library, "id = ?", libraryID).Error; err != nil {
+			w.finishJob(jc.job.ID, err)
+			return
+		}
+		log.Printf("[WORKER] Scanning library %s at path %s", library.Name, library.Path)
+		err = w.scanService.ScanLibrary(jc.ctx, libraryID, library.Path)
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}
