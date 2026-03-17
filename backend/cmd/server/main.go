@@ -60,12 +60,13 @@ func main() {
 	watchlistService := services.NewWatchlistService(db, spotifyAuthHandler, cfg)
 	watchlistHandler := api.NewWatchlistHandler(db, watchlistService)
 	wsManager := api.NewWebSocketManager()
+	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
 
 	// Start log listener
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, db, authHandler, dashHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService)
+	setupRoutes(app, db, authHandler, dashHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler)
 
 	// Start server
 	go func() {
@@ -83,10 +84,10 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService) {
+func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
-	
+
 	// Health check
 	apiPublic.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
@@ -115,6 +116,13 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	watchlistRoutes.Patch("/:id", watchlist.UpdateWatchlist)
 	watchlistRoutes.Delete("/:id", watchlist.DeleteWatchlist)
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
+
+	// Artists
+	artistsRoutes := apiProtected.Group("/artists")
+	artistsRoutes.Get("/", artistsHandler.List)
+	artistsRoutes.Post("/", artistsHandler.Add)
+	artistsRoutes.Delete("/:id", artistsHandler.Delete)
+	artistsRoutes.Patch("/:id", artistsHandler.Update)
 
 	// Jobs
 	jobRoutes := apiProtected.Group("/jobs")
