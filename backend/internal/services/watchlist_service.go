@@ -129,6 +129,26 @@ func (s *WatchlistService) DeleteWatchlist(id uuid.UUID) error {
 	return s.db.Delete(&database.Watchlist{}, "id = ?", id).Error
 }
 
+// makeTrackKey creates a unique key for track identification
+func makeTrackKey(artist, title string) string {
+	return strings.ToLower(fmt.Sprintf("%s-%s", artist, title))
+}
+
+// collectUniqueArtists extracts unique artist names from tracks
+func collectUniqueArtists(tracks []map[string]string) []string {
+	artistMap := make(map[string]bool)
+	for _, t := range tracks {
+		if a, ok := t["artist"]; ok && a != "" {
+			artistMap[strings.ToLower(a)] = true
+		}
+	}
+	var artists []string
+	for a := range artistMap {
+		artists = append(artists, a)
+	}
+	return artists
+}
+
 // GetNewTracks compares current tracks with last known snapshot and returns new additions
 func (s *WatchlistService) GetNewTracks(ctx context.Context, watchlist *database.Watchlist, currentTracks []map[string]string) []map[string]string {
 	if watchlist.LastSnapshotID == "" {
@@ -141,30 +161,29 @@ func (s *WatchlistService) GetNewTracks(ctx context.Context, watchlist *database
 	// We'll fetch the tracks already acquired for this watchlist scope from the acquisitions table.
 
 	// Bolt Optimization: Filter acquisitions by artists in the current batch to avoid loading entire history.
-	artistMap := make(map[string]bool)
-	for _, t := range currentTracks {
-		if a, ok := t["artist"]; ok && a != "" {
-			artistMap[strings.ToLower(a)] = true
-		}
-	}
-	var artists []string
-	for a := range artistMap {
-		artists = append(artists, a)
+	artists := collectUniqueArtists(currentTracks)
+	if len(artists) == 0 {
+		return []map[string]string{}
 	}
 
 	var acquired []database.Acquisition
-	s.db.Where("owner_user_id = ? AND LOWER(artist) IN ?", watchlist.OwnerUserID, artists).Find(&acquired)
+	// Bolt Fix: Add error handling to prevent duplicate acquisitions on DB failure
+	if err := s.db.Where("owner_user_id = ? AND LOWER(artist) IN ?", watchlist.OwnerUserID, artists).Find(&acquired).Error; err != nil {
+		// Returning empty slice to prevent creating duplicate jobs on DB error.
+		// Consider changing the function signature to return an error for better handling.
+		return []map[string]string{}
+	}
 
 	existingMap := make(map[string]bool)
 	for _, a := range acquired {
 		// Create a unique key for comparison (Artist - Title)
-		key := strings.ToLower(fmt.Sprintf("%s-%s", a.Artist, a.TrackTitle))
+		key := makeTrackKey(a.Artist, a.TrackTitle)
 		existingMap[key] = true
 	}
 
 	var newTracks []map[string]string
 	for _, t := range currentTracks {
-		key := strings.ToLower(fmt.Sprintf("%s-%s", t["artist"], t["title"]))
+		key := makeTrackKey(t["artist"], t["title"])
 		if !existingMap[key] {
 			newTracks = append(newTracks, t)
 		}
@@ -182,42 +201,43 @@ func (s *WatchlistService) FilterExistingTracks(ctx context.Context, tracks []ma
 	// Bolt Optimization: Replace N+1 queries with bulk-fetch and hash-map lookup.
 	// This reduces database roundtrips from 2N to 2.
 
-	// 1. Collect unique artists and build lookup keys
-	artistMap := make(map[string]bool)
-	for _, t := range tracks {
-		if a, ok := t["artist"]; ok && a != "" {
-			artistMap[strings.ToLower(a)] = true
-		}
-	}
-
-	var artists []string
-	for a := range artistMap {
-		artists = append(artists, a)
+	// 1. Collect unique artists using helper function
+	artists := collectUniqueArtists(tracks)
+	if len(artists) == 0 {
+		return tracks
 	}
 
 	// 2. Bulk fetch existing tracks from library
 	var existingTracks []database.Track
-	s.db.Where("LOWER(artist) IN ?", artists).Find(&existingTracks)
+	// Bolt Fix: Add error handling to prevent duplicate acquisitions on DB failure
+	if err := s.db.Where("LOWER(artist) IN ?", artists).Find(&existingTracks).Error; err != nil {
+		// Returning empty slice to prevent creating duplicate jobs on DB error.
+		return []map[string]string{}
+	}
 
 	existingMap := make(map[string]bool)
 	for _, et := range existingTracks {
-		key := strings.ToLower(fmt.Sprintf("%s-%s", et.Artist, et.Title))
+		key := makeTrackKey(et.Artist, et.Title)
 		existingMap[key] = true
 	}
 
 	// 3. Bulk fetch active job items
 	var activeItems []database.JobItem
-	s.db.Where("LOWER(artist) IN ? AND status != 'failed'", artists).Find(&activeItems)
+	// Bolt Fix: Add error handling to prevent duplicate acquisitions on DB failure
+	if err := s.db.Where("LOWER(artist) IN ? AND status != 'failed'", artists).Find(&activeItems).Error; err != nil {
+		// Returning empty slice to prevent creating duplicate jobs on DB error.
+		return []map[string]string{}
+	}
 
 	for _, ai := range activeItems {
-		key := strings.ToLower(fmt.Sprintf("%s-%s", ai.Artist, ai.TrackTitle))
+		key := makeTrackKey(ai.Artist, ai.TrackTitle)
 		existingMap[key] = true
 	}
 
 	// 4. Filter tracks
 	var filtered []map[string]string
 	for _, t := range tracks {
-		key := strings.ToLower(fmt.Sprintf("%s-%s", t["artist"], t["title"]))
+		key := makeTrackKey(t["artist"], t["title"])
 		if !existingMap[key] {
 			filtered = append(filtered, t)
 		}
