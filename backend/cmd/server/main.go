@@ -61,12 +61,13 @@ func main() {
 	watchlistHandler := api.NewWatchlistHandler(db, watchlistService)
 	wsManager := api.NewWebSocketManager()
 	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
+	schedulesHandler := api.NewSchedulesHandler(db)
 
 	// Start log listener
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, db, authHandler, dashHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler)
+	setupRoutes(app, db, authHandler, dashHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
 
 	// Start server
 	go func() {
@@ -84,7 +85,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -123,6 +124,13 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	artistsRoutes.Post("/", artistsHandler.Add)
 	artistsRoutes.Delete("/:id", artistsHandler.Delete)
 	artistsRoutes.Patch("/:id", artistsHandler.Update)
+
+	// Schedules
+	schedulesRoutes := apiProtected.Group("/schedules")
+	schedulesRoutes.Get("/", schedulesHandler.List)
+	schedulesRoutes.Post("/", schedulesHandler.Create)
+	schedulesRoutes.Delete("/:id", schedulesHandler.Delete)
+	schedulesRoutes.Patch("/:id", schedulesHandler.Update)
 
 	// Jobs
 	jobRoutes := apiProtected.Group("/jobs")
