@@ -26,7 +26,7 @@ type WorkerOrchestrator struct {
 	workerID string
 	db       *gorm.DB
 	cfg      *config.Config
-	
+
 	// Services
 	mbService   *services.MusicBrainzService
 	atService   *services.ArtistTrackingService
@@ -38,24 +38,24 @@ type WorkerOrchestrator struct {
 	slskd       *services.SlskdService
 	metadata    *services.MetadataExtractor
 	litefs      *database.LiteFSGuard
-	
+
 	// Handlers
 	syncHandler *services.SyncHandler
 	acqHandler  *services.AcquisitionHandler
-	
+
 	activeJobs map[uint64]*jobContext
 	jobMutex   sync.Mutex
 	running    bool
 	wg         sync.WaitGroup
-	
+
 	// Notify
 	wakeupChan chan bool
 }
 
 type jobContext struct {
-	job    database.Job
-	cancel context.CancelFunc
-	ctx    context.Context
+	job     database.Job
+	cancel  context.CancelFunc
+	ctx     context.Context
 	lockKey int64
 }
 
@@ -107,6 +107,7 @@ func (w *WorkerOrchestrator) Start() {
 		go w.schedulerLoop()
 		go w.watchlistPollingLoop()
 		go w.zombieCleanupLoop()
+		go w.rmService.StartBackgroundTask()
 	} else {
 		log.Println("[WORKER] Running in replica mode. Skipping scheduler and watchlist poller.")
 	}
@@ -120,7 +121,7 @@ func (w *WorkerOrchestrator) Start() {
 	for w.running {
 		w.claimAndProcess()
 		w.processActiveJobsRoundRobin()
-		
+
 		// Wait for next tick OR wakeup notification
 		select {
 		case <-time.After(5 * time.Second):
@@ -135,7 +136,7 @@ func (w *WorkerOrchestrator) watchlistPollingLoop() {
 	log.Println("[WATCHLIST] Starting watchlist polling loop")
 	// Poll every 4 hours by default, or use config if available
 	ticker := time.NewTicker(4 * time.Hour)
-	
+
 	// Run once at startup
 	w.triggerWatchlistSyncs()
 
@@ -160,7 +161,7 @@ func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 		}
 
 		log.Printf("[WATCHLIST] Triggering sync for %s", l.Name)
-		
+
 		// Enqueue sync job for watchlist
 		job := database.Job{
 			Type:        "sync",
@@ -214,7 +215,7 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 func (w *WorkerOrchestrator) Stop() {
 	log.Printf("[WORKER] Shutting down worker %s...", w.workerID)
 	w.running = false
-	
+
 	w.jobMutex.Lock()
 	for id, jc := range w.activeJobs {
 		log.Printf("[WORKER] Cancelling job %d", id)
@@ -256,7 +257,7 @@ func (w *WorkerOrchestrator) zombieCleanupLoop() {
 
 		for _, job := range zombieJobs {
 			log.Printf("[WORKER] Resetting zombie job %d (last heartbeat: %v)", job.ID, job.HeartbeatAt)
-			
+
 			w.db.Model(&job).Updates(map[string]interface{}{
 				"state":        "queued",
 				"worker_id":    nil,
@@ -311,7 +312,7 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 
 		for _, s := range schedules {
 			log.Printf("[SCHEDULER] Executing schedule %d for watchlist %s", s.ID, s.WatchlistID)
-			
+
 			// Enqueue sync job
 			job := database.Job{
 				Type:        "sync",
@@ -322,7 +323,7 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 				OwnerUserID: s.Watchlist.OwnerUserID,
 				CreatedBy:   "scheduler",
 			}
-			
+
 			if err := w.db.Create(&job).Error; err != nil {
 				log.Printf("[SCHEDULER] Error enqueuing job: %v", err)
 				continue
@@ -355,7 +356,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	w.jobMutex.Unlock()
 
 	var job database.Job
-	
+
 	// Start an immediate transaction to "lock" the row for SQLite
 	err := w.db.Transaction(func(tx *gorm.DB) error {
 		// 1. Find next queued job
@@ -405,7 +406,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	jc := &jobContext{
 		job:     job,
 		cancel:  cancel,
@@ -432,7 +433,7 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 		w.jobMutex.Lock()
 		jc, ok := w.activeJobs[id]
 		w.jobMutex.Unlock()
-		
+
 		if !ok {
 			continue
 		}
@@ -518,7 +519,7 @@ func (w *WorkerOrchestrator) claimNextJobItem(jobID uint64) (uint64, error) {
 
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 	log.Printf("[WORKER] Executing monolithic job %d (%s)", jc.job.ID, jc.job.Type)
-	
+
 	var err error
 	switch jc.job.Type {
 	case "artist_scan":
@@ -563,7 +564,7 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 		"finished_at": &now,
 		"summary":     summary,
 	})
-	
+
 	log.Printf("[WORKER] Finished job %d: %s", jobID, finalState)
 }
 
@@ -577,14 +578,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
-	
+
 	worker := NewWorkerOrchestrator(cfg, db)
-	
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	go worker.Start()
-	
+
 	log.Println("[WORKER] Worker process running. Press Ctrl+C to stop.")
 	<-stop
 	worker.Stop()
