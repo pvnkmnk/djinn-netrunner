@@ -29,7 +29,11 @@ type BaseHandler struct {
 func (h *BaseHandler) Log(jobID uint64, level, message string, itemID *uint64) {
 	err := database.AppendJobLog(h.db, jobID, level, message, itemID)
 	if err != nil {
-		log.Printf("[HANDLER] Failed to append log: %v", err)
+		if itemID != nil {
+			log.Printf("[HANDLER] Failed to append log | job_id=%d | item_id=%d | error=%v", jobID, *itemID, err)
+		} else {
+			log.Printf("[HANDLER] Failed to append log | job_id=%d | error=%v", jobID, err)
+		}
 	}
 }
 
@@ -486,7 +490,7 @@ func (h *AcquisitionHandler) failItem(jobID uint64, itemID uint64, reason string
 
 	var item database.JobItem
 	if err := h.db.First(&item, itemID).Error; err != nil {
-		log.Printf("[HANDLER] Failed to find item %d for failure update: %v", itemID, err)
+		log.Printf("[HANDLER] Failed to find item for failure update | job_id=%d | item_id=%d | error=%v", jobID, itemID, err)
 		return
 	}
 

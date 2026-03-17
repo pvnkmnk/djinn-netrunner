@@ -98,7 +98,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 
 func (w *WorkerOrchestrator) Start() {
 	w.running = true
-	log.Printf("[WORKER] Starting worker %s", w.workerID)
+	log.Printf("[WORKER] Starting worker | worker_id=%s", w.workerID)
 
 	// Start background tasks
 	go w.heartbeatLoop()
@@ -109,7 +109,7 @@ func (w *WorkerOrchestrator) Start() {
 		go w.zombieCleanupLoop()
 		go w.rmService.StartBackgroundTask()
 	} else {
-		log.Println("[WORKER] Running in replica mode. Skipping scheduler and watchlist poller.")
+		log.Printf("[WORKER] Running in replica mode. Skipping scheduler and watchlist poller. | worker_id=%s", w.workerID)
 	}
 
 	// listenForWakeup only works for Postgres, for SQLite we rely on polling
@@ -127,13 +127,13 @@ func (w *WorkerOrchestrator) Start() {
 		case <-time.After(5 * time.Second):
 			// Regular poll
 		case <-w.wakeupChan:
-			log.Println("[WORKER] Received wakeup notification")
+			log.Printf("[WORKER] Received wakeup notification | worker_id=%s", w.workerID)
 		}
 	}
 }
 
 func (w *WorkerOrchestrator) watchlistPollingLoop() {
-	log.Println("[WATCHLIST] Starting watchlist polling loop")
+	log.Printf("[WATCHLIST] Starting watchlist polling loop | worker_id=%s", w.workerID)
 	// Poll every 4 hours by default, or use config if available
 	ticker := time.NewTicker(4 * time.Hour)
 
@@ -151,7 +151,7 @@ func (w *WorkerOrchestrator) watchlistPollingLoop() {
 func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 	lists, err := w.watchlist.GetWatchlists()
 	if err != nil {
-		log.Printf("[WATCHLIST] Error fetching watchlists: %v", err)
+		log.Printf("[WATCHLIST] Error fetching watchlists | worker_id=%s | error=%v", w.workerID, err)
 		return
 	}
 
@@ -160,7 +160,7 @@ func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 			continue
 		}
 
-		log.Printf("[WATCHLIST] Triggering sync for %s", l.Name)
+		log.Printf("[WATCHLIST] Triggering sync | worker_id=%s | watchlist=%s | watchlist_id=%s", w.workerID, l.Name, l.ID)
 
 		// Enqueue sync job for watchlist
 		job := database.Job{
@@ -174,7 +174,7 @@ func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 		}
 
 		if err := w.db.Create(&job).Error; err != nil {
-			log.Printf("[WATCHLIST] Error enqueuing job: %v", err)
+			log.Printf("[WATCHLIST] Error enqueuing job | worker_id=%s | watchlist_id=%s | error=%v", w.workerID, l.ID, err)
 		}
 	}
 }
@@ -182,17 +182,17 @@ func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 func (w *WorkerOrchestrator) listenForWakeup() {
 	reportProblem := func(ev pq.ListenerEventType, err error) {
 		if err != nil {
-			log.Printf("[NOTIFY] Listener error: %v", err)
+			log.Printf("[NOTIFY] Listener error | worker_id=%s | error=%v", w.workerID, err)
 		}
 	}
 
 	listener := pq.NewListener(w.cfg.DatabaseURL, 10*time.Second, time.Minute, reportProblem)
 	err := listener.Listen("opswakeup")
 	if err != nil {
-		log.Fatalf("[NOTIFY] Failed to listen: %v", err)
+		log.Fatalf("[NOTIFY] Failed to listen | worker_id=%s | error=%v", w.workerID, err)
 	}
 
-	log.Println("[NOTIFY] Listening for 'opswakeup' events")
+	log.Printf("[NOTIFY] Listening for 'opswakeup' events | worker_id=%s", w.workerID)
 
 	for {
 		if !w.running {
@@ -213,19 +213,19 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 }
 
 func (w *WorkerOrchestrator) Stop() {
-	log.Printf("[WORKER] Shutting down worker %s...", w.workerID)
+	log.Printf("[WORKER] Shutting down worker | worker_id=%s", w.workerID)
 	w.running = false
 
 	w.jobMutex.Lock()
 	for id, jc := range w.activeJobs {
-		log.Printf("[WORKER] Cancelling job %d", id)
+		log.Printf("[WORKER] Cancelling job | worker_id=%s | job_id=%d", w.workerID, id)
 		jc.cancel()
 	}
 	w.jobMutex.Unlock()
 
 	w.wg.Wait()
 	w.lockManager.Close()
-	log.Println("[WORKER] Shutdown complete.")
+	log.Printf("[WORKER] Shutdown complete | worker_id=%s", w.workerID)
 }
 
 func (w *WorkerOrchestrator) heartbeatLoop() {
@@ -239,7 +239,7 @@ func (w *WorkerOrchestrator) heartbeatLoop() {
 }
 
 func (w *WorkerOrchestrator) zombieCleanupLoop() {
-	log.Println("[WORKER] Starting zombie cleanup loop")
+	log.Printf("[WORKER] Starting zombie cleanup loop | worker_id=%s", w.workerID)
 	ticker := time.NewTicker(1 * time.Minute)
 	for range ticker.C {
 		if !w.running {
@@ -251,12 +251,12 @@ func (w *WorkerOrchestrator) zombieCleanupLoop() {
 		var zombieJobs []database.Job
 		err := w.db.Where("state = ? AND heartbeat_at < ?", "running", staleThreshold).Find(&zombieJobs).Error
 		if err != nil {
-			log.Printf("[WORKER] Error searching for zombie jobs: %v", err)
+			log.Printf("[WORKER] Error searching for zombie jobs | worker_id=%s | error=%v", w.workerID, err)
 			continue
 		}
 
 		for _, job := range zombieJobs {
-			log.Printf("[WORKER] Resetting zombie job %d (last heartbeat: %v)", job.ID, job.HeartbeatAt)
+			log.Printf("[WORKER] Resetting zombie job | worker_id=%s | job_id=%d | last_heartbeat=%v", w.workerID, job.ID, job.HeartbeatAt)
 
 			w.db.Model(&job).Updates(map[string]interface{}{
 				"state":        "queued",
@@ -291,7 +291,7 @@ func (w *WorkerOrchestrator) updateHeartbeats() {
 }
 
 func (w *WorkerOrchestrator) schedulerLoop() {
-	log.Println("[SCHEDULER] Starting scheduler loop")
+	log.Printf("[SCHEDULER] Starting scheduler loop | worker_id=%s", w.workerID)
 	ticker := time.NewTicker(30 * time.Second)
 
 	for range ticker.C {
@@ -306,12 +306,12 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 		// Find due schedules
 		err := w.db.Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
 		if err != nil {
-			log.Printf("[SCHEDULER] Error fetching schedules: %v", err)
+			log.Printf("[SCHEDULER] Error fetching schedules | worker_id=%s | error=%v", w.workerID, err)
 			continue
 		}
 
 		for _, s := range schedules {
-			log.Printf("[SCHEDULER] Executing schedule %d for watchlist %s", s.ID, s.WatchlistID)
+			log.Printf("[SCHEDULER] Executing schedule | worker_id=%s | schedule_id=%d | watchlist_id=%s", w.workerID, s.ID, s.WatchlistID)
 
 			// Enqueue sync job
 			job := database.Job{
@@ -325,14 +325,14 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 			}
 
 			if err := w.db.Create(&job).Error; err != nil {
-				log.Printf("[SCHEDULER] Error enqueuing job: %v", err)
+				log.Printf("[SCHEDULER] Error enqueuing job | worker_id=%s | schedule_id=%d | error=%v", w.workerID, s.ID, err)
 				continue
 			}
 
 			// Compute next run at
 			sched, err := cron.ParseStandard(s.CronExpr)
 			if err != nil {
-				log.Printf("[SCHEDULER] Invalid cron expression '%s' for schedule %d: %v", s.CronExpr, s.ID, err)
+				log.Printf("[SCHEDULER] Invalid cron expression | worker_id=%s | schedule_id=%d | cron=%s | error=%v", w.workerID, s.ID, s.CronExpr, err)
 				w.db.Model(&s).Update("enabled", false)
 				continue
 			}
@@ -377,7 +377,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
-			log.Printf("[WORKER] Error claiming job: %v", err)
+			log.Printf("[WORKER] Error claiming job | worker_id=%s | error=%v", w.workerID, err)
 		}
 		return
 	}
@@ -385,18 +385,18 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	// Acquire advisory lock for scope
 	lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
 	if err != nil {
-		log.Printf("[WORKER] Error computing lock key for job %d: %v", job.ID, err)
+		log.Printf("[WORKER] Error computing lock key | worker_id=%s | job_id=%d | error=%v", w.workerID, job.ID, err)
 		return
 	}
 
 	acquired, err := w.lockManager.AcquireTryLock(context.Background(), lockKey)
 	if err != nil {
-		log.Printf("[WORKER] Error acquiring advisory lock for job %d: %v", job.ID, err)
+		log.Printf("[WORKER] Error acquiring advisory lock | worker_id=%s | job_id=%d | error=%v", w.workerID, job.ID, err)
 		return
 	}
 
 	if !acquired {
-		log.Printf("[WORKER] Scope locked for job %d, requeueing", job.ID)
+		log.Printf("[WORKER] Scope locked, requeueing | worker_id=%s | job_id=%d | scope_type=%s | scope_id=%s", w.workerID, job.ID, job.ScopeType, job.ScopeID)
 		w.db.Model(&job).Updates(map[string]interface{}{
 			"state":      "queued",
 			"worker_id":  nil,
@@ -418,7 +418,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	w.activeJobs[job.ID] = jc
 	w.jobMutex.Unlock()
 
-	log.Printf("[WORKER] Claimed job %d (%s)", job.ID, job.Type)
+	log.Printf("[WORKER] Claimed job | worker_id=%s | job_id=%d | job_type=%s", w.workerID, job.ID, job.Type)
 }
 
 func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
@@ -468,7 +468,7 @@ func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	// Claim next item
 	itemID, err := w.claimNextJobItem(jc.job.ID)
 	if err != nil {
-		log.Printf("[WORKER] Error claiming item for job %d: %v", jc.job.ID, err)
+		log.Printf("[WORKER] Error claiming item | worker_id=%s | job_id=%d | error=%v", w.workerID, jc.job.ID, err)
 		return
 	}
 
@@ -480,7 +480,7 @@ func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 
 	err = w.acqHandler.ExecuteItem(jc.ctx, jc.job.ID, itemID)
 	if err != nil {
-		log.Printf("[WORKER] Error processing item %d: %v", itemID, err)
+		log.Printf("[WORKER] Error processing item | worker_id=%s | job_id=%d | item_id=%d | error=%v", w.workerID, jc.job.ID, itemID, err)
 	}
 }
 
@@ -518,7 +518,7 @@ func (w *WorkerOrchestrator) claimNextJobItem(jobID uint64) (uint64, error) {
 }
 
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
-	log.Printf("[WORKER] Executing monolithic job %d (%s)", jc.job.ID, jc.job.Type)
+	log.Printf("[WORKER] Executing monolithic job | worker_id=%s | job_id=%d | job_type=%s", w.workerID, jc.job.ID, jc.job.Type)
 
 	var err error
 	switch jc.job.Type {
@@ -528,7 +528,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 	case "release_monitor":
 		err = w.rmService.CheckAllArtists()
 	case "index_refresh":
-		log.Printf("[WORKER] Triggering Gonic index refresh")
+		log.Printf("[WORKER] Triggering Gonic index refresh | worker_id=%s | job_id=%d", w.workerID, jc.job.ID)
 		// Placeholder for actual refresh call via GonicClient
 		w.mbService.HealthCheck() // Just a dummy call to use a service
 	default:
@@ -565,7 +565,7 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 		"summary":     summary,
 	})
 
-	log.Printf("[WORKER] Finished job %d: %s", jobID, finalState)
+	log.Printf("[WORKER] Finished job | worker_id=%s | job_id=%d | state=%s", w.workerID, jobID, finalState)
 }
 
 func main() {
