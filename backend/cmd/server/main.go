@@ -57,6 +57,7 @@ func main() {
 	authHandler := api.NewAuthHandler(db)
 	dashHandler := api.NewDashboardHandler(db)
 	statsHandler := api.NewStatsHandler(db)
+	libraryHandler := api.NewLibraryHandler(db)
 	spotifyAuthHandler := api.NewSpotifyAuthHandler(db)
 	watchlistService := services.NewWatchlistService(db, spotifyAuthHandler, cfg)
 	watchlistHandler := api.NewWatchlistHandler(db, watchlistService)
@@ -68,7 +69,7 @@ func main() {
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, db, authHandler, dashHandler, statsHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
+	setupRoutes(app, db, authHandler, dashHandler, statsHandler, libraryHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
 
 	// Start server
 	go func() {
@@ -86,7 +87,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -132,6 +133,17 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	schedulesRoutes.Post("/", schedulesHandler.Create)
 	schedulesRoutes.Delete("/:id", schedulesHandler.Delete)
 	schedulesRoutes.Patch("/:id", schedulesHandler.Update)
+
+	// Libraries
+	libraryRoutes := apiProtected.Group("/libraries")
+	libraryRoutes.Get("/", library.ListLibraries)
+	libraryRoutes.Post("/", library.CreateLibrary)
+	libraryRoutes.Get("/:id", library.GetLibrary)
+	libraryRoutes.Patch("/:id", library.UpdateLibrary)
+	libraryRoutes.Delete("/:id", library.DeleteLibrary)
+	libraryRoutes.Post("/:id/scan", library.TriggerScan)
+	libraryRoutes.Post("/:id/enrich", library.TriggerEnrich)
+	libraryRoutes.Get("/:id/tracks", library.ListTracks)
 
 	// Stats
 	statsRoutes := apiProtected.Group("/stats")

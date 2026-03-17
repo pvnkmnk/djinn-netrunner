@@ -10,10 +10,10 @@ import (
 
 // User represents a user in the system
 type User struct {
-	ID           uint64    `gorm:"primaryKey;autoIncrement"`
-	Email        string    `gorm:"uniqueIndex;not null"`
-	PasswordHash string    `gorm:"not null"`
-	Role         string    `gorm:"default:'user'"`
+	ID           uint64 `gorm:"primaryKey;autoIncrement"`
+	Email        string `gorm:"uniqueIndex;not null"`
+	PasswordHash string `gorm:"not null"`
+	Role         string `gorm:"default:'user'"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	LastLoginAt  *time.Time
@@ -23,9 +23,9 @@ type User struct {
 
 // Session represents a user session
 type Session struct {
-	ID        uint64    `gorm:"primaryKey;autoIncrement"`
-	SessionID string    `gorm:"uniqueIndex;not null"`
-	UserID    uint64    `gorm:"not null;index"`
+	ID        uint64 `gorm:"primaryKey;autoIncrement"`
+	SessionID string `gorm:"uniqueIndex;not null"`
+	UserID    uint64 `gorm:"not null;index"`
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	IP        string
@@ -37,9 +37,9 @@ type QualityProfile struct {
 	ID                  uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Name                string    `gorm:"uniqueIndex;not null"`
 	Description         string
-	PreferLossless      bool     `gorm:"default:true"`
-	AllowedFormats      string   `gorm:"type:text"` // Store as comma-separated or JSON for portability
-	MinBitrate          int      `gorm:"default:320"`
+	PreferLossless      bool   `gorm:"default:true"`
+	AllowedFormats      string `gorm:"type:text"` // Store as comma-separated or JSON for portability
+	MinBitrate          int    `gorm:"default:320"`
 	PreferBitrate       *int
 	PreferSceneReleases bool `gorm:"default:false"`
 	PreferWebReleases   bool `gorm:"default:true"`
@@ -57,27 +57,27 @@ func (m *QualityProfile) BeforeCreate(tx *gorm.DB) error {
 
 // MonitoredArtist represents an artist being tracked
 type MonitoredArtist struct {
-	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
-	MusicBrainzID string    `gorm:"uniqueIndex;not null"`
-	Name          string    `gorm:"not null"`
-	SortName      string
+	ID             uuid.UUID `gorm:"type:uuid;primaryKey"`
+	MusicBrainzID  string    `gorm:"uniqueIndex;not null"`
+	Name           string    `gorm:"not null"`
+	SortName       string
 	Disambiguation string
-	
+
 	QualityProfileID uuid.UUID `gorm:"type:uuid;not null;index"`
 	Monitored        bool      `gorm:"default:true"`
 	MonitorNew       bool      `gorm:"column:monitor_new_releases;default:true"`
-	
+
 	MonitorAlbums       bool `gorm:"default:true"`
 	MonitorEPs          bool `gorm:"default:true"`
 	MonitorSingles      bool `gorm:"default:false"`
 	MonitorCompilations bool `gorm:"default:false"`
 	MonitorLive         bool `gorm:"default:false"`
-	
+
 	LastScanDate     *time.Time
 	LastReleaseCheck *time.Time
 	TotalReleases    int `gorm:"default:0"`
 	AcquiredReleases int `gorm:"default:0"`
-	
+
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	OwnerUserID *uint64 `gorm:"index"`
@@ -95,26 +95,26 @@ func (m *MonitoredArtist) BeforeCreate(tx *gorm.DB) error {
 
 // TrackedRelease represents a release we are monitoring
 type TrackedRelease struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
-	ArtistID  uuid.UUID `gorm:"type:uuid;not null;index"`
-	
+	ID       uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ArtistID uuid.UUID `gorm:"type:uuid;not null;index"`
+
 	ReleaseGroupID string `gorm:"column:musicbrainz_release_group_id;not null"`
 	ReleaseID      string `gorm:"column:musicbrainz_release_id"`
-	
+
 	Title         string `gorm:"not null"`
 	ReleaseType   string `gorm:"not null"`
 	ReleaseDate   *time.Time
 	ReleaseStatus string `gorm:"default:'official'"`
-	
+
 	Status    string `gorm:"default:'wanted'"`
 	Monitored bool   `gorm:"default:true"`
-	
+
 	JobID           *uint64 `gorm:"index"`
 	AcquiredDate    *time.Time
 	FilePath        string
 	AcquiredFormat  string
 	AcquiredBitrate int
-	
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -155,6 +155,10 @@ type Track struct {
 	Format    string
 	FileSize  int64
 	FileHash  string `gorm:"index"`
+	Year      *int   // Release year
+	Genre     string // Genre
+	Composer  string // Composer
+	CoverURL  string // URL to cover art
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
@@ -177,7 +181,7 @@ type Watchlist struct {
 	QualityProfileID uuid.UUID `gorm:"type:uuid;not null;index"`
 	LastSnapshotID   string    // Used for Spotify delta checks
 	LastSyncedAt     *time.Time
-	Enabled          bool      `gorm:"default:true"`
+	Enabled          bool `gorm:"default:true"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	OwnerUserID      *uint64 `gorm:"index"`
@@ -214,7 +218,7 @@ type Schedule struct {
 	Timezone    string     `gorm:"not null;default:'UTC'"`
 	NextRunAt   *time.Time `gorm:"index"`
 	LastRunAt   *time.Time
-	Enabled     bool      `gorm:"not null;default:true;index"`
+	Enabled     bool `gorm:"not null;default:true;index"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 
@@ -223,23 +227,23 @@ type Schedule struct {
 
 // Job represents a background job
 type Job struct {
-	ID          uint64          `gorm:"primaryKey;autoIncrement"`
-	Type        string          `gorm:"column:job_type;not null;index"`
-	State       string          `gorm:"column:state;not null;index;default:'queued'"`
-	RequestedAt time.Time       `gorm:"index"`
+	ID          uint64    `gorm:"primaryKey;autoIncrement"`
+	Type        string    `gorm:"column:job_type;not null;index"`
+	State       string    `gorm:"column:state;not null;index;default:'queued'"`
+	RequestedAt time.Time `gorm:"index"`
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
 	HeartbeatAt *time.Time
 	WorkerID    *string
-	Attempt     int             `gorm:"default:0"`
-	MaxAttempts int             `gorm:"default:3"`
+	Attempt     int `gorm:"default:0"`
+	MaxAttempts int `gorm:"default:3"`
 	ScopeType   string
 	ScopeID     string
 	Params      json.RawMessage `gorm:"type:jsonb"`
 	Summary     string
-	ErrorDetail string          `gorm:"column:error_detail"`
-	CreatedBy   string          `gorm:"column:created_by"`
-	OwnerUserID *uint64         `gorm:"index"`
+	ErrorDetail string  `gorm:"column:error_detail"`
+	CreatedBy   string  `gorm:"column:created_by"`
+	OwnerUserID *uint64 `gorm:"index"`
 }
 
 func (m *Job) BeforeCreate(tx *gorm.DB) error {
@@ -251,11 +255,11 @@ func (m *Job) BeforeCreate(tx *gorm.DB) error {
 
 // JobLog represents a log entry for a job
 type JobLog struct {
-	ID        uint64    `gorm:"primaryKey;autoIncrement"`
-	JobID     uint64    `gorm:"not null;index"`
-	JobItemID *uint64   `gorm:"index"`
-	Level     string    `gorm:"not null"`
-	Message   string    `gorm:"not null"`
+	ID        uint64  `gorm:"primaryKey;autoIncrement"`
+	JobID     uint64  `gorm:"not null;index"`
+	JobItemID *uint64 `gorm:"index"`
+	Level     string  `gorm:"not null"`
+	Message   string  `gorm:"not null"`
 	CreatedAt time.Time
 }
 
@@ -268,10 +272,10 @@ func (m *JobLog) BeforeCreate(tx *gorm.DB) error {
 
 // JobItem represents a unit of work within a job
 type JobItem struct {
-	ID              uint64    `gorm:"primaryKey;autoIncrement"`
-	JobID           uint64    `gorm:"not null;index"`
-	Status          string    `gorm:"default:'queued'"`
-	NormalizedQuery string    `gorm:"not null"`
+	ID              uint64 `gorm:"primaryKey;autoIncrement"`
+	JobID           uint64 `gorm:"not null;index"`
+	Status          string `gorm:"default:'queued'"`
+	NormalizedQuery string `gorm:"not null"`
 	Artist          string
 	Album           string
 	TrackTitle      string
@@ -285,28 +289,28 @@ type JobItem struct {
 	RetryCount      int        `gorm:"default:0"`
 	NextAttemptAt   *time.Time `gorm:"index"`
 	CoverArtURL     string
-	Sequence        int        `gorm:"not null"`
-	OwnerUserID     *uint64   `gorm:"index"`
+	Sequence        int     `gorm:"not null"`
+	OwnerUserID     *uint64 `gorm:"index"`
 }
 
 // Acquisition represents an imported item
 type Acquisition struct {
-	ID            uint64    `gorm:"primaryKey;autoIncrement"`
-	JobID         uint64    `gorm:"not null;index"`
-	JobItemID     uint64    `gorm:"not null;index"`
-	Artist        string    `gorm:"not null"`
-	Album         string
-	TrackTitle    string    `gorm:"not null"`
-	OriginalPath  string    `gorm:"not null"`
-	FinalPath     string    `gorm:"not null;index"`
-	FileSize      int64
-	FileHash      string
-	AcquiredAt    time.Time
-	ImportedAt    time.Time
-	SourceUser    string
-	SourceIP      string
-	OwnerUserID   *uint64   `gorm:"index"`
-	
+	ID           uint64 `gorm:"primaryKey;autoIncrement"`
+	JobID        uint64 `gorm:"not null;index"`
+	JobItemID    uint64 `gorm:"not null;index"`
+	Artist       string `gorm:"not null"`
+	Album        string
+	TrackTitle   string `gorm:"not null"`
+	OriginalPath string `gorm:"not null"`
+	FinalPath    string `gorm:"not null;index"`
+	FileSize     int64
+	FileHash     string
+	AcquiredAt   time.Time
+	ImportedAt   time.Time
+	SourceUser   string
+	SourceIP     string
+	OwnerUserID  *uint64 `gorm:"index"`
+
 	// MB Fields
 	MBRecordingID string `gorm:"column:mb_recording_id"`
 	MBReleaseID   string `gorm:"column:mb_release_id"`
@@ -356,13 +360,13 @@ type Setting struct {
 }
 
 // TableName overrides for GORM
-func (Job) TableName() string { return "jobs" }
-func (JobItem) TableName() string { return "jobitems" }
-func (Acquisition) TableName() string { return "acquisitions" }
-func (User) TableName() string { return "users" }
-func (Session) TableName() string { return "sessions" }
-func (QualityProfile) TableName() string { return "quality_profiles" }
+func (Job) TableName() string             { return "jobs" }
+func (JobItem) TableName() string         { return "jobitems" }
+func (Acquisition) TableName() string     { return "acquisitions" }
+func (User) TableName() string            { return "users" }
+func (Session) TableName() string         { return "sessions" }
+func (QualityProfile) TableName() string  { return "quality_profiles" }
 func (MonitoredArtist) TableName() string { return "monitored_artists" }
-func (TrackedRelease) TableName() string { return "tracked_releases" }
-func (Lock) TableName() string { return "locks" }
-func (Setting) TableName() string { return "settings" }
+func (TrackedRelease) TableName() string  { return "tracked_releases" }
+func (Lock) TableName() string            { return "locks" }
+func (Setting) TableName() string         { return "settings" }
