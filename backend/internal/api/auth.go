@@ -29,7 +29,6 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	var payload struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
-		Role     string `json:"role"`
 	}
 
 	if err := c.BodyParser(&payload); err != nil {
@@ -52,15 +51,10 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to hash password"})
 	}
 
-	role := payload.Role
-	if role == "" {
-		role = "user"
-	}
-
 	user := database.User{
 		Email:        payload.Email,
 		PasswordHash: string(hashedPassword),
-		Role:         role,
+		Role:         "user", // Hardcoded to prevent privilege escalation during registration
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
