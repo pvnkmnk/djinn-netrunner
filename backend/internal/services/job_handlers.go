@@ -384,7 +384,14 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 		} else {
 			// Fallback to search
 			query := fmt.Sprintf("recording:%s AND artist:%s", metadata.Title, metadata.Artist)
-			h.mb.SearchArtist(query)
+			recordings, err := h.mb.SearchRecording(query)
+			if err == nil && len(recordings) > 0 {
+				mbIDs.RecordingID = recordings[0].ID
+				mbIDs.ReleaseID = recordings[0].ReleaseID
+				h.Log(jobID, "OK", fmt.Sprintf("Found recording via search: %s", mbIDs.RecordingID), &itemID)
+			} else if err != nil {
+				h.Log(jobID, "WARN", fmt.Sprintf("Recording search failed: %v", err), &itemID)
+			}
 		}
 	}
 
