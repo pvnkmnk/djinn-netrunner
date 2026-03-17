@@ -50,12 +50,14 @@ func (m *PostgresLockManager) ReleaseLock(ctx context.Context, key int64) error 
 }
 
 func (m *PostgresLockManager) GetScopeLockKey(ctx context.Context, scopeType, scopeID string) (int64, error) {
-	var lockKey int64
-	err := m.db.WithContext(ctx).Raw("SELECT scope_lock_key(?, ?)", scopeType, scopeID).Scan(&lockKey).Error
-	if err != nil {
-		return 0, fmt.Errorf("failed to compute scope lock key: %w", err)
+	// Compute lock key: 1001 * 1000000000 + (hash of scope_type:scopeID)
+	// This matches the logic in TableLockManager
+	hash := int64(0)
+	combined := fmt.Sprintf("%s:%s", scopeType, scopeID)
+	for _, char := range combined {
+		hash = 31*hash + int64(char)
 	}
-	return lockKey, nil
+	return 1001*1000000000 + (hash & 0x7FFFFFFF), nil
 }
 
 func (m *PostgresLockManager) Close() error {
@@ -121,4 +123,3 @@ func (m *TableLockManager) GetScopeLockKey(ctx context.Context, scopeType, scope
 func (m *TableLockManager) Close() error {
 	return nil
 }
-
