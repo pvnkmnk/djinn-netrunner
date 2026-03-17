@@ -86,7 +86,7 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 
 	// Discovery logic: find new tracks
 	tracks = h.watchlist.GetNewTracks(ctx, watchlist, currentTracks)
-	
+
 	// Deduplication logic: check library and active queue
 	tracks = h.watchlist.FilterExistingTracks(ctx, tracks)
 
@@ -182,7 +182,7 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 
 			if completed+failed >= total {
 				h.Log(jobID, "OK", fmt.Sprintf("Acquisition finished. %s", summary), nil)
-				
+
 				// Final State
 				finalState := "succeeded"
 				if failed == total {
@@ -264,7 +264,7 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 
 	h.Log(jobID, "OK", fmt.Sprintf("Found %d results", len(results)), &itemID)
 	best := results[0]
-	
+
 	// Check if the best result actually matches the profile (if strictly required)
 	if profile != nil {
 		format := ""
@@ -275,7 +275,7 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 		if best.Bitrate != nil {
 			bitrate = *best.Bitrate
 		}
-		
+
 		if !profile.IsMatch(format, bitrate) {
 			h.Log(jobID, "WARN", fmt.Sprintf("Best result doesn't match profile requirements: %s", best.Filename), &itemID)
 			// For now, we continue but we could fail here if "strict mode" was enabled
@@ -377,14 +377,14 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 
 	if h.mb != nil && (mbIDs.RecordingID != "" || metadata.IsValid()) {
 		h.Log(jobID, "INFO", "Enriching with MusicBrainz...", &itemID)
-		
+
 		if mbIDs.RecordingID != "" {
 			// Real MBID from AcoustID!
 			h.Log(jobID, "OK", fmt.Sprintf("Using canonical Recording ID: %s", mbIDs.RecordingID), &itemID)
 		} else {
 			// Fallback to search
 			query := fmt.Sprintf("recording:%s AND artist:%s", metadata.Title, metadata.Artist)
-			h.mb.SearchArtists(query, 1)
+			h.mb.SearchArtist(query)
 		}
 	}
 
@@ -396,7 +396,7 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 	os.MkdirAll(libraryRoot, 0755)
 
 	finalPath := h.ext.GenerateLibraryPath(metadata, libraryRoot)
-	
+
 	// Ensure unique path
 	if _, err := os.Stat(finalPath); err == nil {
 		ext := filepath.Ext(finalPath)

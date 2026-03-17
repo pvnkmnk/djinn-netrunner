@@ -12,8 +12,10 @@ import (
 
 func TestHealthCheck(t *testing.T) {
 	app := fiber.New()
-	// Mock services and handlers for route setup
-	setupRoutes(app, nil, &api.AuthHandler{}, &api.DashboardHandler{}, &api.WatchlistHandler{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{})
+	// Create mock or nil handlers as needed
+	artistsHandler := &api.ArtistsHandler{}
+	schedulesHandler := &api.SchedulesHandler{}
+	setupRoutes(app, nil, &api.AuthHandler{}, &api.DashboardHandler{}, &api.WatchlistHandler{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
 	assert.NoError(t, err)

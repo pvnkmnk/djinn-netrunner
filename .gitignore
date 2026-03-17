@@ -37,6 +37,9 @@ Thumbs.db
 *.exe
 *.bin
 
+# Worktrees
+.worktrees/
+
 # Databases
 *.db
 *.db-shm
