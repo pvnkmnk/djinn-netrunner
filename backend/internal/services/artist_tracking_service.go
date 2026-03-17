@@ -84,6 +84,20 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 		return nil
 	}
 
+	// PERFORMANCE: Pre-fetch existing releases to avoid N+1 query problem
+	var existingReleases []database.TrackedRelease
+	if err := s.db.Where("artist_id = ?", artist.ID).Find(&existingReleases).Error; err != nil {
+		return err
+	}
+
+	existingMap := make(map[string]database.TrackedRelease)
+	for _, r := range existingReleases {
+		existingMap[r.ReleaseGroupID] = r
+	}
+
+	var newReleases []database.TrackedRelease
+	now := time.Now()
+
 	for _, rg := range releaseGroups {
 		group := rg.(map[string]interface{})
 		rgID := group["id"].(string)
@@ -104,14 +118,9 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 			shouldMonitor = artist.MonitorSingles
 		}
 
-		// Upsert TrackedRelease
-		var release database.TrackedRelease
-		err := s.db.Where("artist_id = ? AND release_group_id = ?", artist.ID, rgID).First(&release).Error
-		
-		now := time.Now()
-		if err != nil {
-			// Create new
-			release = database.TrackedRelease{
+		if existing, ok := existingMap[rgID]; !ok {
+			// Collect new releases for batch insertion
+			newReleases = append(newReleases, database.TrackedRelease{
 				ArtistID:       artist.ID,
 				ReleaseGroupID: rgID,
 				Title:          title,
@@ -120,18 +129,24 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 				Monitored:      shouldMonitor,
 				CreatedAt:      now,
 				UpdatedAt:      now,
-			}
-			s.db.Create(&release)
-		} else {
-			// Update existing if needed
-			s.db.Model(&release).Updates(map[string]interface{}{
+			})
+		} else if existing.Title != title {
+			// Only update if title changed to minimize DB writes
+			s.db.Model(&existing).Updates(map[string]interface{}{
 				"title":      title,
 				"updated_at": now,
 			})
 		}
 	}
 
+	// PERFORMANCE: Use batch insertion for new records
+	if len(newReleases) > 0 {
+		if err := s.db.CreateInBatches(newReleases, 100).Error; err != nil {
+			return err
+		}
+	}
+
 	// Update last scan date
-	now := time.Now()
-	return s.db.Model(&artist).Update("last_scan_date", &now).Error
+	scanNow := time.Now()
+	return s.db.Model(&artist).Update("last_scan_date", &scanNow).Error
 }
