@@ -1,0 +1,42 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Dashboard - NETRUNNER{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <section class="stats-region" hx-get="/partials/stats" hx-trigger="every 30s">
+        <!-- Stats loaded via HTMX -->
+        <div class="stats-loading">Loading stats...</div>
+    </section>
+    
+    <section class="watchlists-region" hx-get="/partials/watchlists" hx-trigger="every 60s">
+        <!-- Watchlists loaded via HTMX -->
+        <div class="watchlists-loading">Loading watchlists...</div>
+    </section>
+    
+    <section class="console-region">
+        <div class="console-controls">
+            <button class="btn" id="btn-attach" hx-post="/console/attach">Attach</button>
+            <button class="btn" id="btn-detach">Detach</button>
+            <span class="filter-group">
+                <button class="filter-btn active" data-filter="all">ALL</button>
+                <button class="filter-btn" data-filter="OK">OK</button>
+                <button class="filter-btn" data-filter="INFO">INFO</button>
+                <button class="filter-btn" data-filter="ERR">ERR</button>
+            </span>
+            <button class="btn" id="btn-copy">Copy Last 200</button>
+            <button class="btn" id="btn-clear">Clear</button>
+            <button class="btn" id="btn-resume">Resume Live</button>
+        </div>
+        
+        <div id="console-socket" class="console-socket">
+            <!-- WebSocket connection swaps here -->
+            <div class="console-placeholder">Select a job to attach</div>
+        </div>
+        
+        <div id="console-logs" class="console-logs" hx-ext="ws" ws-connect="/ws/jobs">
+            <!-- Log lines rendered here -->
+        </div>
+    </section>
+</div>
+{% endblock %}
