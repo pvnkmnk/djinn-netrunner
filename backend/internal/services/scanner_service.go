@@ -30,7 +30,7 @@ type ScanJob struct {
 }
 
 func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, path string) error {
-	log.Printf("[SCANNER] Starting scan of %s", path)
+	log.Printf("[SCANNER] Starting scan | library_id=%s | path=%s", libraryID, path)
 
 	// 1. Worker Pool Setup
 	numWorkers := 4
@@ -65,7 +65,7 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 	close(jobs)
 	wg.Wait()
 
-	log.Printf("[SCANNER] Finished scan of %s", path)
+	log.Printf("[SCANNER] Finished scan | library_id=%s | path=%s", libraryID, path)
 	return err
 }
 
@@ -73,7 +73,7 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 	// Extract metadata
 	meta, err := s.metadata.Extract(path)
 	if err != nil {
-		log.Printf("[SCANNER] Error extracting metadata from %s: %v", path, err)
+		log.Printf("[SCANNER] Error extracting metadata | library_id=%s | path=%s | error=%v", libraryID, path, err)
 		return
 	}
 
@@ -107,12 +107,12 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 	}
 
 	if err != nil {
-		log.Printf("[SCANNER] Error saving track %s: %v", path, err)
+		log.Printf("[SCANNER] Error saving track | library_id=%s | path=%s | error=%v", libraryID, path, err)
 	}
 }
 
 func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) error {
-	log.Printf("[SCANNER] Starting prune for library %s", libraryID)
+	log.Printf("[SCANNER] Starting prune | library_id=%s", libraryID)
 
 	var tracks []database.Track
 	if err := s.db.Where("library_id = ?", libraryID).Find(&tracks).Error; err != nil {
@@ -126,14 +126,14 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) e
 			return ctx.Err()
 		default:
 			if _, err := os.Stat(t.Path); os.IsNotExist(err) {
-				log.Printf("[SCANNER] Pruning missing file: %s", t.Path)
+				log.Printf("[SCANNER] Pruning missing file | library_id=%s | path=%s", libraryID, t.Path)
 				s.db.Delete(&t)
 				count++
 			}
 		}
 	}
 
-	log.Printf("[SCANNER] Prune complete. Removed %d stale records.", count)
+	log.Printf("[SCANNER] Prune complete | library_id=%s | removed=%d", libraryID, count)
 	return nil
 }
 
