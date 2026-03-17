@@ -139,10 +139,22 @@ func (s *WatchlistService) GetNewTracks(ctx context.Context, watchlist *database
 	// For a more robust implementation, we would store the previous track IDs in the DB
 	// or in a cache. Given our architecture, we'll use a simple approach:
 	// We'll fetch the tracks already acquired for this watchlist scope from the acquisitions table.
-	
+
+	// Bolt Optimization: Filter acquisitions by artists in the current batch to avoid loading entire history.
+	artistMap := make(map[string]bool)
+	for _, t := range currentTracks {
+		if a, ok := t["artist"]; ok && a != "" {
+			artistMap[strings.ToLower(a)] = true
+		}
+	}
+	var artists []string
+	for a := range artistMap {
+		artists = append(artists, a)
+	}
+
 	var acquired []database.Acquisition
-	s.db.Where("owner_user_id = ?", watchlist.OwnerUserID).Find(&acquired)
-	
+	s.db.Where("owner_user_id = ? AND LOWER(artist) IN ?", watchlist.OwnerUserID, artists).Find(&acquired)
+
 	existingMap := make(map[string]bool)
 	for _, a := range acquired {
 		// Create a unique key for comparison (Artist - Title)
@@ -163,26 +175,52 @@ func (s *WatchlistService) GetNewTracks(ctx context.Context, watchlist *database
 
 // FilterExistingTracks removes tracks that are already in the library or active queue
 func (s *WatchlistService) FilterExistingTracks(ctx context.Context, tracks []map[string]string) []map[string]string {
-	var filtered []map[string]string
+	if len(tracks) == 0 {
+		return tracks
+	}
 
+	// Bolt Optimization: Replace N+1 queries with bulk-fetch and hash-map lookup.
+	// This reduces database roundtrips from 2N to 2.
+
+	// 1. Collect unique artists and build lookup keys
+	artistMap := make(map[string]bool)
 	for _, t := range tracks {
-		artist := t["artist"]
-		title := t["title"]
-
-		// 1. Check Library
-		var count int64
-		s.db.Model(&database.Track{}).Where("LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?)", artist, title).Count(&count)
-		if count > 0 {
-			continue
+		if a, ok := t["artist"]; ok && a != "" {
+			artistMap[strings.ToLower(a)] = true
 		}
+	}
 
-		// 2. Check active JobItems (not failed)
-		s.db.Model(&database.JobItem{}).Where("LOWER(artist) = LOWER(?) AND LOWER(track_title) = LOWER(?) AND status != 'failed'", artist, title).Count(&count)
-		if count > 0 {
-			continue
+	var artists []string
+	for a := range artistMap {
+		artists = append(artists, a)
+	}
+
+	// 2. Bulk fetch existing tracks from library
+	var existingTracks []database.Track
+	s.db.Where("LOWER(artist) IN ?", artists).Find(&existingTracks)
+
+	existingMap := make(map[string]bool)
+	for _, et := range existingTracks {
+		key := strings.ToLower(fmt.Sprintf("%s-%s", et.Artist, et.Title))
+		existingMap[key] = true
+	}
+
+	// 3. Bulk fetch active job items
+	var activeItems []database.JobItem
+	s.db.Where("LOWER(artist) IN ? AND status != 'failed'", artists).Find(&activeItems)
+
+	for _, ai := range activeItems {
+		key := strings.ToLower(fmt.Sprintf("%s-%s", ai.Artist, ai.TrackTitle))
+		existingMap[key] = true
+	}
+
+	// 4. Filter tracks
+	var filtered []map[string]string
+	for _, t := range tracks {
+		key := strings.ToLower(fmt.Sprintf("%s-%s", t["artist"], t["title"]))
+		if !existingMap[key] {
+			filtered = append(filtered, t)
 		}
-
-		filtered = append(filtered, t)
 	}
 
 	return filtered
