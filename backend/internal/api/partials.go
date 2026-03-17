@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -30,7 +31,8 @@ func getGormDB(c *fiber.Ctx) (*gorm.DB, error) {
 func RenderStatsPartial(c *fiber.Ctx) error {
 	gormDB, err := getGormDB(c)
 	if err != nil {
-		return c.SendString("<div class=\"error\">" + err.Error() + "</div>")
+		log.Printf("Error getting DB: %v", err)
+		return c.SendString("<div class=\"error\">Error loading stats.</div>")
 	}
 
 	var stats StatsData
@@ -38,12 +40,15 @@ func RenderStatsPartial(c *fiber.Ctx) error {
 	since := time.Now().Add(-24 * time.Hour)
 
 	// Use conditional aggregation for efficient single-query stats
-	gormDB.Model(&database.Job{}).Where("requested_at > ?", since).
+	if err := gormDB.Model(&database.Job{}).Where("requested_at > ?", since).
 		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
 			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
 			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
 			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
-		Scan(&stats)
+		Scan(&stats).Error; err != nil {
+		log.Printf("Error fetching stats: %v", err)
+		return c.SendString("<div class=\"error\">Error loading stats.</div>")
+	}
 
 	return c.Render("partials/stats", fiber.Map{
 		"stats": stats,
@@ -54,11 +59,14 @@ func RenderStatsPartial(c *fiber.Ctx) error {
 func RenderWatchlistsPartial(c *fiber.Ctx) error {
 	gormDB, err := getGormDB(c)
 	if err != nil {
-		return c.SendString("<div class=\"error\">" + err.Error() + "</div>")
+		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
 	}
 
 	var watchlists []database.Watchlist
-	gormDB.Order("name").Find(&watchlists)
+	if err := gormDB.Order("name").Find(&watchlists).Error; err != nil {
+		log.Printf("Error fetching watchlists: %v", err)
+		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
+	}
 
 	return c.Render("partials/watchlists", fiber.Map{
 		"watchlists": watchlists,

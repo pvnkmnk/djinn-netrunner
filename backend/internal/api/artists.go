@@ -1,8 +1,6 @@
 package api
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -54,14 +52,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	artist := results[0]
 	// Simple confidence check: exact match or very close match
 	// MusicBrainz search returns results sorted by relevance
-	if !strings.EqualFold(artist.Name, payload.Name) &&
-		!strings.Contains(strings.ToLower(artist.Name), strings.ToLower(payload.Name)) {
-		// First result doesn't match closely - could be a disambiguation issue
-		// Check if we have multiple results and the second one is better
-		if len(results) > 1 {
-			// Use the first result but log a warning (would need logging infrastructure)
-		}
-	}
+	// TODO: Add logging for ambiguous results when logging infrastructure is available
 
 	// Get quality profile
 	var profileID uuid.UUID

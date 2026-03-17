@@ -68,7 +68,10 @@ func (s *MusicBrainzService) SearchArtist(query string) ([]MusicBrainzArtist, er
 
 	url := fmt.Sprintf("%s/ws/2/artist?query=artist:%s&fmt=json&limit=5", s.baseURL, url.QueryEscape(query))
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create musicbrainz request: %w", err)
+	}
 	userAgent := "netrunner/1.0 (contact@example.com)"
 	if s.cfg != nil && s.cfg.MusicBrainzUserAgent != "" {
 		userAgent = s.cfg.MusicBrainzUserAgent
@@ -131,7 +134,10 @@ func (s *MusicBrainzService) SearchRecording(query string) ([]MusicBrainzRecordi
 
 	url := fmt.Sprintf("%s/ws/2/recording?query=%s&fmt=json&limit=5", s.baseURL, url.QueryEscape(query))
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create musicbrainz request: %w", err)
+	}
 	userAgent := "netrunner/1.0 (contact@example.com)"
 	if s.cfg != nil && s.cfg.MusicBrainzUserAgent != "" {
 		userAgent = s.cfg.MusicBrainzUserAgent
