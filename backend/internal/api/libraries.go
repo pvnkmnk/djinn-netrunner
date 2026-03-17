@@ -93,19 +93,25 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
+		Name *string `json:"name"`
+		Path *string `json:"path"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	if input.Name != "" {
-		library.Name = input.Name
+	if input.Name != nil {
+		if *input.Name == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
+		}
+		library.Name = *input.Name
 	}
-	if input.Path != "" {
-		library.Path = input.Path
+	if input.Path != nil {
+		if *input.Path == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "path cannot be empty"})
+		}
+		library.Path = *input.Path
 	}
 
 	if err := h.db.Save(&library).Error; err != nil {
@@ -130,12 +136,13 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Delete associated tracks first
-	if err := h.db.Delete(&database.Track{}, "library_id = ?", id).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	if err := h.db.Delete(&library).Error; err != nil {
+	// Delete associated tracks and library in a transaction
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&database.Track{}, "library_id = ?", id).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&library).Error
+	}); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 

@@ -143,12 +143,14 @@ func AddLibrary(db *gorm.DB, name, path string) (*database.Library, error) {
 
 // DeleteLibrary deletes a library by ID
 func DeleteLibrary(db *gorm.DB, libraryID uuid.UUID) error {
-	// First delete associated tracks
-	if err := db.Delete(&database.Track{}, "library_id = ?", libraryID).Error; err != nil {
-		return err
-	}
-	// Then delete the library
-	return db.Delete(&database.Library{}, "id = ?", libraryID).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		// First delete associated tracks
+		if err := tx.Delete(&database.Track{}, "library_id = ?", libraryID).Error; err != nil {
+			return err
+		}
+		// Then delete the library
+		return tx.Delete(&database.Library{}, "id = ?", libraryID).Error
+	})
 }
 
 // ScanLibrary triggers a scan job for a specific library

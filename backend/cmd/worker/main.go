@@ -546,10 +546,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 			return
 		}
 		log.Printf("[WORKER] Scanning library %s at path %s", library.Name, library.Path)
-		err = w.scanService.ScanLibrary(context.Background(), libraryID, library.Path)
-		if err != nil {
-			log.Printf("[WORKER] Scan failed: %v", err)
-		}
+		err = w.scanService.ScanLibrary(jc.ctx, libraryID, library.Path)
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}
