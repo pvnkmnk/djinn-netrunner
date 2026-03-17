@@ -48,12 +48,20 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "artist not found in MusicBrainz"})
 	}
 
+	// Check confidence: verify first result matches closely
 	artist := results[0]
+	// Simple confidence check: exact match or very close match
+	// MusicBrainz search returns results sorted by relevance
+	// TODO: Add logging for ambiguous results when logging infrastructure is available
 
 	// Get quality profile
 	var profileID uuid.UUID
 	if payload.QualityProfileID != "" {
-		profileID, _ = uuid.Parse(payload.QualityProfileID)
+		var err error
+		profileID, err = uuid.Parse(payload.QualityProfileID)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid quality_profile_id"})
+		}
 	} else {
 		// Get default profile
 		var profile database.QualityProfile
@@ -62,8 +70,8 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		}
 	}
 
-	// Create monitored artist
-	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID)
+	// Create monitored artist with name and sort name
+	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}

@@ -44,14 +44,34 @@ type MusicBrainzArtist struct {
 	Disambiguation string `json:"disambiguation"`
 }
 
+// MusicBrainzRecording represents a recording from MusicBrainz
+type MusicBrainzRecording struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Artist    string `json:"artist"`
+	Length    int    `json:"length"`
+	ReleaseID string `json:"release,omitempty"`
+}
+
 // SearchArtist searches MusicBrainz for an artist by name
 func (s *MusicBrainzService) SearchArtist(query string) ([]MusicBrainzArtist, error) {
+	cacheKey := fmt.Sprintf("artist:%s", query)
+	if s.cache != nil {
+		var cached []MusicBrainzArtist
+		if found, _ := s.cache.Get("musicbrainz", cacheKey, &cached); found {
+			return cached, nil
+		}
+	}
+
 	// Wait for rate limiter
 	<-s.rateLimiter.C
 
 	url := fmt.Sprintf("%s/ws/2/artist?query=artist:%s&fmt=json&limit=5", s.baseURL, url.QueryEscape(query))
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create musicbrainz request: %w", err)
+	}
 	userAgent := "netrunner/1.0 (contact@example.com)"
 	if s.cfg != nil && s.cfg.MusicBrainzUserAgent != "" {
 		userAgent = s.cfg.MusicBrainzUserAgent
@@ -91,7 +111,92 @@ func (s *MusicBrainzService) SearchArtist(query string) ([]MusicBrainzArtist, er
 			Disambiguation: a.Disambiguation,
 		}
 	}
+
+	if s.cache != nil && len(artists) > 0 {
+		s.cache.Set("musicbrainz", cacheKey, artists, 24*time.Hour)
+	}
+
 	return artists, nil
+}
+
+// SearchRecording searches MusicBrainz for a recording (song) by title and artist
+func (s *MusicBrainzService) SearchRecording(query string) ([]MusicBrainzRecording, error) {
+	cacheKey := fmt.Sprintf("recording:%s", query)
+	if s.cache != nil {
+		var cached []MusicBrainzRecording
+		if found, _ := s.cache.Get("musicbrainz", cacheKey, &cached); found {
+			return cached, nil
+		}
+	}
+
+	// Wait for rate limiter
+	<-s.rateLimiter.C
+
+	url := fmt.Sprintf("%s/ws/2/recording?query=%s&fmt=json&limit=5", s.baseURL, url.QueryEscape(query))
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create musicbrainz request: %w", err)
+	}
+	userAgent := "netrunner/1.0 (contact@example.com)"
+	if s.cfg != nil && s.cfg.MusicBrainzUserAgent != "" {
+		userAgent = s.cfg.MusicBrainzUserAgent
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("musicbrainz api error: %s", resp.Status)
+	}
+
+	var result struct {
+		Recordings []struct {
+			ID       string `json:"id"`
+			Title    string `json:"title"`
+			Length   int    `json:"length"`
+			Releases []struct {
+				ID string `json:"id"`
+			} `json:"releases"`
+			Artists []struct {
+				Name string `json:"name"`
+			} `json:"artists"`
+		} `json:"recordings"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	recordings := make([]MusicBrainzRecording, len(result.Recordings))
+	for i, r := range result.Recordings {
+		artistName := ""
+		if len(r.Artists) > 0 {
+			artistName = r.Artists[0].Name
+		}
+		releaseID := ""
+		if len(r.Releases) > 0 {
+			releaseID = r.Releases[0].ID
+		}
+		recordings[i] = MusicBrainzRecording{
+			ID:        r.ID,
+			Title:     r.Title,
+			Artist:    artistName,
+			Length:    r.Length,
+			ReleaseID: releaseID,
+		}
+	}
+
+	if s.cache != nil && len(recordings) > 0 {
+		s.cache.Set("musicbrainz", cacheKey, recordings, 24*time.Hour)
+	}
+
+	return recordings, nil
 }
 
 // GetArtistDiscography gets all release groups for an artist

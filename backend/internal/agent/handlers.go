@@ -119,6 +119,64 @@ func SyncWatchlist(db *gorm.DB, watchlistID uuid.UUID, userID *uint64) (*databas
 	return &job, nil
 }
 
+// ListLibraries returns all registered libraries
+func ListLibraries(db *gorm.DB) ([]database.Library, error) {
+	var libraries []database.Library
+	err := db.Order("name").Find(&libraries).Error
+	return libraries, err
+}
+
+// AddLibrary adds a new library
+func AddLibrary(db *gorm.DB, name, path string) (*database.Library, error) {
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: name,
+		Path: path,
+	}
+
+	if err := db.Create(&library).Error; err != nil {
+		return nil, err
+	}
+
+	return &library, nil
+}
+
+// DeleteLibrary deletes a library by ID
+func DeleteLibrary(db *gorm.DB, libraryID uuid.UUID) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		// First delete associated tracks
+		if err := tx.Delete(&database.Track{}, "library_id = ?", libraryID).Error; err != nil {
+			return err
+		}
+		// Then delete the library
+		return tx.Delete(&database.Library{}, "id = ?", libraryID).Error
+	})
+}
+
+// ScanLibrary triggers a scan job for a specific library
+func ScanLibrary(db *gorm.DB, libraryID uuid.UUID) (*database.Job, error) {
+	// Verify library exists
+	var library database.Library
+	if err := db.First(&library, "id = ?", libraryID).Error; err != nil {
+		return nil, err
+	}
+
+	job := database.Job{
+		Type:        "scan",
+		State:       "queued",
+		ScopeType:   "library",
+		ScopeID:     libraryID.String(),
+		RequestedAt: time.Now(),
+		CreatedBy:   "cli",
+	}
+
+	if err := db.Create(&job).Error; err != nil {
+		return nil, err
+	}
+
+	return &job, nil
+}
+
 // ListJobs returns recent and active background jobs
 func ListJobs(db *gorm.DB, limit int) ([]database.Job, error) {
 	var jobs []database.Job
@@ -260,61 +318,6 @@ func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, query string) ([]ma
 	}
 
 	return results, nil
-}
-
-// ListLibraries returns all registered libraries
-func ListLibraries(db *gorm.DB) ([]database.Library, error) {
-	var libraries []database.Library
-	err := db.Order("name").Find(&libraries).Error
-	return libraries, err
-}
-
-// AddLibrary adds a new library
-func AddLibrary(db *gorm.DB, name, path string) (*database.Library, error) {
-	library := database.Library{
-		ID:   uuid.New(),
-		Name: name,
-		Path: path,
-	}
-
-	if err := db.Create(&library).Error; err != nil {
-		return nil, err
-	}
-
-	return &library, nil
-}
-
-// DeleteLibrary deletes a library by ID
-func DeleteLibrary(db *gorm.DB, libraryID uuid.UUID) error {
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&database.Track{}, "library_id = ?", libraryID).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&database.Library{}, "id = ?", libraryID).Error
-	})
-}
-
-// ScanLibrary triggers a scan job for a specific library
-func ScanLibrary(db *gorm.DB, libraryID uuid.UUID) (*database.Job, error) {
-	var library database.Library
-	if err := db.First(&library, "id = ?", libraryID).Error; err != nil {
-		return nil, err
-	}
-
-	job := database.Job{
-		Type:        "scan",
-		State:       "queued",
-		ScopeType:   "library",
-		ScopeID:     libraryID.String(),
-		RequestedAt: time.Now(),
-		CreatedBy:   "cli",
-	}
-
-	if err := db.Create(&job).Error; err != nil {
-		return nil, err
-	}
-
-	return &job, nil
 }
 
 // Stats types for CLI

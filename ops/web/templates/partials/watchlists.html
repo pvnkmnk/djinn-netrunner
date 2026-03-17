@@ -1,0 +1,20 @@
+<div class="watchlists-region">
+    <h2>Watchlists</h2>
+    {{ range .watchlists }}
+    <div class="watchlist-card">
+        <div>
+            <div class="name">{{ .Name }}</div>
+            <div class="source">{{ .SourceType }}: {{ .SourceURI }}</div>
+        </div>
+        <div class="sync-status">
+            {{ if .Enabled }}
+            <span class="text-success">Enabled</span>
+            {{ else }}
+            <span class="text-secondary">Disabled</span>
+            {{ end }}
+        </div>
+    </div>
+    {{ else }}
+    <p>No watchlists configured</p>
+    {{ end }}
+</div>
