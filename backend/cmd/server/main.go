@@ -56,10 +56,11 @@ func main() {
 	// Handlers
 	authHandler := api.NewAuthHandler(db)
 	dashHandler := api.NewDashboardHandler(db)
+	statsHandler := api.NewStatsHandler(db)
+	libraryHandler := api.NewLibraryHandler(db)
 	spotifyAuthHandler := api.NewSpotifyAuthHandler(db)
 	watchlistService := services.NewWatchlistService(db, spotifyAuthHandler, cfg)
 	watchlistHandler := api.NewWatchlistHandler(db, watchlistService)
-	libraryHandler := api.NewLibraryHandler(db)
 	wsManager := api.NewWebSocketManager()
 	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
 	schedulesHandler := api.NewSchedulesHandler(db)
@@ -68,7 +69,7 @@ func main() {
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, db, authHandler, dashHandler, watchlistHandler, libraryHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
+	setupRoutes(app, db, authHandler, dashHandler, statsHandler, libraryHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
 
 	// Start server
 	go func() {
@@ -86,7 +87,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, watchlist *api.WatchlistHandler, library *api.LibraryHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -119,16 +120,6 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	watchlistRoutes.Delete("/:id", watchlist.DeleteWatchlist)
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
 
-	// Libraries
-	libraryRoutes := apiProtected.Group("/libraries")
-	libraryRoutes.Get("/", library.ListLibraries)
-	libraryRoutes.Post("/", library.CreateLibrary)
-	libraryRoutes.Get("/:id", library.GetLibrary)
-	libraryRoutes.Patch("/:id", library.UpdateLibrary)
-	libraryRoutes.Delete("/:id", library.DeleteLibrary)
-	libraryRoutes.Post("/:id/scan", library.TriggerScan)
-	libraryRoutes.Get("/:id/tracks", library.ListTracks)
-
 	// Artists
 	artistsRoutes := apiProtected.Group("/artists")
 	artistsRoutes.Get("/", artistsHandler.List)
@@ -142,6 +133,26 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	schedulesRoutes.Post("/", schedulesHandler.Create)
 	schedulesRoutes.Delete("/:id", schedulesHandler.Delete)
 	schedulesRoutes.Patch("/:id", schedulesHandler.Update)
+
+	// Libraries
+	libraryRoutes := apiProtected.Group("/libraries")
+	libraryRoutes.Get("/", library.ListLibraries)
+	libraryRoutes.Post("/", library.CreateLibrary)
+	libraryRoutes.Get("/:id", library.GetLibrary)
+	libraryRoutes.Patch("/:id", library.UpdateLibrary)
+	libraryRoutes.Delete("/:id", library.DeleteLibrary)
+	libraryRoutes.Post("/:id/scan", library.TriggerScan)
+	libraryRoutes.Post("/:id/enrich", library.TriggerEnrich)
+	libraryRoutes.Get("/:id/tracks", library.ListTracks)
+
+	// Stats
+	statsRoutes := apiProtected.Group("/stats")
+	statsRoutes.Get("/jobs", stats.GetJobStats)
+	statsRoutes.Get("/jobs/breakdown", stats.GetJobTypeBreakdown)
+	statsRoutes.Get("/jobs/trends", stats.GetJobTrends)
+	statsRoutes.Get("/library", stats.GetLibraryStats)
+	statsRoutes.Get("/activity", stats.GetActivityStats)
+	statsRoutes.Get("/summary", stats.GetSummary)
 
 	// Jobs
 	jobRoutes := apiProtected.Group("/jobs")
@@ -180,8 +191,4 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 		}
 		return c.JSON(fiber.Map{"status": "scan_triggered"})
 	})
-
-	// HTMX partials
-	app.Get("/partials/stats", api.RenderStatsPartial)
-	app.Get("/partials/watchlists", api.RenderWatchlistsPartial)
 }

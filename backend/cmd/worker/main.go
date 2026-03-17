@@ -33,6 +33,7 @@ type WorkerOrchestrator struct {
 	rmService   *services.ReleaseMonitorService
 	watchlist   *services.WatchlistService
 	scanService *services.ScannerService
+	discogs     *services.DiscogsService
 	lockManager database.LockManager
 	spotify     *services.SpotifyService
 	slskd       *services.SlskdService
@@ -75,6 +76,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	aid := services.NewAcoustIDService(cfg)
 	aid.SetCache(cache)
 	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
+	discogs := services.NewDiscogsService(cfg)
 	return &WorkerOrchestrator{
 		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:          db,
@@ -84,6 +86,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		rmService:   rm,
 		watchlist:   watchlist,
 		scanService: services.NewScannerService(db),
+		discogs:     discogs,
 		lockManager: database.NewLockManager(db),
 		spotify:     spotify,
 		slskd:       slskd,
@@ -532,7 +535,6 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		// Placeholder for actual refresh call via GonicClient
 		w.mbService.HealthCheck() // Just a dummy call to use a service
 	case "scan":
-		// ScopeID contains the Library UUID
 		libraryID, err := uuid.Parse(jc.job.ScopeID)
 		if err != nil {
 			err = fmt.Errorf("invalid library UUID: %w", err)
@@ -547,6 +549,60 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		}
 		log.Printf("[WORKER] Scanning library %s at path %s", library.Name, library.Path)
 		err = w.scanService.ScanLibrary(jc.ctx, libraryID, library.Path)
+	case "enrich":
+		// Enrich metadata for tracks in a library using Discogs
+		libraryID, err := uuid.Parse(jc.job.ScopeID)
+		if err != nil {
+			err = fmt.Errorf("invalid library UUID: %w", err)
+			w.finishJob(jc.job.ID, err)
+			return
+		}
+		log.Printf("[WORKER] Starting metadata enrichment for library %s", libraryID)
+
+		// Get library
+		var library database.Library
+		if err := w.db.First(&library, "id = ?", libraryID).Error; err != nil {
+			w.finishJob(jc.job.ID, err)
+			return
+		}
+
+		// Get all tracks for this library that need enrichment
+		var tracks []database.Track
+		w.db.Where("library_id = ? AND (genre = '' OR genre IS NULL)", libraryID).Find(&tracks)
+
+		enriched := 0
+		for _, track := range tracks {
+			select {
+			case <-jc.ctx.Done():
+				err = jc.ctx.Err()
+				goto doneEnrich
+			default:
+			}
+
+			// Try to enrich from Discogs
+			enrichedData, err := w.discogs.EnrichTrack(track.Artist, track.Title)
+			if err != nil {
+				log.Printf("[WORKER] Could not enrich %s - %s: %v", track.Artist, track.Title, err)
+				continue
+			}
+
+			// Update track
+			if coverURL, ok := enrichedData["cover_url"].(string); ok {
+				track.CoverURL = coverURL
+			}
+			if genre, ok := enrichedData["genre"].(string); ok {
+				track.Genre = genre
+			}
+			if year, ok := enrichedData["year"].(int); ok {
+				track.Year = &year
+			}
+
+			w.db.Save(&track)
+			enriched++
+		}
+
+	doneEnrich:
+		log.Printf("[WORKER] Enriched %d tracks for library %s", enriched, library.Name)
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}

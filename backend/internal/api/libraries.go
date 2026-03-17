@@ -184,6 +184,41 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 	})
 }
 
+// TriggerEnrich creates an enrich job for the library
+func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid library ID"})
+	}
+
+	var library database.Library
+	if err := h.db.First(&library, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Create enrich job
+	job := database.Job{
+		Type:        "enrich",
+		State:       "queued",
+		ScopeType:   "library",
+		ScopeID:     library.ID.String(),
+		RequestedAt: time.Now(),
+		CreatedBy:   "api",
+	}
+
+	if err := h.db.Create(&job).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.Status(202).JSON(fiber.Map{
+		"message": "enrich job queued",
+		"job_id":  job.ID,
+	})
+}
+
 // ListTracks returns all tracks for a library
 func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 	libraryID, err := uuid.Parse(c.Params("id"))
