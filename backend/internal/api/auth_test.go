@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"strings"
+
+	"github.com/glebarez/sqlite"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/driver/postgres"
@@ -21,7 +24,14 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		t.Skip("DATABASE_URL not set, skipping integration test")
 	}
 
-	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
+	var dialector gorm.Dialector
+	if strings.HasPrefix(dbURL, "postgres") {
+		dialector = postgres.Open(dbURL)
+	} else {
+		dialector = sqlite.Open(dbURL)
+	}
+
+	db, err := gorm.Open(dialector, &gorm.Config{})
 	if err != nil {
 		t.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -48,6 +58,7 @@ func TestAuthFlow(t *testing.T) {
 	regPayload := map[string]string{
 		"email":    email,
 		"password": password,
+		"role":     "admin", // Attempt to spoof role
 	}
 	body, _ := json.Marshal(regPayload)
 	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
@@ -80,4 +91,9 @@ func TestAuthFlow(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: cookieStr})
 	resp, _ = app.Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
+
+	// 4. Verify role was NOT spoofed
+	var user database.User
+	db.Where("email = ?", email).First(&user)
+	assert.Equal(t, "user", user.Role)
 }
