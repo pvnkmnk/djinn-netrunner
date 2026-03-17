@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -16,24 +17,33 @@ type StatsData struct {
 	FailedCount    int64
 }
 
-// RenderStatsPartial returns stats HTML for HTMX
-func RenderStatsPartial(c *fiber.Ctx) error {
+// getGormDB extracts the GORM database from fiber context
+func getGormDB(c *fiber.Ctx) (*gorm.DB, error) {
 	db := c.Locals("db")
 	if db == nil {
-		return c.SendString("<div class=\"error\">DB not available</div>")
+		return nil, fmt.Errorf("DB not available")
 	}
+	return db.(*gorm.DB), nil
+}
 
-	gormDB := db.(*gorm.DB)
+// RenderStatsPartial returns stats HTML for HTMX
+func RenderStatsPartial(c *fiber.Ctx) error {
+	gormDB, err := getGormDB(c)
+	if err != nil {
+		return c.SendString("<div class=\"error\">" + err.Error() + "</div>")
+	}
 
 	var stats StatsData
 
 	since := time.Now().Add(-24 * time.Hour)
 
-	// Count jobs by state in the last 24 hours
-	gormDB.Model(&database.Job{}).Where("requested_at > ?", since).Count(&stats.QueuedCount)
-	gormDB.Model(&database.Job{}).Where("requested_at > ? AND state = ?", since, "running").Count(&stats.RunningCount)
-	gormDB.Model(&database.Job{}).Where("requested_at > ? AND state = ?", since, "succeeded").Count(&stats.SucceededCount)
-	gormDB.Model(&database.Job{}).Where("requested_at > ? AND state = ?", since, "failed").Count(&stats.FailedCount)
+	// Use conditional aggregation for efficient single-query stats
+	gormDB.Model(&database.Job{}).Where("requested_at > ?", since).
+		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
+			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
+			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
+			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
+		Scan(&stats)
 
 	return c.Render("partials/stats", fiber.Map{
 		"stats": stats,
@@ -42,12 +52,10 @@ func RenderStatsPartial(c *fiber.Ctx) error {
 
 // RenderWatchlistsPartial returns watchlists HTML for HTMX
 func RenderWatchlistsPartial(c *fiber.Ctx) error {
-	db := c.Locals("db")
-	if db == nil {
-		return c.SendString("<div class=\"error\">DB not available</div>")
+	gormDB, err := getGormDB(c)
+	if err != nil {
+		return c.SendString("<div class=\"error\">" + err.Error() + "</div>")
 	}
-
-	gormDB := db.(*gorm.DB)
 
 	var watchlists []database.Watchlist
 	gormDB.Order("name").Find(&watchlists)

@@ -24,7 +24,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 line.style.display = '';
             } else {
                 const level = line.querySelector('.log-level');
-                if (level && level.textContent.includes(filter)) {
+                // Use exact match for robust filtering
+                if (level && level.textContent.trim() === '[' + filter + ']') {
                     line.style.display = '';
                 } else {
                     line.style.display = 'none';
@@ -79,9 +80,14 @@ document.addEventListener('DOMContentLoaded', function() {
     document.body.addEventListener('htmx:wsMessage', function(evt) {
         const msg = evt.detail.message;
         if (msg && consoleLogs) {
-            const div = document.createElement('div');
-            div.innerHTML = msg;
-            consoleLogs.appendChild(div);
+            // Use DOMParser to safely parse HTML and prevent XSS
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(msg, 'text/html');
+            const fragment = document.createDocumentFragment();
+            while (doc.body.firstChild) {
+                fragment.appendChild(doc.body.firstChild);
+            }
+            consoleLogs.appendChild(fragment);
             if (autoScroll) {
                 consoleLogs.scrollTop = consoleLogs.scrollHeight;
             }

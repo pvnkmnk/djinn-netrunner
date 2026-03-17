@@ -25,7 +25,7 @@ func NewArtistTrackingService(db *gorm.DB, mb *MusicBrainzService) *ArtistTracki
 }
 
 // AddMonitoredArtist adds a new artist to the system and starts monitoring
-func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID) (*database.MonitoredArtist, error) {
+func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID, name, sortName string) (*database.MonitoredArtist, error) {
 	// 1. Fetch artist details from MusicBrainz to ensure it exists and get metadata
 	// (Simplified for now, in a real implementation we'd parse the MB response properly)
 
@@ -36,10 +36,17 @@ func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID
 		return nil, errors.New("artist already monitored")
 	}
 
+	// Use provided name or fallback to MBID
+	artistName := name
+	if artistName == "" {
+		artistName = mbid
+	}
+
 	// Create artist record
-	// For now, we'll assume the name is provided or we fetch it
 	artist := database.MonitoredArtist{
 		MusicBrainzID:    mbid,
+		Name:             artistName,
+		SortName:         sortName,
 		QualityProfileID: qualityProfileID,
 		Monitored:        true,
 		MonitorNew:       true,

@@ -19,7 +19,9 @@ func NewSchedulesHandler(db *gorm.DB) *SchedulesHandler {
 // GET /api/schedules - List all schedules
 func (h *SchedulesHandler) List(c *fiber.Ctx) error {
 	var schedules []database.Schedule
-	h.db.Preload("Watchlist").Find(&schedules)
+	if err := h.db.Preload("Watchlist").Find(&schedules).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 	return c.JSON(schedules)
 }
 
