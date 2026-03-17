@@ -15,7 +15,7 @@ func TestHealthCheck(t *testing.T) {
 	// Create mock or nil handlers as needed
 	artistsHandler := &api.ArtistsHandler{}
 	schedulesHandler := &api.SchedulesHandler{}
-	setupRoutes(app, nil, &api.AuthHandler{}, &api.DashboardHandler{}, &api.WatchlistHandler{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler)
+	setupRoutes(app, nil, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.WatchlistHandler{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
 	assert.NoError(t, err)

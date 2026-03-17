@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -16,7 +16,7 @@ import (
 type SystemStatus struct {
 	DatabaseConnected bool   `json:"database_connected"`
 	SlskdConnected    bool   `json:"slskd_connected"`
-	GonicConnected     bool   `json:"gonic_connected"`
+	GonicConnected    bool   `json:"gonic_connected"`
 	Message           string `json:"message"`
 }
 
@@ -230,7 +230,7 @@ func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, query string) ([]ma
 	searchQuery := "%" + query + "%"
 	err := db.Where("artist LIKE ? OR track_title LIKE ? OR album LIKE ?", searchQuery, searchQuery, searchQuery).
 		Limit(50).Find(&acquisitions).Error
-	
+
 	if err == nil {
 		for _, a := range acquisitions {
 			results = append(results, map[string]string{
@@ -260,4 +260,176 @@ func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, query string) ([]ma
 	}
 
 	return results, nil
+}
+
+// ListLibraries returns all registered libraries
+func ListLibraries(db *gorm.DB) ([]database.Library, error) {
+	var libraries []database.Library
+	err := db.Order("name").Find(&libraries).Error
+	return libraries, err
+}
+
+// AddLibrary adds a new library
+func AddLibrary(db *gorm.DB, name, path string) (*database.Library, error) {
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: name,
+		Path: path,
+	}
+
+	if err := db.Create(&library).Error; err != nil {
+		return nil, err
+	}
+
+	return &library, nil
+}
+
+// DeleteLibrary deletes a library by ID
+func DeleteLibrary(db *gorm.DB, libraryID uuid.UUID) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&database.Track{}, "library_id = ?", libraryID).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&database.Library{}, "id = ?", libraryID).Error
+	})
+}
+
+// ScanLibrary triggers a scan job for a specific library
+func ScanLibrary(db *gorm.DB, libraryID uuid.UUID) (*database.Job, error) {
+	var library database.Library
+	if err := db.First(&library, "id = ?", libraryID).Error; err != nil {
+		return nil, err
+	}
+
+	job := database.Job{
+		Type:        "scan",
+		State:       "queued",
+		ScopeType:   "library",
+		ScopeID:     libraryID.String(),
+		RequestedAt: time.Now(),
+		CreatedBy:   "cli",
+	}
+
+	if err := db.Create(&job).Error; err != nil {
+		return nil, err
+	}
+
+	return &job, nil
+}
+
+// Stats types for CLI
+type JobStats struct {
+	Total       int64   `json:"total"`
+	Queued      int64   `json:"queued"`
+	Running     int64   `json:"running"`
+	Succeeded   int64   `json:"succeeded"`
+	Failed      int64   `json:"failed"`
+	SuccessRate float64 `json:"success_rate"`
+}
+
+type LibraryStats struct {
+	TotalTracks     int64         `json:"total_tracks"`
+	TotalSize       int64         `json:"total_size"`
+	TotalSizeMB     float64       `json:"total_size_mb"`
+	FormatBreakdown []FormatCount `json:"format_breakdown"`
+}
+
+type FormatCount struct {
+	Format    string `json:"format"`
+	Count     int64  `json:"count"`
+	TotalSize int64  `json:"total_size"`
+}
+
+type ActivityStats struct {
+	MonitoredArtists int64 `json:"monitored_artists"`
+	Watchlists       int64 `json:"watchlists"`
+	Libraries        int64 `json:"libraries"`
+}
+
+type SummaryStats struct {
+	Jobs     JobStats      `json:"jobs"`
+	Library  LibraryStats  `json:"library"`
+	Activity ActivityStats `json:"activity"`
+}
+
+// GetJobStats returns job statistics
+func GetJobStats(db *gorm.DB) (*JobStats, error) {
+	since := time.Now().Add(-24 * time.Hour)
+
+	var stats JobStats
+	err := db.Model(&database.Job{}).Where("requested_at > ?", since).
+		Select("COUNT(*) as total, " +
+			"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
+			"COUNT(*) FILTER (WHERE state = 'running') as running, " +
+			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
+			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
+		Scan(&stats).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	completed := stats.Succeeded + stats.Failed
+	if completed > 0 {
+		stats.SuccessRate = float64(stats.Succeeded) / float64(completed) * 100
+	}
+
+	return &stats, nil
+}
+
+// GetLibraryStats returns library statistics
+func GetLibraryStats(db *gorm.DB) (*LibraryStats, error) {
+	var stats LibraryStats
+
+	err := db.Model(&database.Track{}).
+		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
+		Scan(&stats).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
+
+	// Format breakdown
+	err = db.Model(&database.Track{}).
+		Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
+		Group("format").
+		Order("count DESC").
+		Scan(&stats.FormatBreakdown).Error
+
+	return &stats, err
+}
+
+// GetStatsSummary returns combined summary statistics
+func GetStatsSummary(db *gorm.DB) (*SummaryStats, error) {
+	var summary SummaryStats
+
+	// Job stats (24h)
+	since := time.Now().Add(-24 * time.Hour)
+	db.Model(&database.Job{}).Where("requested_at > ?", since).
+		Select("COUNT(*) as total, " +
+			"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
+			"COUNT(*) FILTER (WHERE state = 'running') as running, " +
+			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
+			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
+		Scan(&summary.Jobs)
+
+	completed := summary.Jobs.Succeeded + summary.Jobs.Failed
+	if completed > 0 {
+		summary.Jobs.SuccessRate = float64(summary.Jobs.Succeeded) / float64(completed) * 100
+	}
+
+	// Library stats
+	db.Model(&database.Track{}).
+		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
+		Scan(&summary.Library)
+	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
+
+	// Activity stats
+	db.Model(&database.MonitoredArtist{}).Count(&summary.Activity.MonitoredArtists)
+	db.Model(&database.Watchlist{}).Count(&summary.Activity.Watchlists)
+	db.Model(&database.Library{}).Count(&summary.Activity.Libraries)
+
+	return &summary, nil
 }

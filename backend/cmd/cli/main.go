@@ -6,12 +6,12 @@ import (
 	"log"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/agent"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 )
@@ -46,6 +46,8 @@ func main() {
 	rootCmd.AddCommand(statusCmd())
 	rootCmd.AddCommand(configCmd())
 	rootCmd.AddCommand(watchlistCmd())
+	rootCmd.AddCommand(libraryCmd())
+	rootCmd.AddCommand(statsCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -188,7 +190,7 @@ func watchlistCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "import",
 		Short: "Import watchlists from JSON array via stdin",
-		Long: `Example: echo '[{"name": "My List", "source_type": "rss_feed", "source_uri": "...", "quality_profile_id": "..."}]' | netrunner-cli watchlist import`,
+		Long:  `Example: echo '[{"name": "My List", "source_type": "rss_feed", "source_uri": "...", "quality_profile_id": "..."}]' | netrunner-cli watchlist import`,
 		Run: func(cmd *cobra.Command, args []string) {
 			var inputs []struct {
 				Name             string    `json:"name"`
@@ -219,6 +221,190 @@ func watchlistCmd() *cobra.Command {
 				printJSON(created)
 			} else {
 				fmt.Printf("Successfully imported %d watchlists.\n", len(created))
+			}
+		},
+	})
+
+	return cmd
+}
+
+func libraryCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "library",
+		Short: "Manage music libraries",
+	}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List all libraries",
+		Run: func(cmd *cobra.Command, args []string) {
+			libraries, err := agent.ListLibraries(db)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(libraries)
+			} else {
+				if len(libraries) == 0 {
+					fmt.Println("No libraries found.")
+					return
+				}
+				for _, l := range libraries {
+					fmt.Printf("- %s | Path: %s | ID: %s\n", l.Name, l.Path, l.ID)
+				}
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "add [name] [path]",
+		Short: "Add a new library",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			library, err := agent.AddLibrary(db, args[0], args[1])
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(library)
+			} else {
+				fmt.Printf("Successfully added library: %s (ID: %s)\n", library.Name, library.ID)
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "scan [id]",
+		Short: "Trigger a scan for a library",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid UUID: %w", err))
+				return
+			}
+
+			job, err := agent.ScanLibrary(db, id)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(job)
+			} else {
+				fmt.Printf("Successfully queued scan job: %d\n", job.ID)
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "rm [id]",
+		Short: "Remove a library",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid UUID: %w", err))
+				return
+			}
+
+			if err := agent.DeleteLibrary(db, id); err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(map[string]string{"status": "deleted"})
+			} else {
+				fmt.Println("Successfully deleted library.")
+			}
+		},
+	})
+
+	return cmd
+}
+
+func statsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "stats",
+		Short: "Show system statistics",
+	}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "summary",
+		Short: "Show summary statistics",
+		Run: func(cmd *cobra.Command, args []string) {
+			stats, err := agent.GetStatsSummary(db)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(stats)
+			} else {
+				fmt.Printf("Jobs (24h):\n")
+				fmt.Printf("  Total: %d | Queued: %d | Running: %d\n", stats.Jobs.Total, stats.Jobs.Queued, stats.Jobs.Running)
+				fmt.Printf("  Succeeded: %d | Failed: %d | Success Rate: %.1f%%\n", stats.Jobs.Succeeded, stats.Jobs.Failed, stats.Jobs.SuccessRate)
+				fmt.Printf("\nLibrary:\n")
+				fmt.Printf("  Tracks: %d | Size: %.2f MB\n", stats.Library.TotalTracks, stats.Library.TotalSizeMB)
+				fmt.Printf("\nActivity:\n")
+				fmt.Printf("  Monitored Artists: %d\n", stats.Activity.MonitoredArtists)
+				fmt.Printf("  Watchlists: %d\n", stats.Activity.Watchlists)
+				fmt.Printf("  Libraries: %d\n", stats.Activity.Libraries)
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "jobs",
+		Short: "Show job statistics",
+		Run: func(cmd *cobra.Command, args []string) {
+			stats, err := agent.GetJobStats(db)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(stats)
+			} else {
+				fmt.Printf("Jobs (24h):\n")
+				fmt.Printf("  Total: %d\n", stats.Total)
+				fmt.Printf("  Queued: %d | Running: %d\n", stats.Queued, stats.Running)
+				fmt.Printf("  Succeeded: %d | Failed: %d\n", stats.Succeeded, stats.Failed)
+				fmt.Printf("  Success Rate: %.1f%%\n", stats.SuccessRate)
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "library",
+		Short: "Show library statistics",
+		Run: func(cmd *cobra.Command, args []string) {
+			stats, err := agent.GetLibraryStats(db)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(stats)
+			} else {
+				fmt.Printf("Library Statistics:\n")
+				fmt.Printf("  Total Tracks: %d\n", stats.TotalTracks)
+				fmt.Printf("  Total Size: %.2f MB\n", stats.TotalSizeMB)
+				if len(stats.FormatBreakdown) > 0 {
+					fmt.Printf("\n  Format Breakdown:\n")
+					for _, f := range stats.FormatBreakdown {
+						fmt.Printf("    %s: %d (%.2f MB)\n", f.Format, f.Count, float64(f.TotalSize)/(1024*1024))
+					}
+				}
 			}
 		},
 	})
