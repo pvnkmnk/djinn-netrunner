@@ -407,13 +407,16 @@ func GetStatsSummary(db *gorm.DB) (*SummaryStats, error) {
 
 	// Job stats (24h)
 	since := time.Now().Add(-24 * time.Hour)
-	db.Model(&database.Job{}).Where("requested_at > ?", since).
+	err := db.Model(&database.Job{}).Where("requested_at > ?", since).
 		Select("COUNT(*) as total, " +
 			"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
 			"COUNT(*) FILTER (WHERE state = 'running') as running, " +
 			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
 			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
-		Scan(&summary.Jobs)
+		Scan(&summary.Jobs).Error
+	if err != nil {
+		return nil, err
+	}
 
 	completed := summary.Jobs.Succeeded + summary.Jobs.Failed
 	if completed > 0 {
@@ -421,15 +424,24 @@ func GetStatsSummary(db *gorm.DB) (*SummaryStats, error) {
 	}
 
 	// Library stats
-	db.Model(&database.Track{}).
+	err = db.Model(&database.Track{}).
 		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&summary.Library)
+		Scan(&summary.Library).Error
+	if err != nil {
+		return nil, err
+	}
 	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
 	// Activity stats
-	db.Model(&database.MonitoredArtist{}).Count(&summary.Activity.MonitoredArtists)
-	db.Model(&database.Watchlist{}).Count(&summary.Activity.Watchlists)
-	db.Model(&database.Library{}).Count(&summary.Activity.Libraries)
+	if err := db.Model(&database.MonitoredArtist{}).Count(&summary.Activity.MonitoredArtists).Error; err != nil {
+		return nil, err
+	}
+	if err := db.Model(&database.Watchlist{}).Count(&summary.Activity.Watchlists).Error; err != nil {
+		return nil, err
+	}
+	if err := db.Model(&database.Library{}).Count(&summary.Activity.Libraries).Error; err != nil {
+		return nil, err
+	}
 
 	return &summary, nil
 }

@@ -145,7 +145,7 @@ func (m *Library) BeforeCreate(tx *gorm.DB) error {
 // Track represents a single audio file in the library
 type Track struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
-	LibraryID uuid.UUID `gorm:"type:uuid;not null;index"`
+	LibraryID uuid.UUID `gorm:"type:uuid;not null;index:idx_library_genre"`
 	Title     string    `gorm:"not null"`
 	Artist    string    `gorm:"index"`
 	Album     string    `gorm:"index"`
@@ -156,7 +156,7 @@ type Track struct {
 	FileSize  int64
 	FileHash  string `gorm:"index"`
 	Year      *int   // Release year
-	Genre     string // Genre
+	Genre     string `gorm:"index:idx_library_genre"` // Genre
 	Composer  string // Composer
 	CoverURL  string // URL to cover art
 	CreatedAt time.Time

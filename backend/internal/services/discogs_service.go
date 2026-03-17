@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -221,8 +222,7 @@ func (s *DiscogsService) GetYear(artist, title string) (int, error) {
 
 	// Year might be in format "2020" or "2020, 2021"
 	yearStr = strings.Split(yearStr, ",")[0]
-	var year int
-	fmt.Sscanf(yearStr, "%d", &year)
+	year, _ := strconv.Atoi(yearStr)
 
 	return year, nil
 }
@@ -250,8 +250,7 @@ func (s *DiscogsService) EnrichTrack(artist, title string) (map[string]interface
 
 	if r.Year != "" {
 		yearStr := strings.Split(r.Year, ",")[0]
-		var year int
-		if n, _ := fmt.Sscanf(yearStr, "%d", &year); n == 1 {
+		if year, err := strconv.Atoi(yearStr); err == nil {
 			enriched["year"] = year
 		}
 	}

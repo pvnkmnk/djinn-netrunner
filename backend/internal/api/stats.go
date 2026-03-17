@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -124,7 +125,7 @@ func (h *StatsHandler) GetJobTypeBreakdown(c *fiber.Ctx) error {
 func (h *StatsHandler) GetJobTrends(c *fiber.Ctx) error {
 	days := 7
 	if d := c.Query("days"); d != "" {
-		if parsed := 0; parsed > 0 {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
 			days = parsed
 		}
 	}
@@ -167,11 +168,18 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 		Group("library_id").
 		Scan(&stats.LibraryBreakdown)
 
-	// Join library names
+	// Get library names in a single query to avoid N+1
+	var libraries []database.Library
+	h.db.Find(&libraries)
+	libraryNames := make(map[string]string)
+	for _, lib := range libraries {
+		libraryNames[lib.ID.String()] = lib.Name
+	}
+
+	// Map library names
 	for i := range stats.LibraryBreakdown {
-		var lib database.Library
-		if err := h.db.First(&lib, "id = ?", stats.LibraryBreakdown[i].LibraryID).Error; err == nil {
-			stats.LibraryBreakdown[i].LibraryName = lib.Name
+		if name, ok := libraryNames[stats.LibraryBreakdown[i].LibraryID]; ok {
+			stats.LibraryBreakdown[i].LibraryName = name
 		}
 	}
 
@@ -182,17 +190,29 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 func (h *StatsHandler) GetActivityStats(c *fiber.Ctx) error {
 	var stats ActivityStats
 
-	h.db.Model(&database.MonitoredArtist{}).Count(&stats.MonitoredArtists)
-	h.db.Model(&database.Watchlist{}).Count(&stats.Watchlists)
-	h.db.Model(&database.QualityProfile{}).Count(&stats.QualityProfiles)
-	h.db.Model(&database.Library{}).Count(&stats.Libraries)
+	if err := h.db.Model(&database.MonitoredArtist{}).Count(&stats.MonitoredArtists).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := h.db.Model(&database.Watchlist{}).Count(&stats.Watchlists).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := h.db.Model(&database.QualityProfile{}).Count(&stats.QualityProfiles).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := h.db.Model(&database.Library{}).Count(&stats.Libraries).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 
 	// Recent jobs
 	since24h := time.Now().Add(-24 * time.Hour)
-	h.db.Model(&database.Job{}).Where("requested_at > ?", since24h).Count(&stats.RecentJobs24h)
+	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since24h).Count(&stats.RecentJobs24h).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 
 	since7d := time.Now().Add(-7 * 24 * time.Hour)
-	h.db.Model(&database.Job{}).Where("requested_at > ?", since7d).Count(&stats.RecentJobs7d)
+	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since7d).Count(&stats.RecentJobs7d).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 
 	return c.JSON(stats)
 }

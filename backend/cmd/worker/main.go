@@ -542,11 +542,21 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		if jc.job.Params != nil {
 			json.Unmarshal(jc.job.Params, &scanParams)
 		}
-		libraryID, _ := uuid.Parse(jc.job.ScopeID)
+		libraryID, err := uuid.Parse(jc.job.ScopeID)
+		if err != nil {
+			err = fmt.Errorf("invalid library UUID: %w", err)
+			w.finishJob(jc.job.ID, err)
+			return
+		}
 		err = w.scanService.ScanLibrary(jc.ctx, libraryID, scanParams.Path)
 	case "enrich":
 		// Enrich metadata for tracks in a library using Discogs
-		libraryID, _ := uuid.Parse(jc.job.ScopeID)
+		libraryID, err := uuid.Parse(jc.job.ScopeID)
+		if err != nil {
+			err = fmt.Errorf("invalid library UUID: %w", err)
+			w.finishJob(jc.job.ID, err)
+			return
+		}
 		log.Printf("[WORKER] Starting metadata enrichment for library %s", libraryID)
 
 		// Get library
