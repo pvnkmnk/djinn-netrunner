@@ -36,33 +36,6 @@ func (s *MusicBrainzService) SetCache(cache *CacheService) {
 	s.cache = cache
 }
 
-// SearchArtists searches for artists on MusicBrainz
-func (s *MusicBrainzService) SearchArtists(query string, limit int) (map[string]interface{}, error) {
-	cacheKey := fmt.Sprintf("search:artist:%s:%d", query, limit)
-	if s.cache != nil {
-		var cached map[string]interface{}
-		if found, _ := s.cache.Get("musicbrainz", cacheKey, &cached); found {
-			return cached, nil
-		}
-	}
-
-	params := url.Values{}
-	params.Add("query", query)
-	params.Add("limit", fmt.Sprintf("%d", limit))
-	params.Add("fmt", "json")
-
-	result, err := s.doRequest("artist", params)
-	if err != nil {
-		return nil, err
-	}
-
-	if s.cache != nil {
-		s.cache.Set("musicbrainz", cacheKey, result, 24*time.Hour)
-	}
-
-	return result, nil
-}
-
 // MusicBrainzArtist represents an artist from MusicBrainz
 type MusicBrainzArtist struct {
 	ID             string `json:"id"`
