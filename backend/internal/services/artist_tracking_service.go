@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,7 +28,7 @@ func NewArtistTrackingService(db *gorm.DB, mb *MusicBrainzService) *ArtistTracki
 func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID) (*database.MonitoredArtist, error) {
 	// 1. Fetch artist details from MusicBrainz to ensure it exists and get metadata
 	// (Simplified for now, in a real implementation we'd parse the MB response properly)
-	
+
 	// Check if artist already exists
 	var existing database.MonitoredArtist
 	err := s.db.Where("music_brainz_id = ?", mbid).First(&existing).Error
@@ -65,10 +66,15 @@ func (s *ArtistTrackingService) UpdateArtistStatus(id uuid.UUID, monitored bool)
 	return s.db.Model(&database.MonitoredArtist{}).Where("id = ?", id).Update("monitored", monitored).Error
 }
 
-// SyncDiscography fetches the latest releases for an artist and updates tracked releases
+// DeleteMonitoredArtist removes an artist from monitoring
+func (s *ArtistTrackingService) DeleteMonitoredArtist(id uuid.UUID) error {
+	return s.db.Delete(&database.MonitoredArtist{}, "id = ?", id).Error
+}
+
+// SyncDiscography fetches the latest releases for an artist and creates acquisition jobs for new releases
 func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 	var artist database.MonitoredArtist
-	if err := s.db.First(&artist, "id = ?", artistID).Error; err != nil {
+	if err := s.db.Preload("QualityProfile").First(&artist, "id = ?", artistID).Error; err != nil {
 		return err
 	}
 
@@ -83,6 +89,8 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 	if !ok {
 		return nil
 	}
+
+	var newReleases []database.TrackedRelease
 
 	for _, rg := range releaseGroups {
 		group := rg.(map[string]interface{})
@@ -107,7 +115,7 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 		// Upsert TrackedRelease
 		var release database.TrackedRelease
 		err := s.db.Where("artist_id = ? AND release_group_id = ?", artist.ID, rgID).First(&release).Error
-		
+
 		now := time.Now()
 		if err != nil {
 			// Create new
@@ -122,12 +130,50 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 				UpdatedAt:      now,
 			}
 			s.db.Create(&release)
+			if shouldMonitor {
+				newReleases = append(newReleases, release)
+			}
 		} else {
 			// Update existing if needed
 			s.db.Model(&release).Updates(map[string]interface{}{
 				"title":      title,
 				"updated_at": now,
 			})
+		}
+	}
+
+	// Create acquisition job for new releases
+	if len(newReleases) > 0 {
+		job := database.Job{
+			Type:        "acquisition",
+			State:       "queued",
+			ScopeType:   "artist",
+			ScopeID:     artistID.String(),
+			OwnerUserID: artist.OwnerUserID,
+			CreatedBy:   "artist_tracking",
+		}
+
+		if err := s.db.Create(&job).Error; err != nil {
+			log.Printf("[ARTIST] Error creating acquisition job: %v", err)
+		} else {
+			// Create job items for each new release
+			for i, rel := range newReleases {
+				item := database.JobItem{
+					JobID:           job.ID,
+					Sequence:        i,
+					NormalizedQuery: rel.Title,
+					Artist:          artist.Name,
+					Album:           rel.Title,
+					TrackTitle:      rel.Title,
+					Status:          "queued",
+					OwnerUserID:     artist.OwnerUserID,
+				}
+				s.db.Create(&item)
+
+				// Mark release as queued
+				s.db.Model(&rel).Update("status", "queued")
+			}
+			log.Printf("[ARTIST] Created acquisition job %d with %d items for artist %s", job.ID, len(newReleases), artist.Name)
 		}
 	}
 
