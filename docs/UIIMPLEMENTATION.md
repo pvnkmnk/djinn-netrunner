@@ -16,15 +16,19 @@ The main page is a server-rendered shell with:
   - a scrollable log lines container
   - minimal controls (filter/copy/clear/live pause)
 
+## Partials
+- `GET /partials/stats` - Job statistics (queued, running, succeeded, failed counts in last 24h). Uses conditional aggregation for efficient single-query stats.
+- `GET /partials/watchlists` - List of configured watchlists with status.
+
 ## Console socket pattern
-A dedicated DOM region (e.g., #console-socket) is swapped to “attach” to a job without custom front-end routing.
-- When jobid is present, render an element that opens a WebSocket (hx-ext=""ws"") to /ws/jobs/{jobid}.
+A dedicated DOM region (e.g., #console-socket) is swapped to "attach" to a job without custom front-end routing.
+- When jobid is present, render an element that opens a WebSocket (hx-ext="")ws"") to /ws/jobs/{jobid}.
 - When jobid is absent, render an inert placeholder.
 
 ## Attach modes (STARTED vs ATTACHED)
 Two attach modes balance liveness proof with spam prevention:
 - STARTED: used immediately after starting a new job; sends a small backlog tail (e.g., last 50 lines).
-- ATTACHED: used when attaching to an existing job; “quiet attach” since last seen log id (since-id).
+- ATTACHED: used when attaching to an existing job; "quiet attach" since last seen log id (since-id).
 
 ## WebSocket log streaming contract
 - ops-web exposes /ws/jobs/{jobid}.
@@ -40,7 +44,7 @@ Preferred server-side mechanism:
 ## Console controls (minimal JS)
 - Auto-scroll pauses when the operator scrolls up; resumes when bottom is reached.
 - RESUME LIVE forces scroll-to-bottom and resumes follow mode.
-- Filters: ALL / OK / INFO / ERR via data-filter attribute and CSS selectors.
+- Filters: ALL / OK / INFO / WARN / ERR via data-filter attribute and CSS selectors.
 - COPY LAST 200 copies recent rendered lines to clipboard.
 - CLEAR clears viewport (does not mutate DB logs).
 
