@@ -10,17 +10,58 @@ This document defines the runtime contracts and invariants for NETRUNNER, especi
 - **slskd**: Acquisition daemon with bounded download slots.
 - **gonic**: Streaming server (Subsonic-compatible).
 
+## Core Services (Go)
+The worker orchestrates multiple specialized services:
+- **WatchlistService**: Manages automated discovery sources (Spotify, RSS, Last.fm, Discogs, local files).
+- **ArtistTrackingService**: Monitors artists for new releases via MusicBrainz.
+- **ReleaseMonitorService**: Periodic background task that checks monitored artists for new releases.
+- **AcquisitionHandler**: Processes acquisition jobs - downloads files via slskd, enriches with metadata.
+- **ScannerService**: Scans and indexes local music library, extracts metadata.
+- **MusicBrainzService**: Client for MusicBrainz API with caching.
+- **AcoustIDService**: Audio fingerprinting lookup for metadata enrichment.
+- **CacheService**: Persistent shadow cache for external API responses (MusicBrainz/Spotify/AcoustID).
+
 ## Core Data Model
 ### Tables (minimum)
 - **jobs**: Durable job records (state machine + execution metadata).
 - **jobitems**: Durable units of work; MUST be created before execution (deterministic plan).
 - **joblogs**: Append-only console lines for each job.
 - **acquisitions**: Provenance and final-path record for imported items.
-- **metadata_cache**: Persistent shadow cache for external API responses (MusicBrainz/Spotify).
+- **metadata_cache**: Persistent shadow cache for external API responses.
+- **watchlists**: Automated discovery source configurations.
+- **schedules**: Cron-based scheduling for watchlist syncs.
+- **monitored_artists**: Artist tracking configuration.
+- **tracks**: Indexed local library tracks.
+
+## API Endpoints
+### Watchlists
+- `GET /api/watchlists` - List all watchlists
+- `POST /api/watchlists` - Create new watchlist
+- `DELETE /api/watchlists/:id` - Delete watchlist
+- `POST /api/watchlists/:id/sync` - Trigger manual sync
+
+### Artists (Monitoring)
+- `GET /api/artists` - List monitored artists
+- `POST /api/artists` - Add artist to monitoring
+- `DELETE /api/artists/:id` - Remove artist monitoring
+
+### Schedules
+- `GET /api/schedules` - List all schedules
+- `POST /api/schedules` - Create schedule
+- `PATCH /api/schedules/:id` - Update schedule
+- `DELETE /api/schedules/:id` - Delete schedule
+
+### Dashboard
+- `GET /` - Main dashboard (server-rendered)
+- `GET /partials/stats` - Stats partial (HTMX)
+- `GET /partials/watchlists` - Watchlists partial (HTMX)
+
+### WebSocket
+- `WS /ws/jobs/:jobid` - Live log streaming for job
 
 ## Concurrency + Correctness Invariants
 1. **Contention-Safe Claims**: Jobs and jobitems are claimed using atomic status updates (SQLite) or `FOR UPDATE SKIP LOCKED` (PostgreSQL) to prevent duplicate claims.
-2. **Explicit Exclusivity**: Per-scope locks (file-based or DB-level) prevent multiple workers from executing the same scope (e.g., syncing the same playlist) simultaneously.
+2. **Explicit Exclusivity**: Per-scope locks (file-based or DB-level advisory locks) prevent multiple workers from executing the same scope (e.g., syncing the same playlist) simultaneously.
 3. **Deterministic Work Plans**: `jobitems` are created before execution; retries resume without re-deriving metadata.
 4. **Fair Scheduling**: Round-robin task selection across active jobs to prevent starvation.
 5. **Authoritative Heartbeats**: Running jobs update `heartbeat_at` frequently; the reaper uses this to detect and recover from worker crashes.

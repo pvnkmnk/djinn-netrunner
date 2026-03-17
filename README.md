@@ -31,10 +31,12 @@ NetRunner 2.1 is a complete architectural evolution of the original music pipeli
 - **Glassmorphic Aesthetic**: Deep cyberpunk theme with high-quality typography (Orbitron/Inter).
 
 ### Core Pipeline
-- **Unified Watchlists**: Single paradigm for all monitoring sources (Spotify, RSS, Local Files).
+- **Unified Watchlists**: Single paradigm for all monitoring sources (Spotify, RSS, Last.fm, Discogs, local files).
+- **Artist Tracking**: Monitor specific artists for new releases via MusicBrainz integration.
+- **Scheduled Syncing**: Cron-based scheduling for automated watchlist and artist monitoring.
 - **Intelligent Search**: Multi-variable quality ranking (bitrate, speed, queue depth).
 - **Smart Deduplication**: MD5 hash-based verification ensures you never download or import the same file twice.
-- **Enhanced Enrichment**: Automatic MusicBrainz integration to fetch recording/release IDs and high-res cover art.
+- **Enhanced Enrichment**: Automatic MusicBrainz and AcoustID integration for recording IDs and metadata.
 - **Dynamic Library Routing**: Configurable library paths via the `MUSIC_LIBRARY` environment variable.
 - **Parallel Scanning**: Concurrent IO worker pool for ultra-fast library imports.
 - **Crash-Safe**: Robust heartbeat-driven recovery and automated zombie job cleanup.
@@ -96,6 +98,18 @@ netrunner-cli watchlist add "My Playlist" "spotify_playlist" "https://open.spoti
 
 # Trigger a sync for a specific watchlist
 netrunner-cli watchlist sync <watchlist-uuid>
+
+# List monitored artists
+netrunner-cli artist list
+
+# Add an artist to monitoring
+netrunner-cli artist add "Artist Name"
+
+# List schedules
+netrunner-cli schedule list
+
+# Create a schedule
+netrunner-cli schedule add <watchlist-uuid> "0 6 * * *"  # Daily at 6am
 
 # Check system status
 netrunner-cli status
