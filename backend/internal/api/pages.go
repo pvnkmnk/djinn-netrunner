@@ -62,3 +62,10 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 	h.db.Find(&artists)
 	return RenderPage(c, "artists", "pages/artists", fiber.Map{"artists": artists})
 }
+
+// JobsPage renders the jobs page
+func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
+	var jobs []database.Job
+	h.db.Order("requested_at DESC").Limit(50).Find(&jobs)
+	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs})
+}

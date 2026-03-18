@@ -1,0 +1,102 @@
+<div class="jobs-region">
+    <div class="filters">
+        <select hx-get="/partials/jobs" hx-target="#jobs-list" hx-include="this">
+            <option value="">All Types</option>
+            <option value="sync">Sync</option>
+            <option value="scan">Scan</option>
+            <option value="acquisition">Acquisition</option>
+            <option value="enrich">Enrich</option>
+        </select>
+        <select hx-get="/partials/jobs" hx-target="#jobs-list" hx-include="this">
+            <option value="">All States</option>
+            <option value="queued">Queued</option>
+            <option value="running">Running</option>
+            <option value="succeeded">Succeeded</option>
+            <option value="failed">Failed</option>
+        </select>
+    </div>
+    
+    <div id="jobs-list">
+    {{ range .jobs }}
+    <div class="job-card" id="job-{{ .ID }}">
+        <div class="job-info">
+            <div class="job-id">#{{ .ID }}</div>
+            <div class="job-type">{{ .Type }}</div>
+            <div class="job-state state-{{ .State }}">{{ .State }}</div>
+        </div>
+        <div class="job-meta">
+            <span>{{ .RequestedAt.Format "Jan 02 15:04" }}</span>
+            <span>By: {{ .CreatedBy }}</span>
+        </div>
+        <div class="actions">
+            <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ .ID }}" hx-target="#job-logs-container" hx-swap="innerHTML">
+                View Logs
+            </button>
+            {{ if eq .State "queued" }}
+            <button class="btn btn-sm btn-danger" hx-delete="/api/jobs/{{ .ID }}" hx-target="#job-{{ .ID }}" hx-swap="outerHTML">
+                Cancel
+            </button>
+            {{ end }}
+        </div>
+    </div>
+    {{ else }}
+    <p class="empty-state">No jobs found</p>
+    {{ end }}
+    </div>
+    
+    <div id="job-logs-container"></div>
+</div>
+
+<style>
+.jobs-region .filters {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.jobs-region select {
+    padding: 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+}
+.job-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+.job-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 200px;
+}
+.job-id { font-weight: 600; }
+.job-type { 
+    background: var(--bg-tertiary); 
+    padding: 0.125rem 0.5rem; 
+    border-radius: 4px; 
+    font-size: 0.75rem;
+}
+.job-state {
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    text-transform: capitalize;
+}
+.state-queued { background: var(--accent-warning); color: black; }
+.state-running { background: var(--accent-primary); color: white; }
+.state-succeeded { background: var(--accent-success); color: white; }
+.state-failed { background: var(--accent-error); color: white; }
+.job-meta {
+    flex: 1;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+.job-meta span { margin-right: 1rem; }
+</style>

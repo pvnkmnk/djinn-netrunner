@@ -108,3 +108,29 @@ func RenderSchedulesPartial(c *fiber.Ctx) error {
 		"schedules": schedules,
 	})
 }
+
+// RenderJobsPartial returns jobs HTML for HTMX
+func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
+	var jobs []database.Job
+	query := h.db.Order("requested_at DESC").Limit(50)
+
+	// Apply filters if provided
+	jobType := c.Query("job_type")
+	state := c.Query("state")
+
+	if jobType != "" {
+		query = query.Where("job_type = ?", jobType)
+	}
+	if state != "" {
+		query = query.Where("state = ?", state)
+	}
+
+	if err := query.Find(&jobs).Error; err != nil {
+		log.Printf("Error fetching jobs: %v", err)
+		return c.SendString("<div class=\"error\">Error loading jobs.</div>")
+	}
+
+	return c.Render("partials/jobs", fiber.Map{
+		"jobs": jobs,
+	})
+}
