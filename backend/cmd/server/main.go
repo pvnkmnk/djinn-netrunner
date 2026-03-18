@@ -116,6 +116,13 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	// UI routes (protected)
 	app.Get("/", auth.AuthMiddleware, dash.RenderIndex)
 
+	// Page routes
+	app.Get("/watchlists", auth.AuthMiddleware, watchlist.WatchlistsPage)
+	app.Get("/libraries", auth.AuthMiddleware, library.LibrariesPage)
+	app.Get("/profiles", auth.AuthMiddleware, profile.ProfilesPage)
+	app.Get("/schedules", auth.AuthMiddleware, schedulesHandler.SchedulesPage)
+	app.Get("/artists", auth.AuthMiddleware, artistsHandler.ArtistsPage)
+
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
 
