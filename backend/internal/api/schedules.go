@@ -145,8 +145,11 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.Render("partials/schedules", fiber.Map{
-		"schedules": []database.Schedule{sched},
+	// Reload with Watchlist
+	h.db.Preload("Watchlist").First(&sched, "id = ?", id)
+
+	return c.Render("partials/schedule-card", fiber.Map{
+		"Schedule": sched,
 	})
 }
 
@@ -174,5 +177,17 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 		"CronExpr":    sched.CronExpr,
 		"Enabled":     sched.Enabled,
 		"watchlists":  watchlists,
+	})
+}
+
+// RenderSchedulesPartial returns schedules HTML for HTMX
+func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
+	var schedules []database.Schedule
+	if err := h.db.Preload("Watchlist").Order("created_at desc").Find(&schedules).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading schedules.</div>")
+	}
+
+	return c.Render("partials/schedules", fiber.Map{
+		"schedules": schedules,
 	})
 }

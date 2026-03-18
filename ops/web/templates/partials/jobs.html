@@ -1,13 +1,13 @@
 <div class="jobs-region">
-    <div class="filters">
-        <select hx-get="/partials/jobs" hx-target="#jobs-list" hx-include="this">
+    <div class="filters" hx-get="/partials/jobs" hx-target="#jobs-list" hx-trigger="change">
+        <select name="job_type">
             <option value="">All Types</option>
             <option value="sync">Sync</option>
             <option value="scan">Scan</option>
             <option value="acquisition">Acquisition</option>
             <option value="enrich">Enrich</option>
         </select>
-        <select hx-get="/partials/jobs" hx-target="#jobs-list" hx-include="this">
+        <select name="state">
             <option value="">All States</option>
             <option value="queued">Queued</option>
             <option value="running">Running</option>

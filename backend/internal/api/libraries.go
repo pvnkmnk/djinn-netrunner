@@ -255,3 +255,15 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 		"Path": lib.Path,
 	})
 }
+
+// RenderLibrariesPartial returns libraries HTML for HTMX
+func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
+	var libraries []database.Library
+	if err := h.db.Order("name").Find(&libraries).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading libraries.</div>")
+	}
+
+	return c.Render("partials/libraries", fiber.Map{
+		"libraries": libraries,
+	})
+}

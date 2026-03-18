@@ -117,17 +117,18 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	app.Get("/", auth.AuthMiddleware, dash.RenderIndex)
 
 	// Page routes
+	app.Get("/watchlists", auth.AuthMiddleware, watchlist.WatchlistsPage)
 	app.Get("/libraries", auth.AuthMiddleware, library.LibrariesPage)
 	app.Get("/profiles", auth.AuthMiddleware, profile.ProfilesPage)
 	app.Get("/schedules", auth.AuthMiddleware, schedulesHandler.SchedulesPage)
 	app.Get("/artists", auth.AuthMiddleware, artistsHandler.ArtistsPage)
 	app.Get("/jobs", auth.AuthMiddleware, stats.JobsPage)
 
-	// Partial routes
-	app.Get("/partials/stats", api.RenderStatsPartial)
-	app.Get("/partials/watchlists", api.RenderWatchlistsPartial)
-	app.Get("/partials/libraries", api.RenderLibrariesPartial)
-	app.Get("/partials/schedules", api.RenderSchedulesPartial)
+	// Partial routes (all protected)
+	app.Get("/partials/stats", auth.AuthMiddleware, api.RenderStatsPartial)
+	app.Get("/partials/watchlists", auth.AuthMiddleware, api.RenderWatchlistsPartial)
+	app.Get("/partials/libraries", auth.AuthMiddleware, library.RenderLibrariesPartial)
+	app.Get("/partials/schedules", auth.AuthMiddleware, schedulesHandler.RenderSchedulesPartial)
 	app.Get("/partials/artists", auth.AuthMiddleware, artistsHandler.RenderPartial)
 	app.Get("/partials/artist-form", auth.AuthMiddleware, artistsHandler.GetForm)
 	app.Get("/partials/jobs", auth.AuthMiddleware, stats.RenderJobsPartial)
