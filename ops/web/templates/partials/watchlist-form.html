@@ -1,0 +1,139 @@
+<div class="modal-overlay" id="modal-overlay" 
+     hx-on:click="if(event.target === this) htmx.removeClass(htmx.find('#modal-container'), 'active')">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>{{ if .ID }}Edit{{ else }}Add{{ end }} Watchlist</h3>
+            <button class="modal-close" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active')">&times;</button>
+        </div>
+        <form hx-post="/api/watchlists" hx-target="#watchlists-list" hx-swap="outerHTML">
+            {{ if .ID }}<input type="hidden" name="id" value="{{ .ID }}">{{ end }}
+            <div class="form-group">
+                <label for="name">Name</label>
+                <input type="text" id="name" name="name" value="{{ .Name }}" required>
+            </div>
+            <div class="form-group">
+                <label for="source_type">Source Type</label>
+                <select id="source_type" name="source_type" required>
+                    <option value="spotify_playlist" {{ if eq .SourceType "spotify_playlist" }}selected{{ end }}>Spotify Playlist</option>
+                    <option value="lastfm_chart" {{ if eq .SourceType "lastfm_chart" }}selected{{ end }}>Last.fm Chart</option>
+                    <option value="lastfm_loved" {{ if eq .SourceType "lastfm_loved" }}selected{{ end }}>Last.fm Loved Tracks</option>
+                    <option value="discogs_collection" {{ if eq .SourceType "discogs_collection" }}selected{{ end }}>Discogs Collection</option>
+                    <option value="discogs_wantlist" {{ if eq .SourceType "discogs_wantlist" }}selected{{ end }}>Discogs Wantlist</option>
+                    <option value="rss_feed" {{ if eq .SourceType "rss_feed" }}selected{{ end }}>RSS Feed</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="source_uri">Source URI</label>
+                <input type="text" id="source_uri" name="source_uri" value="{{ .SourceURI }}" required placeholder="https://...">
+            </div>
+            <div class="form-group">
+                <label for="quality_profile_id">Quality Profile</label>
+                <select id="quality_profile_id" name="quality_profile_id">
+                    <option value="">Default</option>
+                    {{ range .profiles }}
+                    <option value="{{ .ID }}" {{ if eq $.QualityProfileID .ID }}selected{{ end }}>{{ .Name }}</option>
+                    {{ end }}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="enabled" {{ if .Enabled }}checked{{ end }}>
+                    <span>Enabled</span>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+.modal-header h3 {
+    margin: 0;
+}
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+.modal form {
+    padding: 1rem;
+}
+.form-group {
+    margin-bottom: 1rem;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 0.375rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+.form-group input, 
+.form-group select {
+    width: 100%;
+    padding: 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+}
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+.checkbox-label {
+    display: flex !important;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+.checkbox-label input {
+    width: auto !important;
+}
+.form-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+}
+.btn-primary {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+.btn-primary:hover {
+    opacity: 0.9;
+}
+</style>

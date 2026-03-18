@@ -119,3 +119,32 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 	}
 	return c.JSON(profiles)
 }
+
+// GetForm returns the watchlist form for add/edit
+func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
+	id := c.Query("id")
+
+	var wl database.Watchlist
+	if id != "" {
+		uuid, err := uuid.Parse(id)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+		}
+		if err := h.db.First(&wl, "id = ?", uuid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+	}
+
+	var profiles []database.QualityProfile
+	h.db.Order("name").Find(&profiles)
+
+	return c.Render("partials/watchlist-form", fiber.Map{
+		"ID":               wl.ID,
+		"Name":             wl.Name,
+		"SourceType":       wl.SourceType,
+		"SourceURI":        wl.SourceURI,
+		"QualityProfileID": wl.QualityProfileID,
+		"Enabled":          wl.Enabled,
+		"profiles":         profiles,
+	})
+}
