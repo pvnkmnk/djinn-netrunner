@@ -234,3 +234,30 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 
 	return c.SendStatus(204)
 }
+
+// GetForm returns the profile form for add/edit
+func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
+	id := c.Query("id")
+
+	var profile database.QualityProfile
+	if id != "" {
+		uuid, err := uuid.Parse(id)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+		}
+		if err := h.db.First(&profile, "id = ?", uuid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+	}
+
+	return c.Render("partials/profile-form", fiber.Map{
+		"ID":                  profile.ID,
+		"Name":                profile.Name,
+		"Description":         profile.Description,
+		"PreferLossless":      profile.PreferLossless,
+		"AllowedFormats":      profile.AllowedFormats,
+		"MinBitrate":          profile.MinBitrate,
+		"PreferSceneReleases": profile.PreferSceneReleases,
+		"PreferWebReleases":   profile.PreferWebReleases,
+	})
+}

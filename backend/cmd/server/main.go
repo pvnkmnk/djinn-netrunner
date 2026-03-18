@@ -132,6 +132,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	profileRoutes := apiProtected.Group("/profiles")
 	profileRoutes.Get("/", profile.List)
 	profileRoutes.Post("/", profile.Create)
+	profileRoutes.Get("/form", profile.GetForm)
 	profileRoutes.Get("/:id", profile.Get)
 	profileRoutes.Patch("/:id", profile.Update)
 	profileRoutes.Delete("/:id", profile.Delete)
