@@ -1,6 +1,8 @@
 package api
 
 import (
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -146,7 +148,9 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 	}
 
 	// Reload with Watchlist
-	h.db.Preload("Watchlist").First(&sched, "id = ?", id)
+	if err := h.db.Preload("Watchlist").First(&sched, "id = ?", id).Error; err != nil {
+		log.Printf("Error reloading schedule with watchlist: %v", err)
+	}
 
 	return c.Render("partials/schedule-card", fiber.Map{
 		"Schedule": sched,
@@ -159,7 +163,9 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 
 	var sched database.Schedule
 	var watchlists []database.Watchlist
-	h.db.Find(&watchlists)
+	if err := h.db.Find(&watchlists).Error; err != nil {
+		log.Printf("Error fetching watchlists for schedule form: %v", err)
+	}
 
 	if id != "" {
 		parsedID, err := uuid.Parse(id)

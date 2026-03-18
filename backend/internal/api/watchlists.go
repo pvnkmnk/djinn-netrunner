@@ -1,6 +1,8 @@
 package api
 
 import (
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -136,7 +138,9 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 	}
 
 	var profiles []database.QualityProfile
-	h.db.Order("name").Find(&profiles)
+	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+		log.Printf("Error fetching profiles for watchlist form: %v", err)
+	}
 
 	return c.Render("partials/watchlist-form", fiber.Map{
 		"ID":               wl.ID,
