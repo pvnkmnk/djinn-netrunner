@@ -1,0 +1,63 @@
+<div class="schedules-region">
+    <div class="section-header">
+        <h2>Schedules</h2>
+        <button class="btn btn-primary" hx-get="/api/schedules/form" hx-target="#modal-container" hx-swap="innerHTML" hx-on:htmx:after-request="if(event.detail.successful) htmx.addClass(htmx.find('#modal-container'), 'active')">
+            Add Schedule
+        </button>
+    </div>
+    
+    <div id="schedules-list">
+    {{ range .schedules }}
+    <div class="schedule-card" id="schedule-{{ .ID }}">
+        <div class="schedule-info">
+            <div class="name">
+                {{ .Watchlist.Name }}
+                {{ if not .Enabled }}<span class="badge badge-disabled">Disabled</span>{{ end }}
+            </div>
+            <div class="details">
+                <span>Cron: {{ .CronExpr }}</span>
+                <span>Next: {{ .NextRunAt.Format "Jan 02 15:04" }}</span>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn btn-sm" hx-patch="/api/schedules/{{ .ID }}/toggle" hx-target="#schedule-{{ .ID }}" hx-swap="outerHTML">
+                {{ if .Enabled }}Disable{{ else }}Enable{{ end }}
+            </button>
+            <button class="btn btn-sm" hx-get="/api/schedules/form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML" hx-on:htmx:after-request="if(event.detail.successful) htmx.addClass(htmx.find('#modal-container'), 'active')">
+                Edit
+            </button>
+            <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ .ID }}" hx-target="#schedule-{{ .ID }}" hx-swap="outerHTML">
+                Delete
+            </button>
+        </div>
+    </div>
+    {{ else }}
+    <p class="empty-state">No schedules configured</p>
+    {{ end }}
+    </div>
+</div>
+
+<div id="modal-container"></div>
+
+<style>
+.schedule-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.schedule-info .name { font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+.schedule-info .details { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; }
+.schedule-info .details span { margin-right: 1rem; }
+.badge-disabled {
+    background: var(--text-secondary);
+    color: white;
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 2px;
+}
+</style>

@@ -126,6 +126,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	app.Get("/partials/stats", api.RenderStatsPartial)
 	app.Get("/partials/watchlists", api.RenderWatchlistsPartial)
 	app.Get("/partials/libraries", api.RenderLibrariesPartial)
+	app.Get("/partials/schedules", api.RenderSchedulesPartial)
 
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
@@ -157,9 +158,11 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	// Schedules
 	schedulesRoutes := apiProtected.Group("/schedules")
 	schedulesRoutes.Get("/", schedulesHandler.List)
+	schedulesRoutes.Get("/form", schedulesHandler.GetForm)
 	schedulesRoutes.Post("/", schedulesHandler.Create)
 	schedulesRoutes.Delete("/:id", schedulesHandler.Delete)
 	schedulesRoutes.Patch("/:id", schedulesHandler.Update)
+	schedulesRoutes.Patch("/:id/toggle", schedulesHandler.Toggle)
 
 	// Libraries
 	libraryRoutes := apiProtected.Group("/libraries")

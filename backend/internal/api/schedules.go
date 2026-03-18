@@ -126,3 +126,53 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"status": "updated"})
 }
+
+// PATCH /api/schedules/:id/toggle - Toggle schedule enabled/disabled
+func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+
+	var sched database.Schedule
+	if err := h.db.Preload("Watchlist").First(&sched, "id = ?", id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "not found"})
+	}
+
+	// Toggle the enabled state
+	sched.Enabled = !sched.Enabled
+	if err := h.db.Save(&sched).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.Render("partials/schedules", fiber.Map{
+		"schedules": []database.Schedule{sched},
+	})
+}
+
+// GetForm returns the schedule form for add/edit
+func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
+	id := c.Query("id")
+
+	var sched database.Schedule
+	var watchlists []database.Watchlist
+	h.db.Find(&watchlists)
+
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+		}
+		if err := h.db.Preload("Watchlist").First(&sched, "id = ?", parsedID).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+	}
+
+	return c.Render("partials/schedule-form", fiber.Map{
+		"ID":          sched.ID,
+		"WatchlistID": sched.WatchlistID,
+		"CronExpr":    sched.CronExpr,
+		"Enabled":     sched.Enabled,
+		"watchlists":  watchlists,
+	})
+}

@@ -90,3 +90,21 @@ func RenderLibrariesPartial(c *fiber.Ctx) error {
 		"libraries": libraries,
 	})
 }
+
+// RenderSchedulesPartial returns schedules HTML for HTMX
+func RenderSchedulesPartial(c *fiber.Ctx) error {
+	gormDB, err := getGormDB(c)
+	if err != nil {
+		return c.SendString("<div class=\"error\">Error loading schedules.</div>")
+	}
+
+	var schedules []database.Schedule
+	if err := gormDB.Preload("Watchlist").Order("created_at desc").Find(&schedules).Error; err != nil {
+		log.Printf("Error fetching schedules: %v", err)
+		return c.SendString("<div class=\"error\">Error loading schedules.</div>")
+	}
+
+	return c.Render("partials/schedules", fiber.Map{
+		"schedules": schedules,
+	})
+}
