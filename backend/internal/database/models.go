@@ -333,7 +333,7 @@ type MetadataCache struct {
 	ID        uint64    `gorm:"primaryKey;autoIncrement"`
 	Source    string    `gorm:"index:idx_cache_lookup,priority:1;not null"` // e.g., "musicbrainz", "spotify"
 	Key       string    `gorm:"index:idx_cache_lookup,priority:2;not null"` // e.g., artist ID, search query hash
-	Value     []byte    `gorm:"type:blob;not null"`
+	Value     []byte    `gorm:"not null"`
 	ExpiresAt time.Time `gorm:"index"`
 	CreatedAt time.Time
 }
