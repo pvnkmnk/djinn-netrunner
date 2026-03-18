@@ -1,7 +1,48 @@
 // NETRUNNER - Minimal Console JS
 // Following docs: minimal JS only for console controls
 
+// Modal management
+function closeModal() {
+    const container = document.getElementById('modal-container');
+    if (container) {
+        container.classList.remove('active');
+        container.innerHTML = '';
+    }
+}
+
+function openModal(html) {
+    const container = document.getElementById('modal-container');
+    if (container) {
+        container.innerHTML = html;
+        // Trigger reflow
+        container.offsetHeight;
+        container.classList.add('active');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Close modal on escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeModal();
+        }
+    });
+    
+    // Delegate click events for modal closing
+    document.addEventListener('click', function(e) {
+        const container = document.getElementById('modal-container');
+        if (!container || !container.classList.contains('active')) return;
+        
+        // Close on overlay click
+        if (e.target.classList.contains('modal-overlay')) {
+            closeModal();
+        }
+        // Close on close button click
+        if (e.target.matches('[data-close-modal]')) {
+            closeModal();
+        }
+    });
+    
     const consoleLogs = document.getElementById('console-logs');
     const filterBtns = document.querySelectorAll('.filter-btn');
     let autoScroll = true;

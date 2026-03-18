@@ -1,11 +1,10 @@
-<div class="modal-overlay" id="modal-overlay" 
-     hx-on:click="if(event.target === this) { htmx.removeClass(htmx.find('#modal-container'), 'active'); htmx.find('#modal-container').innerHTML = '' }">
+<div class="modal-overlay" data-close-modal>
     <div class="modal">
         <div class="modal-header">
             <h3>Add Artist</h3>
-            <button class="modal-close" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active'); htmx.find('#modal-container').innerHTML = ''">&times;</button>
+            <button class="modal-close" data-close-modal>&times;</button>
         </div>
-        <form hx-post="/api/artists" hx-target="#artists-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) { htmx.removeClass(htmx.find('#modal-container'), 'active'); htmx.find('#modal-container').innerHTML = '' }">
+        <form hx-post="/api/artists" hx-target="#artists-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
             <div class="form-group">
                 <label for="name">Artist Name</label>
                 <input type="text" id="name" name="name" required placeholder="Enter artist name">
@@ -20,7 +19,7 @@
                 </select>
             </div>
             <div class="form-actions">
-                <button type="button" class="btn" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active'); htmx.find('#modal-container').innerHTML = ''">Cancel</button>
+                <button type="button" class="btn" data-close-modal>Cancel</button>
                 <button type="submit" class="btn btn-primary">Add</button>
             </div>
         </form>
