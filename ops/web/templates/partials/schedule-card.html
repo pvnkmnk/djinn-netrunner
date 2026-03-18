@@ -13,7 +13,7 @@
         <button class="btn btn-sm" hx-patch="/api/schedules/{{ .Schedule.ID }}/toggle" hx-target="#schedule-{{ .Schedule.ID }}" hx-swap="outerHTML">
             {{ if .Schedule.Enabled }}Disable{{ else }}Enable{{ end }}
         </button>
-        <button class="btn btn-sm" hx-get="/partials/schedule-form?id={{ .Schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+        <button class="btn btn-sm" hx-get="/partials/schedule-form?id={{ .Schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML" hx-on:htmx:after-request="if(event.detail.successful) htmx.addClass(htmx.find('#modal-container'), 'active')">
             Edit
         </button>
         <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ .Schedule.ID }}" hx-target="#schedule-{{ .Schedule.ID }}" hx-swap="outerHTML">

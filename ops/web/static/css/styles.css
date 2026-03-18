@@ -510,31 +510,10 @@ a {
 }
 
 /* Libraries */
-.library-card {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
 .library-info .name { font-weight: 600; }
 .library-info .path { color: var(--text-secondary); font-size: 0.875rem; }
 
 /* Artists */
-.artist-card {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
 
 .artist-info .name { font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
 .artist-info .details { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; }
