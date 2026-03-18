@@ -116,3 +116,20 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"status": "updated"})
 }
+
+// GetForm returns the artist form
+func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
+	var profiles []database.QualityProfile
+	h.db.Find(&profiles)
+
+	return c.Render("partials/artist-form", fiber.Map{
+		"profiles": profiles,
+	})
+}
+
+// RenderPartial returns artists HTML for HTMX
+func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
+	var artists []database.MonitoredArtist
+	h.db.Find(&artists)
+	return c.Render("partials/artists", fiber.Map{"artists": artists})
+}

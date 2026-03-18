@@ -127,6 +127,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	app.Get("/partials/watchlists", api.RenderWatchlistsPartial)
 	app.Get("/partials/libraries", api.RenderLibrariesPartial)
 	app.Get("/partials/schedules", api.RenderSchedulesPartial)
+	app.Get("/partials/artists", auth.AuthMiddleware, artistsHandler.RenderPartial)
+	app.Get("/partials/artist-form", auth.AuthMiddleware, artistsHandler.GetForm)
 
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
@@ -151,6 +153,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	// Artists
 	artistsRoutes := apiProtected.Group("/artists")
 	artistsRoutes.Get("/", artistsHandler.List)
+	artistsRoutes.Get("/form", artistsHandler.GetForm)
 	artistsRoutes.Post("/", artistsHandler.Add)
 	artistsRoutes.Delete("/:id", artistsHandler.Delete)
 	artistsRoutes.Patch("/:id", artistsHandler.Update)
