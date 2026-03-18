@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"strconv"
 	"strings"
@@ -106,17 +107,23 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 				var jobLog database.JobLog
 				if err := db.First(&jobLog, event.LogID).Error; err == nil {
 					// Format as HTML for HTMX compatibility
+					// ✅ SECURITY: Escape log message to prevent XSS
+					// ✅ ACCESSIBILITY: Use semantic time and ARIA labels
 					logHTML := fmt.Sprintf(
-						`<div class="log-line log-%s" data-log-id="%d">`+
-							`<span class="log-ts">%s</span> `+
-							`<span class="log-level">[%s]</span> `+
+						`<div class="log-line log-%s" id="log-%d" data-log-id="%d">`+
+							`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
+							`<span class="log-level" aria-label="Log Level %s">[%s]</span> `+
 							`<span class="log-msg">%s</span>`+
 							`</div>`,
 						stringsToLower(jobLog.Level),
 						jobLog.ID,
-						jobLog.CreatedAt.Format("2006-01-02T15:04:05"),
+						jobLog.ID,
+						jobLog.CreatedAt.Format(time.RFC3339),
+						jobLog.CreatedAt.Format(time.RFC3339),
+						jobLog.CreatedAt.Format("15:04:05"),
 						jobLog.Level,
-						jobLog.Message,
+						jobLog.Level,
+						html.EscapeString(jobLog.Message),
 					)
 					m.Broadcast(event.JobID, logHTML)
 				}
@@ -177,17 +184,23 @@ func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 		}
 
 		for _, jobLog := range logs {
+			// ✅ SECURITY: Escape log message to prevent XSS
+			// ✅ ACCESSIBILITY: Use semantic time and ARIA labels
 			logHTML := fmt.Sprintf(
-				`<div class="log-line log-%s" data-log-id="%d">`+
-					`<span class="log-ts">%s</span> `+
-					`<span class="log-level">[%s]</span> `+
+				`<div class="log-line log-%s" id="log-%d" data-log-id="%d">`+
+					`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
+					`<span class="log-level" aria-label="Log Level %s">[%s]</span> `+
 					`<span class="log-msg">%s</span>`+
 					`</div>`,
 				stringsToLower(jobLog.Level),
 				jobLog.ID,
-				jobLog.CreatedAt.Format("2006-01-02T15:04:05"),
+				jobLog.ID,
+				jobLog.CreatedAt.Format(time.RFC3339),
+				jobLog.CreatedAt.Format(time.RFC3339),
+				jobLog.CreatedAt.Format("15:04:05"),
 				jobLog.Level,
-				jobLog.Message,
+				jobLog.Level,
+				html.EscapeString(jobLog.Message),
 			)
 			c.WriteMessage(websocket.TextMessage, []byte(logHTML))
 		}
