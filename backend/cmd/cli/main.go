@@ -47,6 +47,7 @@ func main() {
 	rootCmd.AddCommand(configCmd())
 	rootCmd.AddCommand(watchlistCmd())
 	rootCmd.AddCommand(libraryCmd())
+	rootCmd.AddCommand(profileCmd())
 	rootCmd.AddCommand(statsCmd())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -415,6 +416,138 @@ func statsCmd() *cobra.Command {
 func printJSON(v interface{}) {
 	data, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(data))
+}
+
+func profileCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "profile",
+		Short: "Manage quality profiles",
+	}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List all quality profiles",
+		Run: func(cmd *cobra.Command, args []string) {
+			profiles, err := agent.ListProfiles(db)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(profiles)
+			} else {
+				if len(profiles) == 0 {
+					fmt.Println("No profiles found.")
+					return
+				}
+				for _, p := range profiles {
+					defaultMark := ""
+					if p.IsDefault {
+						defaultMark = " [DEFAULT]"
+					}
+					fmt.Printf("- %s%s\n", p.Name, defaultMark)
+					fmt.Printf("  ID: %s\n", p.ID)
+					if p.Description != "" {
+						fmt.Printf("  %s\n", p.Description)
+					}
+					fmt.Printf("  Lossless: %v | Formats: %s | Min Bitrate: %d\n", p.PreferLossless, p.AllowedFormats, p.MinBitrate)
+					fmt.Println()
+				}
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "add [name]",
+		Short: "Add a new quality profile",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			description, _ := cmd.Flags().GetString("description")
+			lossless, _ := cmd.Flags().GetBool("lossless")
+			formats, _ := cmd.Flags().GetString("formats")
+			minBitrate, _ := cmd.Flags().GetInt("min-bitrate")
+			preferBitrate, _ := cmd.Flags().GetInt("prefer-bitrate")
+			preferScene, _ := cmd.Flags().GetBool("scene")
+			preferWeb, _ := cmd.Flags().GetBool("web")
+
+			var pb *int
+			if preferBitrate > 0 {
+				pb = &preferBitrate
+			}
+
+			profile, err := agent.CreateProfile(db, args[0], description, lossless, formats, minBitrate, pb, preferScene, preferWeb)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(profile)
+			} else {
+				fmt.Printf("Successfully created profile: %s (ID: %s)\n", profile.Name, profile.ID)
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "rm [id]",
+		Short: "Remove a quality profile",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid UUID: %w", err))
+				return
+			}
+
+			if err := agent.DeleteProfile(db, id); err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(map[string]string{"status": "deleted"})
+			} else {
+				fmt.Println("Successfully deleted profile.")
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "set-default [id]",
+		Short: "Set a profile as the default",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid UUID: %w", err))
+				return
+			}
+
+			if err := agent.SetDefaultProfile(db, id); err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(map[string]string{"status": "updated"})
+			} else {
+				fmt.Println("Successfully set default profile.")
+			}
+		},
+	})
+
+	// Add flags to add command
+	cmd.Commands()[1].Flags().String("description", "", "Profile description")
+	cmd.Commands()[1].Flags().Bool("lossless", false, "Prefer lossless audio")
+	cmd.Commands()[1].Flags().String("formats", "FLAC,ALAC,WAV", "Allowed formats (comma-separated)")
+	cmd.Commands()[1].Flags().Int("min-bitrate", 0, "Minimum bitrate (kbps)")
+	cmd.Commands()[1].Flags().Int("prefer-bitrate", 0, "Preferred bitrate (kbps)")
+	cmd.Commands()[1].Flags().Bool("scene", false, "Prefer scene releases")
+	cmd.Commands()[1].Flags().Bool("web", false, "Prefer web releases")
+
+	return cmd
 }
 
 func handleError(err error) {
