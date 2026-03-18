@@ -448,3 +448,81 @@ func GetStatsSummary(db *gorm.DB) (*SummaryStats, error) {
 
 	return &summary, nil
 }
+
+// ListProfiles returns all quality profiles
+func ListProfiles(db *gorm.DB) ([]database.QualityProfile, error) {
+	var profiles []database.QualityProfile
+	err := db.Order("name").Find(&profiles).Error
+	return profiles, err
+}
+
+// GetProfile returns a single profile by ID
+func GetProfile(db *gorm.DB, profileID uuid.UUID) (*database.QualityProfile, error) {
+	var profile database.QualityProfile
+	err := db.First(&profile, "id = ?", profileID).Error
+	if err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+// CreateProfile creates a new quality profile
+func CreateProfile(db *gorm.DB, name, description string, preferLossless bool, allowedFormats string, minBitrate int, preferBitrate *int, preferScene, preferWeb bool) (*database.QualityProfile, error) {
+	// If setting as default, clear other defaults
+	if err := db.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
+		return nil, err
+	}
+
+	profile := database.QualityProfile{
+		ID:                  uuid.New(),
+		Name:                name,
+		Description:         description,
+		PreferLossless:      preferLossless,
+		AllowedFormats:      allowedFormats,
+		MinBitrate:          minBitrate,
+		PreferBitrate:       preferBitrate,
+		PreferSceneReleases: preferScene,
+		PreferWebReleases:   preferWeb,
+		IsDefault:           true,
+	}
+
+	if err := db.Create(&profile).Error; err != nil {
+		return nil, err
+	}
+
+	return &profile, nil
+}
+
+// DeleteProfile deletes a profile by ID
+func DeleteProfile(db *gorm.DB, profileID uuid.UUID) error {
+	// Check if profile is in use
+	var count int64
+	if err := db.Model(&database.Watchlist{}).Where("quality_profile_id = ?", profileID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("profile is in use by watchlists")
+	}
+
+	if err := db.Model(&database.MonitoredArtist{}).Where("quality_profile_id = ?", profileID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("profile is in use by monitored artists")
+	}
+
+	return db.Delete(&database.QualityProfile{}, "id = ?", profileID).Error
+}
+
+// SetDefaultProfile sets a profile as the default
+func SetDefaultProfile(db *gorm.DB, profileID uuid.UUID) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Clear existing defaults
+		if err := tx.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
+			return err
+		}
+
+		// Set new default
+		return tx.Model(&database.QualityProfile{}).Where("id = ?", profileID).Update("is_default", true).Error
+	})
+}

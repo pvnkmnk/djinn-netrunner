@@ -33,7 +33,13 @@ func main() {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
 
-	// 3. Initialize Services
+	// 3. Seed default quality profiles
+	profileService := services.NewProfileService(db)
+	if _, err := profileService.EnsureDefaultProfile(); err != nil {
+		log.Printf("warning: failed to ensure default profile: %v", err)
+	}
+
+	// 4. Initialize Services
 	mbService := services.NewMusicBrainzService(cfg)
 	atService := services.NewArtistTrackingService(db, mbService)
 	scanService := services.NewScannerService(db)
@@ -58,6 +64,7 @@ func main() {
 	dashHandler := api.NewDashboardHandler(db)
 	statsHandler := api.NewStatsHandler(db)
 	libraryHandler := api.NewLibraryHandler(db)
+	profileHandler := api.NewProfileHandler(db)
 	spotifyAuthHandler := api.NewSpotifyAuthHandler(db)
 	watchlistService := services.NewWatchlistService(db, spotifyAuthHandler, cfg)
 	watchlistHandler := api.NewWatchlistHandler(db, watchlistService)
@@ -69,7 +76,7 @@ func main() {
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, db, authHandler, dashHandler, statsHandler, libraryHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
+	setupRoutes(app, db, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
 
 	// Start server
 	go func() {
@@ -87,7 +94,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -119,6 +126,14 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	watchlistRoutes.Patch("/:id", watchlist.UpdateWatchlist)
 	watchlistRoutes.Delete("/:id", watchlist.DeleteWatchlist)
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
+
+	// Quality Profiles
+	profileRoutes := apiProtected.Group("/profiles")
+	profileRoutes.Get("/", profile.List)
+	profileRoutes.Post("/", profile.Create)
+	profileRoutes.Get("/:id", profile.Get)
+	profileRoutes.Patch("/:id", profile.Update)
+	profileRoutes.Delete("/:id", profile.Delete)
 
 	// Artists
 	artistsRoutes := apiProtected.Group("/artists")
