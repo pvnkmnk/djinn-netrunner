@@ -72,3 +72,21 @@ func RenderWatchlistsPartial(c *fiber.Ctx) error {
 		"watchlists": watchlists,
 	})
 }
+
+// RenderLibrariesPartial returns libraries HTML for HTMX
+func RenderLibrariesPartial(c *fiber.Ctx) error {
+	gormDB, err := getGormDB(c)
+	if err != nil {
+		return c.SendString("<div class=\"error\">Error loading libraries.</div>")
+	}
+
+	var libraries []database.Library
+	if err := gormDB.Order("name").Find(&libraries).Error; err != nil {
+		log.Printf("Error fetching libraries: %v", err)
+		return c.SendString("<div class=\"error\">Error loading libraries.</div>")
+	}
+
+	return c.Render("partials/libraries", fiber.Map{
+		"libraries": libraries,
+	})
+}

@@ -117,11 +117,15 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	app.Get("/", auth.AuthMiddleware, dash.RenderIndex)
 
 	// Page routes
-	app.Get("/watchlists", auth.AuthMiddleware, watchlist.WatchlistsPage)
 	app.Get("/libraries", auth.AuthMiddleware, library.LibrariesPage)
 	app.Get("/profiles", auth.AuthMiddleware, profile.ProfilesPage)
 	app.Get("/schedules", auth.AuthMiddleware, schedulesHandler.SchedulesPage)
 	app.Get("/artists", auth.AuthMiddleware, artistsHandler.ArtistsPage)
+
+	// Partial routes
+	app.Get("/partials/stats", api.RenderStatsPartial)
+	app.Get("/partials/watchlists", api.RenderWatchlistsPartial)
+	app.Get("/partials/libraries", api.RenderLibrariesPartial)
 
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
@@ -160,6 +164,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	// Libraries
 	libraryRoutes := apiProtected.Group("/libraries")
 	libraryRoutes.Get("/", library.ListLibraries)
+	libraryRoutes.Get("/form", library.GetForm)
 	libraryRoutes.Post("/", library.CreateLibrary)
 	libraryRoutes.Get("/:id", library.GetLibrary)
 	libraryRoutes.Patch("/:id", library.UpdateLibrary)

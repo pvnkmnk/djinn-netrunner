@@ -233,3 +233,25 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 
 	return c.JSON(tracks)
 }
+
+// GetForm returns the library form for add/edit
+func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
+	id := c.Query("id")
+
+	var lib database.Library
+	if id != "" {
+		uuid, err := uuid.Parse(id)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+		}
+		if err := h.db.First(&lib, "id = ?", uuid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+	}
+
+	return c.Render("partials/library-form", fiber.Map{
+		"ID":   lib.ID,
+		"Name": lib.Name,
+		"Path": lib.Path,
+	})
+}
