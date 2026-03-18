@@ -516,11 +516,13 @@ func DeleteProfile(db *gorm.DB, profileID uuid.UUID) error {
 
 // SetDefaultProfile sets a profile as the default
 func SetDefaultProfile(db *gorm.DB, profileID uuid.UUID) error {
-	// Clear existing defaults
-	if err := db.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
-		return err
-	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Clear existing defaults
+		if err := tx.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
+			return err
+		}
 
-	// Set new default
-	return db.Model(&database.QualityProfile{}).Where("id = ?", profileID).Update("is_default", true).Error
+		// Set new default
+		return tx.Model(&database.QualityProfile{}).Where("id = ?", profileID).Update("is_default", true).Error
+	})
 }

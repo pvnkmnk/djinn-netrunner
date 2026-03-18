@@ -424,7 +424,8 @@ func profileCmd() *cobra.Command {
 		Short: "Manage quality profiles",
 	}
 
-	cmd.AddCommand(&cobra.Command{
+	// Define subcommands as variables for proper flag attachment
+	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all quality profiles",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -456,9 +457,9 @@ func profileCmd() *cobra.Command {
 				}
 			}
 		},
-	})
+	}
 
-	cmd.AddCommand(&cobra.Command{
+	addCmd := &cobra.Command{
 		Use:   "add [name]",
 		Short: "Add a new quality profile",
 		Args:  cobra.ExactArgs(1),
@@ -488,9 +489,9 @@ func profileCmd() *cobra.Command {
 				fmt.Printf("Successfully created profile: %s (ID: %s)\n", profile.Name, profile.ID)
 			}
 		},
-	})
+	}
 
-	cmd.AddCommand(&cobra.Command{
+	rmCmd := &cobra.Command{
 		Use:   "rm [id]",
 		Short: "Remove a quality profile",
 		Args:  cobra.ExactArgs(1),
@@ -512,9 +513,9 @@ func profileCmd() *cobra.Command {
 				fmt.Println("Successfully deleted profile.")
 			}
 		},
-	})
+	}
 
-	cmd.AddCommand(&cobra.Command{
+	setDefaultCmd := &cobra.Command{
 		Use:   "set-default [id]",
 		Short: "Set a profile as the default",
 		Args:  cobra.ExactArgs(1),
@@ -536,16 +537,22 @@ func profileCmd() *cobra.Command {
 				fmt.Println("Successfully set default profile.")
 			}
 		},
-	})
+	}
+
+	// Add commands to parent
+	cmd.AddCommand(listCmd)
+	cmd.AddCommand(addCmd)
+	cmd.AddCommand(rmCmd)
+	cmd.AddCommand(setDefaultCmd)
 
 	// Add flags to add command
-	cmd.Commands()[1].Flags().String("description", "", "Profile description")
-	cmd.Commands()[1].Flags().Bool("lossless", false, "Prefer lossless audio")
-	cmd.Commands()[1].Flags().String("formats", "FLAC,ALAC,WAV", "Allowed formats (comma-separated)")
-	cmd.Commands()[1].Flags().Int("min-bitrate", 0, "Minimum bitrate (kbps)")
-	cmd.Commands()[1].Flags().Int("prefer-bitrate", 0, "Preferred bitrate (kbps)")
-	cmd.Commands()[1].Flags().Bool("scene", false, "Prefer scene releases")
-	cmd.Commands()[1].Flags().Bool("web", false, "Prefer web releases")
+	addCmd.Flags().String("description", "", "Profile description")
+	addCmd.Flags().Bool("lossless", false, "Prefer lossless audio")
+	addCmd.Flags().String("formats", "FLAC,ALAC,WAV", "Allowed formats (comma-separated)")
+	addCmd.Flags().Int("min-bitrate", 0, "Minimum bitrate (kbps)")
+	addCmd.Flags().Int("prefer-bitrate", 0, "Preferred bitrate (kbps)")
+	addCmd.Flags().Bool("scene", false, "Prefer scene releases")
+	addCmd.Flags().Bool("web", false, "Prefer web releases")
 
 	return cmd
 }

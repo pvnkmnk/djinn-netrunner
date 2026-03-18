@@ -64,9 +64,34 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
 	}
 
-	// If setting as default, clear other defaults
+	// If setting as default, use transaction to ensure atomicity
 	if input.IsDefault {
-		h.db.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false)
+		var profile database.QualityProfile
+		err := h.db.Transaction(func(tx *gorm.DB) error {
+			// Clear existing defaults
+			if err := tx.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
+				return err
+			}
+
+			profile = database.QualityProfile{
+				ID:                  uuid.New(),
+				Name:                input.Name,
+				Description:         input.Description,
+				PreferLossless:      input.PreferLossless,
+				AllowedFormats:      input.AllowedFormats,
+				MinBitrate:          input.MinBitrate,
+				PreferBitrate:       input.PreferBitrate,
+				PreferSceneReleases: input.PreferSceneReleases,
+				PreferWebReleases:   input.PreferWebReleases,
+				IsDefault:           input.IsDefault,
+			}
+
+			return tx.Create(&profile).Error
+		})
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(profile)
 	}
 
 	profile := database.QualityProfile{
@@ -120,9 +145,18 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	// Handle default setting
+	// Handle default setting with transaction
 	if input.IsDefault != nil && *input.IsDefault && !profile.IsDefault {
-		h.db.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false)
+		if err := h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
+				return err
+			}
+			profile.IsDefault = true
+			return tx.Save(&profile).Error
+		}); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(profile)
 	}
 
 	if input.Name != nil {
@@ -180,12 +214,16 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 
 	// Check if profile is in use
 	var count int64
-	h.db.Model(&database.Watchlist{}).Where("quality_profile_id = ?", id).Count(&count)
+	if err := h.db.Model(&database.Watchlist{}).Where("quality_profile_id = ?", id).Count(&count).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 	if count > 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "profile is in use by watchlists"})
 	}
 
-	h.db.Model(&database.MonitoredArtist{}).Where("quality_profile_id = ?", id).Count(&count)
+	if err := h.db.Model(&database.MonitoredArtist{}).Where("quality_profile_id = ?", id).Count(&count).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 	if count > 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "profile is in use by monitored artists"})
 	}
