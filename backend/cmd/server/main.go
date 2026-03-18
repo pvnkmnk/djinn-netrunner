@@ -126,6 +126,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	watchlistRoutes.Patch("/:id", watchlist.UpdateWatchlist)
 	watchlistRoutes.Delete("/:id", watchlist.DeleteWatchlist)
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
+	watchlistRoutes.Patch("/:id/toggle", watchlist.ToggleWatchlist)
 
 	// Quality Profiles
 	profileRoutes := apiProtected.Group("/profiles")

@@ -1,20 +1,115 @@
 <div class="watchlists-region">
-    <h2>Watchlists</h2>
+    <div class="section-header">
+        <h2>Watchlists</h2>
+        <button class="btn btn-primary" hx-get="/partials/watchlist-form" hx-target="#modal-container" hx-swap="innerHTML">
+            Add Watchlist
+        </button>
+    </div>
+    
+    <div id="watchlists-list">
     {{ range .watchlists }}
-    <div class="watchlist-card">
-        <div>
+    <div class="watchlist-card" id="watchlist-{{ .ID }}">
+        <div class="watchlist-info">
             <div class="name">{{ .Name }}</div>
             <div class="source">{{ .SourceType }}: {{ .SourceURI }}</div>
         </div>
-        <div class="sync-status">
-            {{ if .Enabled }}
-            <span class="text-success">Enabled</span>
-            {{ else }}
-            <span class="text-secondary">Disabled</span>
-            {{ end }}
+        <div class="actions">
+            <button class="btn btn-sm" hx-post="/api/watchlists/{{ .ID }}/sync" hx-target="#console-logs">
+                Sync
+            </button>
+            <button class="btn btn-sm" hx-get="/partials/watchlist-form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+                Edit
+            </button>
+            <button class="btn btn-sm btn-danger" hx-delete="/api/watchlists/{{ .ID }}" hx-target="#watchlist-{{ .ID }}" hx-swap="outerHTML">
+                Delete
+            </button>
+            <label class="toggle">
+                <input type="checkbox" {{ if .Enabled }}checked{{ end }} 
+                    hx-patch="/api/watchlists/{{ .ID }}/toggle"
+                    hx-target="#watchlist-{{ .ID }}"
+                    hx-swap="outerHTML">
+                <span class="toggle-slider"></span>
+            </label>
         </div>
     </div>
     {{ else }}
-    <p>No watchlists configured</p>
+    <p class="empty-state">No watchlists configured</p>
     {{ end }}
+    </div>
 </div>
+
+<!-- Modal container for forms -->
+<div id="modal-container"></div>
+
+<style>
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.section-header h2 {
+    margin: 0;
+}
+.actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+.btn-danger {
+    background: var(--accent-error);
+    border-color: var(--accent-error);
+}
+.btn-danger:hover {
+    opacity: 0.9;
+}
+.toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 20px;
+    margin-left: 0.5rem;
+}
+.toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--bg-tertiary);
+    transition: 0.3s;
+    border-radius: 20px;
+}
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+.toggle input:checked + .toggle-slider {
+    background-color: var(--accent-success);
+}
+.toggle input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+}
+.empty-state {
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 2rem;
+}
+</style>

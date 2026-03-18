@@ -119,3 +119,27 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 	}
 	return c.JSON(profiles)
 }
+
+// ToggleWatchlist toggles enabled state
+func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
+	user := c.Locals("user").(database.User)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+	}
+
+	var wl database.Watchlist
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := query.First(&wl).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "not found"})
+	}
+
+	wl.Enabled = !wl.Enabled
+	h.db.Save(&wl)
+
+	return c.Render("partials/watchlists", fiber.Map{"watchlists": []database.Watchlist{wl}})
+}
