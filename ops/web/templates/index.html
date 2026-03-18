@@ -4,30 +4,33 @@
 
 {% block content %}
 <div class="dashboard">
-    <section class="stats-region" hx-get="/partials/stats" hx-trigger="every 30s">
+    <section class="stats-region" hx-get="/partials/stats" hx-trigger="every 30s" aria-live="polite" aria-atomic="true">
         <!-- Stats loaded via HTMX -->
         <div class="stats-loading">Loading stats...</div>
     </section>
     
-    <section class="watchlists-region" hx-get="/partials/watchlists" hx-trigger="every 60s">
+    <section class="watchlists-region" hx-get="/partials/watchlists" hx-trigger="every 60s" aria-live="polite" aria-atomic="true">
         <!-- Watchlists loaded via HTMX -->
         <div class="watchlists-loading">Loading watchlists...</div>
     </section>
     
+    <!-- Visually hidden ARIA live region for status announcements -->
+    <div id="status-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
     <section class="console-region">
         <div class="console-controls">
-            <button class="btn" id="btn-attach" hx-post="/console/attach">Attach</button>
-            <button class="btn" id="btn-detach">Detach</button>
-            <span class="filter-group">
-                <button class="filter-btn active" data-filter="all">ALL</button>
-                <button class="filter-btn" data-filter="OK">OK</button>
-                <button class="filter-btn" data-filter="INFO">INFO</button>
-                <button class="filter-btn" data-filter="WARN">WARN</button>
-                <button class="filter-btn" data-filter="ERR">ERR</button>
+            <button class="btn" id="btn-attach" hx-post="/console/attach" aria-label="Attach to job console">Attach</button>
+            <button class="btn" id="btn-detach" aria-label="Detach from job console">Detach</button>
+            <span class="filter-group" role="group" aria-label="Filter logs by level">
+                <button class="filter-btn active" data-filter="all" aria-label="Show all logs">ALL</button>
+                <button class="filter-btn" data-filter="OK" aria-label="Show OK logs">OK</button>
+                <button class="filter-btn" data-filter="INFO" aria-label="Show INFO logs">INFO</button>
+                <button class="filter-btn" data-filter="WARN" aria-label="Show WARN logs">WARN</button>
+                <button class="filter-btn" data-filter="ERR" aria-label="Show ERR logs">ERR</button>
             </span>
-            <button class="btn" id="btn-copy">Copy Last 200</button>
-            <button class="btn" id="btn-clear">Clear</button>
-            <button class="btn" id="btn-resume">Resume Live</button>
+            <button class="btn" id="btn-copy" aria-label="Copy last 200 log lines to clipboard">Copy Last 200</button>
+            <button class="btn" id="btn-clear" aria-label="Clear console logs">Clear</button>
+            <button class="btn" id="btn-resume" aria-label="Resume live log scrolling">Resume Live</button>
         </div>
         
         <div id="console-socket" class="console-socket">
@@ -35,7 +38,7 @@
             <div class="console-placeholder">Select a job to attach</div>
         </div>
         
-        <div id="console-logs" class="console-logs" hx-ext="ws" ws-connect="/ws/jobs">
+        <div id="console-logs" class="console-logs" hx-ext="ws" ws-connect="/ws/jobs" aria-live="polite">
             <!-- Log lines rendered here -->
         </div>
     </section>
