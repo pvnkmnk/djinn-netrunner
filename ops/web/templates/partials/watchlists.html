@@ -1,8 +1,15 @@
 <div class="watchlists-region">
-    <h2>Watchlists</h2>
+    <div class="section-header">
+        <h2>Watchlists</h2>
+        <button class="btn btn-primary" hx-get="/api/watchlists/form" hx-target="#modal-container" hx-swap="innerHTML" hx-on:htmx:after-request="if(event.detail.successful) htmx.addClass(htmx.find('#modal-container'), 'active')">
+            Add Watchlist
+        </button>
+    </div>
+    
+    <div id="watchlists-list">
     {{ range .watchlists }}
-    <div class="watchlist-card">
-        <div>
+    <div class="watchlist-card" id="watchlist-{{ .ID }}">
+        <div class="watchlist-info">
             <div class="name">{{ .Name }}</div>
             <div class="source">{{ .SourceType }}: {{ .SourceURI }}</div>
         </div>
@@ -13,8 +20,22 @@
             <span class="text-secondary">Disabled</span>
             {{ end }}
         </div>
+        <div class="actions">
+            <button class="btn btn-sm" hx-patch="/api/watchlists/{{ .ID }}/toggle" hx-target="#watchlist-{{ .ID }}" hx-swap="outerHTML">
+                {{ if .Enabled }}Disable{{ else }}Enable{{ end }}
+            </button>
+            <button class="btn btn-sm" hx-get="/api/watchlists/form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML" hx-on:htmx:after-request="if(event.detail.successful) htmx.addClass(htmx.find('#modal-container'), 'active')">
+                Edit
+            </button>
+            <button class="btn btn-sm btn-danger" hx-delete="/api/watchlists/{{ .ID }}" hx-target="#watchlist-{{ .ID }}" hx-swap="outerHTML">
+                Delete
+            </button>
+        </div>
     </div>
     {{ else }}
-    <p>No watchlists configured</p>
+    <p class="empty-state">No watchlists configured</p>
     {{ end }}
+    </div>
 </div>
+
+<div id="modal-container"></div>
