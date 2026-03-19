@@ -139,6 +139,14 @@ func stringsToLower(s string) string {
 }
 
 func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
+	// ✅ SECURITY: Only admins can subscribe to the system-wide event stream
+	user, ok := c.Locals("user").(database.User)
+	if !ok || user.Role != "admin" {
+		c.WriteMessage(websocket.TextMessage, []byte("Access denied: Admin role required for system events"))
+		c.Close()
+		return
+	}
+
 	// JobID 0 is for general system events
 	m.Register(0, c)
 	defer m.Unregister(0, c)
@@ -154,7 +162,27 @@ func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
 func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 	jobIDStr := c.Params("job_id")
 	jobID, _ := strconv.ParseUint(jobIDStr, 10, 64)
-	
+
+	// ✅ SECURITY: Verify job ownership or admin role
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		c.Close()
+		return
+	}
+
+	var job database.Job
+	if err := db.First(&job, jobID).Error; err != nil {
+		c.WriteMessage(websocket.TextMessage, []byte("Job not found"))
+		c.Close()
+		return
+	}
+
+	if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
+		c.WriteMessage(websocket.TextMessage, []byte("Access denied: You do not own this job"))
+		c.Close()
+		return
+	}
+
 	tailStr := c.Query("tail")
 	sinceIDStr := c.Query("since_id")
 
