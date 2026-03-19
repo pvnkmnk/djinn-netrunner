@@ -1,0 +1,12 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Jobs - NETRUNNER{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Jobs</h2>
+</div>
+<section id="jobs-region" hx-get="/partials/jobs" hx-trigger="load, every 30s">
+    <div class="loading">Loading...</div>
+</section>
+{% endblock %}

@@ -1,0 +1,38 @@
+<div class="artists-region">
+    <div class="section-header">
+        <h2>Monitored Artists</h2>
+        <button class="btn btn-primary" hx-get="/partials/artist-form" hx-target="#modal-container" hx-swap="innerHTML">
+            Add Artist
+        </button>
+    </div>
+    
+    <div id="artists-list">
+    {{ range .artists }}
+    <div class="artist-card" id="artist-{{ .ID }}">
+        <div class="artist-info">
+            <div class="name">
+                {{ .Name }}
+                {{ if not .Monitored }}<span class="badge badge-disabled">Paused</span>{{ end }}
+            </div>
+            <div class="details">
+                <span>MBID: {{ .MusicBrainzID }}</span>
+                <span>Releases: {{ .AcquiredReleases }}/{{ .TotalReleases }}</span>
+                <span>Last Scan: {{ .LastScanDate.Format "Jan 02 15:04" }}</span>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn btn-sm" hx-patch="/api/artists/{{ .ID }}" hx-target="#artist-{{ .ID }}" hx-swap="outerHTML">
+                {{ if .Monitored }}Pause{{ else }}Resume{{ end }}
+            </button>
+            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ .ID }}" hx-target="#artist-{{ .ID }}" hx-swap="outerHTML">
+                Remove
+            </button>
+        </div>
+    </div>
+    {{ else }}
+    <p class="empty-state">No artists being monitored</p>
+    {{ end }}
+    </div>
+</div>
+
+<div id="modal-container"></div>

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -67,6 +69,8 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		var profile database.QualityProfile
 		if err := h.db.Where("is_default = ?", true).First(&profile).Error; err == nil {
 			profileID = profile.ID
+		} else if err != gorm.ErrRecordNotFound {
+			log.Printf("Error fetching default profile: %v", err)
 		}
 	}
 
@@ -114,5 +118,35 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(fiber.Map{"status": "updated"})
+	// Reload the artist and return the card partial
+	var artist database.MonitoredArtist
+	if err := h.db.First(&artist, "id = ?", id).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "error reloading artist"})
+	}
+
+	return c.Render("partials/artist-card", fiber.Map{"Artist": artist})
+}
+
+// GetForm returns the artist form
+func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
+	var profiles []database.QualityProfile
+	if err := h.db.Find(&profiles).Error; err != nil {
+		log.Printf("Error fetching profiles for artist form: %v", err)
+		return c.Status(500).SendString("Error loading form")
+	}
+
+	c.Set("HX-Trigger", "openModal")
+	return c.Render("partials/artist-form", fiber.Map{
+		"profiles": profiles,
+	})
+}
+
+// RenderPartial returns artists HTML for HTMX
+func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
+	var artists []database.MonitoredArtist
+	if err := h.db.Find(&artists).Error; err != nil {
+		log.Printf("Error fetching artists: %v", err)
+		return c.Status(500).SendString("Error loading artists")
+	}
+	return c.Render("partials/artists", fiber.Map{"artists": artists})
 }

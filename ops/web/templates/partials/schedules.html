@@ -1,0 +1,40 @@
+<div class="schedules-region">
+    <div class="section-header">
+        <h2>Schedules</h2>
+        <button class="btn btn-primary" hx-get="/api/schedules/form" hx-target="#modal-container" hx-swap="innerHTML">
+            Add Schedule
+        </button>
+    </div>
+    
+    <div id="schedules-list">
+    {{ range .schedules }}
+    <div class="schedule-card" id="schedule-{{ .ID }}">
+        <div class="schedule-info">
+            <div class="name">
+                {{ .Watchlist.Name }}
+                {{ if not .Enabled }}<span class="badge badge-disabled">Disabled</span>{{ end }}
+            </div>
+            <div class="details">
+                <span>Cron: {{ .CronExpr }}</span>
+                <span>Next: {{ .NextRunAt.Format "Jan 02 15:04" }}</span>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn btn-sm" hx-patch="/api/schedules/{{ .ID }}/toggle" hx-target="#schedule-{{ .ID }}" hx-swap="outerHTML">
+                {{ if .Enabled }}Disable{{ else }}Enable{{ end }}
+            </button>
+            <button class="btn btn-sm" hx-get="/api/schedules/form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+                Edit
+            </button>
+            <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ .ID }}" hx-target="#schedule-{{ .ID }}" hx-swap="outerHTML">
+                Delete
+            </button>
+        </div>
+    </div>
+    {{ else }}
+    <p class="empty-state">No schedules configured</p>
+    {{ end }}
+    </div>
+</div>
+
+<div id="modal-container"></div>

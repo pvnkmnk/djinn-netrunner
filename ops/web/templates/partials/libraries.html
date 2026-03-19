@@ -1,0 +1,37 @@
+<div class="libraries-region">
+    <div class="section-header">
+        <h2>Libraries</h2>
+        <button class="btn btn-primary" hx-get="/api/libraries/form" hx-target="#modal-container" hx-swap="innerHTML">
+            Add Library
+        </button>
+    </div>
+    
+    <div id="libraries-list">
+    {{ range .libraries }}
+    <div class="library-card" id="library-{{ .ID }}">
+        <div class="library-info">
+            <div class="name">{{ .Name }}</div>
+            <div class="path">{{ .Path }}</div>
+        </div>
+        <div class="actions">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ .ID }}/scan" hx-target="#console-logs">
+                Scan
+            </button>
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ .ID }}/enrich" hx-target="#console-logs">
+                Enrich
+            </button>
+            <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+                Edit
+            </button>
+            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ .ID }}" hx-target="#library-{{ .ID }}" hx-swap="outerHTML">
+                Delete
+            </button>
+        </div>
+    </div>
+    {{ else }}
+    <p class="empty-state">No libraries configured</p>
+    {{ end }}
+    </div>
+</div>
+
+<div id="modal-container"></div>

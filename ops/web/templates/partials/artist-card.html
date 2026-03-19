@@ -1,0 +1,21 @@
+<div class="artist-card" id="artist-{{ .Artist.ID }}">
+    <div class="artist-info">
+        <div class="name">
+            {{ .Artist.Name }}
+            {{ if not .Artist.Monitored }}<span class="badge badge-disabled">Paused</span>{{ end }}
+        </div>
+        <div class="details">
+            <span>MBID: {{ .Artist.MusicBrainzID }}</span>
+            <span>Releases: {{ .Artist.AcquiredReleases }}/{{ .Artist.TotalReleases }}</span>
+            <span>Last Scan: {{ .Artist.LastScanDate.Format "Jan 02 15:04" }}</span>
+        </div>
+    </div>
+    <div class="actions">
+        <button class="btn btn-sm" hx-patch="/api/artists/{{ .Artist.ID }}" hx-target="#artist-{{ .Artist.ID }}" hx-swap="outerHTML">
+            {{ if .Artist.Monitored }}Pause{{ else }}Resume{{ end }}
+        </button>
+        <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ .Artist.ID }}" hx-target="#artist-{{ .Artist.ID }}" hx-swap="outerHTML">
+            Remove
+        </button>
+    </div>
+</div>

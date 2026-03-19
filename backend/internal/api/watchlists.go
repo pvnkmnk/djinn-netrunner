@@ -1,6 +1,8 @@
 package api
 
 import (
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -118,4 +120,37 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(profiles)
+}
+
+// GetForm returns the watchlist form for add/edit
+func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
+	id := c.Query("id")
+
+	var wl database.Watchlist
+	if id != "" {
+		uuid, err := uuid.Parse(id)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+		}
+		if err := h.db.First(&wl, "id = ?", uuid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+	}
+
+	var profiles []database.QualityProfile
+	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+		log.Printf("Error fetching profiles for watchlist form: %v", err)
+		return c.Status(500).SendString("Error loading form")
+	}
+
+	c.Set("HX-Trigger", "openModal")
+	return c.Render("partials/watchlist-form", fiber.Map{
+		"ID":               wl.ID,
+		"Name":             wl.Name,
+		"SourceType":       wl.SourceType,
+		"SourceURI":        wl.SourceURI,
+		"QualityProfileID": wl.QualityProfileID,
+		"Enabled":          wl.Enabled,
+		"profiles":         profiles,
+	})
 }
