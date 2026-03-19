@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -33,6 +34,10 @@ func main() {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
 
+	// Background context for services
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// 3. Seed default quality profiles
 	profileService := services.NewProfileService(db)
 	if _, err := profileService.EnsureDefaultProfile(); err != nil {
@@ -43,6 +48,7 @@ func main() {
 	mbService := services.NewMusicBrainzService(cfg)
 	atService := services.NewArtistTrackingService(db, mbService)
 	scanService := services.NewScannerService(db)
+	go services.NewSpotifyTokenService(db, cfg).Start(ctx)
 
 	// 4. Initialize Fiber
 	engine := html.New("./ops/web/templates", ".html")
