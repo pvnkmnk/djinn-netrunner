@@ -48,11 +48,13 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 	}
 
 	// 2. Discovery
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	// Bolt Optimization: filepath.WalkDir is more efficient than filepath.Walk
+	// as it avoids unnecessary Lstat calls by using os.DirEntry.
+	err := filepath.WalkDir(path, func(filePath string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && s.metadata.IsAudioFile(filePath) {
+		if !d.IsDir() && s.metadata.IsAudioFile(filePath) {
 			select {
 			case jobs <- ScanJob{Path: filePath, LibraryID: libraryID}:
 			case <-ctx.Done():
@@ -80,31 +82,20 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 	// Compute hash
 	hash, _ := s.metadata.HashFile(path)
 
-	// Create or update track
-	track := database.Track{
-		LibraryID: libraryID,
-		Title:     meta.Title,
-		Artist:    meta.Artist,
-		Album:     meta.Album,
-		Path:      path,
-		Format:    meta.Format,
-		FileSize:  meta.FileSize,
-	}
-
-	// Simple upsert based on path
+	// Bolt Optimization: Use a single FirstOrCreate with Assign to handle both Create and Update
+	// in a single database roundtrip, ensuring FileHash is always current and avoiding redundant UPDATEs.
+	var track database.Track
 	err = s.db.Where("path = ?", path).
 		Assign(database.Track{
-			Title:    track.Title,
-			Artist:   track.Artist,
-			Album:    track.Album,
-			Format:   track.Format,
-			FileSize: track.FileSize,
+			LibraryID: libraryID,
+			Title:     meta.Title,
+			Artist:    meta.Artist,
+			Album:     meta.Album,
+			Format:    meta.Format,
+			FileSize:  meta.FileSize,
+			FileHash:  hash,
 		}).
 		FirstOrCreate(&track).Error
-
-	if hash != "" {
-		s.db.Model(&track).Update("file_hash", hash)
-	}
 
 	if err != nil {
 		log.Printf("[SCANNER] Error saving track | library_id=%s | path=%s | error=%v", libraryID, path, err)
@@ -114,12 +105,20 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) error {
 	log.Printf("[SCANNER] Starting prune | library_id=%s", libraryID)
 
-	var tracks []database.Track
-	if err := s.db.Where("library_id = ?", libraryID).Find(&tracks).Error; err != nil {
+	// Bolt Optimization: Select only necessary fields and use batch DELETE
+	// to reduce memory overhead and database roundtrips.
+	var tracks []struct {
+		ID   uuid.UUID
+		Path string
+	}
+	if err := s.db.Model(&database.Track{}).
+		Where("library_id = ?", libraryID).
+		Select("id, path").
+		Find(&tracks).Error; err != nil {
 		return err
 	}
 
-	count := 0
+	var toDelete []uuid.UUID
 	for _, t := range tracks {
 		select {
 		case <-ctx.Done():
@@ -127,13 +126,18 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) e
 		default:
 			if _, err := os.Stat(t.Path); os.IsNotExist(err) {
 				log.Printf("[SCANNER] Pruning missing file | library_id=%s | path=%s", libraryID, t.Path)
-				s.db.Delete(&t)
-				count++
+				toDelete = append(toDelete, t.ID)
 			}
 		}
 	}
 
-	log.Printf("[SCANNER] Prune complete | library_id=%s | removed=%d", libraryID, count)
+	if len(toDelete) > 0 {
+		if err := s.db.Delete(&database.Track{}, "id IN ?", toDelete).Error; err != nil {
+			return err
+		}
+	}
+
+	log.Printf("[SCANNER] Prune complete | library_id=%s | removed=%d", libraryID, len(toDelete))
 	return nil
 }
 
