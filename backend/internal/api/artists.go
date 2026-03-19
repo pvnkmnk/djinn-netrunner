@@ -54,7 +54,11 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	artist := results[0]
 	// Simple confidence check: exact match or very close match
 	// MusicBrainz search returns results sorted by relevance
-	// TODO: Add logging for ambiguous results when logging infrastructure is available
+	// Log ambiguous results for debugging
+	if len(results) > 1 {
+		log.Printf("[ARTISTS] Ambiguous search for '%s' — got %d results, using first: %s",
+			payload.Name, len(results), results[0].Name)
+	}
 
 	// Get quality profile
 	var profileID uuid.UUID
