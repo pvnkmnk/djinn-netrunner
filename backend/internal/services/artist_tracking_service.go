@@ -97,12 +97,26 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 		return nil
 	}
 
-	var newReleases []database.TrackedRelease
+	// Bolt Optimization: Bulk fetch existing releases to avoid N+1 queries in the loop
+	var existingReleases []database.TrackedRelease
+	if err := s.db.Where("artist_id = ?", artist.ID).Find(&existingReleases).Error; err != nil {
+		return err
+	}
 
+	existingMap := make(map[string]database.TrackedRelease)
+	for _, er := range existingReleases {
+		existingMap[er.ReleaseGroupID] = er
+	}
+
+	var releasesToCreate []database.TrackedRelease
+	var releasesToUpdate []database.TrackedRelease
+	var newReleasesForJob []database.TrackedRelease
+
+	now := time.Now()
 	for _, rg := range releaseGroups {
 		group := rg.(map[string]interface{})
-		rgID := group["id"].(string)
-		title := group["title"].(string)
+		rgID, _ := group["id"].(string)
+		title, _ := group["title"].(string)
 		primaryType := ""
 		if t, ok := group["primary-type"].(string); ok {
 			primaryType = t
@@ -119,14 +133,11 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 			shouldMonitor = artist.MonitorSingles
 		}
 
-		// Upsert TrackedRelease
-		var release database.TrackedRelease
-		err := s.db.Where("artist_id = ? AND release_group_id = ?", artist.ID, rgID).First(&release).Error
-
-		now := time.Now()
-		if err != nil {
+		if release, exists := existingMap[rgID]; !exists {
 			// Create new
-			release = database.TrackedRelease{
+			// Bolt Fix: Manually generate ID to ensure consistency between creation and job item reference
+			newRel := database.TrackedRelease{
+				ID:             uuid.New(),
 				ArtistID:       artist.ID,
 				ReleaseGroupID: rgID,
 				Title:          title,
@@ -136,21 +147,38 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 				CreatedAt:      now,
 				UpdatedAt:      now,
 			}
-			s.db.Create(&release)
+			releasesToCreate = append(releasesToCreate, newRel)
 			if shouldMonitor {
-				newReleases = append(newReleases, release)
+				newReleasesForJob = append(newReleasesForJob, newRel)
 			}
 		} else {
-			// Update existing if needed
-			s.db.Model(&release).Updates(map[string]interface{}{
-				"title":      title,
-				"updated_at": now,
-			})
+			// Update existing if title changed
+			if release.Title != title {
+				release.Title = title
+				release.UpdatedAt = now
+				releasesToUpdate = append(releasesToUpdate, release)
+			}
 		}
 	}
 
+	// Bolt Optimization: Use CreateInBatches for bulk inserts
+	if len(releasesToCreate) > 0 {
+		if err := s.db.CreateInBatches(releasesToCreate, 100).Error; err != nil {
+			log.Printf("[ARTIST] Error batch creating releases: %v", err)
+		}
+	}
+
+	// Individual updates for modified releases (usually rare, so N queries here is acceptable
+	// but we could also optimize this if needed)
+	for _, rel := range releasesToUpdate {
+		s.db.Model(&rel).Updates(map[string]interface{}{
+			"title":      rel.Title,
+			"updated_at": rel.UpdatedAt,
+		})
+	}
+
 	// Create acquisition job for new releases
-	if len(newReleases) > 0 {
+	if len(newReleasesForJob) > 0 {
 		job := database.Job{
 			Type:        "acquisition",
 			State:       "queued",
@@ -163,8 +191,11 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 		if err := s.db.Create(&job).Error; err != nil {
 			log.Printf("[ARTIST] Error creating acquisition job: %v", err)
 		} else {
+			var jobItems []database.JobItem
+			var releaseIDsToMarkQueued []uuid.UUID
+
 			// Create job items for each new release
-			for i, rel := range newReleases {
+			for i, rel := range newReleasesForJob {
 				item := database.JobItem{
 					JobID:           job.ID,
 					Sequence:        i,
@@ -175,16 +206,27 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 					Status:          "queued",
 					OwnerUserID:     artist.OwnerUserID,
 				}
-				s.db.Create(&item)
-
-				// Mark release as queued
-				s.db.Model(&rel).Update("status", "queued")
+				jobItems = append(jobItems, item)
+				releaseIDsToMarkQueued = append(releaseIDsToMarkQueued, rel.ID)
 			}
-			log.Printf("[ARTIST] Created acquisition job %d with %d items for artist %s", job.ID, len(newReleases), artist.Name)
+
+			// Bolt Optimization: Batch create job items
+			if err := s.db.CreateInBatches(jobItems, 100).Error; err != nil {
+				log.Printf("[ARTIST] Error batch creating job items: %v", err)
+			}
+
+			// Bolt Optimization: Bulk update release status
+			if len(releaseIDsToMarkQueued) > 0 {
+				s.db.Model(&database.TrackedRelease{}).
+					Where("id IN ?", releaseIDsToMarkQueued).
+					Update("status", "queued")
+			}
+
+			log.Printf("[ARTIST] Created acquisition job %d with %d items for artist %s", job.ID, len(newReleasesForJob), artist.Name)
 		}
 	}
 
 	// Update last scan date
-	now := time.Now()
-	return s.db.Model(&artist).Update("last_scan_date", &now).Error
+	scanNow := time.Now()
+	return s.db.Model(&artist).Update("last_scan_date", &scanNow).Error
 }
