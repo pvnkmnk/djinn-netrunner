@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -25,6 +27,33 @@ func TestProbeSystem(t *testing.T) {
 	assert.True(t, status.DatabaseConnected)
 	// We expect Gonic to fail in this test environment
 	assert.False(t, status.GonicConnected)
+}
+
+func TestProbeSystemSlskdConnected(t *testing.T) {
+	// Setup a mock slskd server that responds OK to /api/v0/session
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v0/session" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+
+	cfg := &config.Config{
+		SlskdURL: server.URL, // no trailing slash — HealthCheck appends /api/v0/session
+	}
+
+	slskdService := services.NewSlskdService(cfg)
+	assert.True(t, slskdService.HealthCheck(), "mock slskd server should be reachable")
+
+	status, err := ProbeSystem(db, cfg)
+	assert.NoError(t, err)
+	assert.True(t, status.DatabaseConnected)
+	assert.True(t, status.SlskdConnected, "SlskdConnected should be true when slskd server responds OK")
 }
 
 func TestConfigTools(t *testing.T) {
