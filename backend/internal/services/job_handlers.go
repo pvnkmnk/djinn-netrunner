@@ -435,6 +435,7 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 	}
 
 	// Embed cover art if available
+	coverArtFetched := false
 	if item.CoverArtURL != "" {
 		h.Log(jobID, "INFO", "Fetching cover art...", &itemID)
 		resp, err := http.Get(item.CoverArtURL)
@@ -442,6 +443,7 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 			artData, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if err == nil {
+				coverArtFetched = true
 				h.Log(jobID, "INFO", "Embedding cover art...", &itemID)
 				if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
 					h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed cover art: %v", err), &itemID)
@@ -451,6 +453,29 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 			}
 		} else if err != nil {
 			h.Log(jobID, "WARN", fmt.Sprintf("Failed to fetch cover art: %v", err), &itemID)
+		}
+	}
+
+	// Fallback: try MusicBrainz cover art if we have a release ID
+	if !coverArtFetched && mbIDs.ReleaseID != "" && h.mb != nil {
+		h.Log(jobID, "INFO", "Fetching cover art from MusicBrainz...", &itemID)
+		coverURL, err := h.mb.GetCoverArt(mbIDs.ReleaseID)
+		if err == nil && coverURL != "" {
+			resp, err := http.Get(coverURL)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				artData, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err == nil {
+					h.Log(jobID, "INFO", "Embedding MusicBrainz cover art...", &itemID)
+					if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
+						h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed MB cover art: %v", err), &itemID)
+					} else {
+						h.Log(jobID, "OK", "MusicBrainz cover art embedded successfully", &itemID)
+					}
+				}
+			}
+		} else {
+			h.Log(jobID, "INFO", "No cover art found on MusicBrainz", &itemID)
 		}
 	}
 
