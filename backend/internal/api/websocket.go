@@ -17,59 +17,49 @@ import (
 )
 
 type WebSocketManager struct {
-	// jobID -> slice of connections
-	connections map[uint64][]*websocket.Conn
-	mutex       sync.RWMutex
+	// jobID -> set of connections
+	clients map[string]map[*websocket.Conn]struct{}
+	mu      sync.RWMutex
 }
 
 func NewWebSocketManager() *WebSocketManager {
 	return &WebSocketManager{
-		connections: make(map[uint64][]*websocket.Conn),
+		clients: make(map[string]map[*websocket.Conn]struct{}),
 	}
 }
 
-func (m *WebSocketManager) Register(jobID uint64, conn *websocket.Conn) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.connections[jobID] = append(m.connections[jobID], conn)
+func (m *WebSocketManager) Subscribe(client *websocket.Conn, jobID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.clients[jobID]; !ok {
+		m.clients[jobID] = make(map[*websocket.Conn]struct{})
+	}
+	m.clients[jobID][client] = struct{}{}
 }
 
-func (m *WebSocketManager) Unregister(jobID uint64, conn *websocket.Conn) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	conns := m.connections[jobID]
-	for i, c := range conns {
-		if c == conn {
-			m.connections[jobID] = append(conns[:i], conns[i+1:]...)
-			break
+func (m *WebSocketManager) Unsubscribe(client *websocket.Conn, jobID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if conns, ok := m.clients[jobID]; ok {
+		delete(conns, client)
+		if len(conns) == 0 {
+			delete(m.clients, jobID)
 		}
 	}
-	if len(m.connections[jobID]) == 0 {
-		delete(m.connections, jobID)
-	}
 }
 
-func (m *WebSocketManager) Broadcast(jobID uint64, message string) {
-	m.mutex.RLock()
-	conns, ok := m.connections[jobID]
-	m.mutex.RUnlock()
+func (m *WebSocketManager) Broadcast(jobID string, message string) {
+	m.mu.RLock()
+	clients, ok := m.clients[jobID]
+	m.mu.RUnlock()
 
-	if ok {
-		for _, conn := range conns {
-			if err := conn.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
-				log.Printf("[WS] broadcast error to job %d: %v", jobID, err)
-			}
-		}
+	if !ok {
+		return
 	}
 
-	// Also broadcast to "system" subscribers (jobID 0)
-	m.mutex.RLock()
-	sysConns, ok := m.connections[0]
-	m.mutex.RUnlock()
-
-	if ok {
-		for _, conn := range sysConns {
-			conn.WriteMessage(websocket.TextMessage, []byte(message))
+	for client := range clients {
+		if err := client.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
+			log.Printf("[WS] broadcast error to job %s: %v", jobID, err)
 		}
 	}
 }
@@ -125,7 +115,7 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 						jobLog.Level,
 						html.EscapeString(jobLog.Message),
 					)
-					m.Broadcast(event.JobID, logHTML)
+					m.Broadcast(strconv.FormatUint(event.JobID, 10), logHTML)
 				}
 			}
 		case <-time.After(1 * time.Minute):
@@ -139,9 +129,9 @@ func stringsToLower(s string) string {
 }
 
 func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
-	// JobID 0 is for general system events
-	m.Register(0, c)
-	defer m.Unregister(0, c)
+	// System-wide events use jobID "0"
+	m.Subscribe(c, "0")
+	defer m.Unsubscribe(c, "0")
 
 	// Read loop to keep connection alive
 	for {
@@ -153,18 +143,18 @@ func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
 
 func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 	jobIDStr := c.Params("job_id")
-	jobID, _ := strconv.ParseUint(jobIDStr, 10, 64)
-	
+	jobIDUint, _ := strconv.ParseUint(jobIDStr, 10, 64)
+
 	tailStr := c.Query("tail")
 	sinceIDStr := c.Query("since_id")
 
-	m.Register(jobID, c)
-	defer m.Unregister(jobID, c)
+	m.Subscribe(c, jobIDStr)
+	defer m.Unsubscribe(c, jobIDStr)
 
 	// Send initial backlog
 	var logs []database.JobLog
-	query := db.Where("job_id = ?", jobID)
-	
+	query := db.Where("job_id = ?", jobIDUint)
+
 	if tailStr != "" {
 		tail, _ := strconv.Atoi(tailStr)
 		query = query.Order("id DESC").Limit(tail)
