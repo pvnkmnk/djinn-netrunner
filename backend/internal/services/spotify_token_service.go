@@ -87,9 +87,9 @@ func (s *SpotifyTokenService) refreshToken(token *database.SpotifyToken) error {
 		Expiry:       token.Expiry,
 	}
 
-	// Use ReuseTokenSource — when the token is expired, it automatically
-	// uses the RefreshToken to obtain a new access token.
-	ts := oauth2.ReuseTokenSource(oauthToken, nil)
+	// Create a TokenSource that can automatically refresh the token when expired.
+	// The Config.TokenSource returns a source backed by the refresh token.
+	ts := s.config.TokenSource(context.Background(), oauthToken)
 	newToken, err := ts.Token()
 	if err != nil {
 		return err

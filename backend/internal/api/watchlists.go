@@ -114,7 +114,7 @@ func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
 
 // PreviewWatchlist fetches tracks without creating a sync job
 func (h *WatchlistHandler) PreviewWatchlist(c *fiber.Ctx) error {
-	id, err := uuid.Parse(c.Query("id"))
+	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid watchlist ID"})
 	}

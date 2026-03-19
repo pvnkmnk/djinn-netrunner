@@ -169,6 +169,35 @@ func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService,
 	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, notifier: notifier}
 }
 
+// embedCoverArt fetches an image from a URL and embeds it into the audio file.
+func (h *AcquisitionHandler) embedCoverArt(jobID, itemID uint64, finalPath, source, coverURL string) bool {
+	resp, err := http.Get(coverURL)
+	if err != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Failed to fetch %s cover art: %v", source, err), &itemID)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		h.Log(jobID, "INFO", fmt.Sprintf("No cover art from %s", source), &itemID)
+		return false
+	}
+
+	artData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Failed to read %s cover art: %v", source, err), &itemID)
+		return false
+	}
+
+	h.Log(jobID, "INFO", fmt.Sprintf("Embedding %s cover art...", source), &itemID)
+	if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed %s cover art: %v", source, err), &itemID)
+		return false
+	}
+	h.Log(jobID, "OK", fmt.Sprintf("%s cover art embedded successfully", source), &itemID)
+	return true
+}
+
 func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
 	h.Log(jobID, "INFO", "Monitoring acquisition progress", nil)
 
@@ -437,45 +466,14 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 	// Embed cover art if available
 	coverArtFetched := false
 	if item.CoverArtURL != "" {
-		h.Log(jobID, "INFO", "Fetching cover art...", &itemID)
-		resp, err := http.Get(item.CoverArtURL)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			artData, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if err == nil {
-				coverArtFetched = true
-				h.Log(jobID, "INFO", "Embedding cover art...", &itemID)
-				if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
-					h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed cover art: %v", err), &itemID)
-				} else {
-					h.Log(jobID, "OK", "Cover art embedded successfully", &itemID)
-				}
-			}
-		} else if err != nil {
-			h.Log(jobID, "WARN", fmt.Sprintf("Failed to fetch cover art: %v", err), &itemID)
-		}
+		coverArtFetched = h.embedCoverArt(jobID, itemID, finalPath, "Watchlist", item.CoverArtURL)
 	}
 
 	// Fallback: try MusicBrainz cover art if we have a release ID
 	if !coverArtFetched && mbIDs.ReleaseID != "" && h.mb != nil {
-		h.Log(jobID, "INFO", "Fetching cover art from MusicBrainz...", &itemID)
 		coverURL, err := h.mb.GetCoverArt(mbIDs.ReleaseID)
 		if err == nil && coverURL != "" {
-			resp, err := http.Get(coverURL)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				artData, err := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				if err == nil {
-					h.Log(jobID, "INFO", "Embedding MusicBrainz cover art...", &itemID)
-					if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
-						h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed MB cover art: %v", err), &itemID)
-					} else {
-						h.Log(jobID, "OK", "MusicBrainz cover art embedded successfully", &itemID)
-					}
-				}
-			}
-		} else {
-			h.Log(jobID, "INFO", "No cover art found on MusicBrainz", &itemID)
+			h.embedCoverArt(jobID, itemID, finalPath, "MusicBrainz", coverURL)
 		}
 	}
 
