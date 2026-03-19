@@ -16,60 +16,87 @@ import (
 	"gorm.io/gorm"
 )
 
+// WebSocketManager manages per-job WebSocket subscriptions for real-time log streaming.
+// Clients subscribe to specific job IDs and only receive logs for those jobs.
 type WebSocketManager struct {
-	// jobID -> slice of connections
-	connections map[uint64][]*websocket.Conn
-	mutex       sync.RWMutex
+	// jobID (string) -> set of connections
+	clients map[string]map[*websocket.Conn]struct{}
+	mu      sync.RWMutex
 }
 
+// NewWebSocketManager creates a new WebSocket manager with initialized client maps.
 func NewWebSocketManager() *WebSocketManager {
 	return &WebSocketManager{
-		connections: make(map[uint64][]*websocket.Conn),
+		clients: make(map[string]map[*websocket.Conn]struct{}),
 	}
 }
 
-func (m *WebSocketManager) Register(jobID uint64, conn *websocket.Conn) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.connections[jobID] = append(m.connections[jobID], conn)
+// Subscribe registers a connection for real-time updates on a specific job.
+func (m *WebSocketManager) Subscribe(conn *websocket.Conn, jobID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.clients[jobID]; !ok {
+		m.clients[jobID] = make(map[*websocket.Conn]struct{})
+	}
+	m.clients[jobID][conn] = struct{}{}
 }
 
-func (m *WebSocketManager) Unregister(jobID uint64, conn *websocket.Conn) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	conns := m.connections[jobID]
-	for i, c := range conns {
-		if c == conn {
-			m.connections[jobID] = append(conns[:i], conns[i+1:]...)
-			break
+// Unsubscribe removes a connection from a job's subscription set.
+// If the set becomes empty, the jobID key is removed from the map.
+func (m *WebSocketManager) Unsubscribe(conn *websocket.Conn, jobID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if clients, ok := m.clients[jobID]; ok {
+		delete(clients, conn)
+		if len(clients) == 0 {
+			delete(m.clients, jobID)
 		}
 	}
-	if len(m.connections[jobID]) == 0 {
-		delete(m.connections, jobID)
+}
+
+// Broadcast sends a message only to clients subscribed to the specific jobID.
+// Clients subscribed to other job IDs do not receive this message.
+func (m *WebSocketManager) Broadcast(jobID string, message string) {
+	m.mu.RLock()
+	clients, ok := m.clients[jobID]
+	// Copy active connections under lock to avoid iterating the map outside the lock
+	active := make([]*websocket.Conn, 0, len(clients))
+	for conn := range clients {
+		active = append(active, conn)
+	}
+	m.mu.RUnlock()
+
+	if !ok || len(active) == 0 {
+		return
+	}
+
+	data := []byte(message)
+	for _, conn := range active {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			// Clean up dead connection
+			m.mu.Lock()
+			delete(m.clients[jobID], conn)
+			m.mu.Unlock()
+			conn.Close()
+		}
 	}
 }
 
-func (m *WebSocketManager) Broadcast(jobID uint64, message string) {
-	m.mutex.RLock()
-	conns, ok := m.connections[jobID]
-	m.mutex.RUnlock()
+// Cleanup removes dead connections from all per-job subscription sets.
+// It pings each connection to check liveness and removes those that fail.
+func (m *WebSocketManager) Cleanup() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	if ok {
-		for _, conn := range conns {
-			if err := conn.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
-				log.Printf("[WS] broadcast error to job %d: %v", jobID, err)
+	for jobID, clients := range m.clients {
+		for conn := range clients {
+			// Check if connection is still alive
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				delete(clients, conn)
 			}
 		}
-	}
-
-	// Also broadcast to "system" subscribers (jobID 0)
-	m.mutex.RLock()
-	sysConns, ok := m.connections[0]
-	m.mutex.RUnlock()
-
-	if ok {
-		for _, conn := range sysConns {
-			conn.WriteMessage(websocket.TextMessage, []byte(message))
+		if len(m.clients[jobID]) == 0 {
+			delete(m.clients, jobID)
 		}
 	}
 }
@@ -80,6 +107,8 @@ type JobLogEvent struct {
 	LogID uint64 `json:"log_id"`
 }
 
+// ListenForJobLogs listens for PostgreSQL NOTIFY events and broadcasts
+// log entries to the appropriate per-job WebSocket clients.
 func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 	reportProblem := func(ev pq.ListenerEventType, err error) {
 		if err != nil {
@@ -125,7 +154,8 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 						jobLog.Level,
 						html.EscapeString(jobLog.Message),
 					)
-					m.Broadcast(event.JobID, logHTML)
+					jobIDStr := strconv.FormatUint(event.JobID, 10)
+					m.Broadcast(jobIDStr, logHTML)
 				}
 			}
 		case <-time.After(1 * time.Minute):
@@ -138,10 +168,11 @@ func stringsToLower(s string) string {
 	return strings.ToLower(s)
 }
 
+// HandleEvents manages a WebSocket connection for system-wide event notifications.
+// Subscribes the connection to the "system" job scope.
 func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
-	// JobID 0 is for general system events
-	m.Register(0, c)
-	defer m.Unregister(0, c)
+	m.Subscribe(c, "system")
+	defer m.Unsubscribe(c, "system")
 
 	// Read loop to keep connection alive
 	for {
@@ -151,20 +182,21 @@ func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
 	}
 }
 
+// HandleConsole manages a WebSocket connection for job-specific log streaming.
+// Subscribes the connection to the specific job ID from the URL path.
 func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 	jobIDStr := c.Params("job_id")
-	jobID, _ := strconv.ParseUint(jobIDStr, 10, 64)
-	
-	tailStr := c.Query("tail")
-	sinceIDStr := c.Query("since_id")
 
-	m.Register(jobID, c)
-	defer m.Unregister(jobID, c)
+	m.Subscribe(c, jobIDStr)
+	defer m.Unsubscribe(c, jobIDStr)
 
 	// Send initial backlog
 	var logs []database.JobLog
-	query := db.Where("job_id = ?", jobID)
-	
+	query := db.Where("job_id = ?", jobIDStr)
+
+	tailStr := c.Query("tail")
+	sinceIDStr := c.Query("since_id")
+
 	if tailStr != "" {
 		tail, _ := strconv.Atoi(tailStr)
 		query = query.Order("id DESC").Limit(tail)
