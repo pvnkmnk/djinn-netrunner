@@ -148,6 +148,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	watchlistRoutes.Post("/", watchlist.CreateWatchlist)
 	watchlistRoutes.Patch("/:id", watchlist.UpdateWatchlist)
 	watchlistRoutes.Delete("/:id", watchlist.DeleteWatchlist)
+	watchlistRoutes.Get("/:id/preview", watchlist.PreviewWatchlist)
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
 	watchlistRoutes.Patch("/:id/toggle", watchlist.ToggleWatchlist)
 	watchlistRoutes.Get("/form", watchlist.GetForm)

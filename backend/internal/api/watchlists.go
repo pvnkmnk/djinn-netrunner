@@ -112,6 +112,40 @@ func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
 	return c.Status(204).Send(nil)
 }
 
+// PreviewWatchlist fetches tracks without creating a sync job
+func (h *WatchlistHandler) PreviewWatchlist(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Query("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid watchlist ID"})
+	}
+
+	watchlist, err := h.service.GetWatchlist(id)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "watchlist not found"})
+	}
+
+	tracks, snapshot, err := h.service.FetchWatchlistTracks(c.Context(), watchlist)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Return first 10 tracks as preview
+	preview := tracks
+	total := len(tracks)
+	more := false
+	if total > 10 {
+		preview = tracks[:10]
+		more = true
+	}
+
+	return c.JSON(fiber.Map{
+		"tracks":   preview,
+		"total":    total,
+		"snapshot": snapshot,
+		"more":     more,
+	})
+}
+
 // Profile endpoints
 
 func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
