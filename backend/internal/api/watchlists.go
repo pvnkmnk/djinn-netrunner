@@ -130,11 +130,12 @@ func (h *WatchlistHandler) PreviewWatchlist(c *fiber.Ctx) error {
 	}
 
 	// Return first 10 tracks as preview
+	const previewLimit = 10
 	preview := tracks
 	total := len(tracks)
 	more := false
-	if total > 10 {
-		preview = tracks[:10]
+	if total > previewLimit {
+		preview = tracks[:previewLimit]
 		more = true
 	}
 

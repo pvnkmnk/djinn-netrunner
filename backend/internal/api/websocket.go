@@ -186,13 +186,18 @@ func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
 // Subscribes the connection to the specific job ID from the URL path.
 func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 	jobIDStr := c.Params("job_id")
+	jobID, err := strconv.ParseUint(jobIDStr, 10, 64)
+	if err != nil {
+		log.Printf("[WS] Invalid job ID provided to console: %s", jobIDStr)
+		return
+	}
 
 	m.Subscribe(c, jobIDStr)
 	defer m.Unsubscribe(c, jobIDStr)
 
 	// Send initial backlog
 	var logs []database.JobLog
-	query := db.Where("job_id = ?", jobIDStr)
+	query := db.Where("job_id = ?", jobID)
 
 	tailStr := c.Query("tail")
 	sinceIDStr := c.Query("since_id")

@@ -241,6 +241,8 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 						if err := h.notifier.NotifyJobCompletion(&updatedJob); err != nil {
 							h.Log(jobID, "WARN", fmt.Sprintf("Notification failed: %v", err), nil)
 						}
+					} else {
+						h.Log(jobID, "WARN", fmt.Sprintf("Failed to fetch job for notification: %v", err), nil)
 					}
 				}
 
