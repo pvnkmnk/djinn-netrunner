@@ -115,6 +115,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Copy Last 200 button
     const copyBtn = document.getElementById('btn-copy');
+    const statusAnnouncer = document.getElementById('status-announcer');
     if (copyBtn) {
         copyBtn.addEventListener('click', function() {
             const lines = Array.from(consoleLogs.querySelectorAll('.log-line'))
@@ -123,6 +124,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 .join('\n');
             navigator.clipboard.writeText(lines).then(() => {
                 copyBtn.textContent = 'Copied!';
+                if (statusAnnouncer) {
+                    statusAnnouncer.textContent = 'Copied logs to clipboard';
+                    // Clear after delay so next announcement can be heard
+                    setTimeout(() => statusAnnouncer.textContent = '', 3000);
+                }
                 setTimeout(() => copyBtn.textContent = 'Copy Last 200', 2000);
             });
         });
