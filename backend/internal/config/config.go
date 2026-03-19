@@ -57,6 +57,10 @@ type Config struct {
 
 	// Proxy
 	ProxyURL string
+
+	// Notifications
+	NotificationWebhookURL string
+	NotificationEnabled    bool
 }
 
 // Load reads configuration from environment variables
@@ -79,7 +83,7 @@ func Load(filenames ...string) (*Config, error) {
 
 		SpotifyClientID:     getEnv("SPOTIFY_CLIENT_ID", ""),
 		SpotifyClientSecret: getEnv("SPOTIFY_CLIENT_SECRET", ""),
-		
+
 		MusicBrainzUserAgent: getEnv("MUSICBRAINZ_USER_AGENT", "NetRunner/1.0.0 (contact@example.com)"),
 		MusicBrainzAPIKey:    getEnv("MUSICBRAINZ_API_KEY", ""),
 		AcoustIDApiKey:       getEnv("ACOUSTID_API_KEY", ""),
@@ -98,6 +102,9 @@ func Load(filenames ...string) (*Config, error) {
 		DiscogsToken:      getEnv("DISCOGS_TOKEN", ""),
 
 		ProxyURL: getEnv("PROXY_URL", ""),
+
+		NotificationWebhookURL: getEnv("NOTIFICATION_WEBHOOK_URL", ""),
+		NotificationEnabled:    getEnv("NOTIFICATION_ENABLED", "false") == "true",
 	}
 
 	// Validate required fields

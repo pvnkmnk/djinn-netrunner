@@ -156,16 +156,17 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 
 type AcquisitionHandler struct {
 	BaseHandler
-	cfg   *config.Config
-	slskd *SlskdService
-	mb    *MusicBrainzService
-	aid   *AcoustIDService
-	ext   *MetadataExtractor
-	gonic *GonicClient
+	cfg      *config.Config
+	slskd    *SlskdService
+	mb       *MusicBrainzService
+	aid      *AcoustIDService
+	ext      *MetadataExtractor
+	gonic    *GonicClient
+	notifier *NotificationService
 }
 
-func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient) *AcquisitionHandler {
-	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic}
+func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient, notifier *NotificationService) *AcquisitionHandler {
+	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, notifier: notifier}
 }
 
 func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
@@ -203,6 +204,17 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 						h.Log(jobID, "OK", "Gonic scan triggered", nil)
 					}
 				}
+
+				// 2.4 Notification Webhook
+				if h.notifier != nil {
+					var updatedJob database.Job
+					if err := h.db.First(&updatedJob, jobID).Error; err == nil {
+						if err := h.notifier.NotifyJobCompletion(&updatedJob); err != nil {
+							h.Log(jobID, "WARN", fmt.Sprintf("Notification failed: %v", err), nil)
+						}
+					}
+				}
+
 				return nil
 			}
 		}

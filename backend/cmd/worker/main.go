@@ -43,6 +43,7 @@ type WorkerOrchestrator struct {
 	// Handlers
 	syncHandler *services.SyncHandler
 	acqHandler  *services.AcquisitionHandler
+	notifier    *services.NotificationService
 
 	activeJobs map[uint64]*jobContext
 	jobMutex   sync.Mutex
@@ -77,6 +78,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	aid.SetCache(cache)
 	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
 	discogs := services.NewDiscogsService(cfg)
+	notifier := services.NewNotificationService(cfg)
 	return &WorkerOrchestrator{
 		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:          db,
@@ -93,9 +95,10 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		metadata:    metadata,
 		litefs:      database.NewLiteFSGuard(cfg.DatabaseURL),
 		syncHandler: services.NewSyncHandler(db, spotify, watchlist),
-		acqHandler:  services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic),
+		acqHandler:  services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic, notifier),
 		activeJobs:  make(map[uint64]*jobContext),
 		wakeupChan:  make(chan bool, 1),
+		notifier:    notifier,
 	}
 }
 
