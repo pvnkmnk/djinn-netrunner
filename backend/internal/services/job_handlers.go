@@ -475,7 +475,9 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 	if !coverArtFetched && mbIDs.ReleaseID != "" && h.mb != nil {
 		coverURL, err := h.mb.GetCoverArt(mbIDs.ReleaseID)
 		if err == nil && coverURL != "" {
-			h.embedCoverArt(jobID, itemID, finalPath, "MusicBrainz", coverURL)
+			// Return value ignored: embedCoverArt logs errors internally and
+			// this is the last cover art fallback — no further action needed.
+			_ = h.embedCoverArt(jobID, itemID, finalPath, "MusicBrainz", coverURL)
 		}
 	}
 

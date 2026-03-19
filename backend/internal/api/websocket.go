@@ -71,32 +71,70 @@ func (m *WebSocketManager) Broadcast(jobID string, message string) {
 	}
 
 	data := []byte(message)
+	var deadConns []*websocket.Conn
 	for _, conn := range active {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			// Clean up dead connection
-			m.mu.Lock()
-			delete(m.clients[jobID], conn)
-			m.mu.Unlock()
-			conn.Close()
+			deadConns = append(deadConns, conn)
+		}
+	}
+
+	// Remove dead connections in a single write lock
+	if len(deadConns) > 0 {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if clients, ok := m.clients[jobID]; ok {
+			for _, conn := range deadConns {
+				delete(clients, conn)
+				conn.Close()
+			}
+			if len(clients) == 0 {
+				delete(m.clients, jobID)
+			}
 		}
 	}
 }
 
 // Cleanup removes dead connections from all per-job subscription sets.
 // It pings each connection to check liveness and removes those that fail.
+// Lock is only held during map mutation, not during network I/O.
 func (m *WebSocketManager) Cleanup() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	// Phase 1: copy all connections under read lock
+	m.mu.RLock()
+	type jobConn struct {
+		jobID string
+		conn  *websocket.Conn
+	}
+	var all []jobConn
 	for jobID, clients := range m.clients {
 		for conn := range clients {
-			// Check if connection is still alive
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				delete(clients, conn)
-			}
+			all = append(all, jobConn{jobID: jobID, conn: conn})
 		}
-		if len(m.clients[jobID]) == 0 {
-			delete(m.clients, jobID)
+	}
+	m.mu.RUnlock()
+
+	if len(all) == 0 {
+		return
+	}
+
+	// Phase 2: ping connections outside the lock
+	var deadConns []jobConn
+	for _, jc := range all {
+		if err := jc.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			deadConns = append(deadConns, jc)
+		}
+	}
+
+	// Phase 3: remove dead connections under write lock
+	if len(deadConns) > 0 {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for _, jc := range deadConns {
+			if clients, ok := m.clients[jc.jobID]; ok {
+				delete(clients, jc.conn)
+				if len(clients) == 0 {
+					delete(m.clients, jc.jobID)
+				}
+			}
 		}
 	}
 }
