@@ -140,8 +140,10 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 	var profiles []database.QualityProfile
 	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
 		log.Printf("Error fetching profiles for watchlist form: %v", err)
+		return c.Status(500).SendString("Error loading form")
 	}
 
+	c.Set("HX-Trigger", "openModal")
 	return c.Render("partials/watchlist-form", fiber.Map{
 		"ID":               wl.ID,
 		"Name":             wl.Name,

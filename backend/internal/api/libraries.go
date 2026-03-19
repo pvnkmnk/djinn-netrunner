@@ -249,6 +249,7 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 		}
 	}
 
+	c.Set("HX-Trigger", "openModal")
 	return c.Render("partials/library-form", fiber.Map{
 		"ID":   lib.ID,
 		"Name": lib.Name,

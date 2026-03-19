@@ -132,8 +132,10 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 	var profiles []database.QualityProfile
 	if err := h.db.Find(&profiles).Error; err != nil {
 		log.Printf("Error fetching profiles for artist form: %v", err)
+		return c.Status(500).SendString("Error loading form")
 	}
 
+	c.Set("HX-Trigger", "openModal")
 	return c.Render("partials/artist-form", fiber.Map{
 		"profiles": profiles,
 	})
@@ -144,6 +146,7 @@ func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
 	var artists []database.MonitoredArtist
 	if err := h.db.Find(&artists).Error; err != nil {
 		log.Printf("Error fetching artists: %v", err)
+		return c.Status(500).SendString("Error loading artists")
 	}
 	return c.Render("partials/artists", fiber.Map{"artists": artists})
 }

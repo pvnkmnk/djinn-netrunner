@@ -172,41 +172,6 @@ body {
     font-weight: 600;
 }
 
-.watchlist-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 0;
-    padding: 1.25rem;
-    margin-bottom: 0.75rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: all 0.2s;
-    position: relative;
-}
-
-.watchlist-card::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: var(--accent-cyan);
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-
-.watchlist-card:hover {
-    border-color: var(--accent-cyan);
-    transform: translateX(4px);
-    box-shadow: 0 0 20px rgba(0, 255, 245, 0.15);
-}
-
-.watchlist-card:hover::before {
-    opacity: 1;
-}
-
 .watchlist-info .name { font-weight: 600; }
 .watchlist-info .source { color: var(--text-secondary); font-size: 0.875rem; }
 

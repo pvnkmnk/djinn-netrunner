@@ -20,7 +20,26 @@ function openModal(html) {
     }
 }
 
+function openModalFromHTMX(target) {
+    const container = document.getElementById('modal-container');
+    if (container && target) {
+        container.innerHTML = target;
+        container.offsetHeight;
+        container.classList.add('active');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Listen for HTMX modal trigger headers
+    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+        const xhr = evt.detail.xhr;
+        if (xhr && xhr.getResponseHeader) {
+            if (xhr.getResponseHeader('HX-Trigger') === 'openModal') {
+                openModalFromHTMX(evt.detail.target);
+            }
+        }
+    });
+    
     // Close modal on escape key
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {

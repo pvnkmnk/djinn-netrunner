@@ -1,7 +1,7 @@
 <div class="artists-region">
     <div class="section-header">
         <h2>Monitored Artists</h2>
-        <button class="btn btn-primary" hx-get="/partials/artist-form" hx-target="#modal-container" hx-swap="innerHTML" hx-on:htmx:after-request="if(event.detail.successful) htmx.addClass(htmx.find('#modal-container'), 'active')">
+        <button class="btn btn-primary" hx-get="/partials/artist-form" hx-target="#modal-container" hx-swap="innerHTML">
             Add Artist
         </button>
     </div>

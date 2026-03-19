@@ -147,10 +147,7 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Reload with Watchlist
-	if err := h.db.Preload("Watchlist").First(&sched, "id = ?", id).Error; err != nil {
-		log.Printf("Error reloading schedule with watchlist: %v", err)
-	}
+	// sched still has preloaded Watchlist from initial fetch, no need to reload
 
 	return c.Render("partials/schedule-card", fiber.Map{
 		"Schedule": sched,
@@ -165,6 +162,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 	var watchlists []database.Watchlist
 	if err := h.db.Find(&watchlists).Error; err != nil {
 		log.Printf("Error fetching watchlists for schedule form: %v", err)
+		return c.Status(500).SendString("Error loading form")
 	}
 
 	if id != "" {
@@ -177,6 +175,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 		}
 	}
 
+	c.Set("HX-Trigger", "openModal")
 	return c.Render("partials/schedule-form", fiber.Map{
 		"ID":          sched.ID,
 		"WatchlistID": sched.WatchlistID,
