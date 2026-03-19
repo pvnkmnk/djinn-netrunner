@@ -1,0 +1,48 @@
+<div class="jobs-region">
+    <div class="filters" hx-get="/partials/jobs" hx-target="#jobs-list" hx-trigger="change">
+        <select name="job_type">
+            <option value="">All Types</option>
+            <option value="sync">Sync</option>
+            <option value="scan">Scan</option>
+            <option value="acquisition">Acquisition</option>
+            <option value="enrich">Enrich</option>
+        </select>
+        <select name="state">
+            <option value="">All States</option>
+            <option value="queued">Queued</option>
+            <option value="running">Running</option>
+            <option value="succeeded">Succeeded</option>
+            <option value="failed">Failed</option>
+        </select>
+    </div>
+    
+    <div id="jobs-list">
+    {{ range .jobs }}
+    <div class="job-card" id="job-{{ .ID }}">
+        <div class="job-info">
+            <div class="job-id">#{{ .ID }}</div>
+            <div class="job-type">{{ .Type }}</div>
+            <div class="job-state state-{{ .State }}">{{ .State }}</div>
+        </div>
+        <div class="job-meta">
+            <span>{{ .RequestedAt.Format "Jan 02 15:04" }}</span>
+            <span>By: {{ .CreatedBy }}</span>
+        </div>
+        <div class="actions">
+            <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ .ID }}" hx-target="#job-logs-container" hx-swap="innerHTML">
+                View Logs
+            </button>
+            {{ if eq .State "queued" }}
+            <button class="btn btn-sm btn-danger" hx-delete="/api/jobs/{{ .ID }}" hx-target="#job-{{ .ID }}" hx-swap="outerHTML">
+                Cancel
+            </button>
+            {{ end }}
+        </div>
+    </div>
+    {{ else }}
+    <p class="empty-state">No jobs found</p>
+    {{ end }}
+    </div>
+    
+    <div id="job-logs-container"></div>
+</div>

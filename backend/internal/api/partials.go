@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"log"
 	"time"
 
@@ -18,20 +17,11 @@ type StatsData struct {
 	FailedCount    int64
 }
 
-// getGormDB extracts the GORM database from fiber context
-func getGormDB(c *fiber.Ctx) (*gorm.DB, error) {
-	db := c.Locals("db")
-	if db == nil {
-		return nil, fmt.Errorf("DB not available")
-	}
-	return db.(*gorm.DB), nil
-}
-
 // RenderStatsPartial returns stats HTML for HTMX
 func RenderStatsPartial(c *fiber.Ctx) error {
-	gormDB, err := getGormDB(c)
-	if err != nil {
-		log.Printf("Error getting DB: %v", err)
+	db, ok := c.Locals("db").(*gorm.DB)
+	if !ok || db == nil {
+		log.Printf("Error getting DB from context")
 		return c.SendString("<div class=\"error\">Error loading stats.</div>")
 	}
 
@@ -40,7 +30,7 @@ func RenderStatsPartial(c *fiber.Ctx) error {
 	since := time.Now().Add(-24 * time.Hour)
 
 	// Use conditional aggregation for efficient single-query stats
-	if err := gormDB.Model(&database.Job{}).Where("requested_at > ?", since).
+	if err := db.Model(&database.Job{}).Where("requested_at > ?", since).
 		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
 			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
 			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
@@ -57,18 +47,44 @@ func RenderStatsPartial(c *fiber.Ctx) error {
 
 // RenderWatchlistsPartial returns watchlists HTML for HTMX
 func RenderWatchlistsPartial(c *fiber.Ctx) error {
-	gormDB, err := getGormDB(c)
-	if err != nil {
+	db, ok := c.Locals("db").(*gorm.DB)
+	if !ok || db == nil {
 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
 	}
 
 	var watchlists []database.Watchlist
-	if err := gormDB.Order("name").Find(&watchlists).Error; err != nil {
+	if err := db.Order("name").Find(&watchlists).Error; err != nil {
 		log.Printf("Error fetching watchlists: %v", err)
 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
 	}
 
 	return c.Render("partials/watchlists", fiber.Map{
 		"watchlists": watchlists,
+	})
+}
+
+// RenderJobsPartial returns jobs HTML for HTMX
+func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
+	var jobs []database.Job
+	query := h.db.Order("requested_at DESC").Limit(50)
+
+	// Apply filters if provided
+	jobType := c.Query("job_type")
+	state := c.Query("state")
+
+	if jobType != "" {
+		query = query.Where("job_type = ?", jobType)
+	}
+	if state != "" {
+		query = query.Where("state = ?", state)
+	}
+
+	if err := query.Find(&jobs).Error; err != nil {
+		log.Printf("Error fetching jobs: %v", err)
+		return c.SendString("<div class=\"error\">Error loading jobs.</div>")
+	}
+
+	return c.Render("partials/jobs", fiber.Map{
+		"jobs": jobs,
 	})
 }

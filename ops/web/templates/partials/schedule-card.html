@@ -1,0 +1,23 @@
+<div class="schedule-card" id="schedule-{{ .Schedule.ID }}">
+    <div class="schedule-info">
+        <div class="name">
+            {{ .Schedule.Watchlist.Name }}
+            {{ if not .Schedule.Enabled }}<span class="badge badge-disabled">Disabled</span>{{ end }}
+        </div>
+        <div class="details">
+            <span>Cron: {{ .Schedule.CronExpr }}</span>
+            <span>Next: {{ .Schedule.NextRunAt.Format "Jan 02 15:04" }}</span>
+        </div>
+    </div>
+    <div class="actions">
+        <button class="btn btn-sm" hx-patch="/api/schedules/{{ .Schedule.ID }}/toggle" hx-target="#schedule-{{ .Schedule.ID }}" hx-swap="outerHTML">
+            {{ if .Schedule.Enabled }}Disable{{ else }}Enable{{ end }}
+        </button>
+        <button class="btn btn-sm" hx-get="/partials/schedule-form?id={{ .Schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+            Edit
+        </button>
+        <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ .Schedule.ID }}" hx-target="#schedule-{{ .Schedule.ID }}" hx-swap="outerHTML">
+            Delete
+        </button>
+    </div>
+</div>

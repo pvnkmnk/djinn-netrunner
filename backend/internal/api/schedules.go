@@ -1,6 +1,8 @@
 package api
 
 import (
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -125,4 +127,72 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"status": "updated"})
+}
+
+// PATCH /api/schedules/:id/toggle - Toggle schedule enabled/disabled
+func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+
+	var sched database.Schedule
+	if err := h.db.Preload("Watchlist").First(&sched, "id = ?", id).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "not found"})
+	}
+
+	// Toggle the enabled state
+	sched.Enabled = !sched.Enabled
+	if err := h.db.Save(&sched).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// sched still has preloaded Watchlist from initial fetch, no need to reload
+
+	return c.Render("partials/schedule-card", fiber.Map{
+		"Schedule": sched,
+	})
+}
+
+// GetForm returns the schedule form for add/edit
+func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
+	id := c.Query("id")
+
+	var sched database.Schedule
+	var watchlists []database.Watchlist
+	if err := h.db.Find(&watchlists).Error; err != nil {
+		log.Printf("Error fetching watchlists for schedule form: %v", err)
+		return c.Status(500).SendString("Error loading form")
+	}
+
+	if id != "" {
+		parsedID, err := uuid.Parse(id)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+		}
+		if err := h.db.Preload("Watchlist").First(&sched, "id = ?", parsedID).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+	}
+
+	c.Set("HX-Trigger", "openModal")
+	return c.Render("partials/schedule-form", fiber.Map{
+		"ID":          sched.ID,
+		"WatchlistID": sched.WatchlistID,
+		"CronExpr":    sched.CronExpr,
+		"Enabled":     sched.Enabled,
+		"watchlists":  watchlists,
+	})
+}
+
+// RenderSchedulesPartial returns schedules HTML for HTMX
+func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
+	var schedules []database.Schedule
+	if err := h.db.Preload("Watchlist").Order("created_at desc").Find(&schedules).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading schedules.</div>")
+	}
+
+	return c.Render("partials/schedules", fiber.Map{
+		"schedules": schedules,
+	})
 }

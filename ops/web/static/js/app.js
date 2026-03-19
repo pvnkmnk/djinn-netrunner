@@ -1,7 +1,67 @@
 // NETRUNNER - Minimal Console JS
 // Following docs: minimal JS only for console controls
 
+// Modal management
+function closeModal() {
+    const container = document.getElementById('modal-container');
+    if (container) {
+        container.classList.remove('active');
+        container.innerHTML = '';
+    }
+}
+
+function openModal(html) {
+    const container = document.getElementById('modal-container');
+    if (container) {
+        container.innerHTML = html;
+        // Trigger reflow
+        container.offsetHeight;
+        container.classList.add('active');
+    }
+}
+
+function openModalFromHTMX(target) {
+    const container = document.getElementById('modal-container');
+    if (container && target) {
+        container.innerHTML = target;
+        container.offsetHeight;
+        container.classList.add('active');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Listen for HTMX modal trigger headers
+    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+        const xhr = evt.detail.xhr;
+        if (xhr && xhr.getResponseHeader) {
+            if (xhr.getResponseHeader('HX-Trigger') === 'openModal') {
+                openModalFromHTMX(evt.detail.target);
+            }
+        }
+    });
+    
+    // Close modal on escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeModal();
+        }
+    });
+    
+    // Delegate click events for modal closing
+    document.addEventListener('click', function(e) {
+        const container = document.getElementById('modal-container');
+        if (!container || !container.classList.contains('active')) return;
+        
+        // Close on overlay click
+        if (e.target.classList.contains('modal-overlay')) {
+            closeModal();
+        }
+        // Close on close button click
+        if (e.target.matches('[data-close-modal]')) {
+            closeModal();
+        }
+    });
+    
     const consoleLogs = document.getElementById('console-logs');
     const filterBtns = document.querySelectorAll('.filter-btn');
     let autoScroll = true;
@@ -55,6 +115,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Copy Last 200 button
     const copyBtn = document.getElementById('btn-copy');
+    const statusAnnouncer = document.getElementById('status-announcer');
     if (copyBtn) {
         copyBtn.addEventListener('click', function() {
             const lines = Array.from(consoleLogs.querySelectorAll('.log-line'))
@@ -63,6 +124,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 .join('\n');
             navigator.clipboard.writeText(lines).then(() => {
                 copyBtn.textContent = 'Copied!';
+                if (statusAnnouncer) {
+                    statusAnnouncer.textContent = 'Copied logs to clipboard';
+                    // Clear after delay so next announcement can be heard
+                    setTimeout(() => statusAnnouncer.textContent = '', 3000);
+                }
                 setTimeout(() => copyBtn.textContent = 'Copy Last 200', 2000);
             });
         });

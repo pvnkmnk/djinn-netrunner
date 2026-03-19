@@ -1,0 +1,12 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Libraries - NETRUNNER{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Libraries</h2>
+</div>
+<section id="libraries-region" hx-get="/partials/libraries" hx-trigger="load">
+    <div class="loading">Loading...</div>
+</section>
+{% endblock %}
