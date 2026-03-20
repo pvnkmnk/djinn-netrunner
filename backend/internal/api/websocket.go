@@ -78,18 +78,20 @@ func (m *WebSocketManager) Broadcast(jobID string, message string) {
 		}
 	}
 
-	// Remove dead connections in a single write lock
+	// Remove dead connections in a single write lock; close after
 	if len(deadConns) > 0 {
 		m.mu.Lock()
-		defer m.mu.Unlock()
 		if clients, ok := m.clients[jobID]; ok {
 			for _, conn := range deadConns {
 				delete(clients, conn)
-				conn.Close()
 			}
 			if len(clients) == 0 {
 				delete(m.clients, jobID)
 			}
+		}
+		m.mu.Unlock()
+		for _, conn := range deadConns {
+			conn.Close()
 		}
 	}
 }
@@ -124,10 +126,9 @@ func (m *WebSocketManager) Cleanup() {
 		}
 	}
 
-	// Phase 3: remove dead connections under write lock
+	// Phase 3: remove dead connections under write lock, then close
 	if len(deadConns) > 0 {
 		m.mu.Lock()
-		defer m.mu.Unlock()
 		for _, jc := range deadConns {
 			if clients, ok := m.clients[jc.jobID]; ok {
 				delete(clients, jc.conn)
@@ -135,6 +136,10 @@ func (m *WebSocketManager) Cleanup() {
 					delete(m.clients, jc.jobID)
 				}
 			}
+		}
+		m.mu.Unlock()
+		for _, jc := range deadConns {
+			jc.conn.Close()
 		}
 	}
 }

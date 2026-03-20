@@ -38,7 +38,7 @@ func NewSpotifyTokenService(db *gorm.DB, cfg *config.Config) *SpotifyTokenServic
 // Start begins the background refresh loop.
 func (s *SpotifyTokenService) Start(ctx context.Context) {
 	// Perform an immediate refresh pass on startup
-	s.refreshExpiringTokens()
+	s.refreshExpiringTokens(ctx)
 
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
@@ -48,12 +48,12 @@ func (s *SpotifyTokenService) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.refreshExpiringTokens()
+			s.refreshExpiringTokens(ctx)
 		}
 	}
 }
 
-func (s *SpotifyTokenService) refreshExpiringTokens() {
+func (s *SpotifyTokenService) refreshExpiringTokens(ctx context.Context) {
 	var tokens []database.SpotifyToken
 	// Refresh tokens that will expire in the next 10 minutes but are not yet expired
 	cutoff := time.Now().Add(10 * time.Minute)
@@ -71,7 +71,7 @@ func (s *SpotifyTokenService) refreshExpiringTokens() {
 	log.Printf("[SPOTIFY] Found %d tokens to refresh", len(tokens))
 
 	for i := range tokens {
-		if err := s.refreshToken(&tokens[i]); err != nil {
+		if err := s.refreshToken(ctx, &tokens[i]); err != nil {
 			log.Printf("[SPOTIFY] Failed to refresh token for user %d: %v", tokens[i].UserID, err)
 		} else {
 			log.Printf("[SPOTIFY] Refreshed token for user %d", tokens[i].UserID)
@@ -79,7 +79,7 @@ func (s *SpotifyTokenService) refreshExpiringTokens() {
 	}
 }
 
-func (s *SpotifyTokenService) refreshToken(token *database.SpotifyToken) error {
+func (s *SpotifyTokenService) refreshToken(ctx context.Context, token *database.SpotifyToken) error {
 	oauthToken := &oauth2.Token{
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -89,7 +89,7 @@ func (s *SpotifyTokenService) refreshToken(token *database.SpotifyToken) error {
 
 	// Create a TokenSource that can automatically refresh the token when expired.
 	// The Config.TokenSource returns a source backed by the refresh token.
-	ts := s.config.TokenSource(context.Background(), oauthToken)
+	ts := s.config.TokenSource(ctx, oauthToken)
 	newToken, err := ts.Token()
 	if err != nil {
 		return err
