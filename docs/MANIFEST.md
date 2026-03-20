@@ -10,9 +10,10 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - docs/RUNBOOK.md — day-to-day operations and troubleshooting.
 
 ### Developers
-- AGENTS.md — agentic IDE guidelines, constraints, and “do not break” rules.
+- AGENTS.md — agentic IDE guidelines, constraints, and "do not break" rules.
 - docs/ARCHITECTURE.md — worker model, locks, tables, and correctness contracts.
 - docs/UIIMPLEMENTATION.md — HTMX patterns, console streaming, attach modes, minimal JS contract.
+- docs/RUNBOOK.md — day-to-day operations and troubleshooting.
 
 ### Operators
 - docs/RUNBOOK.md — operational procedures and failure modes.
