@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/pvnkmnk/netrunner/backend/internal/agent"
@@ -13,7 +14,6 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
-	"github.com/google/uuid"
 )
 
 func main() {
@@ -142,6 +142,29 @@ func main() {
 		return mcp.NewToolResultText(fmt.Sprintf("Watchlist '%s' created successfully with ID %s.", wl.Name, wl.ID)), nil
 	})
 
+	// Register sync_watchlist tool
+	s.AddTool(mcp.NewTool("sync_watchlist",
+		mcp.WithDescription("Trigger a sync job for a specific watchlist"),
+		mcp.WithString("watchlist_id", mcp.Description("The UUID of the watchlist to sync"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		wlIDStr := mcp.ParseString(request, "watchlist_id", "")
+		if wlIDStr == "" {
+			return mcp.NewToolResultError("Missing required 'watchlist_id' argument"), nil
+		}
+
+		wlID, err := uuid.Parse(wlIDStr)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid watchlist_id UUID: %v", err)), nil
+		}
+
+		job, err := agent.SyncWatchlist(db, wlID, nil)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to sync watchlist: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Sync job #%d queued for watchlist %s.", job.ID, wlIDStr)), nil
+	})
+
 	// Register list_jobs tool
 	s.AddTool(mcp.NewTool("list_jobs",
 		mcp.WithDescription("List recent and active background jobs"),
@@ -262,6 +285,74 @@ func main() {
 		}
 
 		return mcp.NewToolResultText(fmt.Sprintf("Webhook '%s' registered successfully.", webhookURL)), nil
+	})
+
+	// Register get_stats tool
+	s.AddTool(mcp.NewTool("get_stats",
+		mcp.WithDescription("Get system summary statistics: jobs, library, and activity"),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		stats, err := agent.GetStatsSummary(db)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get stats: %v", err)), nil
+		}
+
+		out := fmt.Sprintf("Jobs (24h): %d total, %d queued, %d running, %d succeeded, %d failed (%.1f%% success)\n",
+			stats.Jobs.Total, stats.Jobs.Queued, stats.Jobs.Running,
+			stats.Jobs.Succeeded, stats.Jobs.Failed, stats.Jobs.SuccessRate)
+		out += fmt.Sprintf("Library: %d tracks (%.1f MB)\n", stats.Library.TotalTracks, stats.Library.TotalSizeMB)
+		out += fmt.Sprintf("Activity: %d monitored artists, %d watchlists, %d libraries",
+			stats.Activity.MonitoredArtists, stats.Activity.Watchlists, stats.Activity.Libraries)
+
+		return mcp.NewToolResultText(out), nil
+	})
+
+	// Register list_quality_profiles tool
+	s.AddTool(mcp.NewTool("list_quality_profiles",
+		mcp.WithDescription("List all quality profiles with their settings"),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		profiles, err := agent.ListProfiles(db)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list profiles: %v", err)), nil
+		}
+
+		if len(profiles) == 0 {
+			return mcp.NewToolResultText("No quality profiles configured."), nil
+		}
+
+		out := "Quality Profiles:\n"
+		for _, p := range profiles {
+			defaultMark := ""
+			if p.IsDefault {
+				defaultMark = " [DEFAULT]"
+			}
+			bitrateInfo := ""
+			if p.PreferBitrate != nil {
+				bitrateInfo = fmt.Sprintf(", prefer %dkbps", *p.PreferBitrate)
+			}
+			out += fmt.Sprintf("- %s%s: %s, %s, min %dkbps%s\n",
+				p.Name, defaultMark, p.Description, p.AllowedFormats, p.MinBitrate, bitrateInfo)
+		}
+		return mcp.NewToolResultText(out), nil
+	})
+
+	// Register list_libraries tool
+	s.AddTool(mcp.NewTool("list_libraries",
+		mcp.WithDescription("List all configured music libraries"),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		libraries, err := agent.ListLibraries(db)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list libraries: %v", err)), nil
+		}
+
+		if len(libraries) == 0 {
+			return mcp.NewToolResultText("No libraries configured."), nil
+		}
+
+		out := "Libraries:\n"
+		for _, lib := range libraries {
+			out += fmt.Sprintf("- %s: %s (ID: %s)\n", lib.Name, lib.Path, lib.ID.String())
+		}
+		return mcp.NewToolResultText(out), nil
 	})
 
 	// Run the server on stdio
