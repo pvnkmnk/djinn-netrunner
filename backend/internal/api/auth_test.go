@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +23,14 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		t.Skip("DATABASE_URL not set, skipping integration test")
 	}
 
-	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
+	var dialector gorm.Dialector
+	if strings.HasPrefix(dbURL, "postgres") {
+		dialector = postgres.Open(dbURL)
+	} else {
+		dialector = sqlite.Open(dbURL)
+	}
+
+	db, err := gorm.Open(dialector, &gorm.Config{})
 	if err != nil {
 		t.Fatalf("Failed to connect to database: %v", err)
 	}
