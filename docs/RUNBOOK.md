@@ -84,11 +84,37 @@ Optional cleanup:
 delete from joblogs
 where ts < now() - interval '30 days';
 
+## Webhook Notifications
+
+When `NOTIFICATION_ENABLED=true` and `NOTIFICATION_WEBHOOK_URL` is set, NetRunner sends a POST request to the configured URL when each job completes.
+
+### Payload Schema
+
+```json
+{
+  "job_id": 42,
+  "type": "sync",
+  "state": "succeeded",
+  "summary": "Completed",
+  "completed_at": "2026-03-20T15:30:00Z",
+  "worker_id": "worker-1"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `job_id` | uint64 | Unique job identifier |
+| `type` | string | Job type: `sync`, `scan`, `acquisition` |
+| `state` | string | Final state: `succeeded` or `failed` |
+| `summary` | string | Human-readable summary or error message |
+| `completed_at` | timestamp | ISO 8601 UTC timestamp |
+| `worker_id` | string | ID of the worker that processed the job |
+
 ## Notification webhook testing
 ```bash
 curl -X POST $NOTIFICATION_WEBHOOK_URL \
   -H "Content-Type: application/json" \
-  -d '{"job_id":1,"type":"sync","state":"completed","summary":"ok","completed_at":"2026-03-20T00:00:00Z"}'
+  -d '{"job_id":1,"type":"sync","state":"succeeded","summary":"ok","completed_at":"2026-03-20T00:00:00Z","worker_id":"worker-1"}'
 ```
 
 ## Spotify token refresh
