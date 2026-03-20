@@ -5,7 +5,7 @@ This document defines the runtime contracts and invariants for NETRUNNER, especi
 ## Services
 - **caddy**: Edge proxy and TLS termination.
 - **SQLite (WAL)**: Primary system-of-record for jobs, logs, metadata, and concurrency primitives (PostgreSQL also supported).
-- **ops-web (Go/Fiber)**: Management API + server-rendered templates + HTMX UI; WebSockets for console streaming.
+- **ops-web (Go/Fiber)**: Management API + server-rendered templates + HTMX UI; WebSockets for console streaming (fanout filtered by job_id subscription, Phase 7).
 - **ops-worker (Go)**: Background job orchestrator with native goroutine concurrency, heartbeats, and reaper.
 - **slskd**: Acquisition daemon with bounded download slots.
 - **gonic**: Streaming server (Subsonic-compatible).
@@ -20,6 +20,8 @@ The worker orchestrates multiple specialized services:
 - **MusicBrainzService**: Client for MusicBrainz API with caching.
 - **AcoustIDService**: Audio fingerprinting lookup for metadata enrichment.
 - **CacheService**: Persistent shadow cache for external API responses (MusicBrainz/Spotify/AcoustID).
+- **SpotifyTokenService**: Background refresh of OAuth tokens (runs every 5min, refreshes tokens expiring within 10min)
+- **NotificationService**: Webhook dispatcher for job completion events
 
 ## Core Data Model
 ### Tables (minimum)
@@ -57,7 +59,8 @@ The worker orchestrates multiple specialized services:
 - `GET /partials/watchlists` - Watchlists partial (HTMX)
 
 ### WebSocket
-- `WS /ws/jobs/:jobid` - Live log streaming for job
+- `WS /ws/jobs/:job_id` - Per-job log streaming (filtered to specific job)
+- `WS /ws/events` - System-wide event stream (admin-only)
 
 ## Concurrency + Correctness Invariants
 1. **Contention-Safe Claims**: Jobs and jobitems are claimed using atomic status updates (SQLite) or `FOR UPDATE SKIP LOCKED` (PostgreSQL) to prevent duplicate claims.
