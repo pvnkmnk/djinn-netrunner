@@ -76,7 +76,7 @@ func main() {
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, db, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
+	setupRoutes(app, db, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
 
 	// Start server
 	go func() {
@@ -94,7 +94,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -145,6 +145,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
 	watchlistRoutes.Patch("/:id/toggle", watchlist.ToggleWatchlist)
 	watchlistRoutes.Get("/form", watchlist.GetForm)
+	watchlistPreviewHandler := api.NewWatchlistPreviewHandler(watchlistService)
+	watchlistRoutes.Get("/:id/preview", watchlistPreviewHandler.GetPreview)
 
 	// Quality Profiles
 	profileRoutes := apiProtected.Group("/profiles")

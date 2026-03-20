@@ -1,0 +1,12 @@
+{{ range .Tracks }}
+<div class="track">
+    <span class="track-info">
+        <span class="track-title">{{ .Title }}</span>
+        <span class="track-artist">{{ .Artist }}</span>
+        {{ if .Album }}<span class="track-album">{{ .Album }}</span>{{ end }}
+    </span>
+</div>
+{{ end }}
+{{ if .HasMore }}
+<div class="more-indicator">+ more tracks — sync to see full list</div>
+{{ end }}
