@@ -156,16 +156,17 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 
 type AcquisitionHandler struct {
 	BaseHandler
-	cfg   *config.Config
-	slskd *SlskdService
-	mb    *MusicBrainzService
-	aid   *AcoustIDService
-	ext   *MetadataExtractor
-	gonic *GonicClient
+	cfg     *config.Config
+	slskd   *SlskdService
+	mb      *MusicBrainzService
+	aid     *AcoustIDService
+	ext     *MetadataExtractor
+	gonic   *GonicClient
+	discogs *DiscogsService
 }
 
-func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient) *AcquisitionHandler {
-	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic}
+func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient, discogs *DiscogsService) *AcquisitionHandler {
+	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, discogs: discogs}
 }
 
 func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
@@ -313,10 +314,100 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 	h.Log(jobID, "OK", "Download completed", &itemID)
 
 	// 4. Import
-	return h.importFile(jobID, itemID, download.Path, item)
+	return h.importFile(ctx, jobID, itemID, download.Path, item)
 }
 
-func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPath string, item database.JobItem) error {
+// getCoverArtWithFallback attempts to fetch cover art from multiple sources
+func (h *AcquisitionHandler) getCoverArtWithFallback(ctx context.Context, item *database.JobItem, artist, title, album string) ([]byte, error) {
+	// 1. Try the provided URL first
+	if item.CoverArtURL != "" {
+		resp, err := http.Get(item.CoverArtURL)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			data, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err == nil && len(data) > 0 {
+				return data, nil
+			}
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}
+
+	// 2. Try MusicBrainz release search
+	if h.mb != nil && (artist != "" || album != "") {
+		queryArtist := artist
+		if queryArtist == "" && item.Artist != "" {
+			queryArtist = item.Artist
+		}
+		queryAlbum := album
+		if queryAlbum == "" && item.Album != "" {
+			queryAlbum = item.Album
+		}
+
+		if queryArtist != "" || queryAlbum != "" {
+			// Try GetReleaseByArtistTitle which searches by artist and album
+			release, err := h.mb.GetReleaseByArtistTitle(queryArtist, queryAlbum)
+			if err == nil && release != nil {
+				// Look for front cover in images
+				for _, img := range release.Images {
+					if img.Front {
+						resp, err := http.Get(img.Image)
+						if err == nil && resp.StatusCode == http.StatusOK {
+							data, err := io.ReadAll(resp.Body)
+							resp.Body.Close()
+							if err == nil && len(data) > 0 {
+								h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", img.Image), &item.ID)
+								return data, nil
+							}
+						}
+						if resp != nil {
+							resp.Body.Close()
+						}
+					}
+				}
+				// Fall back to first image
+				if len(release.Images) > 0 {
+					resp, err := http.Get(release.Images[0].Image)
+					if err == nil && resp.StatusCode == http.StatusOK {
+						data, err := io.ReadAll(resp.Body)
+						resp.Body.Close()
+						if err == nil && len(data) > 0 {
+							h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", release.Images[0].Image), &item.ID)
+							return data, nil
+						}
+					}
+					if resp != nil {
+						resp.Body.Close()
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Try Discogs search
+	if h.discogs != nil && artist != "" && title != "" {
+		coverURL, err := h.discogs.GetCoverArt(artist, title)
+		if err == nil && coverURL != "" {
+			resp, err := http.Get(coverURL)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				data, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err == nil && len(data) > 0 {
+					h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from Discogs: %s", coverURL), &item.ID)
+					return data, nil
+				}
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("no cover art found from any source")
+}
+
+func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemID uint64, downloadPath string, item database.JobItem) error {
 	h.Log(jobID, "INFO", "Importing to library", &itemID)
 
 	if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
@@ -422,24 +513,18 @@ func (h *AcquisitionHandler) importFile(jobID uint64, itemID uint64, downloadPat
 		return nil
 	}
 
-	// Embed cover art if available
-	if item.CoverArtURL != "" {
-		h.Log(jobID, "INFO", "Fetching cover art...", &itemID)
-		resp, err := http.Get(item.CoverArtURL)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			artData, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if err == nil {
-				h.Log(jobID, "INFO", "Embedding cover art...", &itemID)
-				if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
-					h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed cover art: %v", err), &itemID)
-				} else {
-					h.Log(jobID, "OK", "Cover art embedded successfully", &itemID)
-				}
-			}
-		} else if err != nil {
-			h.Log(jobID, "WARN", fmt.Sprintf("Failed to fetch cover art: %v", err), &itemID)
+	// Attempt to fetch and embed cover art with fallback chain
+	h.Log(jobID, "INFO", "Fetching cover art...", &itemID)
+	artData, err := h.getCoverArtWithFallback(ctx, &item, metadata.Artist, metadata.Title, metadata.Album)
+	if err == nil && len(artData) > 0 {
+		h.Log(jobID, "INFO", "Embedding cover art...", &itemID)
+		if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
+			h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed cover art: %v", err), &itemID)
+		} else {
+			h.Log(jobID, "OK", "Cover art embedded successfully", &itemID)
 		}
+	} else {
+		h.Log(jobID, "INFO", "No cover art available", &itemID)
 	}
 
 	// Update DB

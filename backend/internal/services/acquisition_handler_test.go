@@ -16,7 +16,7 @@ func TestAcquisitionHandler_FailItem(t *testing.T) {
 	}
 	database.Migrate(db)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil)
 
 	// 2. Create job and item
 	job := database.Job{Type: "acquisition"}
@@ -55,7 +55,7 @@ func TestAcquisitionHandler_FailItem(t *testing.T) {
 	if updatedItem.RetryCount != 2 {
 		t.Errorf("expected RetryCount 2, got %d", updatedItem.RetryCount)
 	}
-	
+
 	// Backoff for 1 retry is 5 minutes
 	expectedTime := time.Now().Add(5 * time.Minute)
 	if updatedItem.NextAttemptAt.Before(expectedTime.Add(-10*time.Second)) || updatedItem.NextAttemptAt.After(expectedTime.Add(10*time.Second)) {

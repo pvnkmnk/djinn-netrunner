@@ -12,6 +12,7 @@ import (
 
 	"github.com/bogem/id3v2/v2"
 	"github.com/dhowden/tag"
+	"github.com/gcottom/audiometa"
 	"github.com/go-flac/flacpicture/v2"
 	"github.com/go-flac/go-flac/v2"
 )
@@ -44,9 +45,28 @@ func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error
 		return e.embedMP3(filePath, artData)
 	case ".flac":
 		return e.embedFLAC(filePath, artData)
+	case ".m4a", ".ogg":
+		return e.embedGeneric(filePath, artData)
 	default:
 		return fmt.Errorf("unsupported file format for cover art embedding: %s", ext)
 	}
+}
+
+// embedGeneric uses audiometa to embed cover art into M4A/OGG files
+func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) error {
+	t, err := audiometa.OpenTag(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file for tagging: %w", err)
+	}
+
+	if err := t.SetAlbumArtFromByteArray(artData); err != nil {
+		return fmt.Errorf("failed to set album art: %w", err)
+	}
+
+	if err := t.Save(); err != nil {
+		return fmt.Errorf("failed to save tags: %w", err)
+	}
+	return nil
 }
 
 func (e *MetadataExtractor) embedMP3(filePath string, artData []byte) error {
@@ -114,8 +134,7 @@ func (e *MetadataExtractor) Extract(path string) (*AudioMetadata, error) {
 		Format: string(m.FileType()),
 	}
 
-
-track, _ := m.Track()
+	track, _ := m.Track()
 	metadata.TrackNumber = track
 	metadata.Year = m.Year()
 

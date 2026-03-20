@@ -15,15 +15,15 @@ func TestAcquisitionHandler_SmartSkip(t *testing.T) {
 	// 1. Setup Mock Gonic Server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		resp := map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"searchResult3": map[string]interface{}{
 					"song": []map[string]interface{}{
 						{
-							"id": "123",
-							"title": "Test Song",
+							"id":     "123",
+							"title":  "Test Song",
 							"artist": "Test Artist",
 						},
 					},
@@ -42,7 +42,7 @@ func TestAcquisitionHandler_SmartSkip(t *testing.T) {
 	database.Migrate(db)
 
 	gonic := NewGonicClient(ts.URL, "user", "pass")
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonic)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonic, nil)
 
 	// 3. Create job and item
 	job := database.Job{Type: "acquisition"}

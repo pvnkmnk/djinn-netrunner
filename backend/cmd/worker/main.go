@@ -94,7 +94,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		metadata:            metadata,
 		litefs:              database.NewLiteFSGuard(cfg.DatabaseURL),
 		syncHandler:         services.NewSyncHandler(db, spotify, watchlist),
-		acqHandler:          services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic),
+		acqHandler:          services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic, discogs),
 		notificationService: services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled),
 		activeJobs:          make(map[uint64]*jobContext),
 		wakeupChan:          make(chan bool, 1),

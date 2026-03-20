@@ -1,8 +1,8 @@
 package services
 
 import (
-	"testing"
 	"gorm.io/gorm"
+	"testing"
 )
 
 func TestJobHandlers(t *testing.T) {
@@ -16,7 +16,7 @@ func TestJobHandlers(t *testing.T) {
 
 	slskd := &SlskdService{}
 	metadata := &MetadataExtractor{}
-	acq := NewAcquisitionHandler(db, nil, slskd, nil, nil, metadata, nil)
+	acq := NewAcquisitionHandler(db, nil, slskd, nil, nil, metadata, nil, nil)
 	if acq == nil {
 		t.Fatal("Expected AcquisitionHandler to be initialized")
 	}
