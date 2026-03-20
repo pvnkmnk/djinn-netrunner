@@ -179,8 +179,8 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 				var jobLog database.JobLog
 				if err := db.First(&jobLog, event.LogID).Error; err == nil {
 					// Format as HTML for HTMX compatibility
-					// ✅ SECURITY: Escape log message to prevent XSS
-					// ✅ ACCESSIBILITY: Use semantic time and ARIA labels
+					// SECURITY: Escape log message to prevent XSS
+					// ACCESSIBILITY: Use semantic time and ARIA labels
 					logHTML := fmt.Sprintf(
 						`<div class="log-line log-%s" id="log-%d" data-log-id="%d">`+
 							`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
@@ -213,7 +213,15 @@ func stringsToLower(s string) string {
 
 // HandleEvents manages a WebSocket connection for system-wide event notifications.
 // Subscribes the connection to the "system" job scope.
+// SECURITY: Only admins can subscribe to the system-wide event stream.
 func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
+	user, ok := c.Locals("user").(database.User)
+	if !ok || user.Role != "admin" {
+		c.WriteMessage(websocket.TextMessage, []byte("Access denied: Admin role required for system events"))
+		c.Close()
+		return
+	}
+
 	m.Subscribe(c, "system")
 	defer m.Unsubscribe(c, "system")
 
@@ -227,11 +235,32 @@ func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
 
 // HandleConsole manages a WebSocket connection for job-specific log streaming.
 // Subscribes the connection to the specific job ID from the URL path.
+// SECURITY: Verifies job ownership or admin role.
 func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 	jobIDStr := c.Params("job_id")
 	jobID, err := strconv.ParseUint(jobIDStr, 10, 64)
 	if err != nil {
 		log.Printf("[WS] Invalid job ID provided to console: %s", jobIDStr)
+		return
+	}
+
+	// SECURITY: Verify job ownership or admin role
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		c.Close()
+		return
+	}
+
+	var job database.Job
+	if err := db.First(&job, jobID).Error; err != nil {
+		c.WriteMessage(websocket.TextMessage, []byte("Job not found"))
+		c.Close()
+		return
+	}
+
+	if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
+		c.WriteMessage(websocket.TextMessage, []byte("Access denied: You do not own this job"))
+		c.Close()
 		return
 	}
 
@@ -264,8 +293,8 @@ func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 		}
 
 		for _, jobLog := range logs {
-			// ✅ SECURITY: Escape log message to prevent XSS
-			// ✅ ACCESSIBILITY: Use semantic time and ARIA labels
+			// SECURITY: Escape log message to prevent XSS
+			// ACCESSIBILITY: Use semantic time and ARIA labels
 			logHTML := fmt.Sprintf(
 				`<div class="log-line log-%s" id="log-%d" data-log-id="%d">`+
 					`<time class="log-ts" datetime="%s" title="%s">%s</time> `+

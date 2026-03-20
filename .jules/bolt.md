@@ -5,3 +5,7 @@
 ## 2026-03-18 - N+1 query pattern in SyncDiscography
 **Learning:** Found a classic N+1 query bottleneck in `ArtistTrackingService.SyncDiscography`. The original code queried and inserted/updated records inside a loop for every release in an artist's discography. For an artist with 50+ releases, this caused dozens of database roundtrips. When implementing `CreateInBatches` for related records (e.g., `TrackedRelease` and `JobItem`), manual UUID generation is required to maintain ID consistency between memory slices before the DB generates them.
 **Action:** Replaced the loop-based queries with a bulk fetch of existing releases and used GORM's `CreateInBatches` for bulk inserts of releases and job items. Manually generated UUIDs to ensure job items correctly reference newly created releases.
+
+## 2026-03-20 - Multi-layered optimizations in ScannerService
+**Learning:** Found several performance bottlenecks in `ScannerService` that significantly impacted large libraries: 1) `filepath.Walk` performs redundant `Lstat` calls, 2) individual database updates for file hashes after track upserts, and 3) N+1 database deletions in the pruning logic.
+**Action:** Replaced `filepath.Walk` with `filepath.WalkDir` for faster traversal, consolidated track and hash updates into a single `FirstOrCreate` call with `Assign`, and refactored pruning to use targeted field selection (`id`, `path`) and a single batch `DELETE`. These changes collectively reduce syscalls and database roundtrips by orders of magnitude for large music collections.

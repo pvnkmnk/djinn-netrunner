@@ -12,8 +12,8 @@ import (
 func TestWebSocketManager_Subscribe(t *testing.T) {
 	manager := NewWebSocketManager()
 
-	// Create a mock connection (we'll use a fiber app for this)
-	_ = fiber.New()
+	// Test that we can subscribe a client to a jobID
+	manager.Subscribe(nil, "1")
 
 	// Test that we can subscribe a connection to a job
 	manager.Subscribe(nil, "1")
