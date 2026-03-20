@@ -2,7 +2,7 @@
 
 ## Current Status: Phase 7 Complete ✅
 
-All core systems are implemented and merged.
+All core systems are implemented and merged. Post-Phase 7 hardening tasks are complete.
 
 ### Completed
 - [x] Go backend (Fiber + GORM + SQLite/PostgreSQL)
@@ -19,19 +19,23 @@ All core systems are implemented and merged.
 - [x] Job completion webhook notifications
 - [x] WebSocket auth & job ownership validation
 - [x] Security hardening (XSS protection, auth middleware)
+- [x] Cover art fallback chain (MusicBrainz → Discogs) with OGG/M4A support
+- [x] Watchlist preview endpoint with HTML rendering
+- [x] MCP tool expansion: sync_watchlist, get_stats, list_quality_profiles, list_libraries
+- [x] Webhook notification schema documented
 
 ## Known Gaps & Future Work
 
 ### High Priority
 - [ ] Cover art quality: improve fallback sources and embedding reliability
-- [x] WebSocket filtering: per-job broadcast fanout with thread-safe subscription management
+- [ ] Watchlist preview UI: improve rendering with track counts and source badges
 
 ### Medium Priority
-- [ ] Watchlist preview UI: button added, preview rendering needs polish
-- [ ] Notifications: document webhook payload schema, add email support
-- [ ] MCP agent tools: expand tool surface for richer agent interactions
+- [ ] Notifications: add email support (SMTP integration)
+- [ ] MCP agent tools: add scan_library, list_monitored_artists, cancel_job, retry_job
+- [ ] Integration tests: slskd, watchlist providers, notification webhook
 
 ### Low Priority / Nice-to-Have
-- [ ] Test coverage: integration tests for slskd, watchlist providers
 - [ ] Multi-user UI: role-based dashboard views
 - [ ] Disk quota monitoring and alerts
+- [ ] Acoustic fingerprinting (AcoustID fpcalc integration)
