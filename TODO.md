@@ -24,7 +24,7 @@ All core systems are implemented and merged.
 
 ### High Priority
 - [ ] Cover art quality: improve fallback sources and embedding reliability
-- [ ] WebSocket filtering: scope fanout to specific job subscribers
+- [x] WebSocket filtering: per-job broadcast fanout with thread-safe subscription management
 
 ### Medium Priority
 - [ ] Watchlist preview UI: button added, preview rendering needs polish
