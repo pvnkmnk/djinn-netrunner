@@ -45,8 +45,13 @@ func ProbeSystem(db *gorm.DB, cfg *config.Config) (*SystemStatus, error) {
 		}
 	}
 
-	// 3. Slskd check (stub for now, will implement client later)
-	status.SlskdConnected = false // TODO: Implement slskd ping
+	// 3. Check Slskd
+	if cfg.SlskdURL != "" {
+		slskdClient := services.NewSlskdService(cfg)
+		if slskdClient.HealthCheck() {
+			status.SlskdConnected = true
+		}
+	}
 
 	if status.DatabaseConnected {
 		status.Message = "System partially operational."
