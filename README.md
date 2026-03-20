@@ -134,15 +134,18 @@ NetRunner 2.0 uses a unified Go 1.25 backend:
 │   │   ├── cli/             # Management CLI
 │   │   └── agent/           # MCP Server for AI agents
 │   └── internal/
+│       ├── agent/           # MCP agent tools and handlers
 │       ├── api/             # HTTP & WebSocket handlers
+│       ├── config/          # Configuration loading
 │       ├── database/        # GORM models and connection logic
+│       ├── interfaces/      # Interface definitions
 │       └── services/        # Business logic (Spotify, slskd, Gonic)
 ├── ops/
 │   ├── web/
 │   │   ├── static/          # CSS/JS assets
 │   │   └── templates/       # HTMX templates
 │   └── caddy/               # Reverse proxy config
-└── conductor/               # Track management and development docs
+└── conductor/               # [Archived] Legacy track management docs
 ```
 
 ---
