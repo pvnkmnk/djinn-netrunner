@@ -1,35 +1,37 @@
-# NetRunner Migration & Implementation TODO
+# NetRunner — Status & Roadmap
 
-## 🎯 Current Status: Go Backend Foundation Established
-The core logic from the experimental `netrunnnerrr` project has been ported to a structured Go backend within `netrunner_repo/backend`. The system now combines the advanced Artist Tracking features with the professional orchestration patterns (Advisory Locks, Round-robin fairness).
+## Current Status: Phase 7 Complete ✅
 
-## ✅ Completed Tasks
-- [x] **Backend Initialization**: Go module initialized with Fiber, GORM, and Asynq.
-- [x] **Unified Data Models**: Merged Python and Go models into `backend/internal/database/models.go` (GORM).
-- [x] **Database Infrastructure**: Ported connection and migration logic to Go.
-- [x] **Core Services Ported**:
-    - `MusicBrainzService` (with 1req/s rate limiting).
-    - `ArtistTrackingService` (Add/Sync/Monitor).
-    - `ReleaseMonitorService` (Background daily checks).
-    - `ScannerService` (Audio tag extraction via `dhowden/tag`).
-    - `SlskdService` (API client skeleton).
-- [x] **Go Worker Orchestrator**: Implemented PostgreSQL-based job claiming (`claim_next_job`) with goroutine execution.
-- [x] **DB Migration**: Created `ops/db/init/migrations/2026_03_04_006_artist_tracking.sql`.
+All core systems are implemented and merged.
 
-## 🔜 Next Steps (Conductor Workflow)
+### Completed
+- [x] Go backend (Fiber + GORM + SQLite/PostgreSQL)
+- [x] Music acquisition pipeline (Soulseek via slskd)
+- [x] Metadata enrichment (MusicBrainz, AcoustID)
+- [x] Library scanning & indexing
+- [x] Watchlist management (Spotify, RSS, Last.fm, Discogs, local files)
+- [x] Artist tracking & release monitoring
+- [x] Quality profiles with bitrate/speed/format preferences
+- [x] Operations UI (HTMX + Fiber + cyberpunk theme)
+- [x] WebSocket console with per-job log streaming
+- [x] MCP server for AI agent interaction
+- [x] Background Spotify token refresh
+- [x] Job completion webhook notifications
+- [x] WebSocket auth & job ownership validation
+- [x] Security hardening (XSS protection, auth middleware)
 
-### 1. Infrastructure Integration
-- [ ] **Docker Update**: Modify `docker-compose.yml` to replace Python worker/server with `backend-server` and `backend-worker`.
-- [ ] **Dockerfile Creation**: Finalize multi-stage Dockerfiles for the Go binaries.
+## Known Gaps & Future Work
 
-### 2. Feature Completion
-- [ ] **Acquisition Pipeline**: Port the specific Soulseek search ranking and download scoring logic from Python to Go.
-- [ ] **Job Item Handlers**: Implement `claim_next_jobitem` loop in the Go worker for `acquisition` type jobs.
-- [ ] **Gonic Integration**: Implement the actual trigger for library refreshes via Gonic API.
+### High Priority
+- [ ] Cover art quality: improve fallback sources and embedding reliability
+- [ ] WebSocket filtering: scope fanout to specific job subscribers
 
-### 3. UI/UX Mapping
-- [ ] **Router Alignment**: Update HTMX templates in `ops/web/templates` to point to the new Fiber API endpoints (`:8080/api/...`).
-- [ ] **Artist Tracking UI**: Finalize the `artist_tracking.html` integration with the Go backend.
+### Medium Priority
+- [ ] Watchlist preview UI: button added, preview rendering needs polish
+- [ ] Notifications: document webhook payload schema, add email support
+- [ ] MCP agent tools: expand tool surface for richer agent interactions
 
----
-*Generated on 2026-03-04 for migration session.*
+### Low Priority / Nice-to-Have
+- [ ] Test coverage: integration tests for slskd, watchlist providers
+- [ ] Multi-user UI: role-based dashboard views
+- [ ] Disk quota monitoring and alerts
