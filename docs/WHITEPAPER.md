@@ -17,7 +17,7 @@ The core UX is a “protocol console”: structured logs are the primary progres
 NETRUNNER runs as a small container stack:
 - Caddy: edge proxy + TLS termination
 - PostgreSQL: system-of-record (jobs, logs, metadata, concurrency primitives)
-- ops-web: operations UI + API (FastAPI + HTMX + server-rendered templates) and WebSockets for console streaming
+- ops-web: operations UI + API (Go/Fiber + HTMX + server-rendered templates) and WebSockets for console streaming
 - ops-worker: async orchestration (job claims, locks, round-robin dispatch, heartbeats, reaper)
 - slskd: acquisition daemon (Soulseek)
 - Gonic: Subsonic-compatible streaming
@@ -40,7 +40,7 @@ The system uses:
    - Completed items are validated and moved into the library layout.
    - Index refresh is event-driven (no periodic scanning requirement in the default posture).
 6. Observability
-   - Job logs are appended to joblogs and streamed live to the UI console via WebSockets fed by NOTIFY fanout.
+   - Job logs are appended to joblogs and streamed live to the UI console via WebSockets fed by NOTIFY fanout, filtered per-job_id subscription.
 
 ## Concurrency model
 NETRUNNER combines:
