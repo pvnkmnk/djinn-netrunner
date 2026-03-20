@@ -64,6 +64,11 @@ Checklist:
 - Confirm Caddy routing supports WebSockets.
 - Confirm the NOTIFY fanout loop (if used) is running.
 
+## Job completion not triggering webhook
+1. Verify `NOTIFICATION_ENABLED=true` in environment
+2. Verify `NOTIFICATION_WEBHOOK_URL` is set to a reachable endpoint
+3. Check ops-worker logs for `[NOTIFY]` errors
+
 ## slskd not downloading
 Checklist:
 - Verify slskd is healthy and reachable.
@@ -78,3 +83,14 @@ Weekly:
 Optional cleanup:
 delete from joblogs
 where ts < now() - interval '30 days';
+
+## Notification webhook testing
+```bash
+curl -X POST $NOTIFICATION_WEBHOOK_URL \
+  -H "Content-Type: application/json" \
+  -d '{"job_id":1,"type":"sync","state":"completed","summary":"ok","completed_at":"2026-03-20T00:00:00Z"}'
+```
+
+## Spotify token refresh
+Tokens are refreshed automatically every 5 minutes.
+Manual refresh not exposed via CLI (background service handles it).
