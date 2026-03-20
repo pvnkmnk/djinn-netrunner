@@ -11,6 +11,10 @@ This document defines the UI patterns and contracts for the NETRUNNER operations
 The main page is a server-rendered shell with:
 - A stats region updated via HTMX partial refresh.
 - A playlists/sources region updated via HTMX partial refresh.
+- An artists region (CRUD via modal).
+- A schedules region (cron editor + toggle).
+- A libraries region.
+- A jobs history region.
 - A console region containing:
   - a socket container (swapped to attach/detach)
   - a scrollable log lines container
@@ -19,6 +23,12 @@ The main page is a server-rendered shell with:
 ## Partials
 - `GET /partials/stats` - Job statistics (queued, running, succeeded, failed counts in last 24h). Uses conditional aggregation for efficient single-query stats.
 - `GET /partials/watchlists` - List of configured watchlists with status.
+
+## Modal Pattern (Phase 6+)
+HTMX forms use server-side modal triggering:
+- Server sets `HX-Trigger: openModal` header in form load response
+- Client JS listens globally for `htmx:afterOnLoad` and opens the modal
+- No inline `hx-on:htmx:after-request` handlers on buttons
 
 ## Console socket pattern
 A dedicated DOM region (e.g., #console-socket) is swapped to "attach" to a job without custom front-end routing.
