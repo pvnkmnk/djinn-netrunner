@@ -28,17 +28,18 @@ type WorkerOrchestrator struct {
 	cfg      *config.Config
 
 	// Services
-	mbService   *services.MusicBrainzService
-	atService   *services.ArtistTrackingService
-	rmService   *services.ReleaseMonitorService
-	watchlist   *services.WatchlistService
-	scanService *services.ScannerService
-	discogs     *services.DiscogsService
-	lockManager database.LockManager
-	spotify     *services.SpotifyService
-	slskd       *services.SlskdService
-	metadata    *services.MetadataExtractor
-	litefs      *database.LiteFSGuard
+	mbService           *services.MusicBrainzService
+	atService           *services.ArtistTrackingService
+	rmService           *services.ReleaseMonitorService
+	watchlist           *services.WatchlistService
+	scanService         *services.ScannerService
+	discogs             *services.DiscogsService
+	lockManager         database.LockManager
+	spotify             *services.SpotifyService
+	slskd               *services.SlskdService
+	metadata            *services.MetadataExtractor
+	litefs              *database.LiteFSGuard
+	notificationService *services.NotificationService
 
 	// Handlers
 	syncHandler *services.SyncHandler
@@ -78,24 +79,25 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
 	discogs := services.NewDiscogsService(cfg)
 	return &WorkerOrchestrator{
-		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
-		db:          db,
-		cfg:         cfg,
-		mbService:   mb,
-		atService:   at,
-		rmService:   rm,
-		watchlist:   watchlist,
-		scanService: services.NewScannerService(db),
-		discogs:     discogs,
-		lockManager: database.NewLockManager(db),
-		spotify:     spotify,
-		slskd:       slskd,
-		metadata:    metadata,
-		litefs:      database.NewLiteFSGuard(cfg.DatabaseURL),
-		syncHandler: services.NewSyncHandler(db, spotify, watchlist),
-		acqHandler:  services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic),
-		activeJobs:  make(map[uint64]*jobContext),
-		wakeupChan:  make(chan bool, 1),
+		workerID:            fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
+		db:                  db,
+		cfg:                 cfg,
+		mbService:           mb,
+		atService:           at,
+		rmService:           rm,
+		watchlist:           watchlist,
+		scanService:         services.NewScannerService(db),
+		discogs:             discogs,
+		lockManager:         database.NewLockManager(db),
+		spotify:             spotify,
+		slskd:               slskd,
+		metadata:            metadata,
+		litefs:              database.NewLiteFSGuard(cfg.DatabaseURL),
+		syncHandler:         services.NewSyncHandler(db, spotify, watchlist),
+		acqHandler:          services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic),
+		notificationService: services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled),
+		activeJobs:          make(map[uint64]*jobContext),
+		wakeupChan:          make(chan bool, 1),
 	}
 }
 
@@ -636,6 +638,8 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 		"finished_at": &now,
 		"summary":     summary,
 	})
+
+	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
 
 	log.Printf("[WORKER] Finished job | worker_id=%s | job_id=%d | state=%s", w.workerID, jobID, finalState)
 }

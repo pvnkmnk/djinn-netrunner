@@ -57,6 +57,10 @@ type Config struct {
 
 	// Proxy
 	ProxyURL string
+
+	// Notifications
+	NotificationWebhookURL string
+	NotificationEnabled    bool
 }
 
 // Load reads configuration from environment variables
@@ -79,7 +83,7 @@ func Load(filenames ...string) (*Config, error) {
 
 		SpotifyClientID:     getEnv("SPOTIFY_CLIENT_ID", ""),
 		SpotifyClientSecret: getEnv("SPOTIFY_CLIENT_SECRET", ""),
-		
+
 		MusicBrainzUserAgent: getEnv("MUSICBRAINZ_USER_AGENT", "NetRunner/1.0.0 (contact@example.com)"),
 		MusicBrainzAPIKey:    getEnv("MUSICBRAINZ_API_KEY", ""),
 		AcoustIDApiKey:       getEnv("ACOUSTID_API_KEY", ""),
@@ -98,6 +102,9 @@ func Load(filenames ...string) (*Config, error) {
 		DiscogsToken:      getEnv("DISCOGS_TOKEN", ""),
 
 		ProxyURL: getEnv("PROXY_URL", ""),
+
+		NotificationWebhookURL: getEnv("NOTIFICATION_WEBHOOK_URL", ""),
+		NotificationEnabled:    getEnvBool("NOTIFICATION_ENABLED", false),
 	}
 
 	// Validate required fields
@@ -114,4 +121,12 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// getEnvBool retrieves a boolean environment variable or returns a default value
+func getEnvBool(key string, defaultVal bool) bool {
+	if val := os.Getenv(key); val != "" {
+		return val == "true" || val == "1"
+	}
+	return defaultVal
 }
