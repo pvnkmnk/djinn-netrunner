@@ -17,6 +17,9 @@
             <button class="btn btn-sm" hx-post="/api/watchlists/{{ .ID }}/sync" hx-target="#console-logs">
                 Sync
             </button>
+            <button class="btn btn-sm" hx-get="/api/watchlists/{{ .ID }}/preview" hx-target="#watchlist-preview-{{ .ID }}" hx-swap="innerHTML" type="button">
+                Preview
+            </button>
             <button class="btn btn-sm" hx-get="/partials/watchlist-form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML">
                 Edit
             </button>
@@ -31,6 +34,7 @@
                 <span class="toggle-slider"></span>
             </label>
         </div>
+        <div id="watchlist-preview-{{ .ID }}" class="watchlist-preview"></div>
     </div>
     {{ else }}
     <p class="empty-state">No watchlists configured</p>
@@ -111,6 +115,30 @@
     color: var(--text-secondary);
     text-align: center;
     padding: 2rem;
+}
+.watchlist-preview {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.watchlist-preview .track {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+.watchlist-preview .track:last-child {
+    border-bottom: none;
+}
+.watchlist-preview .more-indicator {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 0.25rem;
 }
 </style>
 
