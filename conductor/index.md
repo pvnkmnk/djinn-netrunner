@@ -1,20 +1,14 @@
-﻿# Project Context
+# Conductor — Development Context
 
-## Definition
-- [Product Definition](./product.md)
-- [Product Guidelines](./product-guidelines.md)
-- [Tech Stack](./tech-stack.md)
+## Active Development
+Development has moved to standard git workflow (branches + PRs + GitHub).
 
-## Workflow
-- [Workflow](./workflow.md)
-- [Code Style Guides](./code_styleguides/)
+## Key Resources
+- [README.md](../README.md) — Project overview
+- [AGENTS.md](../AGENTS.md) — Development constraints for AI agents
+- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) — System architecture
+- [docs/RUNBOOK.md](../docs/RUNBOOK.md) — Operations
+- [docs/plans/HISTORICAL.md](../docs/plans/HISTORICAL.md) — Implementation history
 
-## Management
-- [Tracks Registry](./tracks.md)
-- [Tracks Directory](./tracks/)
-
-## Active Tracks
-- [ ] [Spotify-to-Soulseek Watchlist Automation](./tracks/spotify-watchlist_20260305/index.md)
-- [x] [Web API Migration to Go](./tracks/web-api-migration_20260304/index.md)
-- [x] [Architecture Evolution & Optimization](./tracks/architecture-evolution_20260304/index.md)
-- [x] [Frontend Polish & UI/UX Enhancement](./tracks/frontend-polish_20260304/index.md)
+## Archived Planning
+Old track-based planning is in `conductor/.archive/`.
