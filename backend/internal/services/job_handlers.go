@@ -133,6 +133,8 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 	h.Log(jobID, "OK", fmt.Sprintf("Created acquisition job #%d", acqJob.ID), nil)
 
 	// Create job items
+	// Bolt Optimization: Batch create job items to reduce database roundtrips
+	var jobItems []database.JobItem
 	for i, t := range tracks {
 		item := database.JobItem{
 			JobID:           acqJob.ID,
@@ -145,7 +147,14 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 			Status:          "queued",
 			OwnerUserID:     ownerUserID,
 		}
-		h.db.Create(&item)
+		jobItems = append(jobItems, item)
+	}
+
+	if len(jobItems) > 0 {
+		if err := h.db.CreateInBatches(jobItems, 100).Error; err != nil {
+			h.Log(jobID, "ERR", fmt.Sprintf("Failed to batch create job items: %v", err), nil)
+			return err
+		}
 	}
 
 	// Update sync status
@@ -177,10 +186,20 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(5 * time.Second):
-			var total, completed, failed int64
-			h.db.Model(&database.JobItem{}).Where("job_id = ?", jobID).Count(&total)
-			h.db.Model(&database.JobItem{}).Where("job_id = ?", jobID).Where("status LIKE 'completed%' OR status = 'imported'").Count(&completed)
-			h.db.Model(&database.JobItem{}).Where("job_id = ?", jobID).Where("status = 'failed'").Count(&failed)
+			// Bolt Optimization: Consolidate three count queries into one to reduce polling overhead.
+			// Using COUNT(*) FILTER is supported by both PostgreSQL and modern SQLite.
+			var stats struct {
+				Total     int64
+				Completed int64
+				Failed    int64
+			}
+			h.db.Model(&database.JobItem{}).Where("job_id = ?", jobID).
+				Select("COUNT(*) as total, " +
+					"COUNT(*) FILTER (WHERE status LIKE 'completed%' OR status = 'imported') as completed, " +
+					"COUNT(*) FILTER (WHERE status = 'failed') as failed").
+				Scan(&stats)
+
+			total, completed, failed := stats.Total, stats.Completed, stats.Failed
 
 			summary := fmt.Sprintf("Progress: %d/%d (Success: %d, Failed: %d)", completed+failed, total, completed, failed)
 			h.db.Model(&database.Job{}).Where("id = ?", jobID).Update("summary", summary)

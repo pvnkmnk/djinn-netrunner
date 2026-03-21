@@ -9,3 +9,7 @@
 ## 2026-03-20 - Multi-layered optimizations in ScannerService
 **Learning:** Found several performance bottlenecks in `ScannerService` that significantly impacted large libraries: 1) `filepath.Walk` performs redundant `Lstat` calls, 2) individual database updates for file hashes after track upserts, and 3) N+1 database deletions in the pruning logic.
 **Action:** Replaced `filepath.Walk` with `filepath.WalkDir` for faster traversal, consolidated track and hash updates into a single `FirstOrCreate` call with `Assign`, and refactored pruning to use targeted field selection (`id`, `path`) and a single batch `DELETE`. These changes collectively reduce syscalls and database roundtrips by orders of magnitude for large music collections.
+
+## 2026-03-22 - Batching and Consolidation in Job Handlers
+**Learning:** Identified classic O(N) database operations in `SyncHandler` and `AcquisitionHandler`. Specifically, `JobItem` creation for large watchlists was performing individual inserts in a loop, and job progress polling was using three separate `Count` queries every 5 seconds.
+**Action:** Implemented GORM's `CreateInBatches` for `JobItem` creation and consolidated progress counts into a single query using `COUNT(*) FILTER`. These optimizations significantly reduce database roundtrips during sync and monitoring, especially under load. Verified that `FILTER` clause is supported by the CGO-free SQLite driver.
