@@ -231,6 +231,37 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 	}
 }
 
+func TestSlskdService_EnqueueDownload_ErrorStatusCodes(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		wantErr    bool
+	}{
+		{"bad request", 400, true},
+		{"forbidden", 403, true},
+		{"not found", 404, true},
+		{"rate limited", 429, true},
+		{"server error", 500, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.statusCode)
+			})))
+			defer server.Close()
+
+			cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
+			svc := NewSlskdService(cfg)
+
+			_, err := svc.EnqueueDownload("username", "filename.mp3")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("EnqueueDownload() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestSlskdServiceGetDownload(t *testing.T) {
 	tests := []struct {
 		name            string
