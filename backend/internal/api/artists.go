@@ -22,7 +22,8 @@ func NewArtistsHandler(db *gorm.DB, at *services.ArtistTrackingService, mb *serv
 
 // GET /api/artists - List monitored artists
 func (h *ArtistsHandler) List(c *fiber.Ctx) error {
-	artists, err := h.atService.GetMonitoredArtists()
+	user := c.Locals("user").(database.User)
+	artists, err := h.atService.GetMonitoredArtists(&user.ID, user.Role)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -79,7 +80,8 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	}
 
 	// Create monitored artist with name and sort name
-	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName)
+	user := c.Locals("user").(database.User)
+	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName, &user.ID)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -89,9 +91,19 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 
 // DELETE /api/artists/:id - Remove monitored artist
 func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
+	user := c.Locals("user").(database.User)
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+
+	// Verify ownership before deleting
+	if user.Role != "admin" {
+		var count int64
+		h.db.Model(&database.MonitoredArtist{}).Where("id = ? AND owner_user_id = ?", id, user.ID).Count(&count)
+		if count == 0 {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+		}
 	}
 
 	if err := h.atService.DeleteMonitoredArtist(id); err != nil {
@@ -103,9 +115,19 @@ func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
 
 // PATCH /api/artists/:id - Update artist monitoring settings
 func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
+	user := c.Locals("user").(database.User)
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+
+	// Verify ownership before updating
+	if user.Role != "admin" {
+		var count int64
+		h.db.Model(&database.MonitoredArtist{}).Where("id = ? AND owner_user_id = ?", id, user.ID).Count(&count)
+		if count == 0 {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+		}
 	}
 
 	var payload struct {
@@ -147,8 +169,14 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderPartial returns artists HTML for HTMX
 func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
+	user := c.Locals("user").(database.User)
 	var artists []database.MonitoredArtist
-	if err := h.db.Find(&artists).Error; err != nil {
+	query := h.db.Model(&database.MonitoredArtist{})
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := query.Find(&artists).Error; err != nil {
 		log.Printf("Error fetching artists: %v", err)
 		return c.Status(500).SendString("Error loading artists")
 	}

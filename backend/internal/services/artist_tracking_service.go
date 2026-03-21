@@ -25,7 +25,7 @@ func NewArtistTrackingService(db *gorm.DB, mb *MusicBrainzService) *ArtistTracki
 }
 
 // AddMonitoredArtist adds a new artist to the system and starts monitoring
-func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID, name, sortName string) (*database.MonitoredArtist, error) {
+func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID, name, sortName string, userID *uint64) (*database.MonitoredArtist, error) {
 	// 1. Fetch artist details from MusicBrainz to ensure it exists and get metadata
 	// (Simplified for now, in a real implementation we'd parse the MB response properly)
 
@@ -52,6 +52,7 @@ func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID
 		MonitorNew:       true,
 		MonitorAlbums:    true,
 		MonitorEPs:       true,
+		OwnerUserID:      userID,
 	}
 
 	if err := s.db.Create(&artist).Error; err != nil {
@@ -61,10 +62,16 @@ func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID
 	return &artist, nil
 }
 
-// GetMonitoredArtists retrieves all artists with monitoring enabled
-func (s *ArtistTrackingService) GetMonitoredArtists() ([]database.MonitoredArtist, error) {
+// GetMonitoredArtists retrieves all artists with monitoring enabled, filtered by ownership if requested
+func (s *ArtistTrackingService) GetMonitoredArtists(userID *uint64, role string) ([]database.MonitoredArtist, error) {
 	var artists []database.MonitoredArtist
-	err := s.db.Preload("QualityProfile").Find(&artists, "monitored = ?", true).Error
+	query := s.db.Preload("QualityProfile").Where("monitored = ?", true)
+
+	if role != "admin" && userID != nil {
+		query = query.Where("owner_user_id = ?", *userID)
+	}
+
+	err := query.Find(&artists).Error
 	return artists, err
 }
 

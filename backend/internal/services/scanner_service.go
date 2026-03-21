@@ -146,3 +146,13 @@ func (s *ScannerService) GetMonitoredArtists() ([]database.MonitoredArtist, erro
 	err := s.db.Preload("QualityProfile").Find(&artists).Error
 	return artists, err
 }
+
+func (s *ScannerService) GetMonitoredArtistsFiltered(userID *uint64, role string) ([]database.MonitoredArtist, error) {
+	var artists []database.MonitoredArtist
+	query := s.db.Preload("QualityProfile")
+	if role != "admin" && userID != nil {
+		query = query.Where("owner_user_id = ?", *userID)
+	}
+	err := query.Find(&artists).Error
+	return artists, err
+}

@@ -74,8 +74,13 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 
 // ArtistsPage renders the artists page
 func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
+	user := c.Locals("user").(database.User)
 	var artists []database.MonitoredArtist
-	if err := h.db.Order("name").Find(&artists).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&artists).Error; err != nil {
 		log.Printf("Error getting artists: %v", err)
 	}
 	return RenderPage(c, "artists", "pages/artists", fiber.Map{"artists": artists})
