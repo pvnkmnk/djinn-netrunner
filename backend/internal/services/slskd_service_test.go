@@ -12,37 +12,46 @@ import (
 
 const testAPIKey = "test-key"
 
+// withAPIKeyCheck wraps an http.Handler and validates the X-API-Key header.
+// If the header is missing or incorrect, the request is rejected with 401 and
+// the test is marked failed without terminating the test goroutine.
+func withAPIKeyCheck(t *testing.T, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != testAPIKey {
+			t.Errorf("Expected X-API-Key header '%s', got '%s'", testAPIKey, r.Header.Get("X-API-Key"))
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func TestSlskdServiceHealthCheck(t *testing.T) {
 	tests := []struct {
 		name    string
 		apiKey  string
-		handler http.HandlerFunc
+		handler http.Handler
 		want    bool
 	}{
 		{
 			name:   "success",
 			apiKey: testAPIKey,
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/api/v0/session" {
 					t.Errorf("Expected path /api/v0/session, got %s", r.URL.Path)
 					http.Error(w, "bad path", http.StatusBadRequest)
 					return
 				}
-				if r.Header.Get("X-API-Key") != testAPIKey {
-					t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
-					http.Error(w, "bad api key", http.StatusUnauthorized)
-					return
-				}
 				w.WriteHeader(http.StatusOK)
-			},
+			})),
 			want: true,
 		},
 		{
 			name:   "failure",
 			apiKey: "bad-key",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
-			},
+			}),
 			want: false,
 		},
 	}
@@ -91,52 +100,37 @@ type mockFileInfo struct {
 func TestSlskdServiceSearch(t *testing.T) {
 	searchID := "search-123"
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-Key") != testAPIKey {
-			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
-			http.Error(w, "bad api key", http.StatusUnauthorized)
-			return
-		}
-		switch r.Method {
-		case "POST":
-			if r.URL.Path != "/api/v0/searches" {
-				t.Errorf("Expected POST /api/v0/searches, got %s", r.URL.Path)
-				http.Error(w, "bad path", http.StatusBadRequest)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"id":    searchID,
-				"state": "Completed",
-			})
-		case "GET":
-			expectedPath := "/api/v0/searches/" + searchID
-			if r.URL.Path != expectedPath {
-				t.Errorf("Expected GET %s, got %s", expectedPath, r.URL.Path)
-				http.Error(w, "bad path", http.StatusBadRequest)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(mockSearchResponse{
-				Responses: []mockSearchResult{
-					{
-						Username:    "testuser",
-						UploadSpeed: 500,
-						QueueLength: 0,
-						Files: []mockFileInfo{
-							{
-								Filename: "test_artist_-_test_song.mp3",
-								Size:     5242880,
-								IsLocked: false,
-								BitRate:  intPtr(320),
-								Length:   intPtr(240),
-							},
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v0/searches", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    searchID,
+			"state": "Completed",
+		})
+	})
+	mux.HandleFunc("GET /api/v0/searches/"+searchID, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockSearchResponse{
+			Responses: []mockSearchResult{
+				{
+					Username:    "testuser",
+					UploadSpeed: 500,
+					QueueLength: 0,
+					Files: []mockFileInfo{
+						{
+							Filename: "test_artist_-_test_song.mp3",
+							Size:     5242880,
+							IsLocked: false,
+							BitRate:  intPtr(320),
+							Length:   intPtr(240),
 						},
 					},
 				},
-			})
-		}
-	}))
+			},
+		})
+	})
+
+	server := httptest.NewServer(withAPIKeyCheck(t, mux))
 	defer server.Close()
 
 	cfg := &config.Config{
@@ -175,33 +169,28 @@ func TestSlskdServiceSearch(t *testing.T) {
 func TestSlskdServiceEnqueueDownload(t *testing.T) {
 	tests := []struct {
 		name    string
-		handler http.HandlerFunc
+		handler http.Handler
 		wantID  string
 		wantErr bool
 	}{
 		{
 			name: "success",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/api/v0/downloads" {
 					t.Errorf("Expected path /api/v0/downloads, got %s", r.URL.Path)
 					http.Error(w, "bad path", http.StatusBadRequest)
 					return
 				}
-				if r.Header.Get("X-API-Key") != testAPIKey {
-					t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
-					http.Error(w, "bad api key", http.StatusUnauthorized)
-					return
-				}
 				w.WriteHeader(http.StatusOK)
-			},
+			})),
 			wantID:  "testuser:test_song.mp3",
 			wantErr: false,
 		},
 		{
 			name: "failure",
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
-			},
+			}),
 			wantID:  "",
 			wantErr: true,
 		},
@@ -230,12 +219,7 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 }
 
 func TestSlskdServiceGetDownload(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-Key") != testAPIKey {
-			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
-			http.Error(w, "bad api key", http.StatusUnauthorized)
-			return
-		}
+	server := httptest.NewServer(withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		expectedPath := "/api/v0/downloads/testuser/test song.mp3"
 		if r.URL.Path != expectedPath {
 			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
@@ -247,7 +231,7 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 			"state": "COMPLETED",
 			"path":  "/downloads/test song.mp3",
 		})
-	}))
+	})))
 	defer server.Close()
 
 	cfg := &config.Config{
