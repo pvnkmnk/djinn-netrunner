@@ -169,12 +169,14 @@ func TestSlskdServiceSearch(t *testing.T) {
 func TestSlskdServiceEnqueueDownload(t *testing.T) {
 	tests := []struct {
 		name    string
+		apiKey  string
 		handler http.Handler
 		wantID  string
 		wantErr bool
 	}{
 		{
-			name: "success",
+			name:   "success",
+			apiKey: testAPIKey,
 			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/api/v0/downloads" {
 					t.Errorf("Expected path /api/v0/downloads, got %s", r.URL.Path)
@@ -187,10 +189,21 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "failure",
-			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			name:   "failure - server error",
+			apiKey: testAPIKey,
+			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
-			}),
+			})),
+			wantID:  "",
+			wantErr: true,
+		},
+		{
+			name:   "failure - unauthorized",
+			apiKey: "bad-key",
+			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Error("handler reached on unauthorized request")
+				w.WriteHeader(http.StatusOK)
+			})),
 			wantID:  "",
 			wantErr: true,
 		},
@@ -203,7 +216,7 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 
 			cfg := &config.Config{
 				SlskdURL:    server.URL,
-				SlskdAPIKey: testAPIKey,
+				SlskdAPIKey: tt.apiKey,
 			}
 			svc := NewSlskdService(cfg)
 
@@ -219,37 +232,86 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 }
 
 func TestSlskdServiceGetDownload(t *testing.T) {
-	server := httptest.NewServer(withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		expectedPath := "/api/v0/downloads/testuser/test song.mp3"
-		if r.URL.Path != expectedPath {
-			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
-			http.Error(w, "bad path", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"state": "COMPLETED",
-			"path":  "/downloads/test song.mp3",
+	tests := []struct {
+		name            string
+		apiKey          string
+		handler         http.Handler
+		wantState       string
+		wantErr         bool
+		wantNilDownload bool
+	}{
+		{
+			name:   "success",
+			apiKey: testAPIKey,
+			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/api/v0/downloads/testuser/test song.mp3"
+				if r.URL.Path != expectedPath {
+					t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+					http.Error(w, "bad path", http.StatusBadRequest)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"state": "COMPLETED",
+					"path":  "/downloads/test song.mp3",
+				})
+			})),
+			wantState: "COMPLETED",
+		},
+		{
+			name:   "not found",
+			apiKey: testAPIKey,
+			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+			})),
+			wantNilDownload: true,
+		},
+		{
+			name:   "unauthorized",
+			apiKey: "bad-key",
+			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Error("handler reached on unauthorized request")
+				w.WriteHeader(http.StatusOK)
+			})),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.handler)
+			defer server.Close()
+
+			cfg := &config.Config{
+				SlskdURL:    server.URL,
+				SlskdAPIKey: tt.apiKey,
+			}
+			svc := NewSlskdService(cfg)
+
+			dl, err := svc.GetDownload("testuser", "test song.mp3")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetDownload() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			if tt.wantNilDownload {
+				if dl != nil {
+					t.Errorf("Expected nil download, got %+v", dl)
+				}
+				return
+			}
+
+			if dl == nil {
+				t.Fatal("Expected download info, got nil")
+			}
+			if string(dl.State) != tt.wantState {
+				t.Errorf("Expected state '%s', got '%s'", tt.wantState, dl.State)
+			}
 		})
-	})))
-	defer server.Close()
-
-	cfg := &config.Config{
-		SlskdURL:    server.URL,
-		SlskdAPIKey: testAPIKey,
-	}
-	svc := NewSlskdService(cfg)
-
-	dl, err := svc.GetDownload("testuser", "test song.mp3")
-	if err != nil {
-		t.Fatalf("GetDownload failed: %v", err)
-	}
-
-	if dl == nil {
-		t.Fatal("Expected download info, got nil")
-	}
-	if dl.State != "COMPLETED" {
-		t.Errorf("Expected state 'COMPLETED', got '%s'", dl.State)
 	}
 }
 
