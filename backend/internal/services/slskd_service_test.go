@@ -11,46 +11,55 @@ import (
 )
 
 func TestSlskdServiceHealthCheck(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v0/session" {
-			t.Errorf("Expected path /api/v0/session, got %s", r.URL.Path)
-			http.Error(w, "bad path", http.StatusBadRequest)
-			return
-		}
-		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
-			http.Error(w, "bad api key", http.StatusUnauthorized)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	cfg := &config.Config{
-		SlskdURL:    server.URL,
-		SlskdAPIKey: "test-key",
+	tests := []struct {
+		name    string
+		apiKey  string
+		handler http.HandlerFunc
+		want    bool
+	}{
+		{
+			name:   "success",
+			apiKey: "test-key",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v0/session" {
+					t.Errorf("Expected path /api/v0/session, got %s", r.URL.Path)
+					http.Error(w, "bad path", http.StatusBadRequest)
+					return
+				}
+				if r.Header.Get("X-API-Key") != "test-key" {
+					t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+					http.Error(w, "bad api key", http.StatusUnauthorized)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			want: true,
+		},
+		{
+			name:   "failure",
+			apiKey: "bad-key",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+			},
+			want: false,
+		},
 	}
-	svc := NewSlskdService(cfg)
 
-	if !svc.HealthCheck() {
-		t.Fatal("Expected HealthCheck to return true")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.handler)
+			defer server.Close()
 
-func TestSlskdServiceHealthCheck_Failure(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer server.Close()
+			cfg := &config.Config{
+				SlskdURL:    server.URL,
+				SlskdAPIKey: tt.apiKey,
+			}
+			svc := NewSlskdService(cfg)
 
-	cfg := &config.Config{
-		SlskdURL:    server.URL,
-		SlskdAPIKey: "bad-key",
-	}
-	svc := NewSlskdService(cfg)
-
-	if svc.HealthCheck() {
-		t.Error("Expected HealthCheck to return false for 401")
+			if got := svc.HealthCheck(); got != tt.want {
+				t.Errorf("HealthCheck() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
