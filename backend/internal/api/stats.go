@@ -190,27 +190,22 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 func (h *StatsHandler) GetActivityStats(c *fiber.Ctx) error {
 	var stats ActivityStats
 
-	if err := h.db.Model(&database.MonitoredArtist{}).Count(&stats.MonitoredArtists).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	if err := h.db.Model(&database.Watchlist{}).Count(&stats.Watchlists).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	if err := h.db.Model(&database.QualityProfile{}).Count(&stats.QualityProfiles).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	if err := h.db.Model(&database.Library{}).Count(&stats.Libraries).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	// Recent jobs
 	since24h := time.Now().Add(-24 * time.Hour)
-	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since24h).Count(&stats.RecentJobs24h).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
 	since7d := time.Now().Add(-7 * 24 * time.Hour)
-	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since7d).Count(&stats.RecentJobs7d).Error; err != nil {
+
+	// Bolt Optimization: Consolidate 6 separate count queries into a single query using subqueries.
+	// This significantly reduces database roundtrips from O(N) to O(1).
+	err := h.db.Raw(`
+		SELECT
+			(SELECT COUNT(*) FROM monitored_artists) as monitored_artists,
+			(SELECT COUNT(*) FROM watchlists) as watchlists,
+			(SELECT COUNT(*) FROM quality_profiles) as quality_profiles,
+			(SELECT COUNT(*) FROM libraries) as libraries,
+			(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs_24h,
+			(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs_7d
+	`, since24h, since7d).Scan(&stats).Error
+
+	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -243,13 +238,17 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
 	// Activity stats
-	h.db.Model(&database.MonitoredArtist{}).Count(&summary.Activity.MonitoredArtists)
-	h.db.Model(&database.Watchlist{}).Count(&summary.Activity.Watchlists)
-	h.db.Model(&database.QualityProfile{}).Count(&summary.Activity.QualityProfiles)
-	h.db.Model(&database.Library{}).Count(&summary.Activity.Libraries)
-
+	// Bolt Optimization: Consolidate 5 separate count queries into a single query using subqueries.
+	// This significantly reduces database roundtrips from O(N) to O(1).
 	since24h := time.Now().Add(-24 * time.Hour)
-	h.db.Model(&database.Job{}).Where("requested_at > ?", since24h).Count(&summary.Activity.RecentJobs24h)
+	h.db.Raw(`
+		SELECT
+			(SELECT COUNT(*) FROM monitored_artists) as monitored_artists,
+			(SELECT COUNT(*) FROM watchlists) as watchlists,
+			(SELECT COUNT(*) FROM quality_profiles) as quality_profiles,
+			(SELECT COUNT(*) FROM libraries) as libraries,
+			(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs_24h
+	`, since24h).Scan(&summary.Activity)
 
 	return c.JSON(summary)
 }
