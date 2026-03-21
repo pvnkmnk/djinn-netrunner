@@ -159,10 +159,6 @@ func TestSlskdServiceSearch(t *testing.T) {
 	if !reflect.DeepEqual(expected, result) {
 		t.Errorf("Search result mismatch.\nExpected: %+v\nGot:      %+v", expected, result)
 	}
-
-	if !reflect.DeepEqual(expected, result) {
-		t.Errorf("Search result mismatch.\nExpected: %+v\nGot:      %+v", expected, result)
-	}
 }
 
 func TestSlskdServiceEnqueueDownload(t *testing.T) {
