@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestWebhookEndToEnd(t *testing.T) {
@@ -37,12 +38,14 @@ func TestWebhookEndToEnd(t *testing.T) {
 		{"sync failure", "sync", "failed", "slskd connection timeout", "worker-1"},
 	}
 
-	for i, tt := range tests {
+	for i := range tests {
+		tt := tests[i] // capture per-iteration
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset payload before each call since the variable is shared
 			receivedPayload = JobCompletionPayload{}
 
 			jobID := uint64(100 + i)
+			start := time.Now()
 
 			svc.NotifyJobCompletion(jobID, tt.jobType, tt.state, tt.summary, tt.workerID)
 
@@ -61,6 +64,19 @@ func TestWebhookEndToEnd(t *testing.T) {
 			if receivedPayload.WorkerID != tt.workerID {
 				t.Errorf("expected WorkerID %s, got %s", tt.workerID, receivedPayload.WorkerID)
 			}
+			if receivedPayload.CompletedAt.IsZero() {
+				t.Errorf("expected CompletedAt to be set")
+			}
+			if receivedPayload.CompletedAt.Before(start) {
+				t.Errorf("CompletedAt earlier than start")
+			}
+			if receivedPayload.CompletedAt.Sub(start) > 5*time.Second {
+				t.Errorf("CompletedAt too far in future")
+			}
 		})
+	}
+
+	if callCount != len(tests) {
+		t.Errorf("expected %d webhook calls, got %d", len(tests), callCount)
 	}
 }
