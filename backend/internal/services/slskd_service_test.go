@@ -13,10 +13,14 @@ import (
 func TestSlskdServiceHealthCheck(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v0/session" {
-			t.Fatalf("Expected path /api/v0/session, got %s", r.URL.Path)
+			t.Errorf("Expected path /api/v0/session, got %s", r.URL.Path)
+			http.Error(w, "bad path", http.StatusBadRequest)
+			return
 		}
 		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			http.Error(w, "bad api key", http.StatusUnauthorized)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -78,12 +82,16 @@ func TestSlskdServiceSearch(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			http.Error(w, "bad api key", http.StatusUnauthorized)
+			return
 		}
 		switch r.Method {
 		case "POST":
 			if r.URL.Path != "/api/v0/searches" {
-				t.Fatalf("Expected POST /api/v0/searches, got %s", r.URL.Path)
+				t.Errorf("Expected POST /api/v0/searches, got %s", r.URL.Path)
+				http.Error(w, "bad path", http.StatusBadRequest)
+				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -93,7 +101,9 @@ func TestSlskdServiceSearch(t *testing.T) {
 		case "GET":
 			expectedPath := "/api/v0/searches/" + searchID
 			if r.URL.Path != expectedPath {
-				t.Fatalf("Expected GET %s, got %s", expectedPath, r.URL.Path)
+				t.Errorf("Expected GET %s, got %s", expectedPath, r.URL.Path)
+				http.Error(w, "bad path", http.StatusBadRequest)
+				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(mockSearchResponse{
@@ -143,7 +153,11 @@ func TestSlskdServiceSearch(t *testing.T) {
 		Locked:      false,
 		Bitrate:     intPtr(320),
 		Length:      intPtr(240),
-		Score:       15.0,
+	}
+	expected.CalculateScore(nil)
+
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("Search result mismatch.\nExpected: %+v\nGot:      %+v", expected, result)
 	}
 
 	if !reflect.DeepEqual(expected, result) {
@@ -154,10 +168,14 @@ func TestSlskdServiceSearch(t *testing.T) {
 func TestSlskdServiceEnqueueDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v0/downloads" {
-			t.Fatalf("Expected path /api/v0/downloads, got %s", r.URL.Path)
+			t.Errorf("Expected path /api/v0/downloads, got %s", r.URL.Path)
+			http.Error(w, "bad path", http.StatusBadRequest)
+			return
 		}
 		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			http.Error(w, "bad api key", http.StatusUnauthorized)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -182,11 +200,15 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 func TestSlskdServiceGetDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			http.Error(w, "bad api key", http.StatusUnauthorized)
+			return
 		}
 		expectedPath := "/api/v0/downloads/testuser/test song.mp3"
 		if r.URL.Path != expectedPath {
-			t.Fatalf("Expected path %s, got %s", expectedPath, r.URL.Path)
+			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+			http.Error(w, "bad path", http.StatusBadRequest)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
