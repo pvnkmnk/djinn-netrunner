@@ -12,10 +12,10 @@ import (
 func TestSlskdServiceHealthCheck(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v0/session" {
-			t.Errorf("Expected path /api/v0/session, got %s", r.URL.Path)
+			t.Fatalf("Expected path /api/v0/session, got %s", r.URL.Path)
 		}
 		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -28,7 +28,7 @@ func TestSlskdServiceHealthCheck(t *testing.T) {
 	svc := NewSlskdService(cfg)
 
 	if !svc.HealthCheck() {
-		t.Error("Expected HealthCheck to return true")
+		t.Fatal("Expected HealthCheck to return true")
 	}
 }
 
@@ -49,6 +49,26 @@ func TestSlskdServiceHealthCheck_Failure(t *testing.T) {
 	}
 }
 
+// mockSearchResponse mirrors the slskd API response structure for search results.
+type mockSearchResponse struct {
+	Responses []mockSearchResult `json:"responses"`
+}
+
+type mockSearchResult struct {
+	Username    string         `json:"username"`
+	UploadSpeed int            `json:"uploadSpeed"`
+	QueueLength int            `json:"queueLength"`
+	Files       []mockFileInfo `json:"files"`
+}
+
+type mockFileInfo struct {
+	Filename string `json:"filename"`
+	Size     int    `json:"size"`
+	IsLocked bool   `json:"isLocked"`
+	BitRate  int    `json:"bitRate"`
+	Length   int    `json:"length"`
+}
+
 func TestSlskdServiceSearch(t *testing.T) {
 	searchID := "search-123"
 
@@ -56,7 +76,7 @@ func TestSlskdServiceSearch(t *testing.T) {
 		switch r.Method {
 		case "POST":
 			if r.URL.Path != "/api/v0/searches" {
-				t.Errorf("Expected POST /api/v0/searches, got %s", r.URL.Path)
+				t.Fatalf("Expected POST /api/v0/searches, got %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -66,22 +86,22 @@ func TestSlskdServiceSearch(t *testing.T) {
 		case "GET":
 			expectedPath := "/api/v0/searches/" + searchID
 			if r.URL.Path != expectedPath {
-				t.Errorf("Expected GET %s, got %s", expectedPath, r.URL.Path)
+				t.Fatalf("Expected GET %s, got %s", expectedPath, r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"responses": []map[string]interface{}{
+			json.NewEncoder(w).Encode(mockSearchResponse{
+				Responses: []mockSearchResult{
 					{
-						"username":    "testuser",
-						"uploadSpeed": 500,
-						"queueLength": 0,
-						"files": []map[string]interface{}{
+						Username:    "testuser",
+						UploadSpeed: 500,
+						QueueLength: 0,
+						Files: []mockFileInfo{
 							{
-								"filename": "test_artist_-_test_song.mp3",
-								"size":     5242880,
-								"isLocked": false,
-								"bitRate":  320,
-								"length":   240,
+								Filename: "test_artist_-_test_song.mp3",
+								Size:     5242880,
+								IsLocked: false,
+								BitRate:  320,
+								Length:   240,
 							},
 						},
 					},
@@ -97,7 +117,7 @@ func TestSlskdServiceSearch(t *testing.T) {
 	}
 	svc := NewSlskdService(cfg)
 
-	results, err := svc.Search("test artist test song", 30, nil)
+	results, err := svc.Search("test artist test song", 0, nil)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -117,10 +137,10 @@ func TestSlskdServiceSearch(t *testing.T) {
 func TestSlskdServiceEnqueueDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v0/downloads" {
-			t.Errorf("Expected path /api/v0/downloads, got %s", r.URL.Path)
+			t.Fatalf("Expected path /api/v0/downloads, got %s", r.URL.Path)
 		}
 		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -146,7 +166,7 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		expectedPath := "/api/v0/downloads/testuser/test_song.mp3"
 		if r.URL.Path != expectedPath {
-			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
+			t.Fatalf("Expected path %s, got %s", expectedPath, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
