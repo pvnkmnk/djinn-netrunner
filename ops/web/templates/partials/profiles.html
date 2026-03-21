@@ -30,7 +30,7 @@
             <button class="btn btn-sm" hx-get="/partials/profile-form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/profiles/{{ .ID }}" hx-target="#profile-{{ .ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/profiles/{{ .ID }}" hx-target="#profile-{{ .ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this profile?">
                 Delete
             </button>
         </div>
