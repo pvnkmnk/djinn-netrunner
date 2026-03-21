@@ -20,7 +20,6 @@ The worker orchestrates multiple specialized services:
 - **MusicBrainzService**: Client for MusicBrainz API with caching.
 - **AcoustIDService**: Audio fingerprinting lookup for metadata enrichment.
 - **CacheService**: Persistent shadow cache for external API responses (MusicBrainz/Spotify/AcoustID).
-- **SpotifyTokenService**: Background refresh of OAuth tokens (runs every 5min, refreshes tokens expiring within 10min)
 - **NotificationService**: Webhook dispatcher for job completion events
 
 ## Core Data Model
@@ -71,10 +70,11 @@ The worker orchestrates multiple specialized services:
 
 ## Agentic Interface (MCP)
 NetRunner implements an embedded **Model Context Protocol (MCP)** server. This allows AI agents to:
-- **Probe System**: Check connectivity and resource health.
-- **Manage Watchlists**: Add or list automated discovery sources.
-- **Monitor Pipeline**: View real-time job logs and statuses.
-- **Search Library**: Query the combined Gonic and local indices.
+- **Probe System**: Check connectivity and resource health (`probe_system`).
+- **Manage Watchlists**: Add, list, or trigger sync on automated discovery sources (`add_watchlist`, `list_watchlists`, `sync_watchlist`).
+- **Monitor Pipeline**: View real-time job logs and statuses (`get_job`, `get_job_logs`).
+- **Search Library**: Query the combined Gonic and local indices (`search_library`).
+- **Query System**: Get stats summaries, quality profiles, and configured libraries (`get_stats`, `list_quality_profiles`, `list_libraries`).
 
 ## DB Connection Model
 The system uses a unified GORM connection with specific optimizations for SQLite:

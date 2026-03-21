@@ -117,6 +117,5 @@ curl -X POST $NOTIFICATION_WEBHOOK_URL \
   -d '{"job_id":1,"type":"sync","state":"succeeded","summary":"ok","completed_at":"2026-03-20T00:00:00Z","worker_id":"worker-1"}'
 ```
 
-## Spotify token refresh
-Tokens are refreshed automatically every 5 minutes.
-Manual refresh not exposed via CLI (background service handles it).
+## Spotify access
+Spotify integration uses client credentials (M2M) OAuth — no user token refresh is needed. The service re-authenticates on each request when credentials are configured.
