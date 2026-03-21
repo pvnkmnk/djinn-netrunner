@@ -73,6 +73,9 @@ func TestSlskdServiceSearch(t *testing.T) {
 	searchID := "search-123"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "test-key" {
+			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+		}
 		switch r.Method {
 		case "POST":
 			if r.URL.Path != "/api/v0/searches" {
@@ -164,6 +167,9 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 
 func TestSlskdServiceGetDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "test-key" {
+			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+		}
 		expectedPath := "/api/v0/downloads/testuser/test_song.mp3"
 		if r.URL.Path != expectedPath {
 			t.Fatalf("Expected path %s, got %s", expectedPath, r.URL.Path)
