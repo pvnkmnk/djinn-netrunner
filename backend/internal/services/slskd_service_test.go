@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
@@ -133,23 +134,20 @@ func TestSlskdServiceSearch(t *testing.T) {
 	}
 
 	result := results[0]
-	if result.Username != "testuser" {
-		t.Errorf("Expected username 'testuser', got '%s'", result.Username)
+	expected := SearchResult{
+		Username:    "testuser",
+		Filename:    "test_artist_-_test_song.mp3",
+		Size:        5242880,
+		Speed:       500,
+		QueueLength: 0,
+		Locked:      false,
+		Bitrate:     intPtr(320),
+		Length:      intPtr(240),
+		Score:       15.0,
 	}
-	if result.Filename != "test_artist_-_test_song.mp3" {
-		t.Errorf("Expected filename 'test_artist_-_test_song.mp3', got '%s'", result.Filename)
-	}
-	if result.Size != 5242880 {
-		t.Errorf("Expected size 5242880, got %d", result.Size)
-	}
-	if result.Speed != 500 {
-		t.Errorf("Expected speed 500, got %d", result.Speed)
-	}
-	if result.Bitrate == nil || *result.Bitrate != 320 {
-		t.Errorf("Expected bitrate 320, got %v", result.Bitrate)
-	}
-	if result.Length == nil || *result.Length != 240 {
-		t.Errorf("Expected length 240, got %v", result.Length)
+
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("Search result mismatch.\nExpected: %+v\nGot:      %+v", expected, result)
 	}
 }
 
