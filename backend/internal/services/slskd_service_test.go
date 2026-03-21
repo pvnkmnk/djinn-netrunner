@@ -10,6 +10,8 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 )
 
+const testAPIKey = "test-key"
+
 func TestSlskdServiceHealthCheck(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -19,14 +21,14 @@ func TestSlskdServiceHealthCheck(t *testing.T) {
 	}{
 		{
 			name:   "success",
-			apiKey: "test-key",
+			apiKey: testAPIKey,
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/api/v0/session" {
 					t.Errorf("Expected path /api/v0/session, got %s", r.URL.Path)
 					http.Error(w, "bad path", http.StatusBadRequest)
 					return
 				}
-				if r.Header.Get("X-API-Key") != "test-key" {
+				if r.Header.Get("X-API-Key") != testAPIKey {
 					t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
 					http.Error(w, "bad api key", http.StatusUnauthorized)
 					return
@@ -90,7 +92,7 @@ func TestSlskdServiceSearch(t *testing.T) {
 	searchID := "search-123"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-Key") != "test-key" {
+		if r.Header.Get("X-API-Key") != testAPIKey {
 			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
 			http.Error(w, "bad api key", http.StatusUnauthorized)
 			return
@@ -139,7 +141,7 @@ func TestSlskdServiceSearch(t *testing.T) {
 
 	cfg := &config.Config{
 		SlskdURL:    server.URL,
-		SlskdAPIKey: "test-key",
+		SlskdAPIKey: testAPIKey,
 	}
 	svc := NewSlskdService(cfg)
 
@@ -185,7 +187,7 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 					http.Error(w, "bad path", http.StatusBadRequest)
 					return
 				}
-				if r.Header.Get("X-API-Key") != "test-key" {
+				if r.Header.Get("X-API-Key") != testAPIKey {
 					t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
 					http.Error(w, "bad api key", http.StatusUnauthorized)
 					return
@@ -212,7 +214,7 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 
 			cfg := &config.Config{
 				SlskdURL:    server.URL,
-				SlskdAPIKey: "test-key",
+				SlskdAPIKey: testAPIKey,
 			}
 			svc := NewSlskdService(cfg)
 
@@ -229,7 +231,7 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 
 func TestSlskdServiceGetDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-Key") != "test-key" {
+		if r.Header.Get("X-API-Key") != testAPIKey {
 			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
 			http.Error(w, "bad api key", http.StatusUnauthorized)
 			return
@@ -250,7 +252,7 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 
 	cfg := &config.Config{
 		SlskdURL:    server.URL,
-		SlskdAPIKey: "test-key",
+		SlskdAPIKey: testAPIKey,
 	}
 	svc := NewSlskdService(cfg)
 
