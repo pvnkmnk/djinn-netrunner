@@ -49,6 +49,9 @@ func TestSlskdServiceHealthCheck_Failure(t *testing.T) {
 	}
 }
 
+// intPtr returns a pointer to the given int value.
+func intPtr(v int) *int { return &v }
+
 // mockSearchResponse mirrors the slskd API response structure for search results.
 type mockSearchResponse struct {
 	Responses []mockSearchResult `json:"responses"`
@@ -63,10 +66,10 @@ type mockSearchResult struct {
 
 type mockFileInfo struct {
 	Filename string `json:"filename"`
-	Size     int    `json:"size"`
+	Size     int64  `json:"size"`
 	IsLocked bool   `json:"isLocked"`
-	BitRate  int    `json:"bitRate"`
-	Length   int    `json:"length"`
+	BitRate  *int   `json:"bitRate"`
+	Length   *int   `json:"length"`
 }
 
 func TestSlskdServiceSearch(t *testing.T) {
@@ -103,8 +106,8 @@ func TestSlskdServiceSearch(t *testing.T) {
 								Filename: "test_artist_-_test_song.mp3",
 								Size:     5242880,
 								IsLocked: false,
-								BitRate:  320,
-								Length:   240,
+								BitRate:  intPtr(320),
+								Length:   intPtr(240),
 							},
 						},
 					},
@@ -129,11 +132,24 @@ func TestSlskdServiceSearch(t *testing.T) {
 		t.Fatalf("Expected 1 result, got %d", len(results))
 	}
 
-	if results[0].Username != "testuser" {
-		t.Errorf("Expected username 'testuser', got '%s'", results[0].Username)
+	result := results[0]
+	if result.Username != "testuser" {
+		t.Errorf("Expected username 'testuser', got '%s'", result.Username)
 	}
-	if results[0].Filename != "test_artist_-_test_song.mp3" {
-		t.Errorf("Expected filename 'test_artist_-_test_song.mp3', got '%s'", results[0].Filename)
+	if result.Filename != "test_artist_-_test_song.mp3" {
+		t.Errorf("Expected filename 'test_artist_-_test_song.mp3', got '%s'", result.Filename)
+	}
+	if result.Size != 5242880 {
+		t.Errorf("Expected size 5242880, got %d", result.Size)
+	}
+	if result.Speed != 500 {
+		t.Errorf("Expected speed 500, got %d", result.Speed)
+	}
+	if result.Bitrate == nil || *result.Bitrate != 320 {
+		t.Errorf("Expected bitrate 320, got %v", result.Bitrate)
+	}
+	if result.Length == nil || *result.Length != 240 {
+		t.Errorf("Expected length 240, got %v", result.Length)
 	}
 }
 
@@ -170,14 +186,14 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 		if r.Header.Get("X-API-Key") != "test-key" {
 			t.Fatalf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
 		}
-		expectedPath := "/api/v0/downloads/testuser/test_song.mp3"
+		expectedPath := "/api/v0/downloads/testuser/test song.mp3"
 		if r.URL.Path != expectedPath {
 			t.Fatalf("Expected path %s, got %s", expectedPath, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"state": "COMPLETED",
-			"path":  "/downloads/test_song.mp3",
+			"path":  "/downloads/test song.mp3",
 		})
 	}))
 	defer server.Close()
@@ -188,7 +204,7 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 	}
 	svc := NewSlskdService(cfg)
 
-	dl, err := svc.GetDownload("testuser", "test_song.mp3")
+	dl, err := svc.GetDownload("testuser", "test song.mp3")
 	if err != nil {
 		t.Fatalf("GetDownload failed: %v", err)
 	}
