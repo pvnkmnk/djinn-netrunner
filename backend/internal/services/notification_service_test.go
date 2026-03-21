@@ -37,6 +37,12 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		if receivedPayload.WorkerID != "worker-1" {
 			t.Errorf("expected WorkerID worker-1, got %s", receivedPayload.WorkerID)
 		}
+		if receivedPayload.Summary != "Completed" {
+			t.Errorf("expected Summary 'Completed', got %s", receivedPayload.Summary)
+		}
+		if receivedPayload.CompletedAt.IsZero() {
+			t.Error("expected CompletedAt to be set")
+		}
 	})
 
 	t.Run("server error", func(t *testing.T) {
@@ -45,7 +51,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		}))
 		defer server.Close()
 
-		// Should not panic, just log error
+		// NotifyJobCompletion has no return value; verify it doesn't panic on server error
 		svc := NewNotificationService(server.URL, true)
 		svc.NotifyJobCompletion(1, "sync", "failed", "error", "worker-1")
 	})
