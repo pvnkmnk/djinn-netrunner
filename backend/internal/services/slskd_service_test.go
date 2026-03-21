@@ -162,34 +162,59 @@ func TestSlskdServiceSearch(t *testing.T) {
 }
 
 func TestSlskdServiceEnqueueDownload(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v0/downloads" {
-			t.Errorf("Expected path /api/v0/downloads, got %s", r.URL.Path)
-			http.Error(w, "bad path", http.StatusBadRequest)
-			return
-		}
-		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
-			http.Error(w, "bad api key", http.StatusUnauthorized)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	cfg := &config.Config{
-		SlskdURL:    server.URL,
-		SlskdAPIKey: "test-key",
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		wantID  string
+		wantErr bool
+	}{
+		{
+			name: "success",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v0/downloads" {
+					t.Errorf("Expected path /api/v0/downloads, got %s", r.URL.Path)
+					http.Error(w, "bad path", http.StatusBadRequest)
+					return
+				}
+				if r.Header.Get("X-API-Key") != "test-key" {
+					t.Errorf("Expected X-API-Key header 'test-key', got %s", r.Header.Get("X-API-Key"))
+					http.Error(w, "bad api key", http.StatusUnauthorized)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			wantID:  "testuser:test_song.mp3",
+			wantErr: false,
+		},
+		{
+			name: "failure",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			wantID:  "",
+			wantErr: true,
+		},
 	}
-	svc := NewSlskdService(cfg)
 
-	downloadID, err := svc.EnqueueDownload("testuser", "test_song.mp3")
-	if err != nil {
-		t.Fatalf("EnqueueDownload failed: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.handler)
+			defer server.Close()
 
-	if downloadID != "testuser:test_song.mp3" {
-		t.Errorf("Expected downloadID 'testuser:test_song.mp3', got '%s'", downloadID)
+			cfg := &config.Config{
+				SlskdURL:    server.URL,
+				SlskdAPIKey: "test-key",
+			}
+			svc := NewSlskdService(cfg)
+
+			gotID, err := svc.EnqueueDownload("testuser", "test_song.mp3")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("EnqueueDownload() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && gotID != tt.wantID {
+				t.Errorf("EnqueueDownload() = %v, want %v", gotID, tt.wantID)
+			}
+		})
 	}
 }
 
@@ -243,21 +268,3 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 // The mock server's atomic counter isn't incrementing correctly with the polling loop.
 // The core slskd functionality (Search, EnqueueDownload, GetDownload) is covered
 // by the other tests. Integration tests would better cover the polling/wait path.
-
-func TestSlskdServiceEnqueueDownload_Failure(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	cfg := &config.Config{
-		SlskdURL:    server.URL,
-		SlskdAPIKey: "test-key",
-	}
-	svc := NewSlskdService(cfg)
-
-	_, err := svc.EnqueueDownload("testuser", "test_song.mp3")
-	if err == nil {
-		t.Error("Expected error for failed enqueue")
-	}
-}
