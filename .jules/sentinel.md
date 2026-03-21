@@ -9,3 +9,8 @@
 **Vulnerability:** Any authenticated user could subscribe to any job's log stream or the global system event stream via WebSockets.
 **Learning:** Authentication middleware only verifies identity, not authorization. WebSocket handlers must explicitly check user roles and object ownership (e.g., Job.OwnerUserID) to prevent BOLA.
 **Prevention:** Always verify that the authenticated user has permission to access the specific resource requested via WebSocket parameters.
+
+## 2025-05-29 - [Broken Object Level Authorization (BOLA) in Schedules]
+**Vulnerability:** Authenticated users could create, update, or delete schedules for watchlists they did not own by guessing the schedule ID or providing a different watchlist ID.
+**Learning:** Even when using session-based authentication, object-level checks must be performed by joining with the "owner" entity (e.g., Watchlist) to verify ownership before modifying resources.
+**Prevention:** Always include ownership criteria in database queries (e.g., `.Joins("JOIN watchlists ...").Where("watchlists.owner_user_id = ?", user.ID)`) for sensitive operations.
