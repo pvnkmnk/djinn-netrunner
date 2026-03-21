@@ -72,17 +72,22 @@ type DiscogsSearchItem struct {
 	ResourceURL string   `json:"resource_url"`
 }
 
-// NewDiscogsService creates a new Discogs service
-func NewDiscogsService(cfg *config.Config) *DiscogsService {
+// NewDiscogsService creates a new Discogs service.
+// If baseURL is non-empty it will be used instead of the default Discogs API URL.
+func NewDiscogsService(cfg *config.Config, baseURLs ...string) *DiscogsService {
 	token := ""
 	if cfg != nil {
 		token = cfg.DiscogsToken
+	}
+	baseURL := "https://api.discogs.com"
+	if len(baseURLs) > 0 && baseURLs[0] != "" {
+		baseURL = baseURLs[0]
 	}
 
 	return &DiscogsService{
 		cfg:     cfg,
 		token:   token,
-		baseURL: "https://api.discogs.com",
+		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
