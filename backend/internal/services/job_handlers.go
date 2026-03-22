@@ -556,12 +556,14 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		ReleaseID   string
 		ArtistID    string
 	}
+	var acoustidScore int
 
 	if h.aid != nil && fingerprint != "" {
 		h.Log(jobID, "INFO", "Looking up AcoustID...", &itemID)
 		results, err := h.aid.Lookup(fingerprint, duration)
 		if err == nil && len(results) > 0 {
-			h.Log(jobID, "OK", fmt.Sprintf("AcoustID match found (score: %.2f)", results[0].Score), &itemID)
+			acoustidScore = int(results[0].Score * 100) // Convert 0-1 float to 0-100 int
+			h.Log(jobID, "OK", fmt.Sprintf("AcoustID match found (score: %d%%)", acoustidScore), &itemID)
 			if len(results[0].Recordings) > 0 {
 				mbIDs.RecordingID = results[0].Recordings[0].ID
 				// Try to get artist/release IDs if available in future AcoustID meta enhancements
@@ -648,6 +650,7 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		MBRecordingID: mbIDs.RecordingID,
 		MBReleaseID:   mbIDs.ReleaseID,
 		MBArtistID:    mbIDs.ArtistID,
+		AcoustIDScore: acoustidScore,
 	}
 	h.db.Create(&acq)
 

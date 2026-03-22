@@ -129,11 +129,13 @@ func (m *TrackedRelease) BeforeCreate(tx *gorm.DB) error {
 
 // Library represents a collection of music files
 type Library struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Name      string    `gorm:"not null"`
-	Path      string    `gorm:"uniqueIndex;not null"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Name         string    `gorm:"not null"`
+	Path         string    `gorm:"uniqueIndex;not null"`
+	MaxSizeBytes *int64    `gorm:"default:null"` // nil = no limit
+	QuotaAlertAt *int      `gorm:"default:80"`   // percentage threshold for alerts
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 func (m *Library) BeforeCreate(tx *gorm.DB) error {
@@ -145,23 +147,24 @@ func (m *Library) BeforeCreate(tx *gorm.DB) error {
 
 // Track represents a single audio file in the library
 type Track struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
-	LibraryID uuid.UUID `gorm:"type:uuid;not null;index:idx_library_genre"`
-	Title     string    `gorm:"not null"`
-	Artist    string    `gorm:"index"`
-	Album     string    `gorm:"index"`
-	Path      string    `gorm:"uniqueIndex;not null"`
-	TrackNum  *int
-	DiscNum   *int
-	Format    string
-	FileSize  int64
-	FileHash  string `gorm:"index"`
-	Year      *int   // Release year
-	Genre     string `gorm:"index:idx_library_genre"` // Genre
-	Composer  string // Composer
-	CoverURL  string // URL to cover art
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
+	LibraryID   uuid.UUID `gorm:"type:uuid;not null;index:idx_library_genre"`
+	Title       string    `gorm:"not null"`
+	Artist      string    `gorm:"index"`
+	Album       string    `gorm:"index"`
+	Path        string    `gorm:"uniqueIndex;not null"`
+	TrackNum    *int
+	DiscNum     *int
+	Format      string
+	FileSize    int64
+	FileHash    string `gorm:"index"`
+	Year        *int   // Release year
+	Genre       string `gorm:"index:idx_library_genre"` // Genre
+	Composer    string // Composer
+	CoverURL    string // URL to cover art
+	Fingerprint string // AcoustID fingerprint (stored after first scan)
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 
 	Library Library `gorm:"foreignKey:LibraryID"`
 }
@@ -316,6 +319,9 @@ type Acquisition struct {
 	MBRecordingID string `gorm:"column:mb_recording_id"`
 	MBReleaseID   string `gorm:"column:mb_release_id"`
 	MBArtistID    string `gorm:"column:mb_artist_id"`
+
+	// AcoustID
+	AcoustIDScore int `gorm:"column:acoustid_score"` // 0-100 confidence score from AcoustID lookup
 }
 
 func (m *Acquisition) BeforeCreate(tx *gorm.DB) error {

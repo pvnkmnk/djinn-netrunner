@@ -40,6 +40,7 @@ type WorkerOrchestrator struct {
 	metadata            *services.MetadataExtractor
 	litefs              *database.LiteFSGuard
 	notificationService *services.NotificationService
+	diskQuotaService    *services.DiskQuotaService
 
 	// Handlers
 	syncHandler *services.SyncHandler
@@ -64,6 +65,7 @@ type jobContext struct {
 func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator {
 	// 4. Initialize services
 	cache := services.NewCacheService(db)
+	sqlDB, _ := db.DB() // GORM v1 style; ignore error for now
 	mb := services.NewMusicBrainzService(cfg)
 	mb.SetCache(cache)
 	at := services.NewArtistTrackingService(db, mb)
@@ -96,6 +98,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		syncHandler:         services.NewSyncHandler(db, spotify, watchlist),
 		acqHandler:          services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic, discogs, cache),
 		notificationService: services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled),
+		diskQuotaService:    services.NewDiskQuotaService(sqlDB),
 		activeJobs:          make(map[uint64]*jobContext),
 		wakeupChan:          make(chan bool, 1),
 	}
@@ -240,6 +243,23 @@ func (w *WorkerOrchestrator) heartbeatLoop() {
 			return
 		}
 		w.updateHeartbeats()
+	}
+}
+
+func (w *WorkerOrchestrator) checkQuotaAlerts() {
+	if w.diskQuotaService == nil || w.notificationService == nil {
+		return
+	}
+	alerts, err := w.diskQuotaService.CheckAllLibraryQuotas()
+	if err != nil {
+		log.Printf("[QUOTA] Error checking quotas: %v", err)
+		return
+	}
+	for _, alert := range alerts {
+		if alert.LimitBytes > 0 {
+			threshold := 80
+			w.notificationService.NotifyQuotaWarning(&alert, threshold)
+		}
 	}
 }
 
@@ -551,6 +571,9 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		}
 		log.Printf("[WORKER] Scanning library %s at path %s", library.Name, library.Path)
 		err = w.scanService.ScanLibrary(jc.ctx, libraryID, library.Path)
+		if err == nil {
+			w.checkQuotaAlerts() // Check disk quotas after a successful scan
+		}
 	case "enrich":
 		// Enrich metadata for tracks in a library using Discogs
 		libraryID, err := uuid.Parse(jc.job.ScopeID)

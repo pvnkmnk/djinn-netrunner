@@ -82,18 +82,26 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 	// Compute hash
 	hash, _ := s.metadata.HashFile(path)
 
+	// Extract fingerprint (best-effort — fpcalc may not be installed)
+	var fingerprint string
+	fp, _, fpErr := s.metadata.Fingerprint(path)
+	if fpErr == nil {
+		fingerprint = fp
+	}
+
 	// Bolt Optimization: Use a single FirstOrCreate with Assign to handle both Create and Update
 	// in a single database roundtrip, ensuring FileHash is always current and avoiding redundant UPDATEs.
 	var track database.Track
 	err = s.db.Where("path = ?", path).
 		Assign(database.Track{
-			LibraryID: libraryID,
-			Title:     meta.Title,
-			Artist:    meta.Artist,
-			Album:     meta.Album,
-			Format:    meta.Format,
-			FileSize:  meta.FileSize,
-			FileHash:  hash,
+			LibraryID:   libraryID,
+			Title:       meta.Title,
+			Artist:      meta.Artist,
+			Album:       meta.Album,
+			Format:      meta.Format,
+			FileSize:    meta.FileSize,
+			FileHash:    hash,
+			Fingerprint: fingerprint,
 		}).
 		FirstOrCreate(&track).Error
 

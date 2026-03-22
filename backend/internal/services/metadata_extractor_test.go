@@ -1,6 +1,7 @@
 package services
 
 import (
+	"os"
 	"testing"
 )
 
@@ -50,5 +51,20 @@ func TestEmbedCoverArt_SizeValidation(t *testing.T) {
 	err := e.EmbedCoverArt("test.mp3", smallData)
 	if err == nil {
 		t.Error("expected error for art data below minimum size")
+	}
+}
+
+func TestFpcalcAvailability(t *testing.T) {
+	e := NewMetadataExtractor()
+
+	// Create a temporary audio file for fingerprinting test
+	tmpFile := t.TempDir() + "/test_fpcalc.mp3"
+	if err := os.WriteFile(tmpFile, []byte{}, 0644); err != nil {
+		t.Skipf("could not create temp file: %v", err)
+	}
+
+	_, _, err := e.Fingerprint(tmpFile)
+	if err != nil {
+		t.Skipf("fpcalc not available or failed: %v", err)
 	}
 }

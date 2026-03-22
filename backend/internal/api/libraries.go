@@ -93,8 +93,10 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Name *string `json:"name"`
-		Path *string `json:"path"`
+		Name         *string `json:"name"`
+		Path         *string `json:"path"`
+		MaxSizeBytes *int64  `json:"max_size_bytes"`
+		QuotaAlertAt *int    `json:"quota_alert_at"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -112,6 +114,12 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 			return c.Status(400).JSON(fiber.Map{"error": "path cannot be empty"})
 		}
 		library.Path = *input.Path
+	}
+	if input.MaxSizeBytes != nil {
+		library.MaxSizeBytes = input.MaxSizeBytes
+	}
+	if input.QuotaAlertAt != nil {
+		library.QuotaAlertAt = input.QuotaAlertAt
 	}
 
 	if err := h.db.Save(&library).Error; err != nil {
