@@ -12,13 +12,13 @@
     <header class="app-header">
         <h1>NETRUNNER</h1>
         <nav>
-            <a href="/" {% if .Page eq "dashboard" %}class="active"{% endif %}>Dashboard</a>
-            <a href="/watchlists" {% if .Page eq "watchlists" %}class="active"{% endif %}>Watchlists</a>
-            <a href="/libraries" {% if .Page eq "libraries" %}class="active"{% endif %}>Libraries</a>
-            <a href="/profiles" {% if .Page eq "profiles" %}class="active"{% endif %}>Profiles</a>
-            <a href="/schedules" {% if .Page eq "schedules" %}class="active"{% endif %}>Schedules</a>
-            <a href="/artists" {% if .Page eq "artists" %}class="active"{% endif %}>Artists</a>
-            <a href="/jobs" {% if .Page eq "jobs" %}class="active"{% endif %}>Jobs</a>
+            <a href="/" {% if Page == "dashboard" %}class="active"{% endif %}>Dashboard</a>
+            <a href="/watchlists" {% if Page == "watchlists" %}class="active"{% endif %}>Watchlists</a>
+            <a href="/libraries" {% if Page == "libraries" %}class="active"{% endif %}>Libraries</a>
+            <a href="/profiles" {% if Page == "profiles" %}class="active"{% endif %}>Profiles</a>
+            <a href="/schedules" {% if Page == "schedules" %}class="active"{% endif %}>Schedules</a>
+            <a href="/artists" {% if Page == "artists" %}class="active"{% endif %}>Artists</a>
+            <a href="/jobs" {% if Page == "jobs" %}class="active"{% endif %}>Jobs</a>
         </nav>
     </header>
     <main class="app-main">

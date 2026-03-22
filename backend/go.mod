@@ -5,6 +5,7 @@ go 1.25.8
 require (
 	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8
+	github.com/flosch/pongo2/v6 v6.0.0
 	github.com/gcottom/audiometa v1.3.1
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-flac/flacpicture/v2 v2.0.2
@@ -23,6 +24,7 @@ require (
 	github.com/zmb3/spotify/v2 v2.4.3
 	golang.org/x/crypto v0.49.0
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/sys v0.42.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
 )
@@ -77,7 +79,6 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.70.0 // indirect

@@ -4,16 +4,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/gofiber/template/html/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
+	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -49,12 +47,11 @@ func main() {
 	atService := services.NewArtistTrackingService(db, mbService)
 	scanService := services.NewScannerService(db)
 
-	// 6. Initialize Fiber
-	engine := html.New(cfg.TemplatesPath, ".html")
-	engine.AddFunc("strftime", func(t time.Time, format string) string {
-		return t.Format("01/02 15:04")
-	})
-	engine.AddFunc("upper", strings.ToUpper)
+	// 6. Initialize Fiber with pongo2 (Jinja2-compatible) template engine
+	engine := templates.NewPongo2(cfg.TemplatesPath, ".html")
+	if err := engine.LoadFromDir(); err != nil {
+		log.Printf("warning: failed to preload templates: %v", err)
+	}
 
 	app := fiber.New(fiber.Config{
 		Views: engine,

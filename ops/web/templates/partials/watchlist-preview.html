@@ -1,20 +1,20 @@
 <div class="preview-header">
-    <span class="preview-count">{{ len .Tracks }} of {{ .TotalCount }} tracks</span>
-    <span class="badge badge-source badge-{{ .SourceType }}">{{ .SourceType }}</span>
+    <span class="preview-count">{{ Tracks|length }} of {{ TotalCount }} tracks</span>
+    <span class="badge badge-source badge-{{ SourceType }}">{{ SourceType }}</span>
 </div>
-{{ range .Tracks }}
+{% for track in Tracks %}
 <div class="track">
-    {{ if .CoverURL }}<span class="track-cover" style="background-image: url({{ .CoverURL }})"></span>{{ end }}
+    {% if track.CoverURL %}<span class="track-cover" style="background-image: url({{ track.CoverURL }})"></span>{% endif %}
     <span class="track-info">
-        <span class="track-title">{{ .Title }}</span>
-        <span class="track-artist">{{ .Artist }}</span>
-        {{ if .Album }}<span class="track-album">{{ .Album }}</span>{{ end }}
+        <span class="track-title">{{ track.Title }}</span>
+        <span class="track-artist">{{ track.Artist }}</span>
+        {% if track.Album %}<span class="track-album">{{ track.Album }}</span>{% endif %}
     </span>
 </div>
-{{ end }}
-{{ if .HasMore }}
-<div class="more-indicator">+ {{ .Remaining }} more tracks — sync to see full list</div>
-{{ end }}
+{% endfor %}
+{% if HasMore %}
+<div class="more-indicator">+ {{ Remaining }} more tracks — sync to see full list</div>
+{% endif %}
 
 <style>
 .preview-header {

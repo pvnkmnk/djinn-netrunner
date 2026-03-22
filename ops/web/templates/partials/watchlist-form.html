@@ -1,42 +1,42 @@
 <div class="modal-overlay" data-close-modal>
     <div class="modal">
         <div class="modal-header">
-            <h3>{{ if .ID }}Edit{{ else }}Add{{ end }} Watchlist</h3>
+            <h3>{% if ID %}Edit{% else %}Add{% endif %} Watchlist</h3>
             <button class="modal-close" data-close-modal>&times;</button>
         </div>
         <form hx-post="/api/watchlists" hx-target="#watchlists-list" hx-swap="outerHTML">
-            {{ if .ID }}<input type="hidden" name="id" value="{{ .ID }}">{{ end }}
+            {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
             <div class="form-group">
                 <label for="name">Name</label>
-                <input type="text" id="name" name="name" value="{{ .Name }}" required>
+                <input type="text" id="name" name="name" value="{{ Name }}" required>
             </div>
             <div class="form-group">
                 <label for="source_type">Source Type</label>
                 <select id="source_type" name="source_type" required>
-                    <option value="spotify_playlist" {{ if eq .SourceType "spotify_playlist" }}selected{{ end }}>Spotify Playlist</option>
-                    <option value="lastfm_chart" {{ if eq .SourceType "lastfm_chart" }}selected{{ end }}>Last.fm Chart</option>
-                    <option value="lastfm_loved" {{ if eq .SourceType "lastfm_loved" }}selected{{ end }}>Last.fm Loved Tracks</option>
-                    <option value="discogs_collection" {{ if eq .SourceType "discogs_collection" }}selected{{ end }}>Discogs Collection</option>
-                    <option value="discogs_wantlist" {{ if eq .SourceType "discogs_wantlist" }}selected{{ end }}>Discogs Wantlist</option>
-                    <option value="rss_feed" {{ if eq .SourceType "rss_feed" }}selected{{ end }}>RSS Feed</option>
+                    <option value="spotify_playlist" {% if SourceType == "spotify_playlist" %}selected{% endif %}>Spotify Playlist</option>
+                    <option value="lastfm_chart" {% if SourceType == "lastfm_chart" %}selected{% endif %}>Last.fm Chart</option>
+                    <option value="lastfm_loved" {% if SourceType == "lastfm_loved" %}selected{% endif %}>Last.fm Loved Tracks</option>
+                    <option value="discogs_collection" {% if SourceType == "discogs_collection" %}selected{% endif %}>Discogs Collection</option>
+                    <option value="discogs_wantlist" {% if SourceType == "discogs_wantlist" %}selected{% endif %}>Discogs Wantlist</option>
+                    <option value="rss_feed" {% if SourceType == "rss_feed" %}selected{% endif %}>RSS Feed</option>
                 </select>
             </div>
             <div class="form-group">
                 <label for="source_uri">Source URI</label>
-                <input type="text" id="source_uri" name="source_uri" value="{{ .SourceURI }}" required placeholder="https://...">
+                <input type="text" id="source_uri" name="source_uri" value="{{ SourceURI }}" required placeholder="https://...">
             </div>
             <div class="form-group">
                 <label for="quality_profile_id">Quality Profile</label>
                 <select id="quality_profile_id" name="quality_profile_id">
                     <option value="">Default</option>
-                    {{ range .profiles }}
-                    <option value="{{ .ID }}" {{ if eq $.QualityProfileID .ID }}selected{{ end }}>{{ .Name }}</option>
-                    {{ end }}
+                    {% for profile in profiles %}
+                    <option value="{{ profile.ID }}" {% if profile.ID == QualityProfileID %}selected{% endif %}>{{ profile.Name }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="form-group">
                 <label class="checkbox-label">
-                    <input type="checkbox" name="enabled" {{ if .Enabled }}checked{{ end }}>
+                    <input type="checkbox" name="enabled" {% if Enabled %}checked{% endif %}>
                     <span>Enabled</span>
                 </label>
             </div>
@@ -47,4 +47,3 @@
         </form>
     </div>
 </div>
-

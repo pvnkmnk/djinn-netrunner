@@ -7,33 +7,33 @@
     </div>
     
     <div id="schedules-list">
-    {{ range .schedules }}
-    <div class="schedule-card" id="schedule-{{ .ID }}">
+    {% for schedule in schedules %}
+    <div class="schedule-card" id="schedule-{{ schedule.ID }}">
         <div class="schedule-info">
             <div class="name">
-                {{ .Watchlist.Name }}
-                {{ if not .Enabled }}<span class="badge badge-disabled">Disabled</span>{{ end }}
+                {{ schedule.Watchlist.Name }}
+                {% if not schedule.Enabled %}<span class="badge badge-disabled">Disabled</span>{% endif %}
             </div>
             <div class="details">
-                <span>Cron: {{ .CronExpr }}</span>
-                <span>Next: {{ .NextRunAt.Format "Jan 02 15:04" }}</span>
+                <span>Cron: {{ schedule.CronExpr }}</span>
+                <span>Next: {{ schedule.NextRunAt.Format "Jan 02 15:04" }}</span>
             </div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-patch="/api/schedules/{{ .ID }}/toggle" hx-target="#schedule-{{ .ID }}" hx-swap="outerHTML">
-                {{ if .Enabled }}Disable{{ else }}Enable{{ end }}
+            <button class="btn btn-sm" hx-patch="/api/schedules/{{ schedule.ID }}/toggle" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML">
+                {% if schedule.Enabled %}Disable{% else %}Enable{% endif %}
             </button>
-            <button class="btn btn-sm" hx-get="/api/schedules/form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+            <button class="btn btn-sm" hx-get="/api/schedules/form?id={{ schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ .ID }}" hx-target="#schedule-{{ .ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ schedule.ID }}" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML">
                 Delete
             </button>
         </div>
     </div>
-    {{ else }}
+    {% else %}
     <p class="empty-state">No schedules configured</p>
-    {{ end }}
+    {% endfor %}
     </div>
 </div>
 

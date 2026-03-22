@@ -17,31 +17,31 @@
     </div>
     
     <div id="jobs-list">
-    {{ range .jobs }}
-    <div class="job-card" id="job-{{ .ID }}">
+    {% for job in jobs %}
+    <div class="job-card" id="job-{{ job.ID }}">
         <div class="job-info">
-            <div class="job-id">#{{ .ID }}</div>
-            <div class="job-type">{{ .Type }}</div>
-            <div class="job-state state-{{ .State }}">{{ .State }}</div>
+            <div class="job-id">#{{ job.ID }}</div>
+            <div class="job-type">{{ job.Type }}</div>
+            <div class="job-state state-{{ job.State }}">{{ job.State }}</div>
         </div>
         <div class="job-meta">
-            <span>{{ .RequestedAt.Format "Jan 02 15:04" }}</span>
-            <span>By: {{ .CreatedBy }}</span>
+            <span>{{ job.RequestedAt }}</span>
+            <span>By: {{ job.CreatedBy }}</span>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ .ID }}" hx-target="#job-logs-container" hx-swap="innerHTML">
+            <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ job.ID }}" hx-target="#job-logs-container" hx-swap="innerHTML">
                 View Logs
             </button>
-            {{ if eq .State "queued" }}
-            <button class="btn btn-sm btn-danger" hx-delete="/api/jobs/{{ .ID }}" hx-target="#job-{{ .ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to cancel this job?">
+            {% if job.State == "queued" %}
+            <button class="btn btn-sm btn-danger" hx-delete="/api/jobs/{{ job.ID }}" hx-target="#job-{{ job.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to cancel this job?">
                 Cancel
             </button>
-            {{ end }}
+            {% endif %}
         </div>
     </div>
-    {{ else }}
+    {% else %}
     <p class="empty-state">No jobs found</p>
-    {{ end }}
+    {% endfor %}
     </div>
     
     <div id="job-logs-container"></div>

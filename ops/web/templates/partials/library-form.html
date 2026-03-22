@@ -1,18 +1,18 @@
 <div class="modal-overlay" data-close-modal>
     <div class="modal">
         <div class="modal-header">
-            <h3>{{ if .ID }}Edit{{ else }}Add{{ end }} Library</h3>
+            <h3>{% if ID %}Edit{% else %}Add{% endif %} Library</h3>
             <button class="modal-close" data-close-modal>&times;</button>
         </div>
         <form hx-post="/api/libraries" hx-target="#libraries-list" hx-swap="outerHTML">
-            {{ if .ID }}<input type="hidden" name="id" value="{{ .ID }}">{{ end }}
+            {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
             <div class="form-group">
                 <label for="name">Name</label>
-                <input type="text" id="name" name="name" value="{{ .Name }}" required>
+                <input type="text" id="name" name="name" value="{{ Name }}" required>
             </div>
             <div class="form-group">
                 <label for="path">Path</label>
-                <input type="text" id="path" name="path" value="{{ .Path }}" required placeholder="/path/to/music">
+                <input type="text" id="path" name="path" value="{{ Path }}" required placeholder="/path/to/music">
             </div>
             <div class="form-actions">
                 <button type="button" class="btn" data-close-modal>Cancel</button>
@@ -21,4 +21,3 @@
         </form>
     </div>
 </div>
-

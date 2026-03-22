@@ -1,27 +1,27 @@
 <div class="modal-overlay" data-close-modal>
     <div class="modal">
         <div class="modal-header">
-            <h3>{{ if .ID }}Edit{{ else }}Add{{ end }} Schedule</h3>
+            <h3>{% if ID %}Edit{% else %}Add{% endif %} Schedule</h3>
             <button class="modal-close" data-close-modal>&times;</button>
         </div>
         <form hx-post="/api/schedules" hx-target="#schedules-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
-            {{ if .ID }}<input type="hidden" name="id" value="{{ .ID }}">{{ end }}
+            {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
             <div class="form-group">
                 <label for="watchlist_id">Watchlist</label>
                 <select id="watchlist_id" name="watchlist_id" required>
-                    {{ range .watchlists }}
-                    <option value="{{ .ID }}" {{ if eq $.WatchlistID .ID }}selected{{ end }}>{{ .Name }}</option>
-                    {{ end }}
+                    {% for watchlist in watchlists %}
+                    <option value="{{ watchlist.ID }}" {% if watchlist.ID == WatchlistID %}selected{% endif %}>{{ watchlist.Name }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="form-group">
                 <label for="cron_expr">Cron Expression</label>
-                <input type="text" id="cron_expr" name="cron_expr" value="{{ .CronExpr }}" required placeholder="0 6 * * *">
+                <input type="text" id="cron_expr" name="cron_expr" value="{{ CronExpr }}" required placeholder="0 6 * * *">
                 <small style="color: var(--text-secondary);">Format: minute hour day month weekday</small>
             </div>
             <div class="form-group">
                 <label class="checkbox-label">
-                    <input type="checkbox" name="enabled" {{ if .Enabled }}checked{{ end }}>
+                    <input type="checkbox" name="enabled" {% if Enabled %}checked{% endif %}>
                     <span>Enabled</span>
                 </label>
             </div>
@@ -32,4 +32,3 @@
         </form>
     </div>
 </div>
-

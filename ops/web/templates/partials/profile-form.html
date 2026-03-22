@@ -2,48 +2,48 @@
      hx-on:click="if(event.target === this) htmx.removeClass(htmx.find('#modal-container'), 'active')">
     <div class="modal">
         <div class="modal-header">
-            <h3>{{ if .ID }}Edit{{ else }}Add{{ end }} Profile</h3>
+            <h3>{% if ID %}Edit{% else %}Add{% endif %} Profile</h3>
             <button class="modal-close" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active')">&times;</button>
         </div>
         <form hx-post="/api/profiles" hx-target="#profiles-list" hx-swap="outerHTML">
-            {{ if .ID }}<input type="hidden" name="id" value="{{ .ID }}">{{ end }}
+            {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
             <div class="form-group">
                 <label for="name">Name</label>
-                <input type="text" id="name" name="name" value="{{ .Name }}" required>
+                <input type="text" id="name" name="name" value="{{ Name }}" required>
             </div>
             <div class="form-group">
                 <label for="description">Description</label>
-                <input type="text" id="description" value="{{ .Description }}">
+                <input type="text" id="description" value="{{ Description }}">
             </div>
             <div class="form-group">
                 <label class="checkbox-label">
-                    <input type="checkbox" name="prefer_lossless" {{ if .PreferLossless }}checked{{ end }}>
+                    <input type="checkbox" name="prefer_lossless" {% if PreferLossless %}checked{% endif %}>
                     <span>Prefer Lossless</span>
                 </label>
             </div>
             <div class="form-group">
                 <label for="allowed_formats">Allowed Formats (comma-separated)</label>
-                <input type="text" id="allowed_formats" name="allowed_formats" value="{{ .AllowedFormats }}" placeholder="FLAC,ALAC,WAV">
+                <input type="text" id="allowed_formats" name="allowed_formats" value="{{ AllowedFormats }}" placeholder="FLAC,ALAC,WAV">
             </div>
             <div class="form-group">
                 <label for="min_bitrate">Minimum Bitrate (kbps)</label>
-                <input type="number" id="min_bitrate" name="min_bitrate" value="{{ .MinBitrate }}">
+                <input type="number" id="min_bitrate" name="min_bitrate" value="{{ MinBitrate }}">
             </div>
             <div class="form-group">
                 <label class="checkbox-label">
-                    <input type="checkbox" name="prefer_scene_releases" {{ if .PreferSceneReleases }}checked{{ end }}>
+                    <input type="checkbox" name="prefer_scene_releases" {% if PreferSceneReleases %}checked{% endif %}>
                     <span>Prefer Scene Releases</span>
                 </label>
             </div>
             <div class="form-group">
                 <label class="checkbox-label">
-                    <input type="checkbox" name="prefer_web_releases" {{ if .PreferWebReleases }}checked{{ end }}>
+                    <input type="checkbox" name="prefer_web_releases" {% if PreferWebReleases %}checked{% endif %}>
                     <span>Prefer Web Releases</span>
                 </label>
             </div>
             <div class="form-group">
                 <label for="cover_art_sources">Cover Art Sources (comma-separated)</label>
-                <input type="text" id="cover_art_sources" name="cover_art_sources" value="{{ if .CoverArtSources }}{{ .CoverArtSources }}{{ else }}source,musicbrainz,discogs{{ end }}" placeholder="source,musicbrainz,discogs">
+                <input type="text" id="cover_art_sources" name="cover_art_sources" value="{% if CoverArtSources %}{{ CoverArtSources }}{% else %}source,musicbrainz,discogs{% endif %}" placeholder="source,musicbrainz,discogs">
                 <small style="color: var(--text-secondary);">Order: source (watchlist URL), musicbrainz, discogs</small>
             </div>
             <div class="form-actions">

@@ -13,9 +13,9 @@
                 <label for="quality_profile_id">Quality Profile</label>
                 <select id="quality_profile_id" name="quality_profile_id">
                     <option value="">Default</option>
-                    {{ range .profiles }}
-                    <option value="{{ .ID }}">{{ .Name }}</option>
-                    {{ end }}
+                    {% for profile in profiles %}
+                    <option value="{{ profile.ID }}">{{ profile.Name }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="form-actions">

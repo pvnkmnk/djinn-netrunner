@@ -7,30 +7,30 @@
     </div>
     
     <div id="libraries-list">
-    {{ range .libraries }}
-    <div class="library-card" id="library-{{ .ID }}">
+    {% for library in libraries %}
+    <div class="library-card" id="library-{{ library.ID }}">
         <div class="library-info">
-            <div class="name">{{ .Name }}</div>
-            <div class="path">{{ .Path }}</div>
+            <div class="name">{{ library.Name }}</div>
+            <div class="path">{{ library.Path }}</div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-post="/api/libraries/{{ .ID }}/scan" hx-target="#console-logs">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/scan" hx-target="#console-logs">
                 Scan
             </button>
-            <button class="btn btn-sm" hx-post="/api/libraries/{{ .ID }}/enrich" hx-target="#console-logs">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/enrich" hx-target="#console-logs">
                 Enrich
             </button>
-            <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+            <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ library.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ .ID }}" hx-target="#library-{{ .ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this library?">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ library.ID }}" hx-target="#library-{{ library.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this library?">
                 Delete
             </button>
         </div>
     </div>
-    {{ else }}
+    {% else %}
     <p class="empty-state">No libraries configured</p>
-    {{ end }}
+    {% endfor %}
     </div>
 </div>
 

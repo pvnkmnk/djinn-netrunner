@@ -7,38 +7,38 @@
     </div>
     
     <div id="profiles-list">
-    {{ range .profiles }}
-    <div class="profile-card" id="profile-{{ .ID }}">
+    {% for profile in profiles %}
+    <div class="profile-card" id="profile-{{ profile.ID }}">
         <div class="profile-info">
             <div class="name">
-                {{ .Name }}
-                {{ if .IsDefault }}<span class="badge">Default</span>{{ end }}
+                {{ profile.Name }}
+                {% if profile.IsDefault %}<span class="badge">Default</span>{% endif %}
             </div>
-            <div class="description">{{ .Description }}</div>
+            <div class="description">{{ profile.Description }}</div>
             <div class="details">
-                <span>Lossless: {{ .PreferLossless }}</span>
-                <span>Formats: {{ .AllowedFormats }}</span>
-                <span>Min Bitrate: {{ .MinBitrate }}</span>
-                <span>Cover Art: {{ if .CoverArtSources }}{{ .CoverArtSources }}{{ else }}source,musicbrainz,discogs{{ end }}</span>
+                <span>Lossless: {{ profile.PreferLossless }}</span>
+                <span>Formats: {{ profile.AllowedFormats }}</span>
+                <span>Min Bitrate: {{ profile.MinBitrate }}</span>
+                <span>Cover Art: {% if profile.CoverArtSources %}{{ profile.CoverArtSources }}{% else %}source,musicbrainz,discogs{% endif %}</span>
             </div>
         </div>
         <div class="actions">
-            {{ if not .IsDefault }}
-            <button class="btn btn-sm" hx-post="/api/profiles/{{ .ID }}/set-default" hx-target="#profiles-list" hx-swap="outerHTML">
+            {% if not profile.IsDefault %}
+            <button class="btn btn-sm" hx-post="/api/profiles/{{ profile.ID }}/set-default" hx-target="#profiles-list" hx-swap="outerHTML">
                 Set Default
             </button>
-            {{ end }}
-            <button class="btn btn-sm" hx-get="/partials/profile-form?id={{ .ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+            {% endif %}
+            <button class="btn btn-sm" hx-get="/partials/profile-form?id={{ profile.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/profiles/{{ .ID }}" hx-target="#profile-{{ .ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this profile?">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/profiles/{{ profile.ID }}" hx-target="#profile-{{ profile.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this profile?">
                 Delete
             </button>
         </div>
     </div>
-    {{ else }}
+    {% else %}
     <p class="empty-state">No profiles configured</p>
-    {{ end }}
+    {% endfor %}
     </div>
 </div>
 

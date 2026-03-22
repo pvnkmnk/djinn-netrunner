@@ -7,31 +7,31 @@
     </div>
     
     <div id="artists-list">
-    {{ range .artists }}
-    <div class="artist-card" id="artist-{{ .ID }}">
+    {% for artist in artists %}
+    <div class="artist-card" id="artist-{{ artist.ID }}">
         <div class="artist-info">
             <div class="name">
-                {{ .Name }}
-                {{ if not .Monitored }}<span class="badge badge-disabled">Paused</span>{{ end }}
+                {{ artist.Name }}
+                {% if not artist.Monitored %}<span class="badge badge-disabled">Paused</span>{% endif %}
             </div>
             <div class="details">
-                <span>MBID: {{ .MusicBrainzID }}</span>
-                <span>Releases: {{ .AcquiredReleases }}/{{ .TotalReleases }}</span>
-                <span>Last Scan: {{ .LastScanDate.Format "Jan 02 15:04" }}</span>
+                <span>MBID: {{ artist.MusicBrainzID }}</span>
+                <span>Releases: {{ artist.AcquiredReleases }}/{{ artist.TotalReleases }}</span>
+                <span>Last Scan: {{ artist.LastScanDate.Format "Jan 02 15:04" }}</span>
             </div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-patch="/api/artists/{{ .ID }}" hx-target="#artist-{{ .ID }}" hx-swap="outerHTML">
-                {{ if .Monitored }}Pause{{ else }}Resume{{ end }}
+            <button class="btn btn-sm" hx-patch="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML">
+                {% if artist.Monitored %}Pause{% else %}Resume{% endif %}
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ .ID }}" hx-target="#artist-{{ .ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML">
                 Remove
             </button>
         </div>
     </div>
-    {{ else }}
+    {% else %}
     <p class="empty-state">No artists being monitored</p>
-    {{ end }}
+    {% endfor %}
     </div>
 </div>
 
