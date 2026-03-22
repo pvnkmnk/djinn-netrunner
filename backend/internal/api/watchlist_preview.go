@@ -35,13 +35,15 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).SendString("watchlist not found")
 	}
 
-	tracks, _, err := h.watchlistService.FetchWatchlistTracks(c.Context(), watchlist)
+	allTracks, _, err := h.watchlistService.FetchWatchlistTracks(c.Context(), watchlist)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString("failed to fetch tracks: " + err.Error())
 	}
 
-	if len(tracks) > previewLimit {
-		tracks = tracks[:previewLimit]
+	total := len(allTracks)
+	tracks := allTracks
+	if total > previewLimit {
+		tracks = allTracks[:previewLimit]
 	}
 
 	var items []PreviewTrack
@@ -56,7 +58,10 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 
 	return c.Render("partials/watchlist-preview", fiber.Map{
 		"Tracks":      items,
+		"TotalCount":  total,
 		"WatchlistID": id,
-		"HasMore":     len(items) >= previewLimit,
+		"HasMore":     len(items) >= previewLimit && total > previewLimit,
+		"SourceType":  watchlist.SourceType,
+		"Remaining":   total - previewLimit,
 	})
 }

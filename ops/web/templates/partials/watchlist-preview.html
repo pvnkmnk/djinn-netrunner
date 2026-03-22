@@ -1,5 +1,10 @@
+<div class="preview-header">
+    <span class="preview-count">{{ len .Tracks }} of {{ .TotalCount }} tracks</span>
+    <span class="badge badge-source badge-{{ .SourceType }}">{{ .SourceType }}</span>
+</div>
 {{ range .Tracks }}
 <div class="track">
+    {{ if .CoverURL }}<span class="track-cover" style="background-image: url({{ .CoverURL }})"></span>{{ end }}
     <span class="track-info">
         <span class="track-title">{{ .Title }}</span>
         <span class="track-artist">{{ .Artist }}</span>
@@ -8,5 +13,50 @@
 </div>
 {{ end }}
 {{ if .HasMore }}
-<div class="more-indicator">+ more tracks — sync to see full list</div>
+<div class="more-indicator">+ {{ .Remaining }} more tracks — sync to see full list</div>
 {{ end }}
+
+<style>
+.preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 0.25rem;
+}
+.preview-count {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+.badge-source {
+    font-size: 0.6rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: capitalize;
+}
+.badge-source.badge-spotify_playlist,
+.badge-source.badge-spotify_liked  { background: #1DB954; color: white; }
+.badge-source.badge-lastfm_loved,
+.badge-source.badge-lastfm_top     { background: #d51007; color: white; }
+.badge-source.badge-rss_feed        { background: #f26522; color: white; }
+.badge-source.badge-discogs_wantlist { background: #1A1A1A; color: white; }
+.badge-source.badge-listenbrainz_listens { background: #6d4c7d; color: white; }
+.badge-source.badge-local_file,
+.badge-source.badge-local_directory { background: #555; color: white; }
+.track { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; }
+.track-cover {
+    width: 20px;
+    height: 20px;
+    background-size: cover;
+    background-position: center;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.more-indicator {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+</style>
