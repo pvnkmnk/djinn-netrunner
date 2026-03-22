@@ -82,18 +82,19 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 	// Compute hash
 	hash, _ := s.metadata.HashFile(path)
 
-	// Extract fingerprint (best-effort — fpcalc may not be installed)
+	// Check if track already exists — only compute expensive fingerprint for new tracks
+	// or tracks that are missing a fingerprint (e.g., added before Phase 8).
 	var fingerprint string
-	fp, _, fpErr := s.metadata.Fingerprint(path)
-	if fpErr == nil {
-		fingerprint = fp
-	}
-
-	// Bolt Optimization: Use a single FirstOrCreate with Assign to handle both Create and Update
-	// in a single database roundtrip, ensuring FileHash is always current and avoiding redundant UPDATEs.
-	var track database.Track
-	err = s.db.Where("path = ?", path).
-		Assign(database.Track{
+	var existing database.Track
+	err = s.db.Where("path = ?", path).First(&existing).Error
+	if err != nil {
+		// Track not found — new, fingerprint and create
+		fp, _, fpErr := s.metadata.Fingerprint(path)
+		if fpErr == nil {
+			fingerprint = fp
+		}
+		var track database.Track
+		track = database.Track{
 			LibraryID:   libraryID,
 			Title:       meta.Title,
 			Artist:      meta.Artist,
@@ -102,12 +103,34 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 			FileSize:    meta.FileSize,
 			FileHash:    hash,
 			Fingerprint: fingerprint,
-		}).
-		FirstOrCreate(&track).Error
-
-	if err != nil {
-		log.Printf("[SCANNER] Error saving track | library_id=%s | path=%s | error=%v", libraryID, path, err)
+		}
+		if err := s.db.Create(&track).Error; err != nil {
+			log.Printf("[SCANNER] Error saving track | library_id=%s | path=%s | error=%v", libraryID, path, err)
+		}
+		return
 	}
+
+	// Track exists — preserve fingerprint if already set; only recompute if missing
+	if existing.Fingerprint != "" {
+		fingerprint = existing.Fingerprint
+	} else {
+		// Track was indexed before Phase 8 introduced fingerprinting — backfill it
+		fp, _, fpErr := s.metadata.Fingerprint(path)
+		if fpErr == nil {
+			fingerprint = fp
+		}
+	}
+
+	// Update metadata fields on existing track
+	s.db.Model(&existing).Where("id = ?", existing.ID).Assign(database.Track{
+		Title:       meta.Title,
+		Artist:      meta.Artist,
+		Album:       meta.Album,
+		Format:      meta.Format,
+		FileSize:    meta.FileSize,
+		FileHash:    hash,
+		Fingerprint: fingerprint,
+	}).Save(&existing)
 }
 
 func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) error {

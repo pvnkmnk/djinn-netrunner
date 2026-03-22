@@ -115,6 +115,16 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 		}
 		library.Path = *input.Path
 	}
+	// Validate QuotaAlertAt: must be between 1 and 100
+	if input.QuotaAlertAt != nil && (*input.QuotaAlertAt < 1 || *input.QuotaAlertAt > 100) {
+		return c.Status(400).JSON(fiber.Map{"error": "quota_alert_at must be between 1 and 100"})
+	}
+
+	// Validate MaxSizeBytes: must be non-negative (0 means "no quota")
+	if input.MaxSizeBytes != nil && *input.MaxSizeBytes < 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "max_size_bytes must be non-negative"})
+	}
+
 	if input.MaxSizeBytes != nil {
 		library.MaxSizeBytes = input.MaxSizeBytes
 	}

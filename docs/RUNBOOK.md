@@ -118,4 +118,7 @@ curl -X POST $NOTIFICATION_WEBHOOK_URL \
 ```
 
 ## Spotify access
-Spotify integration uses client credentials (M2M) OAuth — no user token refresh is needed. The service re-authenticates on each request when credentials are configured.
+Spotify integration uses Client Credentials OAuth with a background token refresh mechanism.
+Tokens are cached in the database and refreshed automatically before expiry. No user
+interaction is required. The `SpotifyAuthHandler` manages token lifecycle — operators only
+need to ensure `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set in the environment.

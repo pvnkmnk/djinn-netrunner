@@ -5,7 +5,7 @@ This document defines the runtime contracts and invariants for NETRUNNER, especi
 ## Services
 - **caddy**: Edge proxy and TLS termination.
 - **SQLite (WAL)**: Primary system-of-record for jobs, logs, metadata, and concurrency primitives (PostgreSQL also supported).
-- **ops-web (Go/Fiber)**: Management API + server-rendered templates + HTMX UI; WebSockets for console streaming (fanout filtered by job_id subscription, Phase 7).
+- **ops-web (Go/Fiber)**: Management API + server-rendered templates + HTMX UI; WebSockets for console streaming (fanout filtered by job_id subscription, Phase 8).
 - **ops-worker (Go)**: Background job orchestrator with native goroutine concurrency, heartbeats, and reaper.
 - **slskd**: Acquisition daemon with bounded download slots.
 - **gonic**: Streaming server (Subsonic-compatible).
@@ -16,11 +16,17 @@ The worker orchestrates multiple specialized services:
 - **ArtistTrackingService**: Monitors artists for new releases via MusicBrainz.
 - **ReleaseMonitorService**: Periodic background task that checks monitored artists for new releases.
 - **AcquisitionHandler**: Processes acquisition jobs - downloads files via slskd, enriches with metadata.
-- **ScannerService**: Scans and indexes local music library, extracts metadata.
+- **ScannerService**: Scans and indexes local music library, extracts metadata and AcoustID fingerprints.
 - **MusicBrainzService**: Client for MusicBrainz API with caching.
-- **AcoustIDService**: Audio fingerprinting lookup for metadata enrichment.
+- **AcoustIDService**: Audio fingerprinting lookup (Chromaprint/fpcalc) for metadata enrichment.
 - **CacheService**: Persistent shadow cache for external API responses (MusicBrainz/Spotify/AcoustID).
-- **NotificationService**: Webhook dispatcher for job completion events
+- **NotificationService**: Webhook dispatcher for job completion events and quota warnings.
+- **DiskQuotaService**: Calculates library disk usage and checks quota thresholds (Phase 8).
+- **SlskdService**: Client wrapper for the slskd daemon (Soulseek download API).
+- **SpotifyService**: Spotify client with background token refresh and caching.
+- **DiscogsService**: Discogs API client for cover art, genre, and year enrichment.
+- **GonicClient**: Subsonic API client for library streaming.
+- **ProfileService**: Manages quality profile CRUD and defaults.
 
 ## Core Data Model
 ### Tables (minimum)
@@ -69,11 +75,14 @@ The worker orchestrates multiple specialized services:
 5. **Authoritative Heartbeats**: Running jobs update `heartbeat_at` frequently; the reaper uses this to detect and recover from worker crashes.
 
 ## Agentic Interface (MCP)
-NetRunner implements an embedded **Model Context Protocol (MCP)** server. This allows AI agents to:
+NetRunner implements an embedded **Model Context Protocol (MCP)** server at `backend/cmd/agent`. This allows AI agents to:
 - **Probe System**: Check connectivity and resource health (`probe_system`).
 - **Manage Watchlists**: Add, list, or trigger sync on automated discovery sources (`add_watchlist`, `list_watchlists`, `sync_watchlist`).
 - **Monitor Pipeline**: View real-time job logs and statuses (`get_job`, `get_job_logs`).
 - **Search Library**: Query the combined Gonic and local indices (`search_library`).
+- **Manage Libraries**: Scan or add library paths (`scan_library`, `add_library`).
+- **Manage Artists**: List monitored artists (`list_monitored_artists`).
+- **Manage Jobs**: Cancel or retry jobs (`cancel_job`, `retry_job`).
 - **Query System**: Get stats summaries, quality profiles, and configured libraries (`get_stats`, `list_quality_profiles`, `list_libraries`).
 
 ## DB Connection Model

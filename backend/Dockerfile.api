@@ -5,12 +5,12 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache gcc musl-dev
 
-# Copy go.mod and go.sum
-COPY go.mod go.sum ./
+# Copy go.mod and go.sum from backend/
+COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
-# Copy source code
-COPY . .
+# Copy source code from backend/
+COPY backend/ . .
 
 # Build the application
 RUN go build -o netrunner-api ./cmd/server/main.go
@@ -23,16 +23,19 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/netrunner-api .
 
-# Copy wait-for-it or similar if needed, but we'll assume DB is ready or app retries
+# Copy static assets and templates baked into the image
+COPY --from=builder /app/ops/web/static /app/static
+COPY --from=builder /app/ops/web/templates /app/templates
+
 # Expose port
 EXPOSE 8000
 
 # Set environment variables
 ENV PORT=8000
 ENV STATIC_FILES_PATH=/app/static
+ENV TEMPLATES_PATH=/app/templates
 
-# Note: We need to mount the templates and static files in docker-compose
-# OR copy them here. Since we are in backend/, we'd need to go up.
-# For a production build, it's better to copy them.
+# Static/template volumes can still override these paths at runtime if needed.
+# If overriding, set STATIC_FILES_PATH and TEMPLATES_PATH to the mount points.
 
 CMD ["./netrunner-api"]

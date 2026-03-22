@@ -21,8 +21,8 @@ services:
 
   ops-web:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.api
+      context: .
+      dockerfile: backend/Dockerfile.api
     container_name: netrunner-api
     environment:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops
@@ -47,8 +47,8 @@ services:
 
   ops-worker:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.worker
+      context: .
+      dockerfile: backend/Dockerfile.worker
     container_name: netrunner-worker
     environment:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops

@@ -64,6 +64,18 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 	if input.Name == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
 	}
+	if input.AllowedFormats != "" {
+		// Basic sanity: comma-separated format names should not be empty tokens
+		if len(input.AllowedFormats) < 2 {
+			return c.Status(400).JSON(fiber.Map{"error": "allowed_formats is invalid"})
+		}
+	}
+	if input.CoverArtSources != "" {
+		// Basic sanity: comma-separated source names should not be empty tokens
+		if len(input.CoverArtSources) < 2 {
+			return c.Status(400).JSON(fiber.Map{"error": "cover_art_sources is invalid"})
+		}
+	}
 
 	// If setting as default, use transaction to ensure atomicity
 	if input.IsDefault {
@@ -168,6 +180,12 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 			return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
 		}
 		profile.Name = *input.Name
+	}
+	if input.AllowedFormats != nil && *input.AllowedFormats != "" && len(*input.AllowedFormats) < 2 {
+		return c.Status(400).JSON(fiber.Map{"error": "allowed_formats is invalid"})
+	}
+	if input.CoverArtSources != nil && *input.CoverArtSources != "" && len(*input.CoverArtSources) < 2 {
+		return c.Status(400).JSON(fiber.Map{"error": "cover_art_sources is invalid"})
 	}
 	if input.Description != nil {
 		profile.Description = *input.Description

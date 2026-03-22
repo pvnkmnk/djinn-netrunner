@@ -76,9 +76,9 @@ func (s *DiskQuotaService) GetLibraryUsage(lib database.Library) (*LibraryUsage,
 // CheckQuotaAlert checks if a library has exceeded its alert threshold.
 // Returns the LibraryUsage if over threshold, or nil otherwise.
 func (s *DiskQuotaService) CheckQuotaAlert(lib database.Library) (*LibraryUsage, error) {
-	if lib.QuotaAlertAt == nil {
-		defaultThreshold := 80
-		lib.QuotaAlertAt = &defaultThreshold
+	threshold := 80
+	if lib.QuotaAlertAt != nil {
+		threshold = *lib.QuotaAlertAt
 	}
 
 	usage, err := s.GetLibraryUsage(lib)
@@ -86,7 +86,7 @@ func (s *DiskQuotaService) CheckQuotaAlert(lib database.Library) (*LibraryUsage,
 		return nil, err
 	}
 
-	if usage.LimitBytes > 0 && usage.UsedPct >= *lib.QuotaAlertAt {
+	if usage.LimitBytes > 0 && usage.UsedPct >= threshold {
 		return usage, nil
 	}
 	return nil, nil
