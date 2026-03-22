@@ -53,6 +53,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		PreferBitrate       *int   `json:"prefer_bitrate"`
 		PreferSceneReleases bool   `json:"prefer_scene_releases"`
 		PreferWebReleases   bool   `json:"prefer_web_releases"`
+		CoverArtSources     string `json:"cover_art_sources"`
 		IsDefault           bool   `json:"is_default"`
 	}
 
@@ -83,6 +84,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 				PreferBitrate:       input.PreferBitrate,
 				PreferSceneReleases: input.PreferSceneReleases,
 				PreferWebReleases:   input.PreferWebReleases,
+				CoverArtSources:     input.CoverArtSources,
 				IsDefault:           input.IsDefault,
 			}
 
@@ -104,6 +106,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		PreferBitrate:       input.PreferBitrate,
 		PreferSceneReleases: input.PreferSceneReleases,
 		PreferWebReleases:   input.PreferWebReleases,
+		CoverArtSources:     input.CoverArtSources,
 		IsDefault:           input.IsDefault,
 	}
 
@@ -138,6 +141,7 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		PreferBitrate       *int    `json:"prefer_bitrate"`
 		PreferSceneReleases *bool   `json:"prefer_scene_releases"`
 		PreferWebReleases   *bool   `json:"prefer_web_releases"`
+		CoverArtSources     *string `json:"cover_art_sources"`
 		IsDefault           *bool   `json:"is_default"`
 	}
 
@@ -185,6 +189,9 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 	}
 	if input.PreferWebReleases != nil {
 		profile.PreferWebReleases = *input.PreferWebReleases
+	}
+	if input.CoverArtSources != nil {
+		profile.CoverArtSources = *input.CoverArtSources
 	}
 	if input.IsDefault != nil {
 		profile.IsDefault = *input.IsDefault
@@ -259,5 +266,6 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		"MinBitrate":          profile.MinBitrate,
 		"PreferSceneReleases": profile.PreferSceneReleases,
 		"PreferWebReleases":   profile.PreferWebReleases,
+		"CoverArtSources":     profile.CoverArtSources,
 	})
 }

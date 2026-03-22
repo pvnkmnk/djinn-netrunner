@@ -333,100 +333,158 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 	h.Log(jobID, "OK", "Download completed", &itemID)
 
 	// 4. Import
-	return h.importFile(ctx, jobID, itemID, download.Path, item)
+	return h.importFile(ctx, jobID, itemID, download.Path, item, parseCoverArtSources(profile.CoverArtSources))
 }
 
-// getCoverArtWithFallback attempts to fetch cover art from multiple sources
-func (h *AcquisitionHandler) getCoverArtWithFallback(ctx context.Context, item *database.JobItem, artist, title, album string) ([]byte, error) {
-	// 1. Try the provided URL first
-	if item.CoverArtURL != "" {
-		resp, err := http.Get(item.CoverArtURL)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			data, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if err == nil && len(data) > 0 {
-				return data, nil
-			}
-		}
-		if resp != nil {
-			resp.Body.Close()
+// Default cover art source priority order
+var defaultCoverArtSources = []string{"source", "musicbrainz", "discogs"}
+
+// parseCoverArtSources splits a comma-separated CoverArtSources string into a slice.
+// Returns nil (uses default) if the input is empty or invalid.
+func parseCoverArtSources(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	sources := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p != "" {
+			sources = append(sources, p)
 		}
 	}
+	if len(sources) == 0 {
+		return nil
+	}
+	return sources
+}
 
-	// 2. Try MusicBrainz release search
-	if h.mb != nil && (artist != "" || album != "") {
-		queryArtist := artist
-		if queryArtist == "" && item.Artist != "" {
-			queryArtist = item.Artist
-		}
-		queryAlbum := album
-		if queryAlbum == "" && item.Album != "" {
-			queryAlbum = item.Album
-		}
-
-		if queryArtist != "" || queryAlbum != "" {
-			// Try GetReleaseByArtistTitle which searches by artist and album
-			release, err := h.mb.GetReleaseByArtistTitle(queryArtist, queryAlbum)
-			if err == nil && release != nil {
-				// Look for front cover in images
-				for _, img := range release.Images {
-					if img.Front {
-						resp, err := http.Get(img.Image)
-						if err == nil && resp.StatusCode == http.StatusOK {
-							data, err := io.ReadAll(resp.Body)
-							resp.Body.Close()
-							if err == nil && len(data) > 0 {
-								h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", img.Image), &item.ID)
-								return data, nil
-							}
-						}
-						if resp != nil {
-							resp.Body.Close()
-						}
-					}
-				}
-				// Fall back to first image
-				if len(release.Images) > 0 {
-					resp, err := http.Get(release.Images[0].Image)
-					if err == nil && resp.StatusCode == http.StatusOK {
-						data, err := io.ReadAll(resp.Body)
-						resp.Body.Close()
-						if err == nil && len(data) > 0 {
-							h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", release.Images[0].Image), &item.ID)
-							return data, nil
-						}
-					}
-					if resp != nil {
-						resp.Body.Close()
-					}
-				}
-			}
-		}
+// getCoverArtWithFallback attempts to fetch cover art from multiple sources in priority order
+func (h *AcquisitionHandler) getCoverArtWithFallback(ctx context.Context, item *database.JobItem, artist, title, album string, sources []string) ([]byte, error) {
+	if sources == nil {
+		sources = defaultCoverArtSources
 	}
 
-	// 3. Try Discogs search
-	if h.discogs != nil && artist != "" && title != "" {
-		coverURL, err := h.discogs.GetCoverArt(artist, title)
-		if err == nil && coverURL != "" {
-			resp, err := http.Get(coverURL)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				data, err := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				if err == nil && len(data) > 0 {
-					h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from Discogs: %s", coverURL), &item.ID)
-					return data, nil
-				}
-			}
-			if resp != nil {
-				resp.Body.Close()
-			}
+	for _, source := range sources {
+		var artData []byte
+		var err error
+
+		switch source {
+		case "source":
+			artData, err = h.fetchCoverFromSourceURL(ctx, item)
+		case "musicbrainz":
+			artData, err = h.fetchCoverFromMusicBrainz(ctx, item, artist, album)
+		case "discogs":
+			artData, err = h.fetchCoverFromDiscogs(ctx, item, artist, title)
 		}
+
+		if err == nil && len(artData) > 0 {
+			return artData, nil
+		}
+		// Try next source
 	}
 
 	return nil, fmt.Errorf("no cover art found from any source")
 }
 
-func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemID uint64, downloadPath string, item database.JobItem) error {
+// fetchCoverFromSourceURL extracts the source URL logic from the original function
+func (h *AcquisitionHandler) fetchCoverFromSourceURL(ctx context.Context, item *database.JobItem) ([]byte, error) {
+	if item.CoverArtURL == "" {
+		return nil, fmt.Errorf("no source URL")
+	}
+	resp, err := http.Get(item.CoverArtURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("source URL returned %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// fetchCoverFromMusicBrainz extracts the MusicBrainz logic
+func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item *database.JobItem, artist, album string) ([]byte, error) {
+	if h.mb == nil || (artist == "" && album == "") {
+		return nil, fmt.Errorf("no artist/album for MB lookup")
+	}
+	queryArtist := artist
+	if queryArtist == "" && item.Artist != "" {
+		queryArtist = item.Artist
+	}
+	queryAlbum := album
+	if queryAlbum == "" && item.Album != "" {
+		queryAlbum = item.Album
+	}
+
+	release, err := h.mb.GetReleaseByArtistTitle(queryArtist, queryAlbum)
+	if err != nil || release == nil {
+		return nil, err
+	}
+	for _, img := range release.Images {
+		if img.Front {
+			resp, err := http.Get(img.Image)
+			if err != nil {
+				continue
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				data, err := io.ReadAll(resp.Body)
+				if err == nil && len(data) > 0 {
+					h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", img.Image), &item.ID)
+					return data, nil
+				}
+			}
+		}
+	}
+	// Fall back to first image
+	if len(release.Images) > 0 {
+		resp, err := http.Get(release.Images[0].Image)
+		if err != nil {
+			return nil, fmt.Errorf("no front cover from MB")
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			data, err := io.ReadAll(resp.Body)
+			if err == nil && len(data) > 0 {
+				h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", release.Images[0].Image), &item.ID)
+				return data, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("no front cover from MB")
+}
+
+// fetchCoverFromDiscogs extracts the Discogs logic
+func (h *AcquisitionHandler) fetchCoverFromDiscogs(ctx context.Context, item *database.JobItem, artist, title string) ([]byte, error) {
+	if h.discogs == nil || artist == "" {
+		return nil, fmt.Errorf("no artist for Discogs lookup")
+	}
+	coverURL, err := h.discogs.GetCoverArt(artist, title)
+	if err != nil || coverURL == "" {
+		return nil, err
+	}
+	resp, err := http.Get(coverURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Discogs returned %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from Discogs: %s", coverURL), &item.ID)
+	return data, nil
+}
+
+func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemID uint64, downloadPath string, item database.JobItem, coverArtSources []string) error {
 	h.Log(jobID, "INFO", "Importing to library", &itemID)
 
 	if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
@@ -534,7 +592,7 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 
 	// Attempt to fetch and embed cover art with fallback chain
 	h.Log(jobID, "INFO", "Fetching cover art...", &itemID)
-	artData, err := h.getCoverArtWithFallback(ctx, &item, metadata.Artist, metadata.Title, metadata.Album)
+	artData, err := h.getCoverArtWithFallback(ctx, &item, metadata.Artist, metadata.Title, metadata.Album, coverArtSources)
 	if err == nil && len(artData) > 0 {
 		h.Log(jobID, "INFO", "Embedding cover art...", &itemID)
 		if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {

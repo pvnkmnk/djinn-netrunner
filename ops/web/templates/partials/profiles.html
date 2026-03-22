@@ -19,6 +19,7 @@
                 <span>Lossless: {{ .PreferLossless }}</span>
                 <span>Formats: {{ .AllowedFormats }}</span>
                 <span>Min Bitrate: {{ .MinBitrate }}</span>
+                <span>Cover Art: {{ if .CoverArtSources }}{{ .CoverArtSources }}{{ else }}source,musicbrainz,discogs{{ end }}</span>
             </div>
         </div>
         <div class="actions">
