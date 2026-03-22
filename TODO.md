@@ -1,8 +1,8 @@
 # NetRunner — Status & Roadmap
 
-## Current Status: Phase 7 Complete ✅
+## Current Status: Phase 8 Complete ✅
 
-All core systems are implemented and merged. Post-Phase 7 hardening tasks are complete.
+All Phase 8 items implemented: integration tests, cover art quality, MCP expansion, disk quota, AcoustID fingerprint storage.
 
 ### Completed
 - [x] Go backend (Fiber + GORM + SQLite/PostgreSQL)
@@ -23,19 +23,17 @@ All core systems are implemented and merged. Post-Phase 7 hardening tasks are co
 - [x] Watchlist preview endpoint with HTML rendering
 - [x] MCP tool expansion: sync_watchlist, get_stats, list_quality_profiles, list_libraries
 - [x] Webhook notification schema documented
+- [x] Integration tests: slskd, DiscogsService, SpotifyProvider, NotificationService, webhooks
+- [x] Cover art quality: configurable source priority, MIME detection, image caching
+- [x] Watchlist preview UI: track counts and source badges
+- [x] MCP tool expansion: scan_library, add_library, list_monitored_artists, cancel_job, retry_job
+- [x] Disk quota monitoring and alerts
+- [x] AcoustID fingerprint storage in Track model
 
 ## Known Gaps & Future Work
 
-### High Priority
-- [ ] Cover art quality: improve fallback sources and embedding reliability
-- [ ] Watchlist preview UI: improve rendering with track counts and source badges
-
 ### Medium Priority
 - [ ] Notifications: add email support (SMTP integration)
-- [ ] MCP agent tools: add scan_library, list_monitored_artists, cancel_job, retry_job
-- [ ] Integration tests: slskd, watchlist providers, notification webhook
 
 ### Low Priority / Nice-to-Have
 - [ ] Multi-user UI: role-based dashboard views
-- [ ] Disk quota monitoring and alerts
-- [ ] Acoustic fingerprinting (AcoustID fpcalc integration)
