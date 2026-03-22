@@ -13,3 +13,7 @@
 ## 2026-03-22 - Batching and Consolidation in Job Handlers
 **Learning:** Identified classic O(N) database operations in `SyncHandler` and `AcquisitionHandler`. Specifically, `JobItem` creation for large watchlists was performing individual inserts in a loop, and job progress polling was using three separate `Count` queries every 5 seconds.
 **Action:** Implemented GORM's `CreateInBatches` for `JobItem` creation and consolidated progress counts into a single query using `COUNT(*) FILTER`. These optimizations significantly reduce database roundtrips during sync and monitoring, especially under load. Verified that `FILTER` clause is supported by the CGO-free SQLite driver.
+
+## 2026-03-24 - Consolidated Dashboard Stats
+**Learning:** Dashboard and stats endpoints often aggregate data from multiple unrelated tables. Performing these as separate `Count` queries leads to linear RTT growth as the UI becomes more complex. SQL subqueries allow fetching multiple independent counts in a single result set row.
+**Action:** Consolidated 6 queries in `GetActivityStats` and 5 queries in `GetSummary` into single `db.Raw` calls with subqueries. This reduces RTT by ~80% for these endpoints, significantly improving dashboard snappiness.
