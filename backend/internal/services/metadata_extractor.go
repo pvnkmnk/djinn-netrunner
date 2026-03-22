@@ -37,8 +37,33 @@ func NewMetadataExtractor() *MetadataExtractor {
 	return &MetadataExtractor{}
 }
 
+// MinimumCoverArtSize is the minimum byte size for a valid cover art image (2KB).
+const MinimumCoverArtSize = 2048
+
+// detectImageMimeType detects the MIME type of image data from magic bytes.
+func detectImageMimeType(data []byte) string {
+	if len(data) < 4 {
+		return "image/jpeg" // safe default
+	}
+	switch {
+	case data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF:
+		return "image/jpeg"
+	case data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47:
+		return "image/png"
+	case data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46:
+		return "image/gif"
+	case len(data) >= 12 && string(data[8:12]) == "WEBP": // WEBP: RIFF....WEBP at offset 8
+		return "image/webp"
+	default:
+		return "image/jpeg" // fallback for unknown formats
+	}
+}
+
 // EmbedCoverArt embeds image data into the audio file
 func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error {
+	if len(artData) < MinimumCoverArtSize {
+		return fmt.Errorf("cover art image too small (%d bytes), likely invalid", len(artData))
+	}
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".mp3":
@@ -78,7 +103,7 @@ func (e *MetadataExtractor) embedMP3(filePath string, artData []byte) error {
 
 	pic := id3v2.PictureFrame{
 		Encoding:    id3v2.EncodingUTF8,
-		MimeType:    "image/jpeg",
+		MimeType:    detectImageMimeType(artData),
 		PictureType: id3v2.PTFrontCover,
 		Description: "Front Cover",
 		Picture:     artData,
@@ -101,7 +126,7 @@ func (e *MetadataExtractor) embedFLAC(filePath string, artData []byte) error {
 		flacpicture.PictureTypeFrontCover,
 		"Front Cover",
 		artData,
-		"image/jpeg",
+		detectImageMimeType(artData),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create flac picture block: %w", err)

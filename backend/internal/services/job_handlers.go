@@ -172,10 +172,11 @@ type AcquisitionHandler struct {
 	ext     *MetadataExtractor
 	gonic   *GonicClient
 	discogs *DiscogsService
+	cache   *CacheService
 }
 
-func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient, discogs *DiscogsService) *AcquisitionHandler {
-	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, discogs: discogs}
+func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient, discogs *DiscogsService, cache *CacheService) *AcquisitionHandler {
+	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, discogs: discogs, cache: cache}
 }
 
 func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
@@ -359,6 +360,13 @@ func parseCoverArtSources(s string) []string {
 	return sources
 }
 
+const coverArtCacheTTL = 168 * time.Hour // 1 week, same as MusicBrainz cache TTL
+
+// coverArtCacheKey generates a cache key for cover art lookups.
+func coverArtCacheKey(artist, album, source string) string {
+	return fmt.Sprintf("%s:%s:%s", strings.ToLower(artist), strings.ToLower(album), source)
+}
+
 // getCoverArtWithFallback attempts to fetch cover art from multiple sources in priority order
 func (h *AcquisitionHandler) getCoverArtWithFallback(ctx context.Context, item *database.JobItem, artist, title, album string, sources []string) ([]byte, error) {
 	if sources == nil {
@@ -366,6 +374,15 @@ func (h *AcquisitionHandler) getCoverArtWithFallback(ctx context.Context, item *
 	}
 
 	for _, source := range sources {
+		// Check cache first
+		if h.cache != nil {
+			key := coverArtCacheKey(artist, album, source)
+			if data, found, err := h.cache.GetBytes("coverart", key); err == nil && found {
+				h.Log(item.JobID, "DEBUG", fmt.Sprintf("Cover art cache hit for %s", key), &item.ID)
+				return data, nil
+			}
+		}
+
 		var artData []byte
 		var err error
 
@@ -379,6 +396,11 @@ func (h *AcquisitionHandler) getCoverArtWithFallback(ctx context.Context, item *
 		}
 
 		if err == nil && len(artData) > 0 {
+			// Cache the successful result
+			if h.cache != nil {
+				key := coverArtCacheKey(artist, album, source)
+				_ = h.cache.SetBytes("coverart", key, artData, coverArtCacheTTL)
+			}
 			return artData, nil
 		}
 		// Try next source

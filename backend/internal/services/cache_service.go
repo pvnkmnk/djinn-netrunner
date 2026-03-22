@@ -60,6 +60,33 @@ func (s *CacheService) Delete(source, key string) error {
 	return s.db.Where("source = ? AND key = ?", source, key).Delete(&database.MetadataCache{}).Error
 }
 
+// GetBytes retrieves raw bytes from the cache.
+// Returns the bytes and true if found, or nil and false if not found/expired.
+func (s *CacheService) GetBytes(source, key string) ([]byte, bool, error) {
+	var item database.MetadataCache
+	err := s.db.Where("source = ? AND key = ? AND expires_at > ?", source, key, time.Now()).First(&item).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return item.Value, true, nil
+}
+
+// SetBytes stores raw bytes in the cache.
+func (s *CacheService) SetBytes(source, key string, data []byte, ttl time.Duration) error {
+	item := database.MetadataCache{
+		Source:    source,
+		Key:       key,
+		Value:     data,
+		ExpiresAt: time.Now().Add(ttl),
+	}
+	return s.db.Where("source = ? AND key = ?", source, key).
+		Assign(database.MetadataCache{Value: data, ExpiresAt: item.ExpiresAt}).
+		FirstOrCreate(&item).Error
+}
+
 // Cleanup removes expired items
 func (s *CacheService) Cleanup() error {
 	return s.db.Where("expires_at < ?", time.Now()).Delete(&database.MetadataCache{}).Error
