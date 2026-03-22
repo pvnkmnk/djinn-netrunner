@@ -46,6 +46,10 @@ type Config struct {
 	// Library
 	MusicLibraryPath string
 
+	// Templates
+	TemplatesPath   string
+	StaticFilesPath string
+
 	// Last.fm
 	LastFMApiKey string
 
@@ -96,6 +100,9 @@ func Load(filenames ...string) (*Config, error) {
 		GonicPass: getEnv("GONIC_PASS", "admin"),
 
 		MusicLibraryPath: getEnv("MUSIC_LIBRARY", "./music_library"),
+
+		TemplatesPath:   getEnv("TEMPLATES_PATH", "./ops/web/templates"),
+		StaticFilesPath: getEnv("STATIC_FILES_PATH", "./ops/web/static"),
 
 		LastFMApiKey:      getEnv("LASTFM_API_KEY", ""),
 		ListenBrainzToken: getEnv("LISTENBRAINZ_TOKEN", ""),

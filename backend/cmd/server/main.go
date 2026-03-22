@@ -33,19 +33,24 @@ func main() {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
 
-	// 3. Seed default quality profiles
+	// 3. Run migrations (creates users, quality_profiles, etc.)
+	if err := database.Migrate(db); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
+	}
+
+	// 4. Seed default quality profiles
 	profileService := services.NewProfileService(db)
 	if _, err := profileService.EnsureDefaultProfile(); err != nil {
 		log.Printf("warning: failed to ensure default profile: %v", err)
 	}
 
-	// 4. Initialize Services
+	// 5. Initialize Services
 	mbService := services.NewMusicBrainzService(cfg)
 	atService := services.NewArtistTrackingService(db, mbService)
 	scanService := services.NewScannerService(db)
 
-	// 4. Initialize Fiber
-	engine := html.New("./ops/web/templates", ".html")
+	// 6. Initialize Fiber
+	engine := html.New(cfg.TemplatesPath, ".html")
 	engine.AddFunc("strftime", func(t time.Time, format string) string {
 		return t.Format("01/02 15:04")
 	})
@@ -57,7 +62,7 @@ func main() {
 
 	app.Use(recover.New())
 	app.Use(logger.New())
-	app.Static("/static", "./ops/web/static")
+	app.Static("/static", cfg.StaticFilesPath)
 
 	// Handlers
 	authHandler := api.NewAuthHandler(db)
