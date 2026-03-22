@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -353,6 +354,101 @@ func main() {
 			out += fmt.Sprintf("- %s: %s (ID: %s)\n", lib.Name, lib.Path, lib.ID.String())
 		}
 		return mcp.NewToolResultText(out), nil
+	})
+
+	// Register scan_library tool
+	s.AddTool(mcp.NewTool("scan_library",
+		mcp.WithDescription("Trigger a library scan job to index local music files"),
+		mcp.WithString("library_id", mcp.Description("The UUID of the library to scan"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		libIDStr := mcp.ParseString(request, "library_id", "")
+		if libIDStr == "" {
+			return mcp.NewToolResultError("Missing required 'library_id' argument"), nil
+		}
+		libID, err := uuid.Parse(libIDStr)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid library_id UUID: %v", err)), nil
+		}
+		job, err := agent.ScanLibrary(db, libID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to scan library: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Scan job #%d queued for library %s.", job.ID, libIDStr)), nil
+	})
+
+	// Register add_library tool
+	s.AddTool(mcp.NewTool("add_library",
+		mcp.WithDescription("Register a new music library directory for scanning"),
+		mcp.WithString("name", mcp.Description("Display name for the library"), mcp.Required()),
+		mcp.WithString("path", mcp.Description("Absolute filesystem path to the library directory"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name := mcp.ParseString(request, "name", "")
+		path := mcp.ParseString(request, "path", "")
+		if name == "" || path == "" {
+			return mcp.NewToolResultError("Missing required 'name' or 'path' argument"), nil
+		}
+		lib, err := agent.AddLibrary(db, name, path)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to add library: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Library '%s' registered at %s (ID: %s).", name, path, lib.ID.String())), nil
+	})
+
+	// Register list_monitored_artists tool
+	s.AddTool(mcp.NewTool("list_monitored_artists",
+		mcp.WithDescription("List all monitored artists with their release counts"),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		artists, err := agent.ListMonitoredArtists(db)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list artists: %v", err)), nil
+		}
+		if len(artists) == 0 {
+			return mcp.NewToolResultText("No monitored artists."), nil
+		}
+		out := "Monitored Artists:\n"
+		for _, a := range artists {
+			out += fmt.Sprintf("- %s (MBID: %s): %d acquired / %d total\n",
+				a.Name, a.MusicBrainzID, a.AcquiredReleases, a.TotalReleases)
+		}
+		return mcp.NewToolResultText(out), nil
+	})
+
+	// Register cancel_job tool
+	s.AddTool(mcp.NewTool("cancel_job",
+		mcp.WithDescription("Cancel a queued or running job"),
+		mcp.WithString("job_id", mcp.Description("The numeric ID of the job to cancel"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		idStr := mcp.ParseString(request, "job_id", "")
+		if idStr == "" {
+			return mcp.NewToolResultError("Missing required 'job_id' argument"), nil
+		}
+		jobID, err := strconv.ParseUint(idStr, 10, 64)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid job_id: %v", err)), nil
+		}
+		if err := agent.CancelJob(db, jobID); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Job #%s cancelled.", idStr)), nil
+	})
+
+	// Register retry_job tool
+	s.AddTool(mcp.NewTool("retry_job",
+		mcp.WithDescription("Retry a failed job by resetting its items to queued"),
+		mcp.WithString("job_id", mcp.Description("The numeric ID of the job to retry"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		idStr := mcp.ParseString(request, "job_id", "")
+		if idStr == "" {
+			return mcp.NewToolResultError("Missing required 'job_id' argument"), nil
+		}
+		jobID, err := strconv.ParseUint(idStr, 10, 64)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid job_id: %v", err)), nil
+		}
+		if err := agent.RetryJob(db, jobID); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Job #%s requeued for retry.", idStr)), nil
 	})
 
 	// Run the server on stdio

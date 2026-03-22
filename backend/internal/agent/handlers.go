@@ -182,6 +182,48 @@ func ScanLibrary(db *gorm.DB, libraryID uuid.UUID) (*database.Job, error) {
 	return &job, nil
 }
 
+// ListMonitoredArtists returns all monitored artists with their release counts.
+func ListMonitoredArtists(db *gorm.DB) ([]database.MonitoredArtist, error) {
+	var artists []database.MonitoredArtist
+	err := db.Find(&artists).Error
+	return artists, err
+}
+
+// CancelJob cancels a queued or running job.
+func CancelJob(db *gorm.DB, jobID uint64) error {
+	result := db.Model(&database.Job{}).
+		Where("id = ? AND state IN ?", jobID, []string{"queued", "running"}).
+		Update("state", "cancelled")
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("job %d not found or cannot be cancelled (must be queued or running)", jobID)
+	}
+	// Also cancel any pending job items
+	db.Model(&database.JobItem{}).
+		Where("job_id = ? AND state IN ?", jobID, []string{"queued", "running"}).
+		Update("state", "cancelled")
+	return nil
+}
+
+// RetryJob retries a failed job by resetting its failed items to queued.
+func RetryJob(db *gorm.DB, jobID uint64) error {
+	var job database.Job
+	if err := db.First(&job, "id = ?", jobID).Error; err != nil {
+		return fmt.Errorf("job %d not found", jobID)
+	}
+	if job.State != "failed" {
+		return fmt.Errorf("job %d is not in failed state (current: %s)", jobID, job.State)
+	}
+	// Reset failed items to queued
+	db.Model(&database.JobItem{}).
+		Where("job_id = ? AND state IN ?", jobID, []string{"failed", "completed (duplicate hash)", "completed (already indexed)"}).
+		Update("state", "queued")
+	// Reset job to queued
+	return db.Model(&job).Update("state", "queued").Error
+}
+
 // ListJobs returns recent and active background jobs
 func ListJobs(db *gorm.DB, limit int) ([]database.Job, error) {
 	var jobs []database.Job
