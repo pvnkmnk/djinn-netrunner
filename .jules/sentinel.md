@@ -14,3 +14,8 @@
 **Vulnerability:** Authenticated users could create, update, or delete schedules for watchlists they did not own by guessing the schedule ID or providing a different watchlist ID.
 **Learning:** Even when using session-based authentication, object-level checks must be performed by joining with the "owner" entity (e.g., Watchlist) to verify ownership before modifying resources.
 **Prevention:** Always include ownership criteria in database queries (e.g., `.Joins("JOIN watchlists ...").Where("watchlists.owner_user_id = ?", user.ID)`) for sensitive operations.
+
+## 2025-06-05 - [Broken Object Level Authorization (BOLA) in Artists]
+**Vulnerability:** Authenticated users could list, add, update, or delete monitored artists they did not own by interacting with the `/api/artists` endpoints.
+**Learning:** Artist management was missing `OwnerUserID` enforcement in both the service layer and API handlers. Bypassing the service layer for UI rendering led to inconsistent filtering.
+**Prevention:** Enforce ownership checks at the service layer and ensure all API/Page handlers use these service methods instead of direct database queries.

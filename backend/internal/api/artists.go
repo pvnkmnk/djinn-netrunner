@@ -22,15 +22,24 @@ func NewArtistsHandler(db *gorm.DB, at *services.ArtistTrackingService, mb *serv
 
 // GET /api/artists - List monitored artists
 func (h *ArtistsHandler) List(c *fiber.Ctx) error {
-	artists, err := h.atService.GetMonitoredArtists()
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	artists, err := h.atService.GetMonitoredArtists(&user.ID, user.Role == "admin")
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		log.Printf("[ARTISTS] Error listing: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
 	}
 	return c.JSON(artists)
 }
 
 // POST /api/artists - Add new artist by name
 func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	var payload struct {
 		Name             string `json:"name"`
 		QualityProfileID string `json:"quality_profile_id"`
@@ -79,9 +88,10 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	}
 
 	// Create monitored artist with name and sort name
-	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName)
+	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName, &user.ID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		log.Printf("[ARTISTS] Error adding artist: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
 	}
 
 	return c.Status(201).JSON(monitored)
@@ -89,13 +99,18 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 
 // DELETE /api/artists/:id - Remove monitored artist
 func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
 
-	if err := h.atService.DeleteMonitoredArtist(id); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	if err := h.atService.DeleteMonitoredArtist(id, user.ID, user.Role == "admin"); err != nil {
+		log.Printf("[ARTISTS] Error deleting: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "unauthorized or artist not found"})
 	}
 
 	return c.JSON(fiber.Map{"status": "deleted"})
@@ -103,6 +118,10 @@ func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
 
 // PATCH /api/artists/:id - Update artist monitoring settings
 func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
@@ -117,15 +136,17 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 	}
 
 	if payload.Monitored != nil {
-		if err := h.atService.UpdateArtistStatus(id, *payload.Monitored); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		if err := h.atService.UpdateArtistStatus(id, *payload.Monitored, user.ID, user.Role == "admin"); err != nil {
+			log.Printf("[ARTISTS] Error updating status: %v", err)
+			return c.Status(500).JSON(fiber.Map{"error": "unauthorized or artist not found"})
 		}
 	}
 
 	// Reload the artist and return the card partial
 	var artist database.MonitoredArtist
 	if err := h.db.First(&artist, "id = ?", id).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "error reloading artist"})
+		log.Printf("[ARTISTS] Error reloading artist for UI: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
 	}
 
 	return c.Render("partials/artist-card", fiber.Map{"Artist": artist})
@@ -147,9 +168,13 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderPartial returns artists HTML for HTMX
 func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
-	var artists []database.MonitoredArtist
-	if err := h.db.Find(&artists).Error; err != nil {
-		log.Printf("Error fetching artists: %v", err)
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).SendString("unauthorized")
+	}
+	artists, err := h.atService.GetArtists(&user.ID, user.Role == "admin")
+	if err != nil {
+		log.Printf("[ARTISTS] Error fetching artists for partial: %v", err)
 		return c.Status(500).SendString("Error loading artists")
 	}
 	return c.Render("partials/artists", fiber.Map{"artists": artists})
