@@ -147,7 +147,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
 	watchlistRoutes.Patch("/:id/toggle", watchlist.ToggleWatchlist)
 	watchlistRoutes.Get("/form", watchlist.GetForm)
-	watchlistPreviewHandler := api.NewWatchlistPreviewHandler(watchlistService)
+	watchlistPreviewHandler := api.NewWatchlistPreviewHandler(db, watchlistService)
 	watchlistRoutes.Get("/:id/preview", watchlistPreviewHandler.GetPreview)
 
 	// Quality Profiles

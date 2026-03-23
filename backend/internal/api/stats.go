@@ -292,5 +292,7 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 		return c.SendString("<div class=\"error\">Error loading stats.</div>")
 	}
 
-	return c.Render("partials/stats", stats)
+	return c.Render("partials/stats", fiber.Map{
+		"stats": stats,
+	})
 }

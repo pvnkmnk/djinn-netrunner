@@ -1,19 +1,24 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
+	"gorm.io/gorm"
 )
 
 const previewLimit = 10
 
 type WatchlistPreviewHandler struct {
+	db               *gorm.DB
 	watchlistService *services.WatchlistService
 }
 
-func NewWatchlistPreviewHandler(watchlistService *services.WatchlistService) *WatchlistPreviewHandler {
-	return &WatchlistPreviewHandler{watchlistService: watchlistService}
+func NewWatchlistPreviewHandler(db *gorm.DB, watchlistService *services.WatchlistService) *WatchlistPreviewHandler {
+	return &WatchlistPreviewHandler{db: db, watchlistService: watchlistService}
 }
 
 type PreviewTrack struct {
@@ -24,6 +29,26 @@ type PreviewTrack struct {
 }
 
 func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+
+	isHtmx := c.Get("Htmx-Request") == "true"
+
+	if !hasAuth {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
 	idParam := c.Params("id")
 	id, err := uuid.Parse(idParam)
 	if err != nil {
