@@ -37,7 +37,7 @@ func (h *ArtistsHandler) List(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
-	artists, err := h.atService.GetMonitoredArtists()
+	artists, err := h.atService.GetMonitoredArtists(user.ID, user.Role == "admin")
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -108,7 +108,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	}
 
 	// Create monitored artist with name and sort name
-	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName)
+	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName, &user.ID)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -137,7 +137,7 @@ func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
 
-	if err := h.atService.DeleteMonitoredArtist(id); err != nil {
+	if err := h.atService.DeleteMonitoredArtist(id, user.ID, user.Role == "admin"); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -174,14 +174,19 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 	}
 
 	if payload.Monitored != nil {
-		if err := h.atService.UpdateArtistStatus(id, *payload.Monitored); err != nil {
+		if err := h.atService.UpdateArtistStatus(id, *payload.Monitored, user.ID, user.Role == "admin"); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 	}
 
 	// Reload the artist and return the card partial
 	var artist database.MonitoredArtist
-	if err := h.db.First(&artist, "id = ?", id).Error; err != nil {
+	query := h.db.Model(&database.MonitoredArtist{}).Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := query.First(&artist).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "error reloading artist"})
 	}
 
@@ -245,7 +250,12 @@ func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
 	}
 
 	var artists []database.MonitoredArtist
-	if err := h.db.Find(&artists).Error; err != nil {
+	query := h.db.Model(&database.MonitoredArtist{})
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := query.Find(&artists).Error; err != nil {
 		log.Printf("Error fetching artists: %v", err)
 		return c.SendString("<div class=\"error\">Error loading artists.</div>")
 	}

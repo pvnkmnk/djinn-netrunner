@@ -14,3 +14,8 @@
 **Vulnerability:** Authenticated users could create, update, or delete schedules for watchlists they did not own by guessing the schedule ID or providing a different watchlist ID.
 **Learning:** Even when using session-based authentication, object-level checks must be performed by joining with the "owner" entity (e.g., Watchlist) to verify ownership before modifying resources.
 **Prevention:** Always include ownership criteria in database queries (e.g., `.Joins("JOIN watchlists ...").Where("watchlists.owner_user_id = ?", user.ID)`) for sensitive operations.
+
+## 2025-06-05 - [BOLA in Monitored Artists]
+**Vulnerability:** Monitored artists could be listed, added, updated, or deleted by any authenticated user regardless of ownership.
+**Learning:** Resource-level authorization must be enforced in both the API handlers and the underlying services by passing user identity/role context.
+**Prevention:** Update service signatures to accept authorization context (userID, isAdmin) and ensure all GORM queries for that resource incorporate ownership filters.

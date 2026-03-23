@@ -174,6 +174,8 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) e
 
 func (s *ScannerService) GetMonitoredArtists() ([]database.MonitoredArtist, error) {
 	var artists []database.MonitoredArtist
+	// ScannerService uses this for internal tasks, potentially needing all artists
+	// but keeping it simple for now. If it's used by UI, it should be filtered.
 	err := s.db.Preload("QualityProfile").Find(&artists).Error
 	return artists, err
 }

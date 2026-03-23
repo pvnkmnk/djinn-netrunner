@@ -133,9 +133,9 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 	// Auth check
 	sessionID := c.Cookies("session_id")
+	var user database.User
 	hasAuth := false
 	if sessionID != "" {
-		var user database.User
 		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
 			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
 			First(&user).Error
@@ -146,7 +146,12 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 	}
 
 	var artists []database.MonitoredArtist
-	if err := h.db.Order("name").Find(&artists).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := query.Find(&artists).Error; err != nil {
 		log.Printf("Error getting artists: %v", err)
 	}
 	return RenderPage(c, "artists", "pages/artists", fiber.Map{"artists": artists})
