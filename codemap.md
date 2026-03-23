@@ -11,7 +11,7 @@ Console-first operations UI for a music acquisition pipeline. Monitors watchlist
 - `docker-compose.yml` — Docker Compose orchestration (server, worker, PostgreSQL, Caddy)
 
 ## Architecture Constraints
-- **Language**: Go 1.25+
+- **Language**: Go 1.22+
 - **Database**: SQLite (CGO-free via `modernc.org/sqlite`) in WAL mode, or PostgreSQL
 - **Frontend**: HTMX + server-rendered Pongo2 templates + vanilla CSS (no SPA)
 - **Concurrency**: Native goroutines, round-robin job dispatch, advisory locking
