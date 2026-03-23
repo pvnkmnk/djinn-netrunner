@@ -3,7 +3,7 @@
 {% block title %}Dashboard - NETRUNNER{% endblock %}
 
 {% block content %}
-{% if not IsAuthenticated %}
+{% if authUserID == "" %}
 <div class="login-overlay">
     <div class="login-card" id="login-card">
         <h2>Welcome to NetRunner</h2>
@@ -71,7 +71,7 @@ document.getElementById('login-form').addEventListener('submit', async function(
             body: JSON.stringify({email, password})
         });
         if (resp.ok) {
-            location.reload();
+            window.location.href = '/';
         } else {
             const data = await resp.json();
             errorDiv.textContent = data.error || 'Login failed';
@@ -103,7 +103,7 @@ document.getElementById('register-form').addEventListener('submit', async functi
                 body: JSON.stringify({email, password})
             });
             if (loginResp.ok) {
-                location.reload();
+                window.location.href = '/';
             }
         } else {
             const data = await resp.json();
@@ -186,16 +186,13 @@ document.getElementById('register-form').addEventListener('submit', async functi
 {% else %}
 <div class="dashboard">
     <section class="stats-region" hx-get="/partials/stats" hx-trigger="every 30s" aria-live="polite" aria-atomic="true">
-        <!-- Stats loaded via HTMX -->
         <div class="stats-loading">Loading stats...</div>
     </section>
     
     <section class="watchlists-region" hx-get="/partials/watchlists" hx-trigger="every 60s" aria-live="polite" aria-atomic="true">
-        <!-- Watchlists loaded via HTMX -->
         <div class="watchlists-loading">Loading watchlists...</div>
     </section>
     
-    <!-- Visually hidden ARIA live region for status announcements -->
     <div id="status-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
     <section class="console-region">
@@ -215,12 +212,10 @@ document.getElementById('register-form').addEventListener('submit', async functi
         </div>
         
         <div id="console-socket" class="console-socket">
-            <!-- WebSocket connection swaps here -->
             <div class="console-placeholder">Select a job to attach</div>
         </div>
         
         <div id="console-logs" class="console-logs" hx-ext="ws" ws-connect="/ws/jobs" aria-live="polite">
-            <!-- Log lines rendered here -->
         </div>
     </section>
 </div>

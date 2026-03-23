@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	SessionCookie    = "session_id"
-	SessionTTL       = 7 * 24 * time.Hour
+	SessionCookie = "session_id"
+	SessionTTL    = 7 * 24 * time.Hour
 )
 
 type AuthHandler struct {
@@ -114,9 +114,10 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		Expires:  expiresAt,
 		HTTPOnly: true,
 		SameSite: "Lax",
+		Path:     "/",
 	})
 
-	return c.JSON(fiber.Map{"status": "ok"})
+	return c.Redirect("/", 302)
 }
 
 // Logout handles user logout

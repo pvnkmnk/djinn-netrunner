@@ -1,12 +1,15 @@
 package api
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
+
+const sessionCookieName = "session_id"
 
 type DashboardHandler struct {
 	db *gorm.DB
@@ -18,15 +21,15 @@ func NewDashboardHandler(db *gorm.DB) *DashboardHandler {
 
 func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	// Try to get user from session (optional auth)
-	var user *database.User
-	sessionID := c.Cookies(SessionCookie)
+	var user database.User
+	var authUserID string
+	sessionID := c.Cookies(sessionCookieName)
 	if sessionID != "" {
-		var dbUser database.User
 		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
 			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&dbUser).Error
+			First(&user).Error
 		if err == nil {
-			user = &dbUser
+			authUserID = strconv.FormatUint(user.ID, 10)
 		}
 	}
 
@@ -52,7 +55,7 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 
 	// Get watchlists (only for authenticated users)
 	var watchlists []database.Watchlist
-	if user != nil {
+	if authUserID != "" {
 		wQuery := h.db.Order("name")
 		if user.Role != "admin" {
 			wQuery = wQuery.Where("owner_user_id = ?", user.ID)
@@ -64,16 +67,12 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	var profiles []database.QualityProfile
 	h.db.Order("name").Find(&profiles)
 
-	// Pass auth status to template
-	isAuthenticated := user != nil
-
 	return c.Render("index", fiber.Map{
-		"stats":           stats,
-		"jobs":            jobs,
-		"watchlists":      watchlists,
-		"profiles":        profiles,
-		"User":            user,
-		"IsAuthenticated": isAuthenticated,
+		"stats":      stats,
+		"jobs":       jobs,
+		"watchlists": watchlists,
+		"profiles":   profiles,
+		"User":       user,
+		"authUserID": authUserID,
 	})
-
 }

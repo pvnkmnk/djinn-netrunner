@@ -20,8 +20,8 @@ services:
     image: slskd/slskd:latest
     container_name: netrunner-slskd
     environment:
-      SLSKD_SLSK_USERNAME: ${SLSKD_SLSK_USERNAME}
-      SLSKD_SLSK_PASSWORD: ${SLSKD_SLSK_PASSWORD}
+      SLSKD_SLSK_USERNAME: ${SLSKD_USERNAME}
+      SLSKD_SLSK_PASSWORD: ${SLSKD_PASSWORD}
       SLSKD_REMOTE_CONFIGURATION: "true"
     volumes:
       - netrunner-slskd-data:/app
