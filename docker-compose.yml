@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,8 +7,7 @@ services:
       POSTGRES_USER: musicops
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./ops/db/init:/docker-entrypoint-initdb.d
+      - netrunner-postgres-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -19,64 +16,16 @@ services:
       timeout: 5s
       retries: 5
 
-  ops-web:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile.api
-    container_name: netrunner-api
-    environment:
-      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
-      SLSKD_URL: http://slskd:5030
-      SLSKD_API_KEY: ${SLSKD_API_KEY}
-      GONIC_URL: http://gonic:4747
-      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
-      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
-      STATIC_FILES_PATH: /app/static
-      TEMPLATES_PATH: /app/templates
-    volumes:
-      - ./ops/web/static:/app/static:ro
-      - ./ops/web/templates:/app/templates:ro
-      - download-staging:/downloads
-      - music-library:/music
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  ops-worker:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile.worker
-    container_name: netrunner-worker
-    environment:
-      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
-      SLSKD_URL: http://slskd:5030
-      SLSKD_API_KEY: ${SLSKD_API_KEY}
-      DOWNLOAD_STAGING: /downloads
-      MUSIC_LIBRARY: /music
-      WORKER_ID: ${HOSTNAME:-worker-1}
-      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
-      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
-    volumes:
-      - download-staging:/downloads
-      - music-library:/music
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   slskd:
     image: slskd/slskd:latest
     container_name: netrunner-slskd
     environment:
-      SLSKD_SLSK_USERNAME: ${SLSKD_USERNAME}
-      SLSKD_SLSK_PASSWORD: ${SLSKD_PASSWORD}
+      SLSKD_SLSK_USERNAME: ${SLSKD_SLSK_USERNAME}
+      SLSKD_SLSK_PASSWORD: ${SLSKD_SLSK_PASSWORD}
       SLSKD_REMOTE_CONFIGURATION: "true"
     volumes:
-      - slskd-data:/app
-      - download-staging:/downloads
+      - netrunner-slskd-data:/app
+      - netrunner-downloads:/downloads
     ports:
       - "5030:5030"
       - "50300:50300"
@@ -91,10 +40,10 @@ services:
       GONIC_PODCAST_PATH: /podcasts
       GONIC_CACHE_PATH: /cache
     volumes:
-      - gonic-data:/data
-      - gonic-cache:/cache
-      - music-library:/music:ro
-      - podcasts:/podcasts
+      - netrunner-gonic-data:/data
+      - netrunner-gonic-cache:/cache
+      - netrunner-music:/music:ro
+      - netrunner-podcasts:/podcasts
     ports:
       - "4747:4747"
     restart: unless-stopped
@@ -102,28 +51,62 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: netrunner-caddy
-    environment:
-      DOMAIN: ${DOMAIN:-localhost}
     volumes:
-      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-      - caddy-config:/config
+      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - netrunner-caddy-data:/data
+      - netrunner-caddy-config:/config
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     depends_on:
-      - ops-web
+      - netrunner
       - gonic
     restart: unless-stopped
 
+  netrunner:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: netrunner
+    environment:
+      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
+      SLSKD_URL: http://netrunner-slskd:5030
+      SLSKD_API_KEY: ${SLSKD_API_KEY}
+      GONIC_URL: http://netrunner-gonic:4747
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      PORT: "8080"
+      STATIC_FILES_PATH: /app/static
+      TEMPLATES_PATH: /app/templates
+      DOWNLOAD_STAGING: /app/downloads
+      MUSIC_LIBRARY: /app/music
+      WORKER_ID: ${HOSTNAME:-netrunner-1}
+    volumes:
+      - netrunner-config:/app/config
+      - netrunner-logs:/app/logs
+      - netrunner-downloads:/app/downloads
+      - netrunner-music:/app/music
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      slskd:
+        condition: service_started
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
-  postgres-data:
-  slskd-data:
-  gonic-data:
-  gonic-cache:
-  download-staging:
-  music-library:
-  podcasts:
-  caddy-data:
-  caddy-config:
+  netrunner-postgres-data:
+  netrunner-slskd-data:
+  netrunner-gonic-data:
+  netrunner-gonic-cache:
+  netrunner-caddy-data:
+  netrunner-caddy-config:
+  netrunner-config:
+  netrunner-logs:
+  netrunner-downloads:
+  netrunner-music:
+  netrunner-podcasts:
