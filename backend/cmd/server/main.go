@@ -115,8 +115,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 	authRoutes.Get("/spotify/login", auth.AuthMiddleware, spotifyAuth.Login)
 	authRoutes.Get("/spotify/callback", auth.AuthMiddleware, spotifyAuth.Callback)
 
-	// UI routes (protected)
-	app.Get("/", auth.AuthMiddleware, dash.RenderIndex)
+	// UI routes (public - handles both auth and unauth)
+	app.Get("/", dash.RenderIndex)
 
 	// Page routes
 	app.Get("/watchlists", auth.AuthMiddleware, watchlist.WatchlistsPage)
