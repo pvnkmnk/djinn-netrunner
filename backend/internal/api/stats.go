@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"strconv"
 	"time"
 
@@ -252,4 +253,46 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 	h.db.Model(&database.Job{}).Where("requested_at > ?", since24h).Count(&summary.Activity.RecentJobs24h)
 
 	return c.JSON(summary)
+}
+
+// RenderStatsPartial returns stats HTML for HTMX
+func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+
+	isHtmx := c.Get("Htmx-Request") == "true"
+
+	if !hasAuth {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
+	var stats StatsData
+
+	since := time.Now().Add(-24 * time.Hour)
+
+	// Use conditional aggregation for efficient single-query stats
+	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since).
+		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
+			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
+			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
+			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
+		Scan(&stats).Error; err != nil {
+		log.Printf("Error fetching stats: %v", err)
+		return c.SendString("<div class=\"error\">Error loading stats.</div>")
+	}
+
+	return c.Render("partials/stats", fiber.Map{
+		"stats": stats,
+	})
 }

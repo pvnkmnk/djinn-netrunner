@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -21,10 +22,20 @@ func NewSchedulesHandler(db *gorm.DB) *SchedulesHandler {
 
 // GET /api/schedules - List all schedules
 func (h *SchedulesHandler) List(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
 	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	var schedules []database.Schedule
 	query := h.db.Preload("Watchlist")
 	if user.Role != "admin" {
@@ -38,10 +49,20 @@ func (h *SchedulesHandler) List(c *fiber.Ctx) error {
 
 // POST /api/schedules - Create new schedule
 func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
 	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	var payload struct {
 		WatchlistID string `json:"watchlist_id"`
 		CronExpr    string `json:"cron_expr"`
@@ -98,10 +119,20 @@ func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
 
 // DELETE /api/schedules/:id - Delete schedule
 func (h *SchedulesHandler) Delete(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
 	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id format"})
@@ -128,10 +159,20 @@ func (h *SchedulesHandler) Delete(c *fiber.Ctx) error {
 
 // PATCH /api/schedules/:id - Update schedule
 func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
 	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id format"})
@@ -182,10 +223,20 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 
 // PATCH /api/schedules/:id/toggle - Toggle schedule enabled/disabled
 func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
 	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id format"})
@@ -216,10 +267,26 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 
 // GetForm returns the schedule form for add/edit
 func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Status(401).SendString("unauthorized")
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
 	}
+
+	isHtmx := c.Get("Htmx-Request") == "true"
+
+	if !hasAuth {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
 	id := c.Query("id")
 
 	var sched database.Schedule
@@ -231,7 +298,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 	}
 	if err := wQuery.Find(&watchlists).Error; err != nil {
 		log.Printf("Error fetching watchlists for schedule form: %v", err)
-		return c.Status(500).SendString("Error loading form")
+		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
 
 	if id != "" {
@@ -240,7 +307,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 			sQuery = sQuery.Joins("JOIN watchlists ON watchlists.id = schedules.watchlist_id").Where("watchlists.owner_user_id = ?", user.ID)
 		}
 		if err := sQuery.First(&sched, "schedules.id = ?", id).Error; err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+			return c.SendString("<div class=\"error\">Schedule not found.</div>")
 		}
 	}
 
@@ -256,10 +323,26 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderSchedulesPartial returns schedules HTML for HTMX
 func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Status(401).SendString("unauthorized")
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
 	}
+
+	isHtmx := c.Get("Htmx-Request") == "true"
+
+	if !hasAuth {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
 	var schedules []database.Schedule
 	query := h.db.Preload("Watchlist").Order("schedules.created_at desc")
 	if user.Role != "admin" {

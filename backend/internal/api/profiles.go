@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -17,6 +19,20 @@ func NewProfileHandler(db *gorm.DB) *ProfileHandler {
 
 // List returns all quality profiles
 func (h *ProfileHandler) List(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	var profiles []database.QualityProfile
 	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -26,6 +42,20 @@ func (h *ProfileHandler) List(c *fiber.Ctx) error {
 
 // Get returns a single profile by ID
 func (h *ProfileHandler) Get(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid profile ID"})
@@ -44,6 +74,20 @@ func (h *ProfileHandler) Get(c *fiber.Ctx) error {
 
 // Create creates a new quality profile
 func (h *ProfileHandler) Create(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	var input struct {
 		Name                string `json:"name"`
 		Description         string `json:"description"`
@@ -131,6 +175,20 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 
 // Update updates an existing profile
 func (h *ProfileHandler) Update(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid profile ID"})
@@ -224,6 +282,20 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 
 // Delete deletes a profile
 func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid profile ID"})
@@ -262,16 +334,36 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 
 // GetForm returns the profile form for add/edit
 func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+
+	isHtmx := c.Get("Htmx-Request") == "true"
+
+	if !hasAuth {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
 	id := c.Query("id")
 
 	var profile database.QualityProfile
 	if id != "" {
 		uuid, err := uuid.Parse(id)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+			return c.SendString("<div class=\"error\">Invalid ID.</div>")
 		}
 		if err := h.db.First(&profile, "id = ?", uuid).Error; err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+			return c.SendString("<div class=\"error\">Profile not found.</div>")
 		}
 	}
 
