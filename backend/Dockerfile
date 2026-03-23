@@ -45,8 +45,10 @@ COPY --from=builder /app/entrypoint.sh /entrypoint.sh
 # Make binaries and entrypoint executable
 RUN chmod +x netrunner-server netrunner-worker /entrypoint.sh
 
-# Create necessary directories
-RUN mkdir -p /app/config /app/data /app/logs /app/downloads /app/music
+# Create necessary directories with correct ownership
+RUN mkdir -p /app/config /app/data /app/logs /app/downloads /app/music && \
+    addgroup -S netrunner && adduser -S netrunner -G netrunner && \
+    chown -R netrunner:netrunner /app
 
 # Set environment variables
 ENV STATIC_FILES_PATH=/app/static
@@ -61,6 +63,9 @@ VOLUME /app/config /app/data /app/logs /app/downloads /app/music
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 CMD wget -qO- http://localhost:8080/api/health || exit 1
+
+# Switch to non-root user
+USER netrunner
 
 # Use entrypoint script directly (no tini needed for Go apps)
 ENTRYPOINT ["/entrypoint.sh"]

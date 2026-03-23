@@ -5,9 +5,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
@@ -107,8 +109,22 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 
 	// Auth routes
 	authRoutes := apiPublic.Group("/auth")
-	authRoutes.Post("/register", auth.Register)
-	authRoutes.Post("/login", auth.Login)
+
+	// Rate limiter for auth endpoints (10 requests per minute per IP)
+	authLimiter := limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(429).JSON(fiber.Map{"error": "too many requests, please try again later"})
+		},
+	})
+
+	// Apply rate limiter to sensitive auth endpoints
+	authRoutes.Post("/register", authLimiter, auth.Register)
+	authRoutes.Post("/login", authLimiter, auth.Login)
 	authRoutes.Post("/logout", auth.Logout)
 
 	// Spotify Auth (OAuth Callback is public, but redirected to with user session)

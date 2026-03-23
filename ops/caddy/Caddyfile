@@ -4,7 +4,7 @@
 {$DOMAIN:localhost} {
     # ops-web (dashboard, API, WebSocket console)
     handle /ws/* {
-        reverse_proxy ops-web:8000 {
+        reverse_proxy netrunner:8080 {
             # WebSocket support
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
@@ -13,15 +13,15 @@
     }
 
     handle /static/* {
-        reverse_proxy ops-web:8000
+        reverse_proxy netrunner:8080
     }
 
     handle /api/* {
-        reverse_proxy ops-web:8000
+        reverse_proxy netrunner:8080
     }
 
     handle / {
-        reverse_proxy ops-web:8000
+        reverse_proxy netrunner:8080
     }
 
     # Gonic streaming server (Subsonic API)
