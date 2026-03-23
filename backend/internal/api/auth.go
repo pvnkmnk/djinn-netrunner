@@ -107,13 +107,13 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	now := time.Now()
 	h.db.Model(&user).Update("last_login_at", &now)
 
-	// Set cookie
+	// Set cookie — no SameSite restriction for local dev (works with HTTP localhost)
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookie,
 		Value:    sessionID,
 		Expires:  expiresAt,
 		HTTPOnly: true,
-		SameSite: "Lax",
+		SameSite: "",
 		Path:     "/",
 	})
 

@@ -2,11 +2,9 @@ package api
 
 import (
 	"log"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
-	"gorm.io/gorm"
 )
 
 // StatsData holds the stats for the dashboard
@@ -17,51 +15,51 @@ type StatsData struct {
 	FailedCount    int64
 }
 
-// RenderStatsPartial returns stats HTML for HTMX
-func RenderStatsPartial(c *fiber.Ctx) error {
-	db, ok := c.Locals("db").(*gorm.DB)
-	if !ok || db == nil {
-		log.Printf("Error getting DB from context")
-		return c.SendString("<div class=\"error\">Error loading stats.</div>")
-	}
+// RenderStatsPartial - MOVED to StatsHandler.RenderStatsPartial
+// func RenderStatsPartial(c *fiber.Ctx) error {
+// 	db, ok := c.Locals("db").(*gorm.DB)
+// 	if !ok || db == nil {
+// 		log.Printf("Error getting DB from context")
+// 		return c.SendString("<div class=\"error\">Error loading stats.</div>")
+// 	}
+//
+// 	var stats StatsData
+//
+// 	since := time.Now().Add(-24 * time.Hour)
+//
+// 	// Use conditional aggregation for efficient single-query stats
+// 	if err := db.Model(&database.Job{}).Where("requested_at > ?", since).
+// 		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
+// 			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
+// 			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
+// 			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
+// 		Scan(&stats).Error; err != nil {
+// 		log.Printf("Error fetching stats: %v", err)
+// 		return c.SendString("<div class=\"error\">Error loading stats.</div>")
+// 	}
+//
+// 	return c.Render("partials/stats", fiber.Map{
+// 		"stats": stats,
+// 	})
+// }
 
-	var stats StatsData
-
-	since := time.Now().Add(-24 * time.Hour)
-
-	// Use conditional aggregation for efficient single-query stats
-	if err := db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
-			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
-		Scan(&stats).Error; err != nil {
-		log.Printf("Error fetching stats: %v", err)
-		return c.SendString("<div class=\"error\">Error loading stats.</div>")
-	}
-
-	return c.Render("partials/stats", fiber.Map{
-		"stats": stats,
-	})
-}
-
-// RenderWatchlistsPartial returns watchlists HTML for HTMX
-func RenderWatchlistsPartial(c *fiber.Ctx) error {
-	db, ok := c.Locals("db").(*gorm.DB)
-	if !ok || db == nil {
-		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
-	}
-
-	var watchlists []database.Watchlist
-	if err := db.Order("name").Find(&watchlists).Error; err != nil {
-		log.Printf("Error fetching watchlists: %v", err)
-		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
-	}
-
-	return c.Render("partials/watchlists", fiber.Map{
-		"watchlists": watchlists,
-	})
-}
+// RenderWatchlistsPartial - MOVED to WatchlistHandler.RenderWatchlistsPartial
+// func RenderWatchlistsPartial(c *fiber.Ctx) error {
+// 	db, ok := c.Locals("db").(*gorm.DB)
+// 	if !ok || db == nil {
+// 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
+// 	}
+//
+// 	var watchlists []database.Watchlist
+// 	if err := db.Order("name").Find(&watchlists).Error; err != nil {
+// 		log.Printf("Error fetching watchlists: %v", err)
+// 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
+// 	}
+//
+// 	return c.Render("partials/watchlists", fiber.Map{
+// 		"watchlists": watchlists,
+// 	})
+// }
 
 // RenderJobsPartial returns jobs HTML for HTMX
 func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {

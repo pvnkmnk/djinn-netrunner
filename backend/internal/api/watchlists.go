@@ -2,6 +2,7 @@ package api
 
 import (
 	"log"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -176,5 +177,43 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 		"QualityProfileID": wl.QualityProfileID,
 		"Enabled":          wl.Enabled,
 		"profiles":         profiles,
+	})
+}
+
+// RenderWatchlistsPartial returns watchlists HTML for HTMX
+func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+
+	isHtmx := c.Get("Htmx-Request") == "true"
+
+	if !hasAuth {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
+	var watchlists []database.Watchlist
+	query := h.db.Order("name").Preload("QualityProfile")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := query.Find(&watchlists).Error; err != nil {
+		log.Printf("Error fetching watchlists: %v", err)
+		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
+	}
+
+	return c.Render("partials/watchlists", fiber.Map{
+		"watchlists": watchlists,
 	})
 }
