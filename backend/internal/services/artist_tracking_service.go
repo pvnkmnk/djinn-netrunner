@@ -25,13 +25,20 @@ func NewArtistTrackingService(db *gorm.DB, mb *MusicBrainzService) *ArtistTracki
 }
 
 // AddMonitoredArtist adds a new artist to the system and starts monitoring
-func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID, name, sortName string) (*database.MonitoredArtist, error) {
+func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID, name, sortName string, ownerUserID *uint64) (*database.MonitoredArtist, error) {
 	// 1. Fetch artist details from MusicBrainz to ensure it exists and get metadata
 	// (Simplified for now, in a real implementation we'd parse the MB response properly)
 
-	// Check if artist already exists
+	// Check if artist already exists for this user (or globally if owner is nil)
 	var existing database.MonitoredArtist
-	err := s.db.Where("music_brainz_id = ?", mbid).First(&existing).Error
+	query := s.db.Where("music_brainz_id = ?", mbid)
+	if ownerUserID != nil {
+		query = query.Where("owner_user_id = ?", *ownerUserID)
+	} else {
+		query = query.Where("owner_user_id IS NULL")
+	}
+
+	err := query.First(&existing).Error
 	if err == nil {
 		return nil, errors.New("artist already monitored")
 	}
@@ -52,6 +59,7 @@ func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID
 		MonitorNew:       true,
 		MonitorAlbums:    true,
 		MonitorEPs:       true,
+		OwnerUserID:      ownerUserID,
 	}
 
 	if err := s.db.Create(&artist).Error; err != nil {
@@ -62,20 +70,32 @@ func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID
 }
 
 // GetMonitoredArtists retrieves all artists with monitoring enabled
-func (s *ArtistTrackingService) GetMonitoredArtists() ([]database.MonitoredArtist, error) {
+func (s *ArtistTrackingService) GetMonitoredArtists(userID uint64, isAdmin bool) ([]database.MonitoredArtist, error) {
 	var artists []database.MonitoredArtist
-	err := s.db.Preload("QualityProfile").Find(&artists, "monitored = ?", true).Error
+	query := s.db.Preload("QualityProfile").Where("monitored = ?", true)
+	if !isAdmin {
+		query = query.Where("owner_user_id = ?", userID)
+	}
+	err := query.Find(&artists).Error
 	return artists, err
 }
 
 // UpdateArtistStatus updates the status of an artist
-func (s *ArtistTrackingService) UpdateArtistStatus(id uuid.UUID, monitored bool) error {
-	return s.db.Model(&database.MonitoredArtist{}).Where("id = ?", id).Update("monitored", monitored).Error
+func (s *ArtistTrackingService) UpdateArtistStatus(id uuid.UUID, monitored bool, userID uint64, isAdmin bool) error {
+	query := s.db.Model(&database.MonitoredArtist{}).Where("id = ?", id)
+	if !isAdmin {
+		query = query.Where("owner_user_id = ?", userID)
+	}
+	return query.Update("monitored", monitored).Error
 }
 
 // DeleteMonitoredArtist removes an artist from monitoring
-func (s *ArtistTrackingService) DeleteMonitoredArtist(id uuid.UUID) error {
-	return s.db.Delete(&database.MonitoredArtist{}, "id = ?", id).Error
+func (s *ArtistTrackingService) DeleteMonitoredArtist(id uuid.UUID, userID uint64, isAdmin bool) error {
+	query := s.db.Where("id = ?", id)
+	if !isAdmin {
+		query = query.Where("owner_user_id = ?", userID)
+	}
+	return query.Delete(&database.MonitoredArtist{}).Error
 }
 
 // SyncDiscography fetches the latest releases for an artist and creates acquisition jobs for new releases
