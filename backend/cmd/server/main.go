@@ -56,7 +56,8 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		Views: engine,
+		Views:       engine,
+		ProxyHeader: fiber.HeaderXForwardedFor,
 	})
 
 	app.Use(recover.New())

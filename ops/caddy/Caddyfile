@@ -2,6 +2,11 @@
 # Edge proxy with TLS termination and WebSocket support
 
 {$DOMAIN:localhost} {
+    # Gonic streaming server (Subsonic API)
+    handle /music/* /rest/* {
+        reverse_proxy gonic:4747
+    }
+
     # ops-web (dashboard, API, WebSocket console)
     handle /ws/* {
         reverse_proxy netrunner:8080 {
@@ -12,25 +17,9 @@
         }
     }
 
-    handle /static/* {
+    # All other requests to netrunner
+    handle {
         reverse_proxy netrunner:8080
-    }
-
-    handle /api/* {
-        reverse_proxy netrunner:8080
-    }
-
-    handle / {
-        reverse_proxy netrunner:8080
-    }
-
-    # Gonic streaming server (Subsonic API)
-    handle /music/* {
-        reverse_proxy gonic:4747
-    }
-
-    handle /rest/* {
-        reverse_proxy gonic:4747
     }
 
     # TLS auto (Let's Encrypt for production domains)

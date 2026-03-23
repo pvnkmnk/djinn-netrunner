@@ -13,7 +13,7 @@ func TestWatchlistPreviewHandler_Init(t *testing.T) {
 
 func TestNewWatchlistPreviewHandler(t *testing.T) {
 	// Test that NewWatchlistPreviewHandler returns a non-nil handler
-	handler := NewWatchlistPreviewHandler(nil)
+	handler := NewWatchlistPreviewHandler(nil, nil)
 	assert.NotNil(t, handler, "expected non-nil handler")
 	assert.Nil(t, handler.watchlistService, "expected nil watchlistService")
 }

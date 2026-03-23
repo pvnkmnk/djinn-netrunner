@@ -47,8 +47,8 @@ RUN chmod +x netrunner-server netrunner-worker /entrypoint.sh
 
 # Create necessary directories with correct ownership
 RUN mkdir -p /app/config /app/data /app/logs /app/downloads /app/music && \
-    addgroup -S netrunner && adduser -S netrunner -G netrunner && \
-    chown -R netrunner:netrunner /app
+    addgroup -S -g 1000 netrunner && adduser -S -u 1000 -G netrunner netrunner && \
+    chown -R netrunner:netrunner /app/config /app/data /app/logs /app/downloads /app/music
 
 # Set environment variables
 ENV STATIC_FILES_PATH=/app/static
