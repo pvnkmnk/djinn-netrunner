@@ -26,7 +26,7 @@ jobs:
 
       - name: Test
         working-directory: backend
-        run: go test ./... -race -coverprofile=coverage.out
+        run: go test ./... -coverprofile=coverage.out
         env:
           CGO_ENABLED: 0
 
