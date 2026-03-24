@@ -242,9 +242,6 @@ func (h *IntegrationHarness) ValidateEndToEndSearch(t *testing.T, query string, 
 	
 	t.Logf("Performing end-to-end search for: %s", query)
 	
-	ctx, cancel := context.WithTimeout(context.Background(), searchTimeout)
-	defer cancel()
-	
 	// Perform search with real slskd instance
 	results, err := h.Slskd.Search(query, 30, h.TestQualityProfile)
 	if err != nil {
