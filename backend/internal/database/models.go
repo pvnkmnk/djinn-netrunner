@@ -3,11 +3,50 @@ package database
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+)
+
+// JSONStringArray is a custom type for storing string arrays as JSON in SQLite.
+type JSONStringArray []string
+
+// Value implements the driver.Valuer interface.
+func (a JSONStringArray) Value() (driver.Value, error) {
+	if a == nil {
+		return nil, nil
+	}
+	return json.Marshal(a)
+}
+
+// Scan implements the sql.Scanner interface.
+func (a *JSONStringArray) Scan(value interface{}) error {
+	if value == nil {
+		*a = nil
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New("cannot scan type into JSONStringArray")
+	}
+
+	return json.Unmarshal(bytes, a)
+}
+
+// FilterModeType represents the filter mode for quality profiles.
+type FilterModeType string
+
+const (
+	FilterModePreferred FilterModeType = "preferred"
+	FilterModeRequired  FilterModeType = "required"
 )
 
 // User represents a user in the system
@@ -65,46 +104,6 @@ func (m *QualityProfile) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
-
-// JSONStringArray stores a JSON array of strings in a text column.
-type JSONStringArray []string
-
-func (j JSONStringArray) Value() (driver.Value, error) {
-	if j == nil {
-		return "[]", nil
-	}
-	bytes, err := json.Marshal([]string(j))
-	return string(bytes), err
-}
-
-func (j *JSONStringArray) Scan(value interface{}) error {
-	if value == nil {
-		*j = nil
-		return nil
-	}
-	var s string
-	switch v := value.(type) {
-	case string:
-		s = v
-	case []byte:
-		s = string(v)
-	default:
-		return fmt.Errorf("cannot scan %T into JSONStringArray", value)
-	}
-	if s == "" {
-		*j = nil
-		return nil
-	}
-	return json.Unmarshal([]byte(s), (*[]string)(j))
-}
-
-// FilterModeType controls how strictly quality profile filters are applied.
-type FilterModeType string
-
-const (
-	FilterModePreferred FilterModeType = "preferred"
-	FilterModeRequired  FilterModeType = "required"
-)
 
 // MonitoredArtist represents an artist being tracked
 type MonitoredArtist struct {
@@ -452,3 +451,4 @@ func (MonitoredArtist) TableName() string { return "monitored_artists" }
 func (TrackedRelease) TableName() string  { return "tracked_releases" }
 func (Lock) TableName() string            { return "locks" }
 func (Setting) TableName() string         { return "settings" }
+func (PeerReputation) TableName() string  { return "peer_reputations" }
