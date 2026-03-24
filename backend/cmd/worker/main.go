@@ -48,7 +48,8 @@ type WorkerOrchestrator struct {
 
 	activeJobs map[uint64]*jobContext
 	jobMutex   sync.Mutex
-	running    bool
+	ctx        context.Context
+	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 
 	// Notify
@@ -105,7 +106,9 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 }
 
 func (w *WorkerOrchestrator) Start() {
-	w.running = true
+	// ctx controls the lifecycle of all goroutines spawned by this orchestrator.
+	// Call w.cancel() (via Stop()) to signal graceful shutdown.
+	w.ctx, w.cancel = context.WithCancel(context.Background())
 	log.Printf("[WORKER] Starting worker | worker_id=%s", w.workerID)
 
 	// Start background tasks
@@ -126,7 +129,13 @@ func (w *WorkerOrchestrator) Start() {
 	}
 
 	// Main job loop with round-robin item processing
-	for w.running {
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		default:
+		}
+
 		w.claimAndProcess()
 		w.processActiveJobsRoundRobin()
 
@@ -136,6 +145,8 @@ func (w *WorkerOrchestrator) Start() {
 			// Regular poll
 		case <-w.wakeupChan:
 			log.Printf("[WORKER] Received wakeup notification | worker_id=%s", w.workerID)
+		case <-w.ctx.Done():
+			return
 		}
 	}
 }
@@ -148,11 +159,13 @@ func (w *WorkerOrchestrator) watchlistPollingLoop() {
 	// Run once at startup
 	w.triggerWatchlistSyncs()
 
-	for range ticker.C {
-		if !w.running {
+	for {
+		select {
+		case <-w.ctx.Done():
 			return
+		case <-ticker.C:
+			w.triggerWatchlistSyncs()
 		}
-		w.triggerWatchlistSyncs()
 	}
 }
 
@@ -203,11 +216,9 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 	log.Printf("[NOTIFY] Listening for 'opswakeup' events | worker_id=%s", w.workerID)
 
 	for {
-		if !w.running {
-			return
-		}
-
 		select {
+		case <-w.ctx.Done():
+			return
 		case <-listener.Notify:
 			// Non-blocking send to wakeupChan
 			select {
@@ -222,7 +233,7 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 
 func (w *WorkerOrchestrator) Stop() {
 	log.Printf("[WORKER] Shutting down worker | worker_id=%s", w.workerID)
-	w.running = false
+	w.cancel()
 
 	w.jobMutex.Lock()
 	for id, jc := range w.activeJobs {
@@ -238,11 +249,13 @@ func (w *WorkerOrchestrator) Stop() {
 
 func (w *WorkerOrchestrator) heartbeatLoop() {
 	ticker := time.NewTicker(5 * time.Second)
-	for range ticker.C {
-		if !w.running {
+	for {
+		select {
+		case <-w.ctx.Done():
 			return
+		case <-ticker.C:
+			w.updateHeartbeats()
 		}
-		w.updateHeartbeats()
 	}
 }
 
@@ -266,34 +279,35 @@ func (w *WorkerOrchestrator) checkQuotaAlerts() {
 func (w *WorkerOrchestrator) zombieCleanupLoop() {
 	log.Printf("[WORKER] Starting zombie cleanup loop | worker_id=%s", w.workerID)
 	ticker := time.NewTicker(1 * time.Minute)
-	for range ticker.C {
-		if !w.running {
+	for {
+		select {
+		case <-w.ctx.Done():
 			return
-		}
+		case <-ticker.C:
+			// Find jobs marked as running but with stale heartbeats (> 2 mins)
+			staleThreshold := time.Now().Add(-2 * time.Minute)
+			var zombieJobs []database.Job
+			err := w.db.Where("state = ? AND heartbeat_at < ?", "running", staleThreshold).Find(&zombieJobs).Error
+			if err != nil {
+				log.Printf("[WORKER] Error searching for zombie jobs | worker_id=%s | error=%v", w.workerID, err)
+				continue
+			}
 
-		// Find jobs marked as running but with stale heartbeats (> 2 mins)
-		staleThreshold := time.Now().Add(-2 * time.Minute)
-		var zombieJobs []database.Job
-		err := w.db.Where("state = ? AND heartbeat_at < ?", "running", staleThreshold).Find(&zombieJobs).Error
-		if err != nil {
-			log.Printf("[WORKER] Error searching for zombie jobs | worker_id=%s | error=%v", w.workerID, err)
-			continue
-		}
+			for _, job := range zombieJobs {
+				log.Printf("[WORKER] Resetting zombie job | worker_id=%s | job_id=%d | last_heartbeat=%v", w.workerID, job.ID, job.HeartbeatAt)
 
-		for _, job := range zombieJobs {
-			log.Printf("[WORKER] Resetting zombie job | worker_id=%s | job_id=%d | last_heartbeat=%v", w.workerID, job.ID, job.HeartbeatAt)
+				w.db.Model(&job).Updates(map[string]interface{}{
+					"state":        "queued",
+					"worker_id":    nil,
+					"started_at":   nil,
+					"heartbeat_at": nil,
+				})
 
-			w.db.Model(&job).Updates(map[string]interface{}{
-				"state":        "queued",
-				"worker_id":    nil,
-				"started_at":   nil,
-				"heartbeat_at": nil,
-			})
-
-			// Attempt to release the advisory lock if it was held
-			lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
-			if err == nil {
-				w.lockManager.ReleaseLock(context.Background(), lockKey)
+				// Attempt to release the advisory lock if it was held
+				lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
+				if err == nil {
+					w.lockManager.ReleaseLock(w.ctx, lockKey)
+				}
 			}
 		}
 	}
@@ -319,55 +333,56 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 	log.Printf("[SCHEDULER] Starting scheduler loop | worker_id=%s", w.workerID)
 	ticker := time.NewTicker(30 * time.Second)
 
-	for range ticker.C {
-		if !w.running {
+	for {
+		select {
+		case <-w.ctx.Done():
 			return
-		}
+		case <-ticker.C:
+			var schedules []database.Schedule
+			// Initialize NextRunAt if NULL
+			w.db.Model(&database.Schedule{}).Where("enabled = ? AND next_run_at IS NULL", true).Update("next_run_at", time.Now())
 
-		var schedules []database.Schedule
-		// Initialize NextRunAt if NULL
-		w.db.Model(&database.Schedule{}).Where("enabled = ? AND next_run_at IS NULL", true).Update("next_run_at", time.Now())
-
-		// Find due schedules
-		err := w.db.Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
-		if err != nil {
-			log.Printf("[SCHEDULER] Error fetching schedules | worker_id=%s | error=%v", w.workerID, err)
-			continue
-		}
-
-		for _, s := range schedules {
-			log.Printf("[SCHEDULER] Executing schedule | worker_id=%s | schedule_id=%d | watchlist_id=%s", w.workerID, s.ID, s.WatchlistID)
-
-			// Enqueue sync job
-			job := database.Job{
-				Type:        "sync",
-				State:       "queued",
-				ScopeType:   "watchlist",
-				ScopeID:     s.WatchlistID.String(),
-				RequestedAt: time.Now(),
-				OwnerUserID: s.Watchlist.OwnerUserID,
-				CreatedBy:   "scheduler",
-			}
-
-			if err := w.db.Create(&job).Error; err != nil {
-				log.Printf("[SCHEDULER] Error enqueuing job | worker_id=%s | schedule_id=%d | error=%v", w.workerID, s.ID, err)
-				continue
-			}
-
-			// Compute next run at
-			sched, err := cron.ParseStandard(s.CronExpr)
+			// Find due schedules
+			err := w.db.Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
 			if err != nil {
-				log.Printf("[SCHEDULER] Invalid cron expression | worker_id=%s | schedule_id=%d | cron=%s | error=%v", w.workerID, s.ID, s.CronExpr, err)
-				w.db.Model(&s).Update("enabled", false)
+				log.Printf("[SCHEDULER] Error fetching schedules | worker_id=%s | error=%v", w.workerID, err)
 				continue
 			}
 
-			nextRun := sched.Next(time.Now())
-			now := time.Now()
-			w.db.Model(&s).Updates(map[string]interface{}{
-				"last_run_at": &now,
-				"next_run_at": &nextRun,
-			})
+			for _, s := range schedules {
+				log.Printf("[SCHEDULER] Executing schedule | worker_id=%s | schedule_id=%d | watchlist_id=%s", w.workerID, s.ID, s.WatchlistID)
+
+				// Enqueue sync job
+				job := database.Job{
+					Type:        "sync",
+					State:       "queued",
+					ScopeType:   "watchlist",
+					ScopeID:     s.WatchlistID.String(),
+					RequestedAt: time.Now(),
+					OwnerUserID: s.Watchlist.OwnerUserID,
+					CreatedBy:   "scheduler",
+				}
+
+				if err := w.db.Create(&job).Error; err != nil {
+					log.Printf("[SCHEDULER] Error enqueuing job | worker_id=%s | schedule_id=%d | error=%v", w.workerID, s.ID, err)
+					continue
+				}
+
+				// Compute next run at
+				sched, err := cron.ParseStandard(s.CronExpr)
+				if err != nil {
+					log.Printf("[SCHEDULER] Invalid cron expression | worker_id=%s | schedule_id=%d | cron=%s | error=%v", w.workerID, s.ID, s.CronExpr, err)
+					w.db.Model(&s).Update("enabled", false)
+					continue
+				}
+
+				nextRun := sched.Next(time.Now())
+				now := time.Now()
+				w.db.Model(&s).Updates(map[string]interface{}{
+					"last_run_at": &now,
+					"next_run_at": &nextRun,
+				})
+			}
 		}
 	}
 }

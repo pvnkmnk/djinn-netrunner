@@ -19,7 +19,7 @@
                 <input type="password" id="password" name="password" required placeholder="••••••••">
             </div>
             <button type="submit" class="btn btn-primary btn-block">Sign In</button>
-            <div id="login-error" class="error-message" style="display:none;"></div>
+            <div id="login-error" class="error-message hidden"></div>
         </form>
         
         <div class="login-actions">
@@ -27,7 +27,7 @@
         </div>
     </div>
     
-    <div class="register-card" id="register-card" style="display:none;">
+    <div class="register-card hidden" id="register-card">
         <h2>Create Account</h2>
         <form id="register-form" class="login-form">
             <div class="form-group">
@@ -39,7 +39,7 @@
                 <input type="password" id="reg-password" name="password" required placeholder="••••••••">
             </div>
             <button type="submit" class="btn btn-primary btn-block">Create Account</button>
-            <div id="register-error" class="error-message" style="display:none;"></div>
+            <div id="register-error" class="error-message hidden"></div>
         </form>
         <div class="login-actions">
             <button class="btn btn-link" id="show-login">Back to Login</button>
@@ -47,142 +47,6 @@
     </div>
 </div>
 
-<script>
-document.getElementById('show-register').addEventListener('click', function() {
-    document.getElementById('login-card').style.display = 'none';
-    document.getElementById('register-card').style.display = 'block';
-});
-
-document.getElementById('show-login').addEventListener('click', function() {
-    document.getElementById('register-card').style.display = 'none';
-    document.getElementById('login-card').style.display = 'block';
-});
-
-document.getElementById('login-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-    const errorDiv = document.getElementById('login-error');
-    
-    try {
-        const resp = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({email, password})
-        });
-        if (resp.ok) {
-            window.location.href = '/';
-        } else {
-            const data = await resp.json();
-            errorDiv.textContent = data.error || 'Login failed';
-            errorDiv.style.display = 'block';
-        }
-    } catch(err) {
-        errorDiv.textContent = 'Connection error';
-        errorDiv.style.display = 'block';
-    }
-});
-
-document.getElementById('register-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const email = document.getElementById('reg-email').value;
-    const password = document.getElementById('reg-password').value;
-    const errorDiv = document.getElementById('register-error');
-    
-    try {
-        const resp = await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({email, password})
-        });
-        if (resp.ok) {
-            // Auto-login after register
-            const loginResp = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({email, password})
-            });
-            if (loginResp.ok) {
-                window.location.href = '/';
-            }
-        } else {
-            const data = await resp.json();
-            errorDiv.textContent = data.error || 'Registration failed';
-            errorDiv.style.display = 'block';
-        }
-    } catch(err) {
-        errorDiv.textContent = 'Connection error';
-        errorDiv.style.display = 'block';
-    }
-});
-</script>
-
-<style>
-.login-overlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: var(--bg-primary, #0d1117);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-.login-card, .register-card {
-    background: var(--bg-secondary, #161b22);
-    border: 1px solid var(--border-color, #30363d);
-    border-radius: 12px;
-    padding: 2rem;
-    width: 100%;
-    max-width: 400px;
-}
-.login-card h2, .register-card h2 {
-    text-align: center;
-    margin-bottom: 0.5rem;
-    color: var(--text-primary, #e6edf3);
-}
-.login-subtitle {
-    text-align: center;
-    color: var(--text-secondary, #8b949e);
-    margin-bottom: 1.5rem;
-}
-.login-form .form-group {
-    margin-bottom: 1rem;
-}
-.login-form label {
-    display: block;
-    margin-bottom: 0.5rem;
-    color: var(--text-primary, #e6edf3);
-}
-.login-form input {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--border-color, #30363d);
-    border-radius: 6px;
-    background: var(--bg-primary, #0d1117);
-    color: var(--text-primary, #e6edf3);
-}
-.btn-block {
-    width: 100%;
-}
-.login-actions {
-    text-align: center;
-    margin-top: 1rem;
-}
-.login-actions .btn-link {
-    background: none;
-    border: none;
-    color: var(--accent-primary, #58a6ff);
-    cursor: pointer;
-}
-.error-message {
-    color: #f85149;
-    text-align: center;
-    margin-top: 0.5rem;
-    padding: 0.5rem;
-    background: rgba(248,81,73,0.1);
-    border-radius: 4px;
-}
-</style>
 {% else %}
 <div class="dashboard">
     <section class="stats-region" hx-get="/partials/stats" hx-trigger="every 30s" aria-live="polite" aria-atomic="true">

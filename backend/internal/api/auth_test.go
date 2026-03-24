@@ -62,7 +62,7 @@ func TestAuthFlow(t *testing.T) {
 	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 201, resp.StatusCode)
 
 	// 2. Login
 	loginPayload := map[string]string{

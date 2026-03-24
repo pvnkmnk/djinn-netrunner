@@ -159,4 +159,89 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+
+    // Apply cover art backgrounds from data-cover attributes
+    function applyCoverArt() {
+        document.querySelectorAll('.track-cover[data-cover]').forEach(function(el) {
+            el.style.backgroundImage = 'url(' + el.dataset.cover + ')';
+        });
+    }
+    applyCoverArt();
+    // Re-apply after HTMX swaps in new content
+    document.body.addEventListener('htmx:afterSettle', applyCoverArt);
+
+    // Login/Register form handlers (only on login page)
+    var showRegister = document.getElementById('show-register');
+    if (showRegister) {
+        showRegister.addEventListener('click', function() {
+            document.getElementById('login-card').classList.add('hidden');
+            document.getElementById('register-card').classList.remove('hidden');
+        });
+    }
+    var showLogin = document.getElementById('show-login');
+    if (showLogin) {
+        showLogin.addEventListener('click', function() {
+            document.getElementById('register-card').classList.add('hidden');
+            document.getElementById('login-card').classList.remove('hidden');
+        });
+    }
+    var loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var email = document.getElementById('email').value;
+            var password = document.getElementById('password').value;
+            var errorDiv = document.getElementById('login-error');
+            try {
+                var resp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({email: email, password: password})
+                });
+                if (resp.ok) {
+                    window.location.href = '/';
+                } else {
+                    var data = await resp.json();
+                    errorDiv.textContent = data.error || 'Login failed';
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch(err) {
+                errorDiv.textContent = 'Connection error';
+                errorDiv.classList.remove('hidden');
+            }
+        });
+    }
+    var registerForm = document.getElementById('register-form');
+    if (registerForm) {
+        registerForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var email = document.getElementById('reg-email').value;
+            var password = document.getElementById('reg-password').value;
+            var errorDiv = document.getElementById('register-error');
+            try {
+                var resp = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({email: email, password: password})
+                });
+                if (resp.ok) {
+                    var loginResp = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({email: email, password: password})
+                    });
+                    if (loginResp.ok) {
+                        window.location.href = '/';
+                    }
+                } else {
+                    var data = await resp.json();
+                    errorDiv.textContent = data.error || 'Registration failed';
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch(err) {
+                errorDiv.textContent = 'Connection error';
+                errorDiv.classList.remove('hidden');
+            }
+        });
+    }
 });

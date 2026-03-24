@@ -8,8 +8,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - netrunner-postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U musicops"]
       interval: 10s
@@ -26,9 +24,6 @@ services:
     volumes:
       - netrunner-slskd-data:/app
       - netrunner-downloads:/downloads
-    ports:
-      - "5030:5030"
-      - "50300:50300"
     restart: unless-stopped
 
   gonic:
@@ -44,8 +39,6 @@ services:
       - netrunner-gonic-cache:/cache
       - netrunner-music:/music:ro
       - netrunner-podcasts:/podcasts
-    ports:
-      - "4747:4747"
     restart: unless-stopped
 
   caddy:
@@ -87,8 +80,6 @@ services:
       - netrunner-logs:/app/logs
       - netrunner-downloads:/app/downloads
       - netrunner-music:/app/music
-    ports:
-      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
