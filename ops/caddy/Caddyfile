@@ -17,10 +17,14 @@
         }
     }
 
-    # All other requests to netrunner
-    handle {
-        reverse_proxy netrunner:8080
-    }
+# All other requests to netrunner
+handle {
+	reverse_proxy netrunner:8080 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}
 
     # TLS auto (Let's Encrypt for production domains)
     # For localhost, Caddy uses internal CA
