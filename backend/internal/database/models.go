@@ -1,7 +1,9 @@
 package database
 
 import (
+	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,11 +49,11 @@ type QualityProfile struct {
 	IsDefault           bool   `gorm:"default:false"`
 
 	// Advanced filtering (Phase 2)
-	MinSampleRate         int    `gorm:"default:0"`           // e.g. 44100, 48000
-	MinBitDepth           int    `gorm:"default:0"`           // e.g. 16, 24
-FormatPreferenceOrder JSONStringArray `gorm:"type:text"`           // JSON array: ["flac","wav","alac","mp3"]
-FilterMode            FilterModeType `gorm:"default:'preferred'"` // "preferred" or "required"
-	MaxPeerQueueDepth     int    `gorm:"default:0"`           // 0 = no limit
+	MinSampleRate         int             `gorm:"default:0"`           // e.g. 44100, 48000
+	MinBitDepth           int             `gorm:"default:0"`           // e.g. 16, 24
+	FormatPreferenceOrder JSONStringArray `gorm:"type:text"`           // JSON array: ["flac","wav","alac","mp3"]
+	FilterMode            FilterModeType  `gorm:"default:'preferred'"` // "preferred" or "required"
+	MaxPeerQueueDepth     int             `gorm:"default:0"`           // 0 = no limit
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -63,6 +65,46 @@ func (m *QualityProfile) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
+
+// JSONStringArray stores a JSON array of strings in a text column.
+type JSONStringArray []string
+
+func (j JSONStringArray) Value() (driver.Value, error) {
+	if j == nil {
+		return "[]", nil
+	}
+	bytes, err := json.Marshal([]string(j))
+	return string(bytes), err
+}
+
+func (j *JSONStringArray) Scan(value interface{}) error {
+	if value == nil {
+		*j = nil
+		return nil
+	}
+	var s string
+	switch v := value.(type) {
+	case string:
+		s = v
+	case []byte:
+		s = string(v)
+	default:
+		return fmt.Errorf("cannot scan %T into JSONStringArray", value)
+	}
+	if s == "" {
+		*j = nil
+		return nil
+	}
+	return json.Unmarshal([]byte(s), (*[]string)(j))
+}
+
+// FilterModeType controls how strictly quality profile filters are applied.
+type FilterModeType string
+
+const (
+	FilterModePreferred FilterModeType = "preferred"
+	FilterModeRequired  FilterModeType = "required"
+)
 
 // MonitoredArtist represents an artist being tracked
 type MonitoredArtist struct {
