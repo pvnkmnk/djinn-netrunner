@@ -45,8 +45,16 @@ type QualityProfile struct {
 	PreferWebReleases   bool   `gorm:"default:true"`
 	CoverArtSources     string `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
 	IsDefault           bool   `gorm:"default:false"`
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+
+	// Advanced filtering (Phase 2)
+	MinSampleRate         int    `gorm:"default:0"`           // e.g. 44100, 48000
+	MinBitDepth           int    `gorm:"default:0"`           // e.g. 16, 24
+	FormatPreferenceOrder string `gorm:"type:text"`           // JSON array: ["flac","wav","alac","mp3"]
+	FilterMode            string `gorm:"default:'preferred'"` // "preferred" or "required"
+	MaxPeerQueueDepth     int    `gorm:"default:0"`           // 0 = no limit
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (m *QualityProfile) BeforeCreate(tx *gorm.DB) error {
