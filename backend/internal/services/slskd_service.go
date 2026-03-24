@@ -138,8 +138,41 @@ type Download struct {
 }
 
 type SlskdService struct {
-	cfg        *config.Config
-	httpClient *http.Client
+	cfg         *config.Config
+	httpClient  *http.Client
+	rateLimiter *searchRateLimiter
+}
+
+// searchRateLimiter enforces slskd's search rate limit (34 searches per 220 seconds).
+type searchRateLimiter struct {
+	tokens chan struct{}
+}
+
+func newSearchRateLimiter() *searchRateLimiter {
+	rl := &searchRateLimiter{
+		tokens: make(chan struct{}, 34),
+	}
+	// Fill initial tokens
+	for i := 0; i < 34; i++ {
+		rl.tokens <- struct{}{}
+	}
+	// Refill 34 tokens every 220 seconds
+	go func() {
+		ticker := time.NewTicker(220 * time.Second)
+		for range ticker.C {
+			for i := 0; i < 34; i++ {
+				select {
+				case rl.tokens <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+	return rl
+}
+
+func (rl *searchRateLimiter) Wait() {
+	<-rl.tokens
 }
 
 func NewSlskdService(cfg *config.Config) *SlskdService {
@@ -157,12 +190,16 @@ func NewSlskdService(cfg *config.Config) *SlskdService {
 	}
 
 	return &SlskdService{
-		cfg:        cfg,
-		httpClient: client,
+		cfg:         cfg,
+		httpClient:  client,
+		rateLimiter: newSearchRateLimiter(),
 	}
 }
 
 func (s *SlskdService) Search(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
+	// Rate limit: wait for an available search token (34 per 220 seconds)
+	s.rateLimiter.Wait()
+
 	// If profile has a search suffix (e.g., "flac"), append it to query
 	if profile != nil {
 		suffix := profile.GetSearchSuffix()
@@ -256,7 +293,21 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		return results[i].Score > results[j].Score
 	})
 
+	// Clean up search to free resources on slskd
+	s.deleteSearch(startResult.ID)
+
 	return results, nil
+}
+
+// deleteSearch removes a completed search from slskd.
+func (s *SlskdService) deleteSearch(searchID string) {
+	url := fmt.Sprintf("%s/api/v0/searches/%s", s.cfg.SlskdURL, searchID)
+	req, _ := http.NewRequest("DELETE", url, nil)
+	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
+	resp, err := s.httpClient.Do(req)
+	if err == nil {
+		resp.Body.Close()
+	}
 }
 
 func (s *SlskdService) EnqueueDownload(username, filename string) (string, error) {

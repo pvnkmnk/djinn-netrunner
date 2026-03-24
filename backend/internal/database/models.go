@@ -374,6 +374,31 @@ type Setting struct {
 	UpdatedAt time.Time
 }
 
+// PeerReputation tracks Soulseek peer reliability for scoring adjustments.
+type PeerReputation struct {
+	Username       string `gorm:"primaryKey"`
+	TotalDownloads int    `gorm:"default:0"`
+	SuccessfulDls  int    `gorm:"default:0"`
+	FailedDls      int    `gorm:"default:0"`
+	AvgSpeed       int    `gorm:"default:0"` // bytes/sec
+	LastSeen       time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// SuccessRate returns the download success rate as a float [0, 1].
+func (p *PeerReputation) SuccessRate() float64 {
+	if p.TotalDownloads == 0 {
+		return 1.0
+	}
+	return float64(p.SuccessfulDls) / float64(p.TotalDownloads)
+}
+
+// IsIgnored returns true if the peer should be ignored (success rate < 20% with enough data).
+func (p *PeerReputation) IsIgnored() bool {
+	return p.TotalDownloads >= 5 && p.SuccessRate() < 0.2
+}
+
 // TableName overrides for GORM
 func (Job) TableName() string             { return "jobs" }
 func (JobItem) TableName() string         { return "jobitems" }
