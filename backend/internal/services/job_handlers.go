@@ -232,12 +232,13 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 
 // acquisitionPipeline carries state between pipeline stages.
 type acquisitionPipeline struct {
-	item     database.JobItem
-	job      database.Job
-	profile  *database.QualityProfile
-	results  []SearchResult
-	best     SearchResult
-	download string // path after download completes
+	item       database.JobItem
+	job        database.Job
+	profile    *database.QualityProfile
+	results    []SearchResult
+	best       SearchResult
+	download   string     // path after download completes
+	albumFiles []PeerFile // files found during album-mode browse
 }
 
 // ExecuteItem runs the acquisition pipeline for a single job item.
@@ -276,6 +277,9 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 	} else if skip {
 		return nil
 	}
+
+	// Album mode: browse peer for full album if track is part of one
+	h.stageAlbumBrowse(p)
 
 	if skip, err := h.stageDownloadFile(p); err != nil {
 		return err
@@ -375,6 +379,37 @@ func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip
 
 	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Selected: %s (score: %.1f)", p.best.Filename, p.best.Score), &p.item.ID)
 	return false, nil
+}
+
+// stageAlbumBrowse attempts to discover the full album from the best result's peer.
+// This is a best-effort enhancement — failures are logged but don't fail the pipeline.
+func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
+	// Extract directory from the best result's filename
+	dir := filepath.Dir(p.best.Filename)
+	if dir == "." || dir == "" {
+		return
+	}
+
+	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Album mode: browsing %s for album contents...", p.best.Username), &p.item.ID)
+
+	files, err := h.slskd.Browse(p.best.Username)
+	if err != nil {
+		h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Album browse failed: %v", err), &p.item.ID)
+		return
+	}
+
+	// Find files in the same directory
+	var albumTracks []PeerFile
+	for _, f := range files {
+		if filepath.Dir(f.Filename) == dir {
+			albumTracks = append(albumTracks, f)
+		}
+	}
+
+	if len(albumTracks) > 1 {
+		h.Log(p.item.JobID, "OK", fmt.Sprintf("Album mode: found %d tracks in %s", len(albumTracks), dir), &p.item.ID)
+		p.albumFiles = albumTracks
+	}
 }
 
 // stageDownloadFile queues the download and waits for completion.

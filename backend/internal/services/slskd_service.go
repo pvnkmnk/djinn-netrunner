@@ -177,7 +177,7 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		"searchTimeout":   timeout * 1000,
 		"filterResponses": true,
 	}
-	
+
 	jsonPayload, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
@@ -265,7 +265,7 @@ func (s *SlskdService) EnqueueDownload(username, filename string) (string, error
 		"username": username,
 		"files":    []string{filename},
 	}
-	
+
 	jsonPayload, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
@@ -286,7 +286,7 @@ func (s *SlskdService) EnqueueDownload(username, filename string) (string, error
 
 func (s *SlskdService) GetDownload(username, filename string) (*Download, error) {
 	u := fmt.Sprintf("%s/api/v0/downloads/%s/%s", s.cfg.SlskdURL, username, url.PathEscape(filename))
-	
+
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 
@@ -311,7 +311,7 @@ func (s *SlskdService) GetDownload(username, filename string) (*Download, error)
 func (s *SlskdService) WaitForDownload(username, filename string, timeout time.Duration) (*Download, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	
+
 	start := time.Now()
 	for {
 		select {
@@ -319,7 +319,7 @@ func (s *SlskdService) WaitForDownload(username, filename string, timeout time.D
 			if time.Since(start) > timeout {
 				return nil, fmt.Errorf("download timeout")
 			}
-			
+
 			d, err := s.GetDownload(username, filename)
 			if err != nil {
 				return nil, err
@@ -327,7 +327,7 @@ func (s *SlskdService) WaitForDownload(username, filename string, timeout time.D
 			if d == nil {
 				return nil, fmt.Errorf("download not found")
 			}
-			
+
 			if d.State == DownloadStateCompleted {
 				return d, nil
 			}
@@ -350,4 +350,56 @@ func (s *SlskdService) HealthCheck() bool {
 	defer resp.Body.Close()
 
 	return resp.StatusCode == http.StatusOK
+}
+
+// PeerFile represents a file shared by a peer (from browse response).
+type PeerFile struct {
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+	Bitrate  *int   `json:"bitRate"`
+}
+
+// Browse retrieves the shared files of a peer.
+// Calls GET /api/v0/users/{username}/browse on slskd.
+func (s *SlskdService) Browse(username string) ([]PeerFile, error) {
+	url := fmt.Sprintf("%s/api/v0/users/%s/browse", s.cfg.SlskdURL, url.PathEscape(username))
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("browse request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("browse returned %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Directories []struct {
+			Name  string `json:"name"`
+			Files []struct {
+				Filename string `json:"filename"`
+				Size     int64  `json:"size"`
+				BitRate  *int   `json:"bitRate"`
+			} `json:"files"`
+		} `json:"directories"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode browse response: %w", err)
+	}
+
+	var files []PeerFile
+	for _, dir := range result.Directories {
+		for _, f := range dir.Files {
+			files = append(files, PeerFile{
+				Filename: f.Filename,
+				Size:     f.Size,
+				Bitrate:  f.BitRate,
+			})
+		}
+	}
+	return files, nil
 }
