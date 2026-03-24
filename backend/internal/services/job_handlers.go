@@ -414,7 +414,7 @@ func (h *AcquisitionHandler) fetchCoverFromSourceURL(ctx context.Context, item *
 	if item.CoverArtURL == "" {
 		return nil, fmt.Errorf("no source URL")
 	}
-	resp, err := http.Get(item.CoverArtURL)
+	resp, err := SafeGet(item.CoverArtURL)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +449,7 @@ func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item
 	}
 	for _, img := range release.Images {
 		if img.Front {
-			resp, err := http.Get(img.Image)
+			resp, err := SafeGet(img.Image)
 			if err != nil {
 				continue
 			}
@@ -465,7 +465,7 @@ func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item
 	}
 	// Fall back to first image
 	if len(release.Images) > 0 {
-		resp, err := http.Get(release.Images[0].Image)
+		resp, err := SafeGet(release.Images[0].Image)
 		if err != nil {
 			return nil, fmt.Errorf("no front cover from MB")
 		}
@@ -490,7 +490,7 @@ func (h *AcquisitionHandler) fetchCoverFromDiscogs(ctx context.Context, item *da
 	if err != nil || coverURL == "" {
 		return nil, err
 	}
-	resp, err := http.Get(coverURL)
+	resp, err := SafeGet(coverURL)
 	if err != nil {
 		return nil, err
 	}
