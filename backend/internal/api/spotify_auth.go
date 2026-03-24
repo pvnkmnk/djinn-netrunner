@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -13,6 +15,17 @@ import (
 	oauthspotify "golang.org/x/oauth2/spotify"
 	"gorm.io/gorm"
 )
+
+const oauthStateCookie = "oauth_state"
+
+// generateOAuthState returns a cryptographically random hex-encoded state string.
+func generateOAuthState() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
 
 type SpotifyAuthHandler struct {
 	db     *gorm.DB
@@ -45,15 +58,35 @@ func NewSpotifyAuthHandler(db *gorm.DB) *SpotifyAuthHandler {
 
 // Login redirects the user to Spotify for authentication
 func (h *SpotifyAuthHandler) Login(c *fiber.Ctx) error {
-	state := "netrunner-spotify-state"
+	state, err := generateOAuthState()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to generate oauth state"})
+	}
+
+	// Store state in cookie so Callback can verify it
+	c.Cookie(&fiber.Cookie{
+		Name:     oauthStateCookie,
+		Value:    state,
+		MaxAge:   600, // 10 minutes
+		HTTPOnly: true,
+		SameSite: "Lax",
+		Path:     "/",
+	})
+
 	url := h.config.AuthCodeURL(state)
 	return c.Redirect(url)
 }
 
 // Callback handles the redirect from Spotify
 func (h *SpotifyAuthHandler) Callback(c *fiber.Ctx) error {
-	state := c.Query("state")
-	if state != "netrunner-spotify-state" {
+	// Verify state matches cookie (CSRF protection)
+	queryState := c.Query("state")
+	cookieState := c.Cookies(oauthStateCookie)
+
+	// Clear the state cookie regardless of outcome
+	c.ClearCookie(oauthStateCookie)
+
+	if queryState == "" || cookieState == "" || queryState != cookieState {
 		return c.Status(400).SendString("State mismatch")
 	}
 
