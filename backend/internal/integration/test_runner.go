@@ -1,8 +1,8 @@
-package integration
+//go:build integration
 
 // Package integration provides utilities for running integration tests
 //
-//go:build integration
+package integration
 
 import (
 	"fmt"

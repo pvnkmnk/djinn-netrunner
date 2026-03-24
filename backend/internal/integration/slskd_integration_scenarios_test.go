@@ -1,8 +1,8 @@
-package integration
+//go:build integration
 
 // Package integration provides end-to-end testing scenarios for acquisition flows
 //
-//go:build integration
+package integration
 
 import (
 	"context"
