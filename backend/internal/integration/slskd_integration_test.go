@@ -13,7 +13,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
