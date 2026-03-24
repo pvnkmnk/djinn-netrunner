@@ -39,10 +39,10 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
 	}
 
-	// Check if user exists
+	// Check if user exists — return identical response to prevent user enumeration
 	var existing database.User
 	if err := h.db.Where("email = ?", payload.Email).First(&existing).Error; err == nil {
-		return c.Status(200).JSON(fiber.Map{"user_id": existing.ID}) // Idempotent as per Python version
+		return c.Status(201).JSON(fiber.Map{"status": "ok"})
 	}
 
 	// Hash password
@@ -61,7 +61,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to create user"})
 	}
 
-	return c.JSON(fiber.Map{"user_id": user.ID})
+	return c.Status(201).JSON(fiber.Map{"status": "ok"})
 }
 
 // Login handles user login
