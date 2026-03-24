@@ -106,6 +106,8 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 }
 
 func (w *WorkerOrchestrator) Start() {
+	// ctx controls the lifecycle of all goroutines spawned by this orchestrator.
+	// Call w.cancel() (via Stop()) to signal graceful shutdown.
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	log.Printf("[WORKER] Starting worker | worker_id=%s", w.workerID)
 

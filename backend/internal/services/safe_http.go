@@ -2,9 +2,11 @@ package services
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // privateCIDRs contains CIDR ranges that should never be reachable via outbound HTTP.
@@ -43,8 +45,9 @@ func isPrivateIP(ip net.IP) bool {
 }
 
 // SafeGet performs an HTTP GET after verifying the target does not resolve to a
-// private IP address. This prevents SSRF attacks where an attacker supplies a
-// URL pointing to internal services.
+// private IP address. This prevents SSRF (Server-Side Request Forgery) attacks
+// where an attacker supplies a URL pointing to internal services.
+// See: https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
 func SafeGet(rawURL string) (*http.Response, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -52,6 +55,7 @@ func SafeGet(rawURL string) (*http.Response, error) {
 	}
 
 	if u.Scheme != "http" && u.Scheme != "https" {
+		log.Printf("[SSRF] Blocked unsupported scheme | url=%s scheme=%s", rawURL, u.Scheme)
 		return nil, fmt.Errorf("ssrf: unsupported scheme %q", u.Scheme)
 	}
 
@@ -66,5 +70,6 @@ func SafeGet(rawURL string) (*http.Response, error) {
 		}
 	}
 
-	return http.Get(rawURL)
+	client := &http.Client{Timeout: 30 * time.Second}
+	return client.Get(rawURL)
 }
