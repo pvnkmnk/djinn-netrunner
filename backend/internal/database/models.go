@@ -1,11 +1,52 @@
 package database
 
 import (
+	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+)
+
+// JSONStringArray is a custom type for storing string arrays as JSON in SQLite.
+type JSONStringArray []string
+
+// Value implements the driver.Valuer interface.
+func (a JSONStringArray) Value() (driver.Value, error) {
+	if a == nil {
+		return nil, nil
+	}
+	return json.Marshal(a)
+}
+
+// Scan implements the sql.Scanner interface.
+func (a *JSONStringArray) Scan(value interface{}) error {
+	if value == nil {
+		*a = nil
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New("cannot scan type into JSONStringArray")
+	}
+
+	return json.Unmarshal(bytes, a)
+}
+
+// FilterModeType represents the filter mode for quality profiles.
+type FilterModeType string
+
+const (
+	FilterModePreferred FilterModeType = "preferred"
+	FilterModeRequired  FilterModeType = "required"
 )
 
 // User represents a user in the system
@@ -45,8 +86,16 @@ type QualityProfile struct {
 	PreferWebReleases   bool   `gorm:"default:true"`
 	CoverArtSources     string `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
 	IsDefault           bool   `gorm:"default:false"`
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+
+	// Advanced filtering (Phase 2)
+	MinSampleRate         int             `gorm:"default:0"`           // e.g. 44100, 48000
+	MinBitDepth           int             `gorm:"default:0"`           // e.g. 16, 24
+	FormatPreferenceOrder JSONStringArray `gorm:"type:text"`           // JSON array: ["flac","wav","alac","mp3"]
+	FilterMode            FilterModeType  `gorm:"default:'preferred'"` // "preferred" or "required"
+	MaxPeerQueueDepth     int             `gorm:"default:0"`           // 0 = no limit
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (m *QualityProfile) BeforeCreate(tx *gorm.DB) error {
@@ -366,6 +415,31 @@ type Setting struct {
 	UpdatedAt time.Time
 }
 
+// PeerReputation tracks Soulseek peer reliability for scoring adjustments.
+type PeerReputation struct {
+	Username       string `gorm:"primaryKey"`
+	TotalDownloads int    `gorm:"default:0"`
+	SuccessfulDls  int    `gorm:"default:0"`
+	FailedDls      int    `gorm:"default:0"`
+	AvgSpeed       int    `gorm:"default:0"` // bytes/sec
+	LastSeen       time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// SuccessRate returns the download success rate as a float [0, 1].
+func (p *PeerReputation) SuccessRate() float64 {
+	if p.TotalDownloads == 0 {
+		return 1.0
+	}
+	return float64(p.SuccessfulDls) / float64(p.TotalDownloads)
+}
+
+// IsIgnored returns true if the peer should be ignored (success rate < 20% with enough data).
+func (p *PeerReputation) IsIgnored() bool {
+	return p.TotalDownloads >= 5 && p.SuccessRate() < 0.2
+}
+
 // TableName overrides for GORM
 func (Job) TableName() string             { return "jobs" }
 func (JobItem) TableName() string         { return "jobitems" }
@@ -377,3 +451,4 @@ func (MonitoredArtist) TableName() string { return "monitored_artists" }
 func (TrackedRelease) TableName() string  { return "tracked_releases" }
 func (Lock) TableName() string            { return "locks" }
 func (Setting) TableName() string         { return "settings" }
+func (PeerReputation) TableName() string  { return "peer_reputations" }
