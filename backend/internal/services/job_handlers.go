@@ -334,7 +334,11 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 	h.Log(jobID, "OK", "Download completed", &itemID)
 
 	// 4. Import
-	return h.importFile(ctx, jobID, itemID, download.Path, item, parseCoverArtSources(profile.CoverArtSources))
+	var coverArtSources []string
+	if profile != nil {
+		coverArtSources = parseCoverArtSources(profile.CoverArtSources)
+	}
+	return h.importFile(ctx, jobID, itemID, download.Path, item, coverArtSources)
 }
 
 // Default cover art source priority order

@@ -2,36 +2,19 @@
 # Edge proxy with TLS termination and WebSocket support
 
 {$DOMAIN:localhost} {
-    # ops-web (dashboard, API, WebSocket console)
-    handle /ws/* {
-        reverse_proxy ops-web:8000 {
-            # WebSocket support
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
+# Gonic streaming server (Subsonic API)
+handle /music/* /rest/* {
+    reverse_proxy gonic:4747
+}
 
-    handle /static/* {
-        reverse_proxy ops-web:8000
+# All requests to netrunner (including WebSocket)
+handle {
+    reverse_proxy netrunner:8080 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
     }
-
-    handle /api/* {
-        reverse_proxy ops-web:8000
-    }
-
-    handle / {
-        reverse_proxy ops-web:8000
-    }
-
-    # Gonic streaming server (Subsonic API)
-    handle /music/* {
-        reverse_proxy gonic:4747
-    }
-
-    handle /rest/* {
-        reverse_proxy gonic:4747
-    }
+}
 
     # TLS auto (Let's Encrypt for production domains)
     # For localhost, Caddy uses internal CA

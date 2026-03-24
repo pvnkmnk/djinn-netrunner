@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -65,6 +66,10 @@ type Config struct {
 	// Notifications
 	NotificationWebhookURL string
 	NotificationEnabled    bool
+
+	// Rate Limiter
+	AuthRateLimitMax        int
+	AuthRateLimitExpiration string
 }
 
 // Load reads configuration from environment variables
@@ -112,6 +117,10 @@ func Load(filenames ...string) (*Config, error) {
 
 		NotificationWebhookURL: getEnv("NOTIFICATION_WEBHOOK_URL", ""),
 		NotificationEnabled:    getEnvBool("NOTIFICATION_ENABLED", false),
+
+		// Rate Limiter
+		AuthRateLimitMax:        getEnvAsInt("AUTH_RATE_LIMIT_MAX", 10),
+		AuthRateLimitExpiration: getEnv("AUTH_RATE_LIMIT_EXPIRATION", "1m"),
 	}
 
 	// Validate required fields
@@ -134,6 +143,16 @@ func getEnv(key, defaultValue string) string {
 func getEnvBool(key string, defaultVal bool) bool {
 	if val := os.Getenv(key); val != "" {
 		return val == "true" || val == "1"
+	}
+	return defaultVal
+}
+
+// getEnvAsInt retrieves an integer environment variable or returns a default value
+func getEnvAsInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		if v, err := strconv.Atoi(val); err == nil {
+			return v
+		}
 	}
 	return defaultVal
 }

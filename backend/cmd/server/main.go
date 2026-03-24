@@ -5,9 +5,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
@@ -54,7 +56,8 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		Views: engine,
+		Views:       engine,
+		ProxyHeader: fiber.HeaderXForwardedFor,
 	})
 
 	app.Use(recover.New())
@@ -78,7 +81,7 @@ func main() {
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
 
 	// Routes
-	setupRoutes(app, db, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
+	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
 
 	// Start server
 	go func() {
@@ -96,7 +99,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -107,8 +110,27 @@ func setupRoutes(app *fiber.App, db *gorm.DB, auth *api.AuthHandler, dash *api.D
 
 	// Auth routes
 	authRoutes := apiPublic.Group("/auth")
-	authRoutes.Post("/register", auth.Register)
-	authRoutes.Post("/login", auth.Login)
+
+	// Rate limiter for auth endpoints (configurable via environment variables)
+	authLimiter := limiter.New(limiter.Config{
+		Max: cfg.AuthRateLimitMax,
+		Expiration: func() time.Duration {
+			if d, err := time.ParseDuration(cfg.AuthRateLimitExpiration); err == nil {
+				return d
+			}
+			return 1 * time.Minute // fallback
+		}(),
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(429).JSON(fiber.Map{"error": "too many requests, please try again later"})
+		},
+	})
+
+	// Apply rate limiter to sensitive auth endpoints (excluding logout to prevent user friction)
+	authRoutes.Post("/register", authLimiter, auth.Register)
+	authRoutes.Post("/login", authLimiter, auth.Login)
 	authRoutes.Post("/logout", auth.Logout)
 
 	// Spotify Auth (OAuth Callback is public, but redirected to with user session)
