@@ -128,10 +128,10 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		},
 	})
 
-	// Apply rate limiter to sensitive auth endpoints
+	// Apply rate limiter to sensitive auth endpoints (excluding logout to prevent user friction)
 	authRoutes.Post("/register", authLimiter, auth.Register)
 	authRoutes.Post("/login", authLimiter, auth.Login)
-	authRoutes.Post("/logout", authLimiter, auth.Logout)
+	authRoutes.Post("/logout", auth.Logout)
 
 	// Spotify Auth (OAuth Callback is public, but redirected to with user session)
 	authRoutes.Get("/spotify/login", auth.AuthMiddleware, spotifyAuth.Login)
