@@ -65,7 +65,7 @@ func TestWebSocketManager_HandleEvents(t *testing.T) {
 	// but we can verify the manager state is valid
 	_ = app
 	assert.NotNil(t, manager.clients, "clients map should be initialized")
-	assert.NotNil(t, manager.mu, "mutex should be initialized")
+	// mu is a value type (sync.RWMutex), always initialized with the struct — no pointer check needed
 }
 
 // TestStringsToLower tests the helper function for lowercase conversion
