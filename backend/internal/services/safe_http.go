@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -47,6 +49,10 @@ func isPrivateIP(ip net.IP) bool {
 // SafeGet performs an HTTP GET after verifying the target does not resolve to a
 // private IP address. This prevents SSRF (Server-Side Request Forgery) attacks
 // where an attacker supplies a URL pointing to internal services.
+//
+// Mitigates DNS rebinding (TOCTOU) by resolving DNS once, validating the IP,
+// and dialing directly to the verified IP via a custom transport. Redirects
+// are disabled to prevent redirect-based SSRF.
 // See: https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
 func SafeGet(rawURL string) (*http.Response, error) {
 	u, err := url.Parse(rawURL)
@@ -59,17 +65,55 @@ func SafeGet(rawURL string) (*http.Response, error) {
 		return nil, fmt.Errorf("ssrf: unsupported scheme %q", u.Scheme)
 	}
 
-	ips, err := net.LookupIP(u.Hostname())
+	hostname := u.Hostname()
+	ips, err := net.LookupIP(hostname)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: DNS lookup failed: %w", err)
 	}
 
+	// Find the first safe IP to connect to
+	var safeIP net.IP
 	for _, ip := range ips {
 		if isPrivateIP(ip) {
-			return nil, fmt.Errorf("ssrf: blocked private IP %s for %s", ip, u.Hostname())
+			continue
+		}
+		safeIP = ip
+		break
+	}
+	if safeIP == nil {
+		return nil, fmt.Errorf("ssrf: no public IP found for %s", hostname)
+	}
+
+	// Determine port — use explicit port or scheme default
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
 		}
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	// Build a transport that dials directly to the verified IP, preventing
+	// DNS rebinding (TOCTOU) where a second DNS lookup could return a private IP.
+	dialAddr := net.JoinHostPort(safeIP.String(), port)
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return net.Dial("tcp", dialAddr)
+		},
+		TLSClientConfig: &tls.Config{
+			ServerName: hostname, // SNI must match the original hostname for HTTPS
+		},
+	}
+
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+		// Disable redirects — an attacker could redirect a safe URL to an internal one
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
 	return client.Get(rawURL)
 }

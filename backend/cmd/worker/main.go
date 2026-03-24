@@ -159,13 +159,13 @@ func (w *WorkerOrchestrator) watchlistPollingLoop() {
 	// Run once at startup
 	w.triggerWatchlistSyncs()
 
-	for range ticker.C {
+	for {
 		select {
 		case <-w.ctx.Done():
 			return
-		default:
+		case <-ticker.C:
+			w.triggerWatchlistSyncs()
 		}
-		w.triggerWatchlistSyncs()
 	}
 }
 
@@ -249,13 +249,13 @@ func (w *WorkerOrchestrator) Stop() {
 
 func (w *WorkerOrchestrator) heartbeatLoop() {
 	ticker := time.NewTicker(5 * time.Second)
-	for range ticker.C {
+	for {
 		select {
 		case <-w.ctx.Done():
 			return
-		default:
+		case <-ticker.C:
+			w.updateHeartbeats()
 		}
-		w.updateHeartbeats()
 	}
 }
 
@@ -279,11 +279,11 @@ func (w *WorkerOrchestrator) checkQuotaAlerts() {
 func (w *WorkerOrchestrator) zombieCleanupLoop() {
 	log.Printf("[WORKER] Starting zombie cleanup loop | worker_id=%s", w.workerID)
 	ticker := time.NewTicker(1 * time.Minute)
-	for range ticker.C {
+	for {
 		select {
 		case <-w.ctx.Done():
 			return
-		default:
+		case <-ticker.C:
 		}
 
 		// Find jobs marked as running but with stale heartbeats (> 2 mins)
@@ -334,11 +334,11 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 	log.Printf("[SCHEDULER] Starting scheduler loop | worker_id=%s", w.workerID)
 	ticker := time.NewTicker(30 * time.Second)
 
-	for range ticker.C {
+	for {
 		select {
 		case <-w.ctx.Done():
 			return
-		default:
+		case <-ticker.C:
 		}
 
 		var schedules []database.Schedule
