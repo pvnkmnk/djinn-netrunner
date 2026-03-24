@@ -49,7 +49,7 @@ type QualityProfile struct {
 	// Advanced filtering (Phase 2)
 	MinSampleRate         int    `gorm:"default:0"`           // e.g. 44100, 48000
 	MinBitDepth           int    `gorm:"default:0"`           // e.g. 16, 24
-	FormatPreferenceOrder string `gorm:"type:text"`           // JSON array: ["flac","wav","alac","mp3"]
+FormatPreferenceOrder JSONStringArray `gorm:"type:text"`           // JSON array: ["flac","wav","alac","mp3"]
 	FilterMode            string `gorm:"default:'preferred'"` // "preferred" or "required"
 	MaxPeerQueueDepth     int    `gorm:"default:0"`           // 0 = no limit
 
