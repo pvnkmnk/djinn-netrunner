@@ -138,8 +138,41 @@ type Download struct {
 }
 
 type SlskdService struct {
-	cfg        *config.Config
-	httpClient *http.Client
+	cfg         *config.Config
+	httpClient  *http.Client
+	rateLimiter *searchRateLimiter
+}
+
+// searchRateLimiter enforces slskd's search rate limit (34 searches per 220 seconds).
+type searchRateLimiter struct {
+	tokens chan struct{}
+}
+
+func newSearchRateLimiter() *searchRateLimiter {
+	rl := &searchRateLimiter{
+		tokens: make(chan struct{}, 34),
+	}
+	// Fill initial tokens
+	for i := 0; i < 34; i++ {
+		rl.tokens <- struct{}{}
+	}
+	// Refill 34 tokens every 220 seconds
+	go func() {
+		ticker := time.NewTicker(220 * time.Second)
+		for range ticker.C {
+			for i := 0; i < 34; i++ {
+				select {
+				case rl.tokens <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+	return rl
+}
+
+func (rl *searchRateLimiter) Wait() {
+	<-rl.tokens
 }
 
 func NewSlskdService(cfg *config.Config) *SlskdService {
@@ -157,12 +190,16 @@ func NewSlskdService(cfg *config.Config) *SlskdService {
 	}
 
 	return &SlskdService{
-		cfg:        cfg,
-		httpClient: client,
+		cfg:         cfg,
+		httpClient:  client,
+		rateLimiter: newSearchRateLimiter(),
 	}
 }
 
 func (s *SlskdService) Search(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
+	// Rate limit: wait for an available search token (34 per 220 seconds)
+	s.rateLimiter.Wait()
+
 	// If profile has a search suffix (e.g., "flac"), append it to query
 	if profile != nil {
 		suffix := profile.GetSearchSuffix()
@@ -177,7 +214,7 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		"searchTimeout":   timeout * 1000,
 		"filterResponses": true,
 	}
-	
+
 	jsonPayload, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
@@ -256,7 +293,21 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		return results[i].Score > results[j].Score
 	})
 
+	// Clean up search to free resources on slskd
+	s.deleteSearch(startResult.ID)
+
 	return results, nil
+}
+
+// deleteSearch removes a completed search from slskd.
+func (s *SlskdService) deleteSearch(searchID string) {
+	url := fmt.Sprintf("%s/api/v0/searches/%s", s.cfg.SlskdURL, searchID)
+	req, _ := http.NewRequest("DELETE", url, nil)
+	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
+	resp, err := s.httpClient.Do(req)
+	if err == nil {
+		resp.Body.Close()
+	}
 }
 
 func (s *SlskdService) EnqueueDownload(username, filename string) (string, error) {
@@ -265,7 +316,7 @@ func (s *SlskdService) EnqueueDownload(username, filename string) (string, error
 		"username": username,
 		"files":    []string{filename},
 	}
-	
+
 	jsonPayload, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
@@ -286,7 +337,7 @@ func (s *SlskdService) EnqueueDownload(username, filename string) (string, error
 
 func (s *SlskdService) GetDownload(username, filename string) (*Download, error) {
 	u := fmt.Sprintf("%s/api/v0/downloads/%s/%s", s.cfg.SlskdURL, username, url.PathEscape(filename))
-	
+
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 
@@ -311,7 +362,7 @@ func (s *SlskdService) GetDownload(username, filename string) (*Download, error)
 func (s *SlskdService) WaitForDownload(username, filename string, timeout time.Duration) (*Download, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	
+
 	start := time.Now()
 	for {
 		select {
@@ -319,7 +370,7 @@ func (s *SlskdService) WaitForDownload(username, filename string, timeout time.D
 			if time.Since(start) > timeout {
 				return nil, fmt.Errorf("download timeout")
 			}
-			
+
 			d, err := s.GetDownload(username, filename)
 			if err != nil {
 				return nil, err
@@ -327,7 +378,7 @@ func (s *SlskdService) WaitForDownload(username, filename string, timeout time.D
 			if d == nil {
 				return nil, fmt.Errorf("download not found")
 			}
-			
+
 			if d.State == DownloadStateCompleted {
 				return d, nil
 			}
@@ -350,4 +401,56 @@ func (s *SlskdService) HealthCheck() bool {
 	defer resp.Body.Close()
 
 	return resp.StatusCode == http.StatusOK
+}
+
+// PeerFile represents a file shared by a peer (from browse response).
+type PeerFile struct {
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+	Bitrate  *int   `json:"bitRate"`
+}
+
+// Browse retrieves the shared files of a peer.
+// Calls GET /api/v0/users/{username}/browse on slskd.
+func (s *SlskdService) Browse(username string) ([]PeerFile, error) {
+	url := fmt.Sprintf("%s/api/v0/users/%s/browse", s.cfg.SlskdURL, url.PathEscape(username))
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("browse request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("browse returned %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Directories []struct {
+			Name  string `json:"name"`
+			Files []struct {
+				Filename string `json:"filename"`
+				Size     int64  `json:"size"`
+				BitRate  *int   `json:"bitRate"`
+			} `json:"files"`
+		} `json:"directories"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode browse response: %w", err)
+	}
+
+	var files []PeerFile
+	for _, dir := range result.Directories {
+		for _, f := range dir.Files {
+			files = append(files, PeerFile{
+				Filename: f.Filename,
+				Size:     f.Size,
+				Bitrate:  f.BitRate,
+			})
+		}
+	}
+	return files, nil
 }
