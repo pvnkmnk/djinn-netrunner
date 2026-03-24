@@ -284,31 +284,30 @@ func (w *WorkerOrchestrator) zombieCleanupLoop() {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
-		}
+			// Find jobs marked as running but with stale heartbeats (> 2 mins)
+			staleThreshold := time.Now().Add(-2 * time.Minute)
+			var zombieJobs []database.Job
+			err := w.db.Where("state = ? AND heartbeat_at < ?", "running", staleThreshold).Find(&zombieJobs).Error
+			if err != nil {
+				log.Printf("[WORKER] Error searching for zombie jobs | worker_id=%s | error=%v", w.workerID, err)
+				continue
+			}
 
-		// Find jobs marked as running but with stale heartbeats (> 2 mins)
-		staleThreshold := time.Now().Add(-2 * time.Minute)
-		var zombieJobs []database.Job
-		err := w.db.Where("state = ? AND heartbeat_at < ?", "running", staleThreshold).Find(&zombieJobs).Error
-		if err != nil {
-			log.Printf("[WORKER] Error searching for zombie jobs | worker_id=%s | error=%v", w.workerID, err)
-			continue
-		}
+			for _, job := range zombieJobs {
+				log.Printf("[WORKER] Resetting zombie job | worker_id=%s | job_id=%d | last_heartbeat=%v", w.workerID, job.ID, job.HeartbeatAt)
 
-		for _, job := range zombieJobs {
-			log.Printf("[WORKER] Resetting zombie job | worker_id=%s | job_id=%d | last_heartbeat=%v", w.workerID, job.ID, job.HeartbeatAt)
+				w.db.Model(&job).Updates(map[string]interface{}{
+					"state":        "queued",
+					"worker_id":    nil,
+					"started_at":   nil,
+					"heartbeat_at": nil,
+				})
 
-			w.db.Model(&job).Updates(map[string]interface{}{
-				"state":        "queued",
-				"worker_id":    nil,
-				"started_at":   nil,
-				"heartbeat_at": nil,
-			})
-
-			// Attempt to release the advisory lock if it was held
-			lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
-			if err == nil {
-				w.lockManager.ReleaseLock(context.Background(), lockKey)
+				// Attempt to release the advisory lock if it was held
+				lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
+				if err == nil {
+					w.lockManager.ReleaseLock(context.Background(), lockKey)
+				}
 			}
 		}
 	}
@@ -339,52 +338,51 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
-		}
+			var schedules []database.Schedule
+			// Initialize NextRunAt if NULL
+			w.db.Model(&database.Schedule{}).Where("enabled = ? AND next_run_at IS NULL", true).Update("next_run_at", time.Now())
 
-		var schedules []database.Schedule
-		// Initialize NextRunAt if NULL
-		w.db.Model(&database.Schedule{}).Where("enabled = ? AND next_run_at IS NULL", true).Update("next_run_at", time.Now())
-
-		// Find due schedules
-		err := w.db.Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
-		if err != nil {
-			log.Printf("[SCHEDULER] Error fetching schedules | worker_id=%s | error=%v", w.workerID, err)
-			continue
-		}
-
-		for _, s := range schedules {
-			log.Printf("[SCHEDULER] Executing schedule | worker_id=%s | schedule_id=%d | watchlist_id=%s", w.workerID, s.ID, s.WatchlistID)
-
-			// Enqueue sync job
-			job := database.Job{
-				Type:        "sync",
-				State:       "queued",
-				ScopeType:   "watchlist",
-				ScopeID:     s.WatchlistID.String(),
-				RequestedAt: time.Now(),
-				OwnerUserID: s.Watchlist.OwnerUserID,
-				CreatedBy:   "scheduler",
-			}
-
-			if err := w.db.Create(&job).Error; err != nil {
-				log.Printf("[SCHEDULER] Error enqueuing job | worker_id=%s | schedule_id=%d | error=%v", w.workerID, s.ID, err)
-				continue
-			}
-
-			// Compute next run at
-			sched, err := cron.ParseStandard(s.CronExpr)
+			// Find due schedules
+			err := w.db.Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
 			if err != nil {
-				log.Printf("[SCHEDULER] Invalid cron expression | worker_id=%s | schedule_id=%d | cron=%s | error=%v", w.workerID, s.ID, s.CronExpr, err)
-				w.db.Model(&s).Update("enabled", false)
+				log.Printf("[SCHEDULER] Error fetching schedules | worker_id=%s | error=%v", w.workerID, err)
 				continue
 			}
 
-			nextRun := sched.Next(time.Now())
-			now := time.Now()
-			w.db.Model(&s).Updates(map[string]interface{}{
-				"last_run_at": &now,
-				"next_run_at": &nextRun,
-			})
+			for _, s := range schedules {
+				log.Printf("[SCHEDULER] Executing schedule | worker_id=%s | schedule_id=%d | watchlist_id=%s", w.workerID, s.ID, s.WatchlistID)
+
+				// Enqueue sync job
+				job := database.Job{
+					Type:        "sync",
+					State:       "queued",
+					ScopeType:   "watchlist",
+					ScopeID:     s.WatchlistID.String(),
+					RequestedAt: time.Now(),
+					OwnerUserID: s.Watchlist.OwnerUserID,
+					CreatedBy:   "scheduler",
+				}
+
+				if err := w.db.Create(&job).Error; err != nil {
+					log.Printf("[SCHEDULER] Error enqueuing job | worker_id=%s | schedule_id=%d | error=%v", w.workerID, s.ID, err)
+					continue
+				}
+
+				// Compute next run at
+				sched, err := cron.ParseStandard(s.CronExpr)
+				if err != nil {
+					log.Printf("[SCHEDULER] Invalid cron expression | worker_id=%s | schedule_id=%d | cron=%s | error=%v", w.workerID, s.ID, s.CronExpr, err)
+					w.db.Model(&s).Update("enabled", false)
+					continue
+				}
+
+				nextRun := sched.Next(time.Now())
+				now := time.Now()
+				w.db.Model(&s).Updates(map[string]interface{}{
+					"last_run_at": &now,
+					"next_run_at": &nextRun,
+				})
+			}
 		}
 	}
 }
