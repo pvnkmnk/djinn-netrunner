@@ -48,7 +48,8 @@ type WorkerOrchestrator struct {
 
 	activeJobs map[uint64]*jobContext
 	jobMutex   sync.Mutex
-	running    bool
+	ctx        context.Context
+	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 
 	// Notify
@@ -105,7 +106,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 }
 
 func (w *WorkerOrchestrator) Start() {
-	w.running = true
+	w.ctx, w.cancel = context.WithCancel(context.Background())
 	log.Printf("[WORKER] Starting worker | worker_id=%s", w.workerID)
 
 	// Start background tasks
@@ -126,7 +127,13 @@ func (w *WorkerOrchestrator) Start() {
 	}
 
 	// Main job loop with round-robin item processing
-	for w.running {
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		default:
+		}
+
 		w.claimAndProcess()
 		w.processActiveJobsRoundRobin()
 
@@ -136,6 +143,8 @@ func (w *WorkerOrchestrator) Start() {
 			// Regular poll
 		case <-w.wakeupChan:
 			log.Printf("[WORKER] Received wakeup notification | worker_id=%s", w.workerID)
+		case <-w.ctx.Done():
+			return
 		}
 	}
 }
@@ -149,8 +158,10 @@ func (w *WorkerOrchestrator) watchlistPollingLoop() {
 	w.triggerWatchlistSyncs()
 
 	for range ticker.C {
-		if !w.running {
+		select {
+		case <-w.ctx.Done():
 			return
+		default:
 		}
 		w.triggerWatchlistSyncs()
 	}
@@ -203,11 +214,9 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 	log.Printf("[NOTIFY] Listening for 'opswakeup' events | worker_id=%s", w.workerID)
 
 	for {
-		if !w.running {
-			return
-		}
-
 		select {
+		case <-w.ctx.Done():
+			return
 		case <-listener.Notify:
 			// Non-blocking send to wakeupChan
 			select {
@@ -222,7 +231,7 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 
 func (w *WorkerOrchestrator) Stop() {
 	log.Printf("[WORKER] Shutting down worker | worker_id=%s", w.workerID)
-	w.running = false
+	w.cancel()
 
 	w.jobMutex.Lock()
 	for id, jc := range w.activeJobs {
@@ -239,8 +248,10 @@ func (w *WorkerOrchestrator) Stop() {
 func (w *WorkerOrchestrator) heartbeatLoop() {
 	ticker := time.NewTicker(5 * time.Second)
 	for range ticker.C {
-		if !w.running {
+		select {
+		case <-w.ctx.Done():
 			return
+		default:
 		}
 		w.updateHeartbeats()
 	}
@@ -267,8 +278,10 @@ func (w *WorkerOrchestrator) zombieCleanupLoop() {
 	log.Printf("[WORKER] Starting zombie cleanup loop | worker_id=%s", w.workerID)
 	ticker := time.NewTicker(1 * time.Minute)
 	for range ticker.C {
-		if !w.running {
+		select {
+		case <-w.ctx.Done():
 			return
+		default:
 		}
 
 		// Find jobs marked as running but with stale heartbeats (> 2 mins)
@@ -320,8 +333,10 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 	ticker := time.NewTicker(30 * time.Second)
 
 	for range ticker.C {
-		if !w.running {
+		select {
+		case <-w.ctx.Done():
 			return
+		default:
 		}
 
 		var schedules []database.Schedule
