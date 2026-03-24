@@ -230,115 +230,187 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 	}
 }
 
+// acquisitionPipeline carries state between pipeline stages.
+type acquisitionPipeline struct {
+	item     database.JobItem
+	job      database.Job
+	profile  *database.QualityProfile
+	results  []SearchResult
+	best     SearchResult
+	download string // path after download completes
+}
+
+// ExecuteItem runs the acquisition pipeline for a single job item.
+// Stages are named and independently testable:
+//  1. loadItemContext  — load job, item, profile from DB
+//  2. checkGonicIndex  — skip if already in library
+//  3. searchSoulseek   — execute search with profile awareness
+//  4. selectBestResult — score and validate best match
+//  5. downloadFile     — queue and wait for download
+//  6. importAndEnrich  — import to library, enrich metadata
 func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, itemID uint64) error {
-	var item database.JobItem
-	if err := h.db.First(&item, itemID).Error; err != nil {
+	p := &acquisitionPipeline{}
+
+	if skip, err := h.stageLoadItemContext(p, itemID); err != nil {
 		return err
+	} else if skip {
+		return nil
 	}
 
-	var job database.Job
-	if err := h.db.First(&job, item.JobID).Error; err != nil {
+	h.Log(jobID, "INFO", fmt.Sprintf("Processing: %s", p.item.NormalizedQuery), &itemID)
+
+	if skip, err := h.stageCheckGonicIndex(p); err != nil {
 		return err
+	} else if skip {
+		return nil
 	}
 
-	// 0. Load Quality Profile if specified in params
-	var profile *database.QualityProfile
-	if job.Params != nil {
+	if skip, err := h.stageSearchSoulseek(p); err != nil {
+		return err
+	} else if skip {
+		return nil
+	}
+
+	if skip, err := h.stageSelectBestResult(p); err != nil {
+		return err
+	} else if skip {
+		return nil
+	}
+
+	if skip, err := h.stageDownloadFile(p); err != nil {
+		return err
+	} else if skip {
+		return nil
+	}
+
+	return h.stageImportAndEnrich(ctx, p)
+}
+
+// stageLoadItemContext loads the job item, parent job, and quality profile.
+func (h *AcquisitionHandler) stageLoadItemContext(p *acquisitionPipeline, itemID uint64) (skip bool, err error) {
+	if err := h.db.First(&p.item, itemID).Error; err != nil {
+		return false, err
+	}
+	if err := h.db.First(&p.job, p.item.JobID).Error; err != nil {
+		return false, err
+	}
+
+	// Load Quality Profile if specified in params
+	if p.job.Params != nil {
 		var params struct {
 			ProfileID string `json:"quality_profile_id"`
 		}
-		if err := json.Unmarshal(job.Params, &params); err == nil && params.ProfileID != "" {
+		if err := json.Unmarshal(p.job.Params, &params); err == nil && params.ProfileID != "" {
 			id, _ := uuid.Parse(params.ProfileID)
-			var p database.QualityProfile
-			if err := h.db.First(&p, "id = ?", id).Error; err == nil {
-				profile = &p
+			var profile database.QualityProfile
+			if err := h.db.First(&profile, "id = ?", id).Error; err == nil {
+				p.profile = &profile
 			}
 		}
 	}
+	return false, nil
+}
 
-	h.Log(jobID, "INFO", fmt.Sprintf("Processing: %s", item.NormalizedQuery), &itemID)
-
-	// 0.5 Pre-flight check with Gonic
-	if h.gonic != nil {
-		h.Log(jobID, "INFO", "Checking Gonic index...", &itemID)
-		songs, err := h.gonic.Search3(item.NormalizedQuery)
-		if err == nil && len(songs) > 0 {
-			for _, s := range songs {
-				// Basic heuristic match
-				if (strings.EqualFold(s.Artist, item.Artist) || item.Artist == "") &&
-					strings.EqualFold(s.Title, item.TrackTitle) {
-					h.Log(jobID, "OK", fmt.Sprintf("Found in Gonic (ID: %s). Skipping.", s.ID), &itemID)
-					h.db.Model(&item).Updates(map[string]interface{}{
-						"status":      "completed (already indexed)",
-						"finished_at": time.Now(),
-					})
-					return nil
-				}
-			}
-		}
+// stageCheckGonicIndex checks if the track is already in the Gonic library.
+// Returns skip=true if found (item already indexed).
+func (h *AcquisitionHandler) stageCheckGonicIndex(p *acquisitionPipeline) (skip bool, err error) {
+	if h.gonic == nil {
+		return false, nil
 	}
 
-	h.Log(jobID, "INFO", "Searching Soulseek...", &itemID)
+	h.Log(p.item.JobID, "INFO", "Checking Gonic index...", &p.item.ID)
+	songs, err := h.gonic.Search3(p.item.NormalizedQuery)
+	if err != nil || len(songs) == 0 {
+		return false, nil // not found, continue pipeline
+	}
 
-	// 1. Search with Profile awareness
-	results, err := h.slskd.Search(item.NormalizedQuery, 30, profile)
+	for _, s := range songs {
+		if (strings.EqualFold(s.Artist, p.item.Artist) || p.item.Artist == "") &&
+			strings.EqualFold(s.Title, p.item.TrackTitle) {
+			h.Log(p.item.JobID, "OK", fmt.Sprintf("Found in Gonic (ID: %s). Skipping.", s.ID), &p.item.ID)
+			h.db.Model(&p.item).Updates(map[string]interface{}{
+				"status":      "completed (already indexed)",
+				"finished_at": time.Now(),
+			})
+			return true, nil // skip remaining stages
+		}
+	}
+	return false, nil
+}
+
+// stageSearchSoulseek executes a Soulseek search with profile awareness.
+func (h *AcquisitionHandler) stageSearchSoulseek(p *acquisitionPipeline) (skip bool, err error) {
+	h.Log(p.item.JobID, "INFO", "Searching Soulseek...", &p.item.ID)
+
+	results, err := h.slskd.Search(p.item.NormalizedQuery, 30, p.profile)
 	if err != nil || len(results) == 0 {
-		h.failItem(jobID, itemID, "No results found")
-		return nil
+		h.failItem(p.item.JobID, p.item.ID, "No results found")
+		return true, nil
 	}
 
-	h.Log(jobID, "OK", fmt.Sprintf("Found %d results", len(results)), &itemID)
-	best := results[0]
+	h.Log(p.item.JobID, "OK", fmt.Sprintf("Found %d results", len(results)), &p.item.ID)
+	p.results = results
+	return false, nil
+}
 
-	// Check if the best result actually matches the profile (if strictly required)
-	if profile != nil {
+// stageSelectBestResult picks the top-scored result and validates it against the profile.
+func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip bool, err error) {
+	p.best = p.results[0]
+
+	// Check if the best result matches the profile requirements
+	if p.profile != nil {
 		format := ""
-		if dotIndex := strings.LastIndex(best.Filename, "."); dotIndex != -1 {
-			format = strings.ToLower(best.Filename[dotIndex+1:])
+		if dotIndex := strings.LastIndex(p.best.Filename, "."); dotIndex != -1 {
+			format = strings.ToLower(p.best.Filename[dotIndex+1:])
 		}
 		bitrate := 0
-		if best.Bitrate != nil {
-			bitrate = *best.Bitrate
+		if p.best.Bitrate != nil {
+			bitrate = *p.best.Bitrate
 		}
 
-		if !profile.IsMatch(format, bitrate) {
-			h.Log(jobID, "WARN", fmt.Sprintf("Best result doesn't match profile requirements: %s", best.Filename), &itemID)
-			// For now, we continue but we could fail here if "strict mode" was enabled
+		if !p.profile.IsMatch(format, bitrate) {
+			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Best result doesn't match profile requirements: %s", p.best.Filename), &p.item.ID)
 		}
 	}
 
-	h.Log(jobID, "INFO", fmt.Sprintf("Selected: %s (score: %.1f)", best.Filename, best.Score), &itemID)
+	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Selected: %s (score: %.1f)", p.best.Filename, p.best.Score), &p.item.ID)
+	return false, nil
+}
 
-	// 2. Queue Download
-	h.db.Model(&item).Updates(map[string]interface{}{
+// stageDownloadFile queues the download and waits for completion.
+func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip bool, err error) {
+	h.db.Model(&p.item).Updates(map[string]interface{}{
 		"status":            "downloading",
 		"slskd_search_id":   "completed",
-		"slskd_download_id": fmt.Sprintf("%s:%s", best.Username, best.Filename),
+		"slskd_download_id": fmt.Sprintf("%s:%s", p.best.Username, p.best.Filename),
 	})
 
-	_, err = h.slskd.EnqueueDownload(best.Username, best.Filename)
+	_, err = h.slskd.EnqueueDownload(p.best.Username, p.best.Filename)
 	if err != nil {
-		h.failItem(jobID, itemID, fmt.Sprintf("Download enqueue failed: %v", err))
-		return nil
+		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download enqueue failed: %v", err))
+		return true, nil
 	}
 
-	h.Log(jobID, "INFO", "Download queued", &itemID)
+	h.Log(p.item.JobID, "INFO", "Download queued", &p.item.ID)
 
-	// 3. Wait for completion
-	download, err := h.slskd.WaitForDownload(best.Username, best.Filename, 10*time.Minute)
+	download, err := h.slskd.WaitForDownload(p.best.Username, p.best.Filename, 10*time.Minute)
 	if err != nil {
-		h.failItem(jobID, itemID, fmt.Sprintf("Download failed or timed out: %v", err))
-		return nil
+		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed or timed out: %v", err))
+		return true, nil
 	}
 
-	h.Log(jobID, "OK", "Download completed", &itemID)
+	h.Log(p.item.JobID, "OK", "Download completed", &p.item.ID)
+	p.download = download.Path
+	return false, nil
+}
 
-	// 4. Import
+// stageImportAndEnrich imports the downloaded file and enriches metadata.
+func (h *AcquisitionHandler) stageImportAndEnrich(ctx context.Context, p *acquisitionPipeline) error {
 	var coverArtSources []string
-	if profile != nil {
-		coverArtSources = parseCoverArtSources(profile.CoverArtSources)
+	if p.profile != nil {
+		coverArtSources = parseCoverArtSources(p.profile.CoverArtSources)
 	}
-	return h.importFile(ctx, jobID, itemID, download.Path, item, coverArtSources)
+	return h.importFile(ctx, p.item.JobID, p.item.ID, p.download, p.item, coverArtSources)
 }
 
 // Default cover art source priority order
