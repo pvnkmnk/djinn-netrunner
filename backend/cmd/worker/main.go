@@ -304,9 +304,9 @@ func (w *WorkerOrchestrator) zombieCleanupLoop() {
 				})
 
 				// Attempt to release the advisory lock if it was held
-				lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
+				lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
 				if err == nil {
-					w.lockManager.ReleaseLock(context.Background(), lockKey)
+					w.lockManager.ReleaseLock(w.ctx, lockKey)
 				}
 			}
 		}
