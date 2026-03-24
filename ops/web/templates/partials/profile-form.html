@@ -44,7 +44,7 @@
             <div class="form-group">
                 <label for="cover_art_sources">Cover Art Sources (comma-separated)</label>
                 <input type="text" id="cover_art_sources" name="cover_art_sources" value="{% if CoverArtSources %}{{ CoverArtSources }}{% else %}source,musicbrainz,discogs{% endif %}" placeholder="source,musicbrainz,discogs">
-                <small style="color: var(--text-secondary);">Order: source (watchlist URL), musicbrainz, discogs</small>
+                <small class="text-secondary">Order: source (watchlist URL), musicbrainz, discogs</small>
             </div>
             <div class="form-actions">
                 <button type="button" class="btn" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active')">Cancel</button>
