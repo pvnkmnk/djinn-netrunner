@@ -2,7 +2,6 @@ package api
 
 import (
 	"log"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -24,17 +23,8 @@ func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) erro
 
 // WatchlistsPage renders the watchlists page
 func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	hasAuth := false
-	if sessionID != "" {
-		var user database.User
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Redirect("/", 302)
 	}
 
@@ -55,22 +45,17 @@ func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
 
 // LibrariesPage renders the libraries page
 func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	hasAuth := false
-	if sessionID != "" {
-		var user database.User
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Redirect("/", 302)
 	}
 
 	var libs []database.Library
-	if err := h.db.Order("name").Find(&libs).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&libs).Error; err != nil {
 		log.Printf("Error getting libraries: %v", err)
 	}
 	return RenderPage(c, "libraries", "pages/libraries", fiber.Map{"libraries": libs})
@@ -78,22 +63,17 @@ func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
 
 // ProfilesPage renders the profiles page
 func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	hasAuth := false
-	if sessionID != "" {
-		var user database.User
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Redirect("/", 302)
 	}
 
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	if err := query.Find(&profiles).Error; err != nil {
 		log.Printf("Error getting profiles: %v", err)
 	}
 	return RenderPage(c, "profiles", "pages/profiles", fiber.Map{"profiles": profiles})
@@ -101,17 +81,8 @@ func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
 
 // SchedulesPage renders the schedules page
 func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	hasAuth := false
-	if sessionID != "" {
-		var user database.User
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Redirect("/", 302)
 	}
 
@@ -131,17 +102,8 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 
 // ArtistsPage renders the artists page
 func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Redirect("/", 302)
 	}
 
@@ -159,17 +121,8 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 
 // JobsPage renders the jobs page
 func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	hasAuth := false
-	if sessionID != "" {
-		var user database.User
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Redirect("/", 302)
 	}
 

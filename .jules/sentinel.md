@@ -19,3 +19,8 @@
 **Vulnerability:** Monitored artists could be listed, added, updated, or deleted by any authenticated user regardless of ownership.
 **Learning:** Resource-level authorization must be enforced in both the API handlers and the underlying services by passing user identity/role context.
 **Prevention:** Update service signatures to accept authorization context (userID, isAdmin) and ensure all GORM queries for that resource incorporate ownership filters.
+
+## 2026-03-24 - [BOLA in Libraries and Quality Profiles]
+**Vulnerability:** Libraries and Quality Profiles lacked owner tracking, allowing any authenticated user to view, modify, or delete resources belonging to others.
+**Learning:** Fiber's `c.Locals("user")` should be used consistently across all protected handlers to eliminate redundant database session lookups and enable reliable authorization checks.
+**Prevention:** Always include `OwnerUserID` in core resource models and apply ownership filters in GORM queries unless the user has an administrative role.

@@ -86,6 +86,7 @@ type QualityProfile struct {
 	PreferWebReleases   bool   `gorm:"default:true"`
 	CoverArtSources     string `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
 	IsDefault           bool   `gorm:"default:false"`
+	OwnerUserID         *uint64 `gorm:"index"`
 
 	// Advanced filtering (Phase 2)
 	MinSampleRate         int             `gorm:"default:0"`           // e.g. 44100, 48000
@@ -186,6 +187,7 @@ type Library struct {
 	QuotaAlertAt *int      `gorm:"default:80"`   // percentage threshold for alerts
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	OwnerUserID  *uint64 `gorm:"index"`
 }
 
 func (m *Library) BeforeCreate(tx *gorm.DB) error {
