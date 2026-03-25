@@ -93,6 +93,7 @@ type QualityProfile struct {
 	FormatPreferenceOrder JSONStringArray `gorm:"type:text"`           // JSON array: ["flac","wav","alac","mp3"]
 	FilterMode            FilterModeType  `gorm:"default:'preferred'"` // "preferred" or "required"
 	MaxPeerQueueDepth     int             `gorm:"default:0"`           // 0 = no limit
+	TranscodeTarget       string          `gorm:"default:''"`          // Target format for transcoding (e.g. "opus", "mp3", "aac")
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -196,24 +197,25 @@ func (m *Library) BeforeCreate(tx *gorm.DB) error {
 
 // Track represents a single audio file in the library
 type Track struct {
-	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
-	LibraryID   uuid.UUID `gorm:"type:uuid;not null;index:idx_library_genre"`
-	Title       string    `gorm:"not null"`
-	Artist      string    `gorm:"index"`
-	Album       string    `gorm:"index"`
-	Path        string    `gorm:"uniqueIndex;not null"`
-	TrackNum    *int
-	DiscNum     *int
-	Format      string
-	FileSize    int64
-	FileHash    string `gorm:"index"`
-	Year        *int   // Release year
-	Genre       string `gorm:"index:idx_library_genre"` // Genre
-	Composer    string // Composer
-	CoverURL    string // URL to cover art
-	Fingerprint string // AcoustID fingerprint (stored after first scan)
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                   uuid.UUID `gorm:"type:uuid;primaryKey"`
+	LibraryID            uuid.UUID `gorm:"type:uuid;not null;index:idx_library_genre"`
+	Title                string    `gorm:"not null"`
+	Artist               string    `gorm:"index"`
+	Album                string    `gorm:"index"`
+	Path                 string    `gorm:"uniqueIndex;not null"`
+	TrackNum             *int
+	DiscNum              *int
+	Format               string
+	FileSize             int64
+	FileHash             string `gorm:"index"`
+	Year                 *int   // Release year
+	Genre                string `gorm:"index:idx_library_genre"` // Genre
+	Composer             string // Composer
+	CoverURL             string // URL to cover art
+	Fingerprint          string // AcoustID fingerprint (stored after first scan)
+	EnrichmentProvenance string `gorm:"type:text"` // JSON: which source wrote which tag fields
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 
 	Library Library `gorm:"foreignKey:LibraryID"`
 }
