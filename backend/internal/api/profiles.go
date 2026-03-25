@@ -1,8 +1,6 @@
 package api
 
 import (
-	"time"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -19,17 +17,9 @@ func NewProfileHandler(db *gorm.DB) *ProfileHandler {
 
 // List returns all quality profiles
 func (h *ProfileHandler) List(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -42,17 +32,9 @@ func (h *ProfileHandler) List(c *fiber.Ctx) error {
 
 // Get returns a single profile by ID
 func (h *ProfileHandler) Get(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -74,17 +56,9 @@ func (h *ProfileHandler) Get(c *fiber.Ctx) error {
 
 // Create creates a new quality profile
 func (h *ProfileHandler) Create(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -175,17 +149,9 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 
 // Update updates an existing profile
 func (h *ProfileHandler) Update(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -282,17 +248,9 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 
 // Delete deletes a profile
 func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -334,20 +292,11 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 
 // GetForm returns the profile form for add/edit
 func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}

@@ -17,3 +17,7 @@
 ## 2026-03-24 - Consolidated Dashboard Stats Queries
 **Learning:** Dashboard endpoints `GetActivityStats` and `GetSummary` were performing multiple sequential `Count` queries (up to 6) to gather various metric totals. This created unnecessary database roundtrips and increased latency for the dashboard UI.
 **Action:** Consolidated multiple `Count` operations into a single SQL statement using subqueries. This reduces the database roundtrips to 1 per request, significantly improving response times for metric-heavy endpoints. Verified correctness with new integration tests using a seeded in-memory SQLite database.
+
+## 2026-03-26 - Elimination of Redundant Session Lookups
+**Learning:** Identified a widespread performance anti-pattern where protected API, Page, and Partial handlers were manually performing database session lookups even though `AuthMiddleware` already populates `c.Locals("user")`. This created unnecessary database roundtrips (1 per request) for nearly every protected endpoint in the application.
+**Action:** Refactored handlers in `artists.go`, `libraries.go`, `profiles.go`, `schedules.go`, `stats.go`, `watchlist_preview.go`, `watchlists.go`, and `pages.go` to use the pre-authenticated user from context. Updated `main.go` to apply `AuthMiddleware` to Page and Partial routes to support this optimization. This reduces overall database load and latency for all authenticated requests.

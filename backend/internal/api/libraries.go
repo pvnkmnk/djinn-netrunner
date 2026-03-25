@@ -19,17 +19,9 @@ func NewLibraryHandler(db *gorm.DB) *LibraryHandler {
 
 // ListLibraries returns all libraries
 func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -44,17 +36,9 @@ func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
 
 // GetLibrary returns a single library by ID
 func (h *LibraryHandler) GetLibrary(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -76,17 +60,9 @@ func (h *LibraryHandler) GetLibrary(c *fiber.Ctx) error {
 
 // CreateLibrary creates a new library
 func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -121,17 +97,9 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 
 // UpdateLibrary updates an existing library
 func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -197,17 +165,9 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 
 // DeleteLibrary deletes a library
 func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -239,17 +199,9 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 
 // TriggerScan creates a scan job for the library
 func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -288,17 +240,9 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 
 // TriggerEnrich creates an enrich job for the library
 func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -337,17 +281,9 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 
 // ListTracks returns all tracks for a library
 func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -366,20 +302,11 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 
 // GetForm returns the library form for add/edit
 func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -409,20 +336,11 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderLibrariesPartial returns libraries HTML for HTMX
 func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	// Bolt Optimization: AuthMiddleware already populates "user" in context
+	_, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
