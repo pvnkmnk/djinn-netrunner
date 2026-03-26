@@ -1,6 +1,9 @@
 package api
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -8,6 +11,28 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
+
+// validateLibraryPath validates that a library path is safe to use.
+// It ensures the path is absolute, resolves any traversal segments via
+// filepath.Clean, and verifies the resolved path exists and is a directory.
+func validateLibraryPath(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("library path must be absolute")
+	}
+
+	// Resolve any . or .. segments to prevent traversal attacks.
+	cleanPath := filepath.Clean(path)
+
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		return fmt.Errorf("library path does not exist: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("library path must be a directory")
+	}
+
+	return nil
+}
 
 type LibraryHandler struct {
 	db *gorm.DB
@@ -87,11 +112,14 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 	if input.Path == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "path is required"})
 	}
+	if err := validateLibraryPath(input.Path); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
 
 	library := database.Library{
 		ID:          uuid.New(),
 		Name:        input.Name,
-		Path:        input.Path,
+		Path:        filepath.Clean(input.Path),
 		OwnerUserID: &user.ID,
 	}
 
@@ -147,7 +175,10 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 		if *input.Path == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "path cannot be empty"})
 		}
-		library.Path = *input.Path
+		if err := validateLibraryPath(*input.Path); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		library.Path = filepath.Clean(*input.Path)
 	}
 	// Validate QuotaAlertAt: must be between 1 and 100
 	if input.QuotaAlertAt != nil && (*input.QuotaAlertAt < 1 || *input.QuotaAlertAt > 100) {
