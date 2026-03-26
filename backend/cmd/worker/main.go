@@ -170,7 +170,8 @@ func (w *WorkerOrchestrator) watchlistPollingLoop() {
 }
 
 func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
-	lists, err := w.watchlist.GetWatchlists()
+	// Worker runs as admin to sync all user watchlists
+	lists, err := w.watchlist.GetWatchlists(0, true)
 	if err != nil {
 		log.Printf("[WATCHLIST] Error fetching watchlists | worker_id=%s | error=%v", w.workerID, err)
 		return

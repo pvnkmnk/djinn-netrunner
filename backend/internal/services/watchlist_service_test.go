@@ -60,7 +60,7 @@ func TestWatchlistService(t *testing.T) {
 	})
 
 	t.Run("Get Watchlists", func(t *testing.T) {
-		lists, err := service.GetWatchlists()
+		lists, err := service.GetWatchlists(0, true)
 		assert.NoError(t, err)
 		assert.Len(t, lists, 1)
 		assert.Equal(t, "My Playlist", lists[0].Name)
@@ -68,7 +68,7 @@ func TestWatchlistService(t *testing.T) {
 	})
 
 	t.Run("Update Sync Status", func(t *testing.T) {
-		lists, _ := service.GetWatchlists()
+		lists, _ := service.GetWatchlists(0, true)
 		id := lists[0].ID
 		err := service.UpdateLastSynced(id, "new-snapshot-id")
 		assert.NoError(t, err)
@@ -79,12 +79,12 @@ func TestWatchlistService(t *testing.T) {
 	})
 
 	t.Run("Delete Watchlist", func(t *testing.T) {
-		lists, _ := service.GetWatchlists()
+		lists, _ := service.GetWatchlists(0, true)
 		id := lists[0].ID
 		err := service.DeleteWatchlist(id)
 		assert.NoError(t, err)
 
-		lists, _ = service.GetWatchlists()
+		lists, _ = service.GetWatchlists(0, true)
 		assert.Len(t, lists, 0)
 	})
 
