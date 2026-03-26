@@ -324,6 +324,12 @@ body {
 .mb-2 { margin-bottom: 1rem; }
 .hidden { display: none; }
 
+/* HTMX loading state */
+.htmx-request {
+    opacity: 0.7;
+    cursor: wait !important;
+}
+
 /* Watchlist preview partial */
 .preview-header {
     display: flex;
