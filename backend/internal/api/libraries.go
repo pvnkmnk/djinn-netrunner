@@ -19,23 +19,18 @@ func NewLibraryHandler(db *gorm.DB) *LibraryHandler {
 
 // ListLibraries returns all libraries
 func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
 	var libraries []database.Library
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
 
-	if err := h.db.Order("name").Find(&libraries).Error; err != nil {
+	if err := query.Find(&libraries).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -44,17 +39,8 @@ func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
 
 // GetLibrary returns a single library by ID
 func (h *LibraryHandler) GetLibrary(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -64,7 +50,12 @@ func (h *LibraryHandler) GetLibrary(c *fiber.Ctx) error {
 	}
 
 	var library database.Library
-	if err := h.db.First(&library, "id = ?", id).Error; err != nil {
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := query.First(&library).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
@@ -76,17 +67,8 @@ func (h *LibraryHandler) GetLibrary(c *fiber.Ctx) error {
 
 // CreateLibrary creates a new library
 func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -107,9 +89,10 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 	}
 
 	library := database.Library{
-		ID:   uuid.New(),
-		Name: input.Name,
-		Path: input.Path,
+		ID:          uuid.New(),
+		Name:        input.Name,
+		Path:        input.Path,
+		OwnerUserID: &user.ID,
 	}
 
 	if err := h.db.Create(&library).Error; err != nil {
@@ -121,17 +104,8 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 
 // UpdateLibrary updates an existing library
 func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -141,7 +115,11 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 	}
 
 	var library database.Library
-	if err := h.db.First(&library, "id = ?", id).Error; err != nil {
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&library).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
@@ -197,17 +175,8 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 
 // DeleteLibrary deletes a library
 func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -217,7 +186,11 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 	}
 
 	var library database.Library
-	if err := h.db.First(&library, "id = ?", id).Error; err != nil {
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&library).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
@@ -239,17 +212,8 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 
 // TriggerScan creates a scan job for the library
 func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -259,7 +223,11 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 	}
 
 	var library database.Library
-	if err := h.db.First(&library, "id = ?", id).Error; err != nil {
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&library).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
@@ -274,6 +242,7 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 		ScopeID:     library.ID.String(),
 		RequestedAt: time.Now(),
 		CreatedBy:   "api",
+		OwnerUserID: &user.ID,
 	}
 
 	if err := h.db.Create(&job).Error; err != nil {
@@ -288,17 +257,8 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 
 // TriggerEnrich creates an enrich job for the library
 func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -308,7 +268,11 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 	}
 
 	var library database.Library
-	if err := h.db.First(&library, "id = ?", id).Error; err != nil {
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&library).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
@@ -323,6 +287,7 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 		ScopeID:     library.ID.String(),
 		RequestedAt: time.Now(),
 		CreatedBy:   "api",
+		OwnerUserID: &user.ID,
 	}
 
 	if err := h.db.Create(&job).Error; err != nil {
@@ -337,23 +302,27 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 
 // ListTracks returns all tracks for a library
 func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
 	libraryID, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid library ID"})
+	}
+
+	// Verify ownership of the library before listing tracks
+	var library database.Library
+	query := h.db.Where("id = ?", libraryID)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&library).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	var tracks []database.Track
@@ -366,20 +335,10 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 
 // GetForm returns the library form for add/edit
 func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -394,7 +353,11 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 		if err != nil {
 			return c.SendString("<div class=\"error\">Invalid ID.</div>")
 		}
-		if err := h.db.First(&lib, "id = ?", uuid).Error; err != nil {
+		query := h.db.Where("id = ?", uuid)
+		if user.Role != "admin" {
+			query = query.Where("owner_user_id = ?", user.ID)
+		}
+		if err := query.First(&lib).Error; err != nil {
 			return c.SendString("<div class=\"error\">Library not found.</div>")
 		}
 	}
@@ -409,20 +372,10 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderLibrariesPartial returns libraries HTML for HTMX
 func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -430,7 +383,11 @@ func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 	}
 
 	var libraries []database.Library
-	if err := h.db.Order("name").Find(&libraries).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&libraries).Error; err != nil {
 		return c.SendString("<div class=\"error\">Error loading libraries.</div>")
 	}
 
