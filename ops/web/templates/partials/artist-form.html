@@ -2,7 +2,7 @@
     <div class="modal">
         <div class="modal-header">
             <h3>Add Artist</h3>
-            <button class="modal-close" data-close-modal>&times;</button>
+            <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
         <form hx-post="/api/artists" hx-target="#artists-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
             <div class="form-group">
