@@ -23,18 +23,22 @@ func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) erro
 
 // WatchlistsPage renders the watchlists page
 func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
+	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Redirect("/", 302)
 	}
 
-	lists, err := h.service.GetWatchlists()
+	lists, err := h.service.GetWatchlists(user.ID, user.Role == "admin")
 	if err != nil {
 		log.Printf("Error getting watchlists: %v", err)
 		lists = []database.Watchlist{}
 	}
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+	pQuery := h.db.Order("name")
+	if user.Role != "admin" {
+		pQuery = pQuery.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	if err := pQuery.Find(&profiles).Error; err != nil {
 		log.Printf("Error getting profiles: %v", err)
 	}
 	return RenderPage(c, "watchlists", "pages/watchlists", fiber.Map{
@@ -81,17 +85,26 @@ func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
 
 // SchedulesPage renders the schedules page
 func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
+	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Redirect("/", 302)
 	}
 
 	var scheds []database.Schedule
-	if err := h.db.Preload("Watchlist").Order("created_at desc").Find(&scheds).Error; err != nil {
+	sQuery := h.db.Preload("Watchlist").Order("schedules.created_at desc")
+	if user.Role != "admin" {
+		sQuery = sQuery.Joins("JOIN watchlists ON watchlists.id = schedules.watchlist_id").Where("watchlists.owner_user_id = ?", user.ID)
+	}
+	if err := sQuery.Find(&scheds).Error; err != nil {
 		log.Printf("Error getting schedules: %v", err)
 	}
+
 	var watchlists []database.Watchlist
-	if err := h.db.Order("name").Find(&watchlists).Error; err != nil {
+	wQuery := h.db.Order("name")
+	if user.Role != "admin" {
+		wQuery = wQuery.Where("owner_user_id = ?", user.ID)
+	}
+	if err := wQuery.Find(&watchlists).Error; err != nil {
 		log.Printf("Error getting watchlists: %v", err)
 	}
 	return RenderPage(c, "schedules", "pages/schedules", fiber.Map{
@@ -121,13 +134,17 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 
 // JobsPage renders the jobs page
 func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
+	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Redirect("/", 302)
 	}
 
 	var jobs []database.Job
-	if err := h.db.Order("requested_at DESC").Limit(50).Find(&jobs).Error; err != nil {
+	query := h.db.Order("requested_at DESC").Limit(50)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&jobs).Error; err != nil {
 		log.Printf("Error getting jobs: %v", err)
 	}
 	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs})

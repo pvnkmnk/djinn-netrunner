@@ -102,10 +102,14 @@ func (s *WatchlistService) CreateWatchlist(name, sourceType, uri string, profile
 	return &watchlist, nil
 }
 
-// GetWatchlists retrieves all enabled watchlists
-func (s *WatchlistService) GetWatchlists() ([]database.Watchlist, error) {
+// GetWatchlists retrieves watchlists filtered by ownership
+func (s *WatchlistService) GetWatchlists(userID uint64, isAdmin bool) ([]database.Watchlist, error) {
 	var watchlists []database.Watchlist
-	err := s.db.Preload("QualityProfile").Find(&watchlists).Error
+	query := s.db.Preload("QualityProfile")
+	if !isAdmin {
+		query = query.Where("owner_user_id = ?", userID)
+	}
+	err := query.Find(&watchlists).Error
 	return watchlists, err
 }
 
