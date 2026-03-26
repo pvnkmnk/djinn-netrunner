@@ -1,4 +1,4 @@
-package integration
+//go:build integration
 
 // Package integration provides end-to-end testing harness for NetRunner
 // with dockerized slskd and test Soulseek accounts.
@@ -8,7 +8,7 @@ package integration
 //   2. Run tests: go test ./backend/internal/integration/... -v -tags=integration
 //   3. Stop services: docker compose -f docker-compose.integration.yml down
 //
-//go:build integration
+package integration
 
 import (
 	"context"
