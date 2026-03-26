@@ -1,0 +1,70 @@
+# Integration Testing Services for NetRunner
+# This compose file sets up dockerized slskd for end-to-end testing
+
+services:
+  slskd-integration:
+    image: slskd/slskd:latest
+    container_name: netrunner-slskd-integration
+    environment:
+      # Test Soulseek credentials - these should be set via environment
+      # For CI/testing, use placeholder or test account
+      SLSKD_SLSK_USERNAME: ${SLSKD_TEST_USERNAME:-testuser}
+      SLSKD_SLSK_PASSWORD: ${SLSKD_TEST_PASSWORD:-testpass}
+      SLSKD_REMOTE_CONFIGURATION: "true"
+      SLSKD_HTTP_PORT: 5030
+      SLSKD_SLSK_PORT: 2234
+      # Enable debug logging for integration tests
+      SLSKD_DEBUG: "true"
+      # Generate predictable API key for testing
+      SLSKD_API_KEY: ${SLSKD_TEST_API_KEY:-test-api-key-for-integration}
+      # Configure download paths for testing
+      SLSKD_DOWNLOADS_DIR: /downloads
+      SLSKD_INCOMPLETE_DIR: /downloads/.incomplete
+    volumes:
+      - slskd-integration-data:/app
+      - slskd-integration-downloads:/downloads
+    ports:
+      - "15030:5030"
+      - "12234:2234"
+    networks:
+      - netrunner-integration
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5030/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Mock Soulseek peer for testing downloads
+  # This is a placeholder - in real integration tests, you'd either:
+  # 1. Use a real test Soulseek account with shared files
+  # 2. Mock the Soulseek protocol (complex)
+  # 3. Use a test network with known peers
+  
+  integration-db:
+    image: postgres:16-alpine
+    container_name: netrunner-integration-db
+    environment:
+      POSTGRES_DB: netrunner_integration
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: ${INTEGRATION_DB_PASSWORD:-testpass}
+    volumes:
+      - integration-db-data:/var/lib/postgresql/data
+    ports:
+      - "15432:5432"
+    networks:
+      - netrunner-integration
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  slskd-integration-data:
+  slskd-integration-downloads:
+  integration-db-data:
+
+networks:
+  netrunner-integration:
+    driver: bridge
