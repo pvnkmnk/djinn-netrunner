@@ -24,3 +24,8 @@
 **Vulnerability:** Libraries and Quality Profiles lacked owner tracking, allowing any authenticated user to view, modify, or delete resources belonging to others.
 **Learning:** Fiber's `c.Locals("user")` should be used consistently across all protected handlers to eliminate redundant database session lookups and enable reliable authorization checks.
 **Prevention:** Always include `OwnerUserID` in core resource models and apply ownership filters in GORM queries unless the user has an administrative role.
+
+## 2026-03-27 - [BOLA in Aggregate Statistics]
+**Vulnerability:** Aggregate statistics and dashboard summary endpoints returned global system data, leaking resource counts and job statuses across user accounts.
+**Learning:** Statistics and summary handlers often bypass standard list filtering. Authorization must be explicitly applied even for aggregate counts by joining with owner entities or filtering by `OwnerUserID`.
+**Prevention:** Ensure all dashboard and reporting queries incorporate ownership filters for non-admin users. For resources like `Track` that lack direct ownership, join with the parent entity (e.g., `Library`) to verify access.
