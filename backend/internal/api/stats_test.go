@@ -76,6 +76,10 @@ func TestStatsHandler_GetActivityStats_Integration(t *testing.T) {
 	err = database.Migrate(db)
 	assert.NoError(t, err)
 
+	// Setup admin user
+	admin := database.User{Email: "admin@example.com", Role: "admin"}
+	db.Create(&admin)
+
 	// Seed data
 	db.Create(&database.MonitoredArtist{MusicBrainzID: "a1", Name: "Artist 1"})
 	db.Create(&database.MonitoredArtist{MusicBrainzID: "a2", Name: "Artist 2"})
@@ -89,6 +93,10 @@ func TestStatsHandler_GetActivityStats_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", admin)
+		return c.Next()
+	})
 	app.Get("/api/stats/activity", handler.GetActivityStats)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/activity", nil))
@@ -116,6 +124,10 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 	err = database.Migrate(db)
 	assert.NoError(t, err)
 
+	// Setup admin user
+	admin := database.User{Email: "admin@example.com", Role: "admin"}
+	db.Create(&admin)
+
 	// Seed data
 	db.Create(&database.MonitoredArtist{MusicBrainzID: "a1", Name: "Artist 1"})
 	db.Create(&database.Watchlist{Name: "W1", SourceType: "spotify_playlist", SourceURI: "uri1"})
@@ -128,6 +140,10 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", admin)
+		return c.Next()
+	})
 	app.Get("/api/stats/summary", handler.GetSummary)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/summary", nil))
