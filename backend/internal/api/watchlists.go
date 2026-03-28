@@ -173,7 +173,7 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 
 // GetForm returns the watchlist form for add/edit
 func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
 	if !ok {
@@ -191,7 +191,13 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 		if err != nil {
 			return c.SendString("<div class=\"error\">Invalid ID.</div>")
 		}
-		if err := h.db.First(&wl, "id = ?", uuid).Error; err != nil {
+
+		query := h.db.Where("id = ?", uuid)
+		if user.Role != "admin" {
+			query = query.Where("owner_user_id = ?", user.ID)
+		}
+
+		if err := query.First(&wl).Error; err != nil {
 			return c.SendString("<div class=\"error\">Watchlist not found.</div>")
 		}
 	}
