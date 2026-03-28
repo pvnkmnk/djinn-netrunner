@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const sessionCookieName = "session_id"
+const sessionCookieName = SessionCookie
 
 type DashboardHandler struct {
 	db *gorm.DB
