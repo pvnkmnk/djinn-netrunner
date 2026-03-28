@@ -24,3 +24,8 @@
 **Vulnerability:** Libraries and Quality Profiles lacked owner tracking, allowing any authenticated user to view, modify, or delete resources belonging to others.
 **Learning:** Fiber's `c.Locals("user")` should be used consistently across all protected handlers to eliminate redundant database session lookups and enable reliable authorization checks.
 **Prevention:** Always include `OwnerUserID` in core resource models and apply ownership filters in GORM queries unless the user has an administrative role.
+
+## 2026-03-28 - [BOLA in Watchlist Preview and Form]
+**Vulnerability:** Watchlist previews and the edit form were accessible to any authenticated user by ID, potentially leaking source URIs and library contents.
+**Learning:** Endpoints that only "read" or "preview" data are often overlooked for BOLA. Redundant manual session lookups should be refactored to use centralized middleware context to ensure consistent identity and authorization.
+**Prevention:** Apply ownership filters (e.g., `.Where("owner_user_id = ?", user.ID)`) to all resource-fetching queries, even for previews and forms.
