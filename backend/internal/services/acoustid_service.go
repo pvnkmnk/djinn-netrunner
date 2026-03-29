@@ -30,8 +30,8 @@ func (s *AcoustIDService) SetCache(cache *CacheService) {
 }
 
 type AcoustIDResult struct {
-	ID    string  `json:"id"`
-	Score float64 `json:"score"`
+	ID         string  `json:"id"`
+	Score      float64 `json:"score"`
 	Recordings []struct {
 		ID string `json:"id"`
 	} `json:"recordings"`

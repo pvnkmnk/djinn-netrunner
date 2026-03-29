@@ -31,7 +31,7 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 		// Try to parse "Artist - Title" from item title
 		artist := ""
 		title := item.Title
-		
+
 		parts := strings.SplitN(item.Title, " - ", 2)
 		if len(parts) == 2 {
 			artist = strings.TrimSpace(parts[0])
@@ -45,7 +45,7 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 				coverURL = content[0].Attrs["url"]
 			}
 		}
-		
+
 		// Fallback to item.Image or feed.Image
 		if coverURL == "" && item.Image != nil {
 			coverURL = item.Image.URL
