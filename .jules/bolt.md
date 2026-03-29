@@ -21,3 +21,7 @@
 ## 2026-03-24 - Targeted Column Selection in Watchlist Filtering
 **Learning:** Functions like `GetNewTracks` and `FilterExistingTracks` perform bulk lookups against large tables (`acquisitions`, `tracks`, `jobitems`). By default, GORM selects all columns (`*`), which increases memory allocation and database I/O, especially when only identification fields (`artist`, `title`) are needed.
 **Action:** Use `.Select("column1, column2")` before `.Find()` to fetch only necessary fields. This optimization reduced `GetNewTracks` latency by ~66% and `FilterExistingTracks` latency by ~51% in synthetic benchmarks.
+
+## 2026-03-29 - Redundant Auth Lookups and Query Consolidation
+**Learning:** Identified a widespread performance anti-pattern where every API handler was manually re-verifying the session and user from the database, despite this already being done by the `AuthMiddleware`. This added at least one unnecessary DB roundtrip and a join per request. Also found that dashboard statistics were performing multiple sequential `COUNT` queries.
+**Action:** Removed redundant DB lookups by retrieving the pre-populated user from the Fiber context using `c.Locals("user").(database.User)`. Consolidated multiple statistics counts into single SQL statements using subqueries and conditional aggregation (`COUNT(*) FILTER`). These changes significantly reduce database load and latency for dashboard and list views.
