@@ -1,7 +1,7 @@
 <div class="watchlists-region">
     <div class="section-header">
         <h2>Watchlists</h2>
-        <button class="btn btn-primary" hx-get="/partials/watchlist-form" hx-target="#modal-container" hx-swap="innerHTML">
+        <button class="btn btn-primary" hx-get="/partials/watchlist-form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Add a new watchlist">
             Add Watchlist
         </button>
     </div>
@@ -14,23 +14,24 @@
             <div class="source">{{ watchlist.SourceType }}: {{ watchlist.SourceURI }}</div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-post="/api/watchlists/{{ watchlist.ID }}/sync" hx-target="#console-logs">
+            <button class="btn btn-sm" hx-post="/api/watchlists/{{ watchlist.ID }}/sync" hx-target="#console-logs" aria-label="Sync watchlist {{ watchlist.Name }}">
                 Sync
             </button>
-            <button class="btn btn-sm" hx-get="/api/watchlists/{{ watchlist.ID }}/preview" hx-target="#watchlist-preview-{{ watchlist.ID }}" hx-swap="innerHTML" type="button">
+            <button class="btn btn-sm" hx-get="/api/watchlists/{{ watchlist.ID }}/preview" hx-target="#watchlist-preview-{{ watchlist.ID }}" hx-swap="innerHTML" type="button" aria-label="Preview tracks in {{ watchlist.Name }}">
                 Preview
             </button>
-            <button class="btn btn-sm" hx-get="/partials/watchlist-form?id={{ watchlist.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+            <button class="btn btn-sm" hx-get="/partials/watchlist-form?id={{ watchlist.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit watchlist {{ watchlist.Name }}">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/watchlists/{{ watchlist.ID }}" hx-target="#watchlist-{{ watchlist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this watchlist?">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/watchlists/{{ watchlist.ID }}" hx-target="#watchlist-{{ watchlist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete the watchlist '{{ watchlist.Name }}'?" aria-label="Delete watchlist {{ watchlist.Name }}">
                 Delete
             </button>
             <label class="toggle">
                 <input type="checkbox" {% if watchlist.Enabled %}checked{% endif %} 
                     hx-patch="/api/watchlists/{{ watchlist.ID }}/toggle"
                     hx-target="#watchlist-{{ watchlist.ID }}"
-                    hx-swap="outerHTML">
+                    hx-swap="outerHTML"
+                    aria-label="Toggle {{ watchlist.Name }} enabled state">
                 <span class="toggle-slider"></span>
             </label>
         </div>

@@ -1,7 +1,7 @@
 <div class="libraries-region">
     <div class="section-header">
         <h2>Libraries</h2>
-        <button class="btn btn-primary" hx-get="/api/libraries/form" hx-target="#modal-container" hx-swap="innerHTML">
+        <button class="btn btn-primary" hx-get="/api/libraries/form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Add a new library">
             Add Library
         </button>
     </div>
@@ -14,16 +14,16 @@
             <div class="path">{{ library.Path }}</div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/scan" hx-target="#console-logs">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/scan" hx-target="#console-logs" aria-label="Scan library {{ library.Name }}">
                 Scan
             </button>
-            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/enrich" hx-target="#console-logs">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/enrich" hx-target="#console-logs" aria-label="Enrich metadata for library {{ library.Name }}">
                 Enrich
             </button>
-            <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ library.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+            <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ library.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit library {{ library.Name }}">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ library.ID }}" hx-target="#library-{{ library.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this library?">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ library.ID }}" hx-target="#library-{{ library.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete the library '{{ library.Name }}'?" aria-label="Delete library {{ library.Name }}">
                 Delete
             </button>
         </div>
