@@ -86,15 +86,26 @@ type SummaryStats struct {
 
 // GetJobStats returns job statistics
 func (h *StatsHandler) GetJobStats(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	since := time.Now().Add(-24 * time.Hour)
 
 	var stats JobStats
-	h.db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("COUNT(*) as total, " +
-			"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
-			"COUNT(*) FILTER (WHERE state = 'running') as running, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
+	query := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+
+	// ✅ SECURITY: Apply BOLA protection
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	query.Select("COUNT(*) as total, " +
+		"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
+		"COUNT(*) FILTER (WHERE state = 'running') as running, " +
+		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
+		"COUNT(*) FILTER (WHERE state = 'failed') as failed").
 		Scan(&stats)
 
 	// Calculate success rate (excluding queued/running)
@@ -108,14 +119,25 @@ func (h *StatsHandler) GetJobStats(c *fiber.Ctx) error {
 
 // GetJobTypeBreakdown returns job stats by type
 func (h *StatsHandler) GetJobTypeBreakdown(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	since := time.Now().Add(-30 * 24 * time.Hour)
 
 	var breakdowns []JobTypeBreakdown
-	h.db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("job_type as type, " +
-			"COUNT(*) as total, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
+	query := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+
+	// ✅ SECURITY: Apply BOLA protection
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	query.Select("job_type as type, " +
+		"COUNT(*) as total, " +
+		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
+		"COUNT(*) FILTER (WHERE state = 'failed') as failed").
 		Group("job_type").
 		Scan(&breakdowns)
 
@@ -124,6 +146,11 @@ func (h *StatsHandler) GetJobTypeBreakdown(c *fiber.Ctx) error {
 
 // GetJobTrends returns daily job trends
 func (h *StatsHandler) GetJobTrends(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	days := 7
 	if d := c.Query("days"); d != "" {
 		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
@@ -134,10 +161,16 @@ func (h *StatsHandler) GetJobTrends(c *fiber.Ctx) error {
 	since := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
 
 	var trends []DailyJobTrend
-	h.db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("DATE(requested_at) as date, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
+	query := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+
+	// ✅ SECURITY: Apply BOLA protection
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	query.Select("DATE(requested_at) as date, " +
+		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
+		"COUNT(*) FILTER (WHERE state = 'failed') as failed").
 		Group("DATE(requested_at)").
 		Order("date").
 		Scan(&trends)
@@ -147,31 +180,44 @@ func (h *StatsHandler) GetJobTrends(c *fiber.Ctx) error {
 
 // GetLibraryStats returns library statistics
 func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	var stats LibraryStats
 
+	// ✅ SECURITY: Base query for tracks requires joining with libraries for ownership check
+	trackQuery := h.db.Model(&database.Track{})
+	if user.Role != "admin" {
+		trackQuery = trackQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ?", user.ID)
+	}
+
 	// Total tracks and size
-	h.db.Model(&database.Track{}).
-		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
+	trackQuery.Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
 		Scan(&stats)
 
 	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
 
 	// Format breakdown
-	h.db.Model(&database.Track{}).
-		Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
+	trackQuery.Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
 		Group("format").
 		Order("count DESC").
 		Scan(&stats.FormatBreakdown)
 
 	// Library breakdown
-	h.db.Model(&database.Track{}).
-		Select("library_id, COUNT(*) as track_count, COALESCE(SUM(file_size), 0) as total_size").
+	trackQuery.Select("library_id, COUNT(*) as track_count, COALESCE(SUM(file_size), 0) as total_size").
 		Group("library_id").
 		Scan(&stats.LibraryBreakdown)
 
 	// Get library names in a single query to avoid N+1
 	var libraries []database.Library
-	h.db.Find(&libraries)
+	libQuery := h.db.Model(&database.Library{})
+	if user.Role != "admin" {
+		libQuery = libQuery.Where("owner_user_id = ?", user.ID)
+	}
+	libQuery.Find(&libraries)
 	libraryNames := make(map[string]string)
 	for _, lib := range libraries {
 		libraryNames[lib.ID.String()] = lib.Name
@@ -189,23 +235,46 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 
 // GetActivityStats returns activity metrics
 func (h *StatsHandler) GetActivityStats(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	var stats ActivityStats
+
+	// Construct conditional WHERE clauses for BOLA protection
+	whereClause := ""
+	if user.Role != "admin" {
+		whereClause = "WHERE owner_user_id = " + strconv.FormatUint(user.ID, 10)
+	}
 
 	// Bolt Optimization: Consolidate multiple count queries into a single SQL statement using subqueries
 	// to reduce database roundtrips from 6 to 1.
 	since24h := time.Now().Add(-24 * time.Hour)
 	since7d := time.Now().Add(-7 * 24 * time.Hour)
 
-	err := h.db.Raw(`
+	// Construct query with conditional filters
+	query := `
 		SELECT
-			(SELECT COUNT(*) FROM monitored_artists) as monitored_artists,
-			(SELECT COUNT(*) FROM watchlists) as watchlists,
-			(SELECT COUNT(*) FROM quality_profiles) as quality_profiles,
-			(SELECT COUNT(*) FROM libraries) as libraries,
-			(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs24h,
-			(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs7d
-	`, since24h, since7d).Scan(&stats).Error
+			(SELECT COUNT(*) FROM monitored_artists ` + whereClause + `) as monitored_artists,
+			(SELECT COUNT(*) FROM watchlists ` + whereClause + `) as watchlists,
+			(SELECT COUNT(*) FROM quality_profiles ` + whereClause + `) as quality_profiles,
+			(SELECT COUNT(*) FROM libraries ` + whereClause + `) as libraries,
+			(SELECT COUNT(*) FROM jobs WHERE requested_at > ? ` + func() string {
+		if whereClause != "" {
+			return " AND owner_user_id = " + strconv.FormatUint(user.ID, 10)
+		}
+		return ""
+	}() + `) as recent_jobs24h,
+			(SELECT COUNT(*) FROM jobs WHERE requested_at > ? ` + func() string {
+		if whereClause != "" {
+			return " AND owner_user_id = " + strconv.FormatUint(user.ID, 10)
+		}
+		return ""
+	}() + `) as recent_jobs7d
+	`
 
+	err := h.db.Raw(query, since24h, since7d).Scan(&stats).Error
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -215,16 +284,25 @@ func (h *StatsHandler) GetActivityStats(c *fiber.Ctx) error {
 
 // GetSummary returns combined overview stats
 func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	var summary SummaryStats
 
 	// Job stats (last 24h)
 	since := time.Now().Add(-24 * time.Hour)
-	h.db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("COUNT(*) as total, " +
-			"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
-			"COUNT(*) FILTER (WHERE state = 'running') as running, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
+	jobQuery := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+	if user.Role != "admin" {
+		jobQuery = jobQuery.Where("owner_user_id = ?", user.ID)
+	}
+
+	jobQuery.Select("COUNT(*) as total, " +
+		"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
+		"COUNT(*) FILTER (WHERE state = 'running') as running, " +
+		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
+		"COUNT(*) FILTER (WHERE state = 'failed') as failed").
 		Scan(&summary.Jobs)
 
 	completed := summary.Jobs.Succeeded + summary.Jobs.Failed
@@ -233,43 +311,47 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 	}
 
 	// Library stats
-	h.db.Model(&database.Track{}).
-		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
+	trackQuery := h.db.Model(&database.Track{})
+	if user.Role != "admin" {
+		trackQuery = trackQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ?", user.ID)
+	}
+	trackQuery.Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
 		Scan(&summary.Library)
 	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
 	// Activity stats
-	// Bolt Optimization: Consolidate multiple count queries into a single SQL statement using subqueries
-	// to reduce database roundtrips from 5 to 1.
+	whereClause := ""
+	if user.Role != "admin" {
+		whereClause = "WHERE owner_user_id = " + strconv.FormatUint(user.ID, 10)
+	}
+
 	since24h := time.Now().Add(-24 * time.Hour)
-	h.db.Raw(`
+	query := `
 		SELECT
-			(SELECT COUNT(*) FROM monitored_artists) as monitored_artists,
-			(SELECT COUNT(*) FROM watchlists) as watchlists,
-			(SELECT COUNT(*) FROM quality_profiles) as quality_profiles,
-			(SELECT COUNT(*) FROM libraries) as libraries,
-			(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs24h
-	`, since24h).Scan(&summary.Activity)
+			(SELECT COUNT(*) FROM monitored_artists ` + whereClause + `) as monitored_artists,
+			(SELECT COUNT(*) FROM watchlists ` + whereClause + `) as watchlists,
+			(SELECT COUNT(*) FROM quality_profiles ` + whereClause + `) as quality_profiles,
+			(SELECT COUNT(*) FROM libraries ` + whereClause + `) as libraries,
+			(SELECT COUNT(*) FROM jobs WHERE requested_at > ? ` + func() string {
+		if whereClause != "" {
+			return " AND owner_user_id = " + strconv.FormatUint(user.ID, 10)
+		}
+		return ""
+	}() + `) as recent_jobs24h
+	`
+
+	h.db.Raw(query, since24h).Scan(&summary.Activity)
 
 	return c.JSON(summary)
 }
 
 // RenderStatsPartial returns stats HTML for HTMX
 func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -279,13 +361,18 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 	var stats StatsData
 
 	since := time.Now().Add(-24 * time.Hour)
+	query := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+
+	// ✅ SECURITY: Apply BOLA protection
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
 
 	// Use conditional aggregation for efficient single-query stats
-	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
-			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
+	if err := query.Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
+		"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
+		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
+		"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
 		Scan(&stats).Error; err != nil {
 		log.Printf("Error fetching stats: %v", err)
 		return c.SendString("<div class=\"error\">Error loading stats.</div>")

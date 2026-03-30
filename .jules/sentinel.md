@@ -24,3 +24,8 @@
 **Vulnerability:** Libraries and Quality Profiles lacked owner tracking, allowing any authenticated user to view, modify, or delete resources belonging to others.
 **Learning:** Fiber's `c.Locals("user")` should be used consistently across all protected handlers to eliminate redundant database session lookups and enable reliable authorization checks.
 **Prevention:** Always include `OwnerUserID` in core resource models and apply ownership filters in GORM queries unless the user has an administrative role.
+
+## 2026-03-30 - [BOLA in Aggregate Statistics]
+**Vulnerability:** Aggregate statistics (jobs, libraries, tracks, activity) were not filtered by owner, allowing any authenticated user to see system-wide metadata.
+**Learning:** Raw SQL subqueries for aggregate counts require manual interpolation of ownership filters if the user is not an administrator.
+**Prevention:** Construct conditional `WHERE` clauses for GORM queries and raw SQL subqueries to enforce `owner_user_id` filtering based on the authenticated user's role.

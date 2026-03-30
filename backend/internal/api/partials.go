@@ -63,8 +63,18 @@ type StatsData struct {
 
 // RenderJobsPartial returns jobs HTML for HTMX
 func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.SendString("<div class=\"error\">Not authenticated.</div>")
+	}
+
 	var jobs []database.Job
 	query := h.db.Order("requested_at DESC").Limit(50)
+
+	// ✅ SECURITY: Apply BOLA protection
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
 
 	// Apply filters if provided
 	jobType := c.Query("job_type")
