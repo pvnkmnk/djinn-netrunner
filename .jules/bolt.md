@@ -21,3 +21,7 @@
 ## 2026-03-24 - Targeted Column Selection in Watchlist Filtering
 **Learning:** Functions like `GetNewTracks` and `FilterExistingTracks` perform bulk lookups against large tables (`acquisitions`, `tracks`, `jobitems`). By default, GORM selects all columns (`*`), which increases memory allocation and database I/O, especially when only identification fields (`artist`, `title`) are needed.
 **Action:** Use `.Select("column1, column2")` before `.Find()` to fetch only necessary fields. This optimization reduced `GetNewTracks` latency by ~66% and `FilterExistingTracks` latency by ~51% in synthetic benchmarks.
+
+## 2026-03-25 - Redundant Session Lookups
+**Learning:** Found a recurring pattern where API handlers were manually performing database queries to look up user sessions from cookies, even when those handlers were already protected by an `AuthMiddleware` that populates `c.Locals("user")`. This resulted in one unnecessary database roundtrip per request.
+**Action:** Replaced manual session lookups with `user, ok := c.Locals("user").(database.User)` in several handlers (`ArtistsHandler`, `StatsHandler`, `WatchlistPreviewHandler`). This optimization reduces the database load and latency for these endpoints by eliminating one query per request.
