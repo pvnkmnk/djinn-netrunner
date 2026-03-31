@@ -113,8 +113,9 @@ func setupLibraryTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User) {
 	require.NoError(t, database.Migrate(db))
 
 	user := database.User{
-		Username: "testuser",
-		Role:     "admin",
+		Email:        "test@example.com",
+		PasswordHash: "hashed_password",
+		Role:         "admin",
 	}
 	require.NoError(t, db.Create(&user).Error)
 
