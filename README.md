@@ -4,23 +4,27 @@
 
 NetRunner is a modern, Go-native system for automated music discovery, download, organization, and streaming. Built for performance and privacy, it transforms your server into a resilient music acquisition terminal.
 
-![Status](https://img.shields.io/badge/status-v2.1--curation--update-cyan)
+![Status](https://img.shields.io/badge/status-v2.2.0--security--hardening-green)
 ![Architecture](https://img.shields.io/badge/architecture-standalone--sqlite-blue)
 ![UI](https://img.shields.io/badge/ui-htmx--cyberpunk-magenta)
+![Security](https://img.shields.io/badge/security-BOLA%20hardened-brightgreen)
 
 ---
 
 ## 🎯 What is NETRUNNER?
 
-NetRunner 2.1 is a complete architectural evolution of the original music pipeline. It provides a "zero-config" standalone experience with a high-fidelity operations console and intelligent library curation.
+NetRunner 2.2 is a security-hardened, performance-optimized evolution of the music acquisition pipeline. It provides a "zero-config" standalone experience with a high-fidelity operations console, intelligent library curation, and comprehensive multi-user data isolation.
 
 - 📥 **Acquisition**: Seamless integration with Soulseek (via `slskd`).
 - 🏗️ **Standalone Architecture**: Single-binary focus with CGO-free SQLite (WAL mode) or PostgreSQL.
 - 🏷️ **Metadata Resilience**: Persistent "Shadow Cache" for MusicBrainz & Spotify.
 - ⚡ **High-Performance**: Concurrent worker pools and round-robin task orchestration.
 - 🛡️ **Privacy-First**: Native SOCKS5/HTTP proxy support for all P2P and API traffic.
+- 🛡️ **Multi-User Security**: Broken Object Level Authorization (BOLA) protection across all endpoints with per-user data isolation.
 - 🖥️ **Cyberpunk UI**: A modern, interactive Bento Grid dashboard powered by HTMX and Fiber.
 - 🤖 **Agent-Native**: Built-in MCP (Model Context Protocol) server and CLI for autonomous management.
+- ⚡ **Optimized Performance**: Eliminated redundant database lookups, consolidated stats queries, and improved HTMX feedback.
+- ♿ **Accessible Console**: ARIA labels, contextual confirmations, and screen-reader-friendly management interfaces.
 
 ## ✨ Key Features
 
