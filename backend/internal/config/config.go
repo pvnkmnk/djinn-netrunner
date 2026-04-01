@@ -1,7 +1,10 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 
@@ -72,6 +75,15 @@ type Config struct {
 	AuthRateLimitExpiration string
 }
 
+// generateSecureSecret generates a cryptographically secure random secret
+func generateSecureSecret() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatal("failed to generate secure secret: ", err)
+	}
+	return hex.EncodeToString(b)
+}
+
 // Load reads configuration from environment variables
 func Load(filenames ...string) (*Config, error) {
 	// Try to load .env file if provided, otherwise default to project root
@@ -81,11 +93,26 @@ func Load(filenames ...string) (*Config, error) {
 		_ = godotenv.Load("../../.env")
 	}
 
+	// SECURITY: JWT_SECRET must be explicitly set. Never use a hardcoded default.
+	// In development, auto-generate a random secret if not provided.
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = generateSecureSecret()
+		log.Println("[WARN] JWT_SECRET not set — generated random secret. Set JWT_SECRET in .env for persistence across restarts.")
+	}
+
+	// SECURITY: Gonic credentials must be explicitly set. Never use hardcoded defaults.
+	gonicUser := os.Getenv("GONIC_USER")
+	gonicPass := os.Getenv("GONIC_PASS")
+	if gonicUser == "" || gonicPass == "" {
+		log.Println("[WARN] GONIC_USER or GONIC_PASS not set — Gonic integration will fail until credentials are configured.")
+	}
+
 	cfg := &Config{
 		Environment: getEnv("ENVIRONMENT", "development"),
 		Port:        getEnv("PORT", "8080"),
 		Domain:      getEnv("DOMAIN", "localhost"),
-		JWTSecret:   getEnv("JWT_SECRET", "dev-secret-do-not-use-in-prod"),
+		JWTSecret:   jwtSecret,
 
 		DatabaseURL: getEnv("DATABASE_URL", ""),
 		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
@@ -101,8 +128,8 @@ func Load(filenames ...string) (*Config, error) {
 		SlskdAPIKey: getEnv("SLSKD_API_KEY", ""),
 
 		GonicURL:  getEnv("GONIC_URL", "http://localhost:4747"),
-		GonicUser: getEnv("GONIC_USER", "admin"),
-		GonicPass: getEnv("GONIC_PASS", "admin"),
+		GonicUser: gonicUser,
+		GonicPass: gonicPass,
 
 		MusicLibraryPath: getEnv("MUSIC_LIBRARY", "./music_library"),
 

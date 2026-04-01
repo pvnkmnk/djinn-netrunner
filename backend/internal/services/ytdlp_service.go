@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,14 +19,25 @@ func NewYtdlpService() *YtdlpService {
 }
 
 // DownloadAudio extracts audio from a URL using yt-dlp
-func (s *YtdlpService) DownloadAudio(url, outputDir, audioFormat string) (string, error) {
+func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (string, error) {
 	// Validate input
-	if url == "" {
+	if rawURL == "" {
 		return "", errors.New("URL is required")
 	}
 	if outputDir == "" {
 		return "", errors.New("output directory is required")
 	}
+
+	// SECURITY: Validate URL format to prevent command injection
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.New("URL must use http or https scheme")
+	}
+	// Reconstruct URL from parsed components to ensure it's clean
+	url := parsed.String()
 
 	// Check if output directory exists
 	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
@@ -37,10 +49,17 @@ func (s *YtdlpService) DownloadAudio(url, outputDir, audioFormat string) (string
 		audioFormat = "flac"
 	}
 
+	// Validate audio format against whitelist
+	validFormats := map[string]bool{"flac": true, "mp3": true, "wav": true, "aac": true, "ogg": true, "m4a": true, "opus": true}
+	if !validFormats[audioFormat] {
+		return "", fmt.Errorf("unsupported audio format: %s (supported: flac, mp3, wav, aac, ogg, m4a, opus)", audioFormat)
+	}
+
 	// Generate output template
 	outputTemplate := filepath.Join(outputDir, "%(title)s.%(ext)s")
 
 	// Build yt-dlp command with audio extraction flags
+	// SECURITY: All arguments are passed as separate slice elements, never concatenated into a shell string
 	cmd := exec.Command("yt-dlp",
 		"--extract-audio",
 		"--audio-format", audioFormat,

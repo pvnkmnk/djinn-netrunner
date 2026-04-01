@@ -109,13 +109,17 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	now := time.Now()
 	h.db.Model(&user).Update("last_login_at", &now)
 
-	// Set cookie — no SameSite restriction for local dev (works with HTTP localhost)
+	// Set cookie with security best practices
+	// SECURITY: SameSite=Lax prevents CSRF while allowing normal navigation
+	// Secure flag is set based on environment (true in production, false for local HTTP dev)
+	secure := c.Protocol() == "https"
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookie,
 		Value:    sessionID,
 		Expires:  expiresAt,
 		HTTPOnly: true,
-		SameSite: "",
+		Secure:   secure,
+		SameSite: "Lax",
 		Path:     "/",
 	})
 

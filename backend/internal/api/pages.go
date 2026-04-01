@@ -16,6 +16,10 @@ type PageData struct {
 // RenderPage renders a page with common layout
 func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) error {
 	base := fiber.Map{"Page": page}
+	// SECURITY: Expose CSRF token to templates for HTMX state-changing requests
+	if csrf := c.Locals("csrf"); csrf != nil {
+		base["CSRFToken"] = csrf
+	}
 	for k, v := range data {
 		base[k] = v
 	}

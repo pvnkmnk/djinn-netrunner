@@ -62,7 +62,7 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 
 	allTracks, _, err := h.watchlistService.FetchWatchlistTracks(c.Context(), watchlist)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString("failed to fetch tracks: " + err.Error())
+		return c.Status(fiber.StatusInternalServerError).SendString("failed to fetch tracks")
 	}
 
 	total := len(allTracks)

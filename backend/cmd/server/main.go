@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/csrf"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -63,6 +64,26 @@ func main() {
 	app.Use(recover.New())
 	app.Use(logger.New())
 	app.Static("/static", cfg.StaticFilesPath)
+
+	// SECURITY: CSRF protection for state-changing operations
+	// Uses cookie-based storage with HTMX-compatible header matching
+	app.Use(csrf.New(csrf.Config{
+		KeyLookup:      "header:X-CSRF-Token",
+		CookieName:     "csrf_",
+		CookieSameSite: "Lax",
+		Expiration:     24 * time.Hour,
+		ContextKey:     "csrf",
+	}))
+
+	// SECURITY: Add security headers to all responses
+	app.Use(func(c *fiber.Ctx) error {
+		c.Set("X-Content-Type-Options", "nosniff")
+		c.Set("X-Frame-Options", "DENY")
+		c.Set("X-XSS-Protection", "1; mode=block")
+		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		return c.Next()
+	})
 
 	// Handlers
 	authHandler := api.NewAuthHandler(db)

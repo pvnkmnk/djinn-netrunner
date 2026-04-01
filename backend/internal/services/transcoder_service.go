@@ -32,10 +32,26 @@ func (s *TranscoderService) Transcode(inputPath, outputFormat string) (string, e
 		return "", errors.New("input file does not exist")
 	}
 
+	// SECURITY: Validate output format against whitelist to prevent command injection
+	validFormats := map[string]bool{
+		"mp3": true, "flac": true, "wav": true, "aac": true,
+		"ogg": true, "m4a": true, "opus": true, "wma": true,
+	}
+	if !validFormats[outputFormat] {
+		return "", fmt.Errorf("unsupported output format: %s", outputFormat)
+	}
+
 	// Generate output path by replacing extension
 	outputPath := strings.TrimSuffix(inputPath, filepath.Ext(inputPath)) + "." + outputFormat
 
+	// SECURITY: Validate output path stays within expected directory
+	cleanOutput := filepath.Clean(outputPath)
+	if !strings.HasPrefix(cleanOutput, filepath.Clean(filepath.Dir(inputPath))) {
+		return "", errors.New("output path would escape input directory")
+	}
+
 	// Build FFmpeg command
+	// SECURITY: All arguments passed as separate slice elements, never concatenated
 	cmd := exec.Command("ffmpeg", "-i", inputPath, "-y", outputPath)
 
 	// Run command and capture output
