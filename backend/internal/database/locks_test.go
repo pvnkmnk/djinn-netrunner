@@ -38,7 +38,7 @@ func TestLockManager(t *testing.T) {
 
 	// Try to acquire again (same session should succeed in Postgres, but our manager tracks it)
 	// Actually Postgres allowing re-acquisition in same session is fine.
-	
+
 	// Release lock
 	err = lm.ReleaseLock(ctx, lockKey)
 	if err != nil {

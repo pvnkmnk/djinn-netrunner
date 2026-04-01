@@ -55,7 +55,7 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 	if err != nil {
 		return nil, "", err
 	}
-	
+
 	// Ensure trailing slash for joining
 	if u.Path != "" && u.Path[len(u.Path)-1] != '/' {
 		u.Path += "/"

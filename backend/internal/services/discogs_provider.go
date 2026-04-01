@@ -51,7 +51,7 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 	if err != nil {
 		return nil, "", err
 	}
-	
+
 	u.Path = fmt.Sprintf("/users/%s/wants", watchlist.SourceURI)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)

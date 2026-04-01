@@ -73,7 +73,7 @@ func (p *FileWatchlistProvider) parseCSV(f *os.File) ([]map[string]string, error
 
 	var tracks []map[string]string
 	header := records[0]
-	
+
 	// Identify column indices
 	artistIdx, titleIdx, albumIdx := -1, -1, -1
 	for i, h := range header {
@@ -146,7 +146,7 @@ func (p *FileWatchlistProvider) parseM3U(f *os.File) ([]map[string]string, error
 			// If there's no #EXTINF, we could try to parse the filename, but for simplicity
 			// and to match the test expectations (which include manual artist - title lines),
 			// we'll only parse lines that don't look like absolute/relative paths if they are the primary identifier.
-			
+
 			// If it doesn't look like a path, treat it as a track string
 			if !strings.Contains(line, "/") && !strings.Contains(line, "\\") && !strings.HasSuffix(strings.ToLower(line), ".mp3") && !strings.HasSuffix(strings.ToLower(line), ".flac") {
 				tracks = append(tracks, p.parseLine(line))
@@ -171,7 +171,7 @@ func (p *FileWatchlistProvider) parseTXT(f *os.File) ([]map[string]string, error
 
 func (p *FileWatchlistProvider) parseLine(line string) map[string]string {
 	track := make(map[string]string)
-	
+
 	// Try "Artist - Title"
 	parts := strings.SplitN(line, " - ", 2)
 	if len(parts) == 2 {
@@ -201,7 +201,7 @@ func (p *FileWatchlistProvider) ValidateConfig(config string) error {
 			return fmt.Errorf("access to path %s is restricted", config)
 		}
 	}
-	
+
 	// Check if path exists
 	if _, err := os.Stat(config); err != nil {
 		return fmt.Errorf("file not found: %w", err)

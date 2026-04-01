@@ -82,10 +82,10 @@ type QualityProfile struct {
 	AllowedFormats      string `gorm:"type:text"` // Store as comma-separated or JSON for portability
 	MinBitrate          int    `gorm:"default:320"`
 	PreferBitrate       *int
-	PreferSceneReleases bool   `gorm:"default:false"`
-	PreferWebReleases   bool   `gorm:"default:true"`
-	CoverArtSources     string `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
-	IsDefault           bool   `gorm:"default:false"`
+	PreferSceneReleases bool    `gorm:"default:false"`
+	PreferWebReleases   bool    `gorm:"default:true"`
+	CoverArtSources     string  `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
+	IsDefault           bool    `gorm:"default:false"`
 	OwnerUserID         *uint64 `gorm:"index"`
 
 	// Advanced filtering (Phase 2)

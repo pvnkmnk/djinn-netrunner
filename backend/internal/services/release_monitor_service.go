@@ -44,7 +44,7 @@ func (s *ReleaseMonitorService) CheckAllArtists() error {
 		// Update last release check
 		now := time.Now()
 		s.db.Model(&artist).Update("last_release_check", &now)
-		
+
 		// Respect MusicBrainz rate limit (SyncDiscography already does, but extra safety)
 		time.Sleep(2 * time.Second)
 	}

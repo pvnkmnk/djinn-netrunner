@@ -220,9 +220,9 @@ func TestCreateLibrary_ValidPath(t *testing.T) {
 
 	var result map[string]interface{}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
-	assert.Equal(t, "My Music", result["name"])
+	assert.Equal(t, "My Music", result["Name"])
 	// Stored path must be the cleaned canonical form
-	assert.Equal(t, filepath.Clean(tmpDir), result["path"])
+	assert.Equal(t, filepath.Clean(tmpDir), result["Path"])
 
 	// Confirm stored in DB with cleaned path
 	var lib database.Library

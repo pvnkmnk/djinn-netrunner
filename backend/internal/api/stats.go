@@ -48,8 +48,8 @@ type LibraryStats struct {
 	TotalTracks      int64          `json:"total_tracks"`
 	TotalSize        int64          `json:"total_size"`
 	TotalSizeMB      float64        `json:"total_size_mb"`
-	FormatBreakdown  []FormatCount  `json:"format_breakdown"`
-	LibraryBreakdown []LibraryCount `json:"library_breakdown"`
+	FormatBreakdown  []FormatCount  `json:"format_breakdown" gorm:"-"`
+	LibraryBreakdown []LibraryCount `json:"library_breakdown" gorm:"-"`
 }
 
 // FormatCount represents track count per format
