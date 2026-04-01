@@ -82,10 +82,10 @@ type QualityProfile struct {
 	AllowedFormats      string `gorm:"type:text"` // Store as comma-separated or JSON for portability
 	MinBitrate          int    `gorm:"default:320"`
 	PreferBitrate       *int
-	PreferSceneReleases bool   `gorm:"default:false"`
-	PreferWebReleases   bool   `gorm:"default:true"`
-	CoverArtSources     string `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
-	IsDefault           bool   `gorm:"default:false"`
+	PreferSceneReleases bool    `gorm:"default:false"`
+	PreferWebReleases   bool    `gorm:"default:true"`
+	CoverArtSources     string  `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
+	IsDefault           bool    `gorm:"default:false"`
 	OwnerUserID         *uint64 `gorm:"index"`
 
 	// Advanced filtering (Phase 2)
@@ -180,14 +180,14 @@ func (m *TrackedRelease) BeforeCreate(tx *gorm.DB) error {
 
 // Library represents a collection of music files
 type Library struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Name         string    `gorm:"not null"`
-	Path         string    `gorm:"uniqueIndex;not null"`
-	MaxSizeBytes *int64    `gorm:"default:null"` // nil = no limit
-	QuotaAlertAt *int      `gorm:"default:80"`   // percentage threshold for alerts
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	OwnerUserID  *uint64 `gorm:"index"`
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name         string    `gorm:"not null" json:"name"`
+	Path         string    `gorm:"uniqueIndex;not null" json:"path"`
+	MaxSizeBytes *int64    `gorm:"default:null" json:"max_size_bytes,omitempty"` // nil = no limit
+	QuotaAlertAt *int      `gorm:"default:80" json:"quota_alert_at,omitempty"`   // percentage threshold for alerts
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	OwnerUserID  *uint64   `gorm:"index" json:"owner_user_id,omitempty"`
 }
 
 func (m *Library) BeforeCreate(tx *gorm.DB) error {
