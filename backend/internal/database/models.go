@@ -183,11 +183,11 @@ type Library struct {
 	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 	Name         string    `gorm:"not null" json:"name"`
 	Path         string    `gorm:"uniqueIndex;not null" json:"path"`
-	MaxSizeBytes *int64    `gorm:"default:null" json:"max_size_bytes,omitempty"` // nil = no limit
-	QuotaAlertAt *int      `gorm:"default:80" json:"quota_alert_at,omitempty"`   // percentage threshold for alerts
+	MaxSizeBytes *int64    `gorm:"default:null" json:"max_size_bytes"`
+	QuotaAlertAt *int      `gorm:"default:80" json:"quota_alert_at"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-	OwnerUserID  *uint64 `gorm:"index" json:"owner_user_id,omitempty"`
+	OwnerUserID  *uint64   `gorm:"index" json:"owner_user_id"`
 }
 
 func (m *Library) BeforeCreate(tx *gorm.DB) error {

@@ -94,12 +94,8 @@ func TestFileWatchlistProvider_FetchTracks(t *testing.T) {
 		// Order might vary, check content
 		foundA, foundB := false, false
 		for _, tr := range tracks {
-			if tr["artist"] == "Artist A" {
-				foundA = true
-			}
-			if tr["artist"] == "Artist B" {
-				foundB = true
-			}
+			if tr["artist"] == "Artist A" { foundA = true }
+			if tr["artist"] == "Artist B" { foundB = true }
 		}
 		assert.True(t, foundA)
 		assert.True(t, foundB)

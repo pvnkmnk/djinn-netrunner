@@ -14,15 +14,15 @@ func TestGonicClient_Search3(t *testing.T) {
 
 		resp := map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
-				"status":  "ok",
+				"status": "ok",
 				"version": "1.16.1",
 				"searchResult3": map[string]interface{}{
 					"song": []map[string]interface{}{
 						{
-							"id":     "123",
-							"title":  "Test Song",
+							"id": "123",
+							"title": "Test Song",
 							"artist": "Test Artist",
-							"album":  "Test Album",
+							"album": "Test Album",
 						},
 					},
 				},
@@ -56,13 +56,13 @@ func TestGonicClient_GetSong(t *testing.T) {
 
 		resp := map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
-				"status":  "ok",
+				"status": "ok",
 				"version": "1.16.1",
 				"song": map[string]interface{}{
-					"id":     "123",
-					"title":  "Test Song",
+					"id": "123",
+					"title": "Test Song",
 					"artist": "Test Artist",
-					"album":  "Test Album",
+					"album": "Test Album",
 				},
 			},
 		}

@@ -1,13 +1,13 @@
 package services
 
 import (
-	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"testing"
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 )
 
 func TestSpotifyService(t *testing.T) {
 	cfg := &config.Config{
-		SpotifyClientID:     "test-id",
+		SpotifyClientID: "test-id",
 		SpotifyClientSecret: "test-secret",
 	}
 	s := NewSpotifyService(cfg)

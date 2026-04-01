@@ -150,9 +150,15 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 	var stats LibraryStats
 
 	// Total tracks and size
+	var baseStats struct {
+		TotalTracks int64 `gorm:"column:total_tracks"`
+		TotalSize   int64 `gorm:"column:total_size"`
+	}
 	h.db.Model(&database.Track{}).
 		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&stats)
+		Scan(&baseStats)
+	stats.TotalTracks = baseStats.TotalTracks
+	stats.TotalSize = baseStats.TotalSize
 
 	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
 
@@ -233,9 +239,15 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 	}
 
 	// Library stats
+	var libBase struct {
+		TotalTracks int64 `gorm:"column:total_tracks"`
+		TotalSize   int64 `gorm:"column:total_size"`
+	}
 	h.db.Model(&database.Track{}).
 		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&summary.Library)
+		Scan(&libBase)
+	summary.Library.TotalTracks = libBase.TotalTracks
+	summary.Library.TotalSize = libBase.TotalSize
 	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
 	// Activity stats
