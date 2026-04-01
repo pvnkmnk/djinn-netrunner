@@ -24,3 +24,8 @@
 **Vulnerability:** Libraries and Quality Profiles lacked owner tracking, allowing any authenticated user to view, modify, or delete resources belonging to others.
 **Learning:** Fiber's `c.Locals("user")` should be used consistently across all protected handlers to eliminate redundant database session lookups and enable reliable authorization checks.
 **Prevention:** Always include `OwnerUserID` in core resource models and apply ownership filters in GORM queries unless the user has an administrative role.
+
+## 2026-03-31 - [BOLA in HTMX Form Partials]
+**Vulnerability:** HTMX partials for forms (like Watchlist edit) could be accessed by ID without ownership checks, leaking configuration details.
+**Learning:** HTMX handlers often return 200 OK with an error snippet instead of 403/404 to provide better UX (inline errors instead of broken modals). This requires the underlying query to be ownership-aware so that unauthorized access is treated as a "Not Found" event.
+**Prevention:** In handlers serving HTMX partials, incorporate ownership filters (e.g., `.Where("owner_user_id = ?", user.ID)`) directly into the `First()` or `Find()` queries to ensure that missing ownership results in a standard "record not found" error, which can then be rendered as a user-friendly error snippet.

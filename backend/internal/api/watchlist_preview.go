@@ -28,7 +28,7 @@ type PreviewTrack struct {
 
 func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
-	_, ok := c.Locals("user").(database.User)
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
 	if !ok {
@@ -47,6 +47,11 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 	watchlist, err := h.watchlistService.GetWatchlist(id)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).SendString("watchlist not found")
+	}
+
+	// ✅ SECURITY: Verify ownership before fetching tracks
+	if user.Role != "admin" && (watchlist.OwnerUserID == nil || *watchlist.OwnerUserID != user.ID) {
+		return c.Status(fiber.StatusForbidden).SendString("forbidden")
 	}
 
 	allTracks, _, err := h.watchlistService.FetchWatchlistTracks(c.Context(), watchlist)
