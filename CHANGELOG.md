@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-04-01
+
+### 🛡️ Security
+
+- **CRITICAL — JWT Secret Hardcoded**: Replaced hardcoded `dev-secret-do-not-use-in-prod` with cryptographically secure auto-generated random secret. Warns on startup if `JWT_SECRET` not set.
+- **CRITICAL — yt-dlp Command Injection**: Added URL validation (scheme check, `url.ParseRequestURI`) and audio format whitelist to prevent command injection via crafted URLs.
+- **HIGH — Gonic Default Credentials**: Removed hardcoded `admin/admin` defaults. Now requires explicit `GONIC_USER`/`GONIC_PASS` environment variables with startup warning if unset.
+- **HIGH — Missing CSRF Protection**: Added Fiber CSRF middleware with HTMX-compatible `X-CSRF-Token` header support.
+- **HIGH — Insecure Session Cookies**: Added `SameSite=Lax` and `Secure` (HTTPS-aware) flags to session cookies.
+- **HIGH — Verbose Error Messages**: Sanitized 39 error responses across all API handlers to return generic messages instead of internal error details.
+- **HIGH — FFmpeg Command Injection**: Added output format whitelist and path validation to transcoder service.
+- **MEDIUM — fpcalc Path Validation**: Added path existence check and `filepath.Clean` before passing to fpcalc.
+- **MEDIUM — Security Headers**: Added `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, and `Permissions-Policy` headers to all responses.
+
+### 🧪 Testing
+
+- All 12 test packages pass with zero failures.
+
+---
+
 ## [2.2.0] - 2026-04-01
 
 ### 🛡️ Security
