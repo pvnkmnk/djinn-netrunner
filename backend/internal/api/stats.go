@@ -150,10 +150,16 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 	var stats LibraryStats
 
 	// Total tracks and size
+	var totals struct {
+		TotalTracks int64
+		TotalSize   int64
+	}
 	h.db.Model(&database.Track{}).
 		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&stats)
+		Scan(&totals)
 
+	stats.TotalTracks = totals.TotalTracks
+	stats.TotalSize = totals.TotalSize
 	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
 
 	// Format breakdown
@@ -233,9 +239,15 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 	}
 
 	// Library stats
+	var libTotals struct {
+		TotalTracks int64
+		TotalSize   int64
+	}
 	h.db.Model(&database.Track{}).
 		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&summary.Library)
+		Scan(&libTotals)
+	summary.Library.TotalTracks = libTotals.TotalTracks
+	summary.Library.TotalSize = libTotals.TotalSize
 	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
 	// Activity stats
