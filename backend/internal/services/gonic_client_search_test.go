@@ -11,18 +11,18 @@ func TestGonicClient_Search3(t *testing.T) {
 	// 1. Setup Mock Server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		resp := map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
-				"status": "ok",
+				"status":  "ok",
 				"version": "1.16.1",
 				"searchResult3": map[string]interface{}{
 					"song": []map[string]interface{}{
 						{
-							"id": "123",
-							"title": "Test Song",
+							"id":     "123",
+							"title":  "Test Song",
 							"artist": "Test Artist",
-							"album": "Test Album",
+							"album":  "Test Album",
 						},
 					},
 				},
@@ -53,16 +53,16 @@ func TestGonicClient_GetSong(t *testing.T) {
 	// 1. Setup Mock Server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		resp := map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
-				"status": "ok",
+				"status":  "ok",
 				"version": "1.16.1",
 				"song": map[string]interface{}{
-					"id": "123",
-					"title": "Test Song",
+					"id":     "123",
+					"title":  "Test Song",
 					"artist": "Test Artist",
-					"album": "Test Album",
+					"album":  "Test Album",
 				},
 			},
 		}

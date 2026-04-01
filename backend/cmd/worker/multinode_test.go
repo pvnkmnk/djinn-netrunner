@@ -47,7 +47,7 @@ func TestMultiNodeJobClaim(t *testing.T) {
 
 	// 4. Concurrent claim test
 	var wg sync.WaitGroup
-	
+
 	claimFunc := func(w *WorkerOrchestrator) {
 		defer wg.Done()
 		for i := 0; i < numJobs; i++ {

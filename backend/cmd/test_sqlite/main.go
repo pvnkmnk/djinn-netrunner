@@ -35,7 +35,7 @@ func main() {
 	// 4. Test LockManager
 	lm := database.NewLockManager(db)
 	ctx := context.Background()
-	
+
 	key, _ := lm.GetScopeLockKey(ctx, "artist", "test-123")
 	acquired, err := lm.AcquireTryLock(ctx, key)
 	if err != nil || !acquired {
