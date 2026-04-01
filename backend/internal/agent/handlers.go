@@ -97,7 +97,8 @@ func UpdateConfig(db *gorm.DB, key, value string) error {
 
 // ListWatchlists returns all registered watchlists
 func ListWatchlists(s *services.WatchlistService) ([]database.Watchlist, error) {
-	return s.GetWatchlists()
+	// For agent, we assume admin-level access as it's an internal management interface
+	return s.GetWatchlists(0, true)
 }
 
 // AddWatchlist adds a new watchlist using the service

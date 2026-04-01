@@ -42,8 +42,12 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	}
 
 	since := time.Now().Add(-24 * time.Hour)
-	h.db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
+	jQuery := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+	if authUserID != "" && user.Role != "admin" {
+		jQuery = jQuery.Where("owner_user_id = ?", user.ID)
+	}
+
+	jQuery.Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
 			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
 			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
 			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
@@ -51,7 +55,11 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 
 	// Get recent jobs
 	var jobs []database.Job
-	h.db.Order("requested_at DESC").Limit(20).Find(&jobs)
+	rjQuery := h.db.Order("requested_at DESC").Limit(20)
+	if authUserID != "" && user.Role != "admin" {
+		rjQuery = rjQuery.Where("owner_user_id = ?", user.ID)
+	}
+	rjQuery.Find(&jobs)
 
 	// Get watchlists (only for authenticated users)
 	var watchlists []database.Watchlist
@@ -65,7 +73,11 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 
 	// Get quality profiles
 	var profiles []database.QualityProfile
-	h.db.Order("name").Find(&profiles)
+	pQuery := h.db.Order("name")
+	if authUserID != "" && user.Role != "admin" {
+		pQuery = pQuery.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	pQuery.Find(&profiles)
 
 	return c.Render("index", fiber.Map{
 		"stats":      stats,
