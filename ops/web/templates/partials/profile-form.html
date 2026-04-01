@@ -3,7 +3,7 @@
     <div class="modal">
         <div class="modal-header">
             <h3>{% if ID %}Edit{% else %}Add{% endif %} Profile</h3>
-            <button class="modal-close" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active')">&times;</button>
+            <button class="modal-close" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active')" aria-label="Close modal">&times;</button>
         </div>
         <form hx-post="/api/profiles" hx-target="#profiles-list" hx-swap="outerHTML">
             {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
