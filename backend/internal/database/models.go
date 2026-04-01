@@ -199,27 +199,27 @@ func (m *Library) BeforeCreate(tx *gorm.DB) error {
 
 // Track represents a single audio file in the library
 type Track struct {
-	ID                   uuid.UUID `gorm:"type:uuid;primaryKey"`
-	LibraryID            uuid.UUID `gorm:"type:uuid;not null;index:idx_library_genre"`
-	Title                string    `gorm:"not null"`
-	Artist               string    `gorm:"index"`
-	Album                string    `gorm:"index"`
-	Path                 string    `gorm:"uniqueIndex;not null"`
-	TrackNum             *int
-	DiscNum              *int
-	Format               string
-	FileSize             int64
-	FileHash             string `gorm:"index"`
-	Year                 *int   // Release year
-	Genre                string `gorm:"index:idx_library_genre"` // Genre
-	Composer             string // Composer
-	CoverURL             string // URL to cover art
-	Fingerprint          string // AcoustID fingerprint (stored after first scan)
-	EnrichmentProvenance string `gorm:"type:text"` // JSON: which source wrote which tag fields
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                   uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	LibraryID            uuid.UUID `gorm:"type:uuid;not null;index:idx_library_genre" json:"library_id"`
+	Title                string    `gorm:"not null" json:"title"`
+	Artist               string    `gorm:"index" json:"artist"`
+	Album                string    `gorm:"index" json:"album"`
+	Path                 string    `gorm:"uniqueIndex;not null" json:"path"`
+	TrackNum             *int      `json:"track_num"`
+	DiscNum              *int      `json:"disc_num"`
+	Format               string    `json:"format"`
+	FileSize             int64     `json:"file_size"`
+	FileHash             string    `gorm:"index" json:"file_hash"`
+	Year                 *int      `json:"year"`
+	Genre                string    `gorm:"index:idx_library_genre" json:"genre"`
+	Composer             string    `json:"composer"`
+	CoverURL             string    `json:"cover_url"`
+	Fingerprint          string    `json:"fingerprint"`
+	EnrichmentProvenance string    `gorm:"type:text" json:"enrichment_provenance"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 
-	Library Library `gorm:"foreignKey:LibraryID"`
+	Library Library `gorm:"foreignKey:LibraryID" json:"library"`
 }
 
 func (m *Track) BeforeCreate(tx *gorm.DB) error {

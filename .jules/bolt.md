@@ -25,3 +25,7 @@
 ## 2026-03-25 - Redundant Session Lookups
 **Learning:** Found a recurring pattern where API handlers were manually performing database queries to look up user sessions from cookies, even when those handlers were already protected by an `AuthMiddleware` that populates `c.Locals("user")`. This resulted in one unnecessary database roundtrip per request.
 **Action:** Replaced manual session lookups with `user, ok := c.Locals("user").(database.User)` in several handlers (`ArtistsHandler`, `StatsHandler`, `WatchlistPreviewHandler`). This optimization reduces the database load and latency for these endpoints by eliminating one query per request.
+
+## 2026-04-01 - Redundant Initial Dashboard Load Queries
+**Learning:** The dashboard's initial synchronous render was performing four separate database queries to fetch stats, recent jobs, watchlists, and quality profiles. However, these variables were never actually used in the `index.html` template, as the dashboard relies on HTMX to load this data asynchronously via partials.
+**Action:** Removed the redundant database queries from `DashboardHandler.RenderIndex` and updated the fiber render map. This reduces the database load by 4 queries per dashboard visit and improves the initial page load time.
