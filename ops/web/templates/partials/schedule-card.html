@@ -6,17 +6,17 @@
         </div>
         <div class="details">
             <span>Cron: {{ Schedule.CronExpr }}</span>
-             <span>Next: {{ Schedule.NextRunAt | date "Jan 02 15:04" }}</span>
+             <span>Next: {{ Schedule.NextRunAt | date:"Jan 02 15:04" }}</span>
         </div>
     </div>
     <div class="actions">
-        <button class="btn btn-sm" hx-patch="/api/schedules/{{ Schedule.ID }}/toggle" hx-target="#schedule-{{ Schedule.ID }}" hx-swap="outerHTML">
+        <button class="btn btn-sm" hx-patch="/api/schedules/{{ Schedule.ID }}/toggle" hx-target="#schedule-{{ Schedule.ID }}" hx-swap="outerHTML" aria-label="{% if Schedule.Enabled %}Disable{% else %}Enable{% endif %} schedule for {{ Schedule.Watchlist.Name }}">
             {% if Schedule.Enabled %}Disable{% else %}Enable{% endif %}
         </button>
-        <button class="btn btn-sm" hx-get="/partials/schedule-form?id={{ Schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+        <button class="btn btn-sm" hx-get="/partials/schedule-form?id={{ Schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit schedule for {{ Schedule.Watchlist.Name }}">
             Edit
         </button>
-        <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ Schedule.ID }}" hx-target="#schedule-{{ Schedule.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this schedule?">
+        <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ Schedule.ID }}" hx-target="#schedule-{{ Schedule.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete the schedule for {{ Schedule.Watchlist.Name }}?" aria-label="Delete schedule for {{ Schedule.Watchlist.Name }}">
             Delete
         </button>
     </div>
