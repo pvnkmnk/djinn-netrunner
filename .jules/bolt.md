@@ -29,3 +29,7 @@
 ## 2026-04-01 - Redundant Initial Dashboard Load Queries
 **Learning:** The dashboard's initial synchronous render was performing four separate database queries to fetch stats, recent jobs, watchlists, and quality profiles. However, these variables were never actually used in the `index.html` template, as the dashboard relies on HTMX to load this data asynchronously via partials.
 **Action:** Removed the redundant database queries from `DashboardHandler.RenderIndex` and updated the fiber render map. This reduces the database load by 4 queries per dashboard visit and improves the initial page load time.
+
+## 2026-04-02 - Library Stats Query Consolidation and BOLA Enforcement
+**Learning:** GetLibraryStats was performing 4 sequential queries to gather tracks, format breakdown, and library details. By using a SQL JOIN between tracks and libraries and calculating global totals in-memory from the format breakdown, roundtrips were reduced to 2. Furthermore, statistics endpoints lacked Broken Object Level Authorization (BOLA), allowing users to see global system metrics.
+**Action:** Optimized GetLibraryStats to use joins and in-memory aggregation. Enforced BOLA across all stats endpoints by filtering subqueries and joins by owner_user_id. Eliminated redundant session lookups by using c.Locals("user").

@@ -89,6 +89,11 @@ func TestStatsHandler_GetActivityStats_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
+	// Mock auth middleware to inject admin user
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", database.User{Role: "admin"})
+		return c.Next()
+	})
 	app.Get("/api/stats/activity", handler.GetActivityStats)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/activity", nil))
@@ -128,6 +133,11 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
+	// Mock auth middleware to inject admin user
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", database.User{Role: "admin"})
+		return c.Next()
+	})
 	app.Get("/api/stats/summary", handler.GetSummary)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/summary", nil))
@@ -150,4 +160,88 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 	assert.Equal(t, int64(1), stats.Activity.QualityProfiles)
 	assert.Equal(t, int64(1), stats.Activity.Libraries)
 	assert.Equal(t, int64(2), stats.Activity.RecentJobs24h)
+}
+
+func TestStatsHandler_GetLibraryStats_Integration(t *testing.T) {
+	// Initialize in-memory SQLite
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+
+	// Auto-migrate
+	err = database.Migrate(db)
+	assert.NoError(t, err)
+
+	// Setup users
+	user1 := database.User{Email: "user1@example.com", Role: "user"}
+	user2 := database.User{Email: "user2@example.com", Role: "user"}
+	db.Create(&user1)
+	db.Create(&user2)
+
+	// Setup libraries and tracks for user1
+	lib1 := database.Library{Name: "User1 Lib", Path: "/tmp/u1", OwnerUserID: &user1.ID}
+	db.Create(&lib1)
+	db.Create(&database.Track{
+		LibraryID: lib1.ID,
+		Title:     "Track 1",
+		Format:    "FLAC",
+		FileSize:  1000000,
+		Path:      "/tmp/u1/track1.flac",
+	})
+
+	// Setup libraries and tracks for user2
+	lib2 := database.Library{Name: "User2 Lib", Path: "/tmp/u2", OwnerUserID: &user2.ID}
+	db.Create(&lib2)
+	db.Create(&database.Track{
+		LibraryID: lib2.ID,
+		Title:     "Track 2",
+		Format:    "MP3",
+		FileSize:  500000,
+		Path:      "/tmp/u2/track2.mp3",
+	})
+
+	handler := NewStatsHandler(db)
+
+	// 1. Test BOLA: User1 should only see their own stats
+	app1 := fiber.New()
+	app1.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", user1)
+		return c.Next()
+	})
+	app1.Get("/api/stats/library", handler.GetLibraryStats)
+
+	resp1, err := app1.Test(httptest.NewRequest("GET", "/api/stats/library", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp1.StatusCode)
+
+	var stats1 LibraryStats
+	err = json.NewDecoder(resp1.Body).Decode(&stats1)
+	assert.NoError(t, err)
+
+	assert.Equal(t, int64(1), stats1.TotalTracks)
+	assert.Equal(t, int64(1000000), stats1.TotalSize)
+	assert.Len(t, stats1.FormatBreakdown, 1)
+	assert.Equal(t, "FLAC", stats1.FormatBreakdown[0].Format)
+	assert.Len(t, stats1.LibraryBreakdown, 1)
+	assert.Equal(t, "User1 Lib", stats1.LibraryBreakdown[0].LibraryName)
+
+	// 2. Test Admin: should see everything
+	appAdmin := fiber.New()
+	appAdmin.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", database.User{Role: "admin"})
+		return c.Next()
+	})
+	appAdmin.Get("/api/stats/library", handler.GetLibraryStats)
+
+	respAdmin, err := appAdmin.Test(httptest.NewRequest("GET", "/api/stats/library", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, respAdmin.StatusCode)
+
+	var statsAdmin LibraryStats
+	err = json.NewDecoder(respAdmin.Body).Decode(&statsAdmin)
+	assert.NoError(t, err)
+
+	assert.Equal(t, int64(2), statsAdmin.TotalTracks)
+	assert.Equal(t, int64(1500000), statsAdmin.TotalSize)
+	assert.Len(t, statsAdmin.FormatBreakdown, 2)
+	assert.Len(t, statsAdmin.LibraryBreakdown, 2)
 }
