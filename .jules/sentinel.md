@@ -29,3 +29,8 @@
 **Vulnerability:** HTMX partials for forms (like Watchlist edit) could be accessed by ID without ownership checks, leaking configuration details.
 **Learning:** HTMX handlers often return 200 OK with an error snippet instead of 403/404 to provide better UX (inline errors instead of broken modals). This requires the underlying query to be ownership-aware so that unauthorized access is treated as a "Not Found" event.
 **Prevention:** In handlers serving HTMX partials, incorporate ownership filters (e.g., `.Where("owner_user_id = ?", user.ID)`) directly into the `First()` or `Find()` queries to ensure that missing ownership results in a standard "record not found" error, which can then be rendered as a user-friendly error snippet.
+
+## 2026-04-07 - [BOLA in Aggregate Statistics and Reporting]
+**Vulnerability:** Statistics and reporting endpoints provided system-wide totals and logs, exposing activity levels and resource counts of other users to any authenticated user.
+**Learning:** Aggregate queries and raw SQL subqueries often bypass standard ownership filters applied to individual resource lookups. Every reporting function must explicitly incorporate ownership context.
+**Prevention:** Pass the authenticated user's ID to all statistics handlers and ensure `Where("owner_user_id = ?", user.ID)` or appropriate `JOIN` clauses are applied to all sub-queries and aggregate calculations.
