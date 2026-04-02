@@ -29,11 +29,11 @@
             <span>By: {{ job.CreatedBy }}</span>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ job.ID }}" hx-target="#job-logs-container" hx-swap="innerHTML">
+            <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ job.ID }}" hx-target="#job-logs-container" hx-swap="innerHTML" aria-label="View logs for job #{{ job.ID }}">
                 View Logs
             </button>
             {% if job.State == "queued" %}
-            <button class="btn btn-sm btn-danger" hx-delete="/api/jobs/{{ job.ID }}" hx-target="#job-{{ job.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to cancel this job?">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/jobs/{{ job.ID }}" hx-target="#job-{{ job.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to cancel job #{{ job.ID }}?" aria-label="Cancel job #{{ job.ID }}">
                 Cancel
             </button>
             {% endif %}

@@ -1,7 +1,7 @@
 <div class="artists-region">
     <div class="section-header">
         <h2>Monitored Artists</h2>
-        <button class="btn btn-primary" hx-get="/partials/artist-form" hx-target="#modal-container" hx-swap="innerHTML">
+        <button class="btn btn-primary" hx-get="/partials/artist-form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Add new artist to monitor">
             Add Artist
         </button>
     </div>
@@ -17,14 +17,14 @@
             <div class="details">
                 <span>MBID: {{ artist.MusicBrainzID }}</span>
                 <span>Releases: {{ artist.AcquiredReleases }}/{{ artist.TotalReleases }}</span>
-                 <span>Last Scan: {{ artist.LastScanDate | date "Jan 02 15:04" }}</span>
+                 <span>Last Scan: {{ artist.LastScanDate | date:"Jan 02 15:04" }}</span>
             </div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-patch="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm" hx-patch="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" aria-label="{% if artist.Monitored %}Pause monitoring for {{ artist.Name }}{% else %}Resume monitoring for {{ artist.Name }}{% endif %}">
                 {% if artist.Monitored %}Pause{% else %}Resume{% endif %}
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to remove {{ artist.Name }} from monitoring?" aria-label="Remove {{ artist.Name }} from monitoring">
                 Remove
             </button>
         </div>
