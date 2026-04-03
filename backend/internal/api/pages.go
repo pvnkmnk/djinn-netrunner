@@ -121,13 +121,20 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 
 // JobsPage renders the jobs page
 func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
+	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Redirect("/", 302)
 	}
 
 	var jobs []database.Job
-	if err := h.db.Order("requested_at DESC").Limit(50).Find(&jobs).Error; err != nil {
+	query := h.db.Order("requested_at DESC").Limit(50)
+
+	// ✅ SECURITY: Enforce BOLA by filtering by owner_user_id for non-admin users
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := query.Find(&jobs).Error; err != nil {
 		log.Printf("Error getting jobs: %v", err)
 	}
 	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs})

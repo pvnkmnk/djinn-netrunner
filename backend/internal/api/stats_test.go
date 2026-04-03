@@ -77,6 +77,9 @@ func TestStatsHandler_GetActivityStats_Integration(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Seed data
+	adminUser := database.User{Email: "admin@example.com", Role: "admin"}
+	db.Create(&adminUser)
+
 	db.Create(&database.MonitoredArtist{MusicBrainzID: "a1", Name: "Artist 1"})
 	db.Create(&database.MonitoredArtist{MusicBrainzID: "a2", Name: "Artist 2"})
 	db.Create(&database.Watchlist{Name: "W1", SourceType: "spotify_playlist", SourceURI: "uri1"})
@@ -89,6 +92,13 @@ func TestStatsHandler_GetActivityStats_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
+
+	// Inject admin user to context for tests
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", adminUser)
+		return c.Next()
+	})
+
 	app.Get("/api/stats/activity", handler.GetActivityStats)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/activity", nil))
@@ -117,6 +127,9 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Seed data
+	adminUser := database.User{Email: "admin@example.com", Role: "admin"}
+	db.Create(&adminUser)
+
 	db.Create(&database.MonitoredArtist{MusicBrainzID: "a1", Name: "Artist 1"})
 	db.Create(&database.Watchlist{Name: "W1", SourceType: "spotify_playlist", SourceURI: "uri1"})
 	db.Create(&database.QualityProfile{Name: "P1"})
@@ -128,6 +141,13 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
+
+	// Inject admin user to context for tests
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", adminUser)
+		return c.Next()
+	})
+
 	app.Get("/api/stats/summary", handler.GetSummary)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/summary", nil))

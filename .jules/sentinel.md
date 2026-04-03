@@ -29,3 +29,8 @@
 **Vulnerability:** HTMX partials for forms (like Watchlist edit) could be accessed by ID without ownership checks, leaking configuration details.
 **Learning:** HTMX handlers often return 200 OK with an error snippet instead of 403/404 to provide better UX (inline errors instead of broken modals). This requires the underlying query to be ownership-aware so that unauthorized access is treated as a "Not Found" event.
 **Prevention:** In handlers serving HTMX partials, incorporate ownership filters (e.g., `.Where("owner_user_id = ?", user.ID)`) directly into the `First()` or `Find()` queries to ensure that missing ownership results in a standard "record not found" error, which can then be rendered as a user-friendly error snippet.
+
+## 2026-04-07 - [BOLA in Statistics and Job Listings]
+**Vulnerability:** Authenticated users could see global application statistics, library track counts, and background job details belonging to other users.
+**Learning:** Statistics endpoints often use aggregate queries that skip object-level ownership checks by default. Raw SQL queries are particularly prone to BOLA if they don't explicitly incorporate ownership filters.
+**Prevention:** Always filter aggregate and raw SQL queries by `owner_user_id` for non-admin users. For tracks, join with the parent `libraries` table to verify ownership.
