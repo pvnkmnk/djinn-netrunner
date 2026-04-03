@@ -29,3 +29,7 @@
 ## 2026-04-01 - Redundant Initial Dashboard Load Queries
 **Learning:** The dashboard's initial synchronous render was performing four separate database queries to fetch stats, recent jobs, watchlists, and quality profiles. However, these variables were never actually used in the `index.html` template, as the dashboard relies on HTMX to load this data asynchronously via partials.
 **Action:** Removed the redundant database queries from `DashboardHandler.RenderIndex` and updated the fiber render map. This reduces the database load by 4 queries per dashboard visit and improves the initial page load time.
+
+## 2026-04-03 - Consolidated Library Stats Queries
+**Learning:** `GetLibraryStats` was performing four sequential database queries to gather library metadata, breakdown by format, and breakdown by library name. By calculating global totals in-memory from format breakdowns and using a SQL `JOIN` for library names, the number of database roundtrips is reduced to 2.
+**Action:** Consolidate scalar total queries with group-by queries when possible. Use SQL joins instead of manual mapping in Go to reduce code complexity and database overhead for relational data retrieval.

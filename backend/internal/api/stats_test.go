@@ -151,3 +151,73 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 	assert.Equal(t, int64(1), stats.Activity.Libraries)
 	assert.Equal(t, int64(2), stats.Activity.RecentJobs24h)
 }
+
+func TestStatsHandler_GetLibraryStats_Integration(t *testing.T) {
+	// Initialize in-memory SQLite
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+
+	// Auto-migrate
+	err = database.Migrate(db)
+	assert.NoError(t, err)
+
+	// Seed data
+	lib1 := database.Library{Name: "Library 1", Path: "/tmp/l1"}
+	lib2 := database.Library{Name: "Library 2", Path: "/tmp/l2"}
+	db.Create(&lib1)
+	db.Create(&lib2)
+
+	// Tracks for lib1
+	db.Create(&database.Track{LibraryID: lib1.ID, Format: "FLAC", FileSize: 1000, Path: "/tmp/l1/t1.flac", Title: "T1", Artist: "A1"})
+	db.Create(&database.Track{LibraryID: lib1.ID, Format: "FLAC", FileSize: 1500, Path: "/tmp/l1/t2.flac", Title: "T2", Artist: "A1"})
+	db.Create(&database.Track{LibraryID: lib1.ID, Format: "FLAC", FileSize: 800, Path: "/tmp/l1/t5.flac", Title: "T5", Artist: "A1"})
+	db.Create(&database.Track{LibraryID: lib1.ID, Format: "MP3", FileSize: 500, Path: "/tmp/l1/t3.mp3", Title: "T3", Artist: "A2"})
+
+	// Tracks for lib2
+	db.Create(&database.Track{LibraryID: lib2.ID, Format: "MP3", FileSize: 600, Path: "/tmp/l2/t4.mp3", Title: "T4", Artist: "A3"})
+
+	handler := NewStatsHandler(db)
+	app := fiber.New()
+	app.Get("/api/stats/library", handler.GetLibraryStats)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/library", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var stats LibraryStats
+	err = json.NewDecoder(resp.Body).Decode(&stats)
+	assert.NoError(t, err)
+
+	// Verify global totals
+	assert.Equal(t, int64(5), stats.TotalTracks)
+	assert.Equal(t, int64(4400), stats.TotalSize)
+
+	// Verify format breakdown
+	assert.Len(t, stats.FormatBreakdown, 2)
+	// They are ordered by count DESC
+	assert.Equal(t, "FLAC", stats.FormatBreakdown[0].Format)
+	assert.Equal(t, int64(3), stats.FormatBreakdown[0].Count)
+	assert.Equal(t, int64(3300), stats.FormatBreakdown[0].TotalSize)
+
+	assert.Equal(t, "MP3", stats.FormatBreakdown[1].Format)
+	assert.Equal(t, int64(2), stats.FormatBreakdown[1].Count)
+	assert.Equal(t, int64(1100), stats.FormatBreakdown[1].TotalSize)
+
+	// Verify library breakdown
+	assert.Len(t, stats.LibraryBreakdown, 2)
+
+	libMap := make(map[string]LibraryCount)
+	for _, l := range stats.LibraryBreakdown {
+		libMap[l.LibraryID] = l
+	}
+
+	assert.Contains(t, libMap, lib1.ID.String())
+	assert.Equal(t, "Library 1", libMap[lib1.ID.String()].LibraryName)
+	assert.Equal(t, int64(4), libMap[lib1.ID.String()].TrackCount)
+	assert.Equal(t, int64(3800), libMap[lib1.ID.String()].TotalSize)
+
+	assert.Contains(t, libMap, lib2.ID.String())
+	assert.Equal(t, "Library 2", libMap[lib2.ID.String()].LibraryName)
+	assert.Equal(t, int64(1), libMap[lib2.ID.String()].TrackCount)
+	assert.Equal(t, int64(600), libMap[lib2.ID.String()].TotalSize)
+}

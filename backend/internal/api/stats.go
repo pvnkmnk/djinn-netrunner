@@ -149,46 +149,29 @@ func (h *StatsHandler) GetJobTrends(c *fiber.Ctx) error {
 func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 	var stats LibraryStats
 
-	// Total tracks and size
-	var totals struct {
-		TotalTracks int64
-		TotalSize   int64
-	}
-	h.db.Model(&database.Track{}).
-		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&totals)
+	// Bolt Optimization: Reduce database roundtrips from 4 to 2 by:
+	// 1. Deriving global totals in-memory from format breakdown.
+	// 2. Joining with libraries table to fetch names in one go.
 
-	stats.TotalTracks = totals.TotalTracks
-	stats.TotalSize = totals.TotalSize
-	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
-
-	// Format breakdown
+	// 1. Format breakdown (and derive totals)
 	h.db.Model(&database.Track{}).
 		Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
 		Group("format").
 		Order("count DESC").
 		Scan(&stats.FormatBreakdown)
 
-	// Library breakdown
-	h.db.Model(&database.Track{}).
-		Select("library_id, COUNT(*) as track_count, COALESCE(SUM(file_size), 0) as total_size").
-		Group("library_id").
+	for _, f := range stats.FormatBreakdown {
+		stats.TotalTracks += f.Count
+		stats.TotalSize += f.TotalSize
+	}
+	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
+
+	// 2. Library breakdown with names joined
+	h.db.Table("tracks").
+		Select("tracks.library_id, libraries.name as library_name, COUNT(*) as track_count, COALESCE(SUM(file_size), 0) as total_size").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Group("tracks.library_id, libraries.name").
 		Scan(&stats.LibraryBreakdown)
-
-	// Get library names in a single query to avoid N+1
-	var libraries []database.Library
-	h.db.Find(&libraries)
-	libraryNames := make(map[string]string)
-	for _, lib := range libraries {
-		libraryNames[lib.ID.String()] = lib.Name
-	}
-
-	// Map library names
-	for i := range stats.LibraryBreakdown {
-		if name, ok := libraryNames[stats.LibraryBreakdown[i].LibraryID]; ok {
-			stats.LibraryBreakdown[i].LibraryName = name
-		}
-	}
 
 	return c.JSON(stats)
 }
