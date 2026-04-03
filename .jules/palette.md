@@ -5,3 +5,7 @@
 ## 2026-03-26 - [UX: Visual Feedback for HTMX Interactions]
 **Learning:** Providing immediate visual feedback for HTMX-driven actions (like Sync or Scan) using the `.htmx-request` class in CSS is an effective, low-effort way to indicate background processing. Combining `opacity` and `cursor: wait` on the triggering element prevents users from wondering if their click was registered.
 **Action:** Utilize the `.htmx-request` class in `styles.css` for consistent loading state feedback across all asynchronous UI interactions.
+
+## 2026-03-27 - [Pongo2 Syntax: Date Filter]
+**Learning:** The Pongo2 `date` filter requires a colon to pass format arguments (e.g., `| date:"Jan 02"`). Using a space instead of a colon results in a template parsing error, which might fail silently or cause the entire partial to not render.
+**Action:** Always use the `| date:"format"` syntax with a colon when formatting timestamps in Go-based Pongo2 templates.
