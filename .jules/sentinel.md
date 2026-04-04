@@ -29,3 +29,8 @@
 **Vulnerability:** HTMX partials for forms (like Watchlist edit) could be accessed by ID without ownership checks, leaking configuration details.
 **Learning:** HTMX handlers often return 200 OK with an error snippet instead of 403/404 to provide better UX (inline errors instead of broken modals). This requires the underlying query to be ownership-aware so that unauthorized access is treated as a "Not Found" event.
 **Prevention:** In handlers serving HTMX partials, incorporate ownership filters (e.g., `.Where("owner_user_id = ?", user.ID)`) directly into the `First()` or `Find()` queries to ensure that missing ownership results in a standard "record not found" error, which can then be rendered as a user-friendly error snippet.
+
+## 2026-04-04 - [BOLA in Statistics and Job Listings]
+**Vulnerability:** Global statistics and the full job history were visible to any authenticated user, regardless of ownership.
+**Learning:** Aggregate queries and raw SQL used for dashboard statistics often bypass the standard GORM model hooks or Scopes where ownership filters might be applied. These must be manually secured by explicitly incorporating user identity filters.
+**Prevention:** Always verify that every aggregate query (SUM, COUNT, etc.) and every raw SQL statement includes an 'owner_user_id' filter for non-admin users. For track-level statistics, join with the 'libraries' table to enforce ownership.

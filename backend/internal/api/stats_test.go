@@ -89,6 +89,10 @@ func TestStatsHandler_GetActivityStats_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", database.User{Role: "admin"})
+		return c.Next()
+	})
 	app.Get("/api/stats/activity", handler.GetActivityStats)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/activity", nil))
@@ -128,6 +132,10 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", database.User{Role: "admin"})
+		return c.Next()
+	})
 	app.Get("/api/stats/summary", handler.GetSummary)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/summary", nil))
