@@ -37,7 +37,7 @@
         </div>
         <div id="watchlist-preview-{{ watchlist.ID }}" class="watchlist-preview"></div>
     </div>
-    {% else %}
+    {% empty %}
     <p class="empty-state">No watchlists configured</p>
     {% endfor %}
     </div>
