@@ -29,3 +29,8 @@
 **Vulnerability:** HTMX partials for forms (like Watchlist edit) could be accessed by ID without ownership checks, leaking configuration details.
 **Learning:** HTMX handlers often return 200 OK with an error snippet instead of 403/404 to provide better UX (inline errors instead of broken modals). This requires the underlying query to be ownership-aware so that unauthorized access is treated as a "Not Found" event.
 **Prevention:** In handlers serving HTMX partials, incorporate ownership filters (e.g., `.Where("owner_user_id = ?", user.ID)`) directly into the `First()` or `Find()` queries to ensure that missing ownership results in a standard "record not found" error, which can then be rendered as a user-friendly error snippet.
+
+## 2026-04-05 - [BOLA in Page and Partial Handlers]
+**Vulnerability:** Core UI pages (Watchlists, Schedules, Jobs) and HTMX partials (Jobs) lacked ownership filtering, allowing users to view data belonging to others.
+**Learning:** Even if the underlying API is secure, the UI handlers that perform their own database queries (or call un-filtered service methods) can leak data. Centralized service methods should be designed to accept authorization context (userID/role) to prevent inconsistent security posture between the API and the UI.
+**Prevention:** Update service method signatures to include authorization context and ensure all page/partial handlers pass the authenticated user's credentials to these methods or apply filters to inline queries.
