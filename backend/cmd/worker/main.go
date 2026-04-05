@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -75,7 +75,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	watchlist := services.NewWatchlistService(db, spotifyAuth, cfg)
 	spotify := services.NewSpotifyService(cfg)
 	spotify.SetCache(cache)
-	slskd := services.NewSlskdService(cfg)
+	slskd := services.NewSlskdService(cfg, db)
 	metadata := services.NewMetadataExtractor()
 	aid := services.NewAcoustIDService(cfg)
 	aid.SetCache(cache)
@@ -109,7 +109,7 @@ func (w *WorkerOrchestrator) Start() {
 	// ctx controls the lifecycle of all goroutines spawned by this orchestrator.
 	// Call w.cancel() (via Stop()) to signal graceful shutdown.
 	w.ctx, w.cancel = context.WithCancel(context.Background())
-	log.Printf("[WORKER] Starting worker | worker_id=%s", w.workerID)
+	slog.Info("Starting worker", "worker_id", w.workerID)
 
 	// Start background tasks
 	go w.heartbeatLoop()
@@ -120,7 +120,7 @@ func (w *WorkerOrchestrator) Start() {
 		go w.zombieCleanupLoop()
 		go w.rmService.StartBackgroundTask()
 	} else {
-		log.Printf("[WORKER] Running in replica mode. Skipping scheduler and watchlist poller. | worker_id=%s", w.workerID)
+		slog.Info("Running in replica mode. Skipping scheduler and watchlist poller.", "worker_id", w.workerID)
 	}
 
 	// listenForWakeup only works for Postgres, for SQLite we rely on polling
@@ -144,7 +144,7 @@ func (w *WorkerOrchestrator) Start() {
 		case <-time.After(5 * time.Second):
 			// Regular poll
 		case <-w.wakeupChan:
-			log.Printf("[WORKER] Received wakeup notification | worker_id=%s", w.workerID)
+			slog.Info("Received wakeup notification", "worker_id", w.workerID)
 		case <-w.ctx.Done():
 			return
 		}
@@ -152,7 +152,7 @@ func (w *WorkerOrchestrator) Start() {
 }
 
 func (w *WorkerOrchestrator) watchlistPollingLoop() {
-	log.Printf("[WATCHLIST] Starting watchlist polling loop | worker_id=%s", w.workerID)
+	slog.Info("Starting watchlist polling loop", "worker_id", w.workerID)
 	// Poll every 4 hours by default, or use config if available
 	ticker := time.NewTicker(4 * time.Hour)
 
@@ -172,7 +172,7 @@ func (w *WorkerOrchestrator) watchlistPollingLoop() {
 func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 	lists, err := w.watchlist.GetWatchlists()
 	if err != nil {
-		log.Printf("[WATCHLIST] Error fetching watchlists | worker_id=%s | error=%v", w.workerID, err)
+		slog.Error("Error fetching watchlists", "worker_id", w.workerID, "error", err)
 		return
 	}
 
@@ -181,7 +181,7 @@ func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 			continue
 		}
 
-		log.Printf("[WATCHLIST] Triggering sync | worker_id=%s | watchlist=%s | watchlist_id=%s", w.workerID, l.Name, l.ID)
+		slog.Info("Triggering watchlist sync", "worker_id", w.workerID, "watchlist", l.Name, "watchlist_id", l.ID)
 
 		// Enqueue sync job for watchlist
 		job := database.Job{
@@ -195,7 +195,7 @@ func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 		}
 
 		if err := w.db.Create(&job).Error; err != nil {
-			log.Printf("[WATCHLIST] Error enqueuing job | worker_id=%s | watchlist_id=%s | error=%v", w.workerID, l.ID, err)
+			slog.Error("Error enqueuing watchlist job", "worker_id", w.workerID, "watchlist_id", l.ID, "error", err)
 		}
 	}
 }
@@ -203,17 +203,18 @@ func (w *WorkerOrchestrator) triggerWatchlistSyncs() {
 func (w *WorkerOrchestrator) listenForWakeup() {
 	reportProblem := func(ev pq.ListenerEventType, err error) {
 		if err != nil {
-			log.Printf("[NOTIFY] Listener error | worker_id=%s | error=%v", w.workerID, err)
+			slog.Error("Notify listener error", "worker_id", w.workerID, "error", err)
 		}
 	}
 
 	listener := pq.NewListener(w.cfg.DatabaseURL, 10*time.Second, time.Minute, reportProblem)
 	err := listener.Listen("opswakeup")
 	if err != nil {
-		log.Fatalf("[NOTIFY] Failed to listen | worker_id=%s | error=%v", w.workerID, err)
+		slog.Error("Failed to listen for wakeup", "worker_id", w.workerID, "error", err)
+		os.Exit(1)
 	}
 
-	log.Printf("[NOTIFY] Listening for 'opswakeup' events | worker_id=%s", w.workerID)
+	slog.Info("Listening for opswakeup events", "worker_id", w.workerID)
 
 	for {
 		select {
@@ -232,19 +233,19 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 }
 
 func (w *WorkerOrchestrator) Stop() {
-	log.Printf("[WORKER] Shutting down worker | worker_id=%s", w.workerID)
+	slog.Info("Shutting down worker", "worker_id", w.workerID)
 	w.cancel()
 
 	w.jobMutex.Lock()
 	for id, jc := range w.activeJobs {
-		log.Printf("[WORKER] Cancelling job | worker_id=%s | job_id=%d", w.workerID, id)
+		slog.Info("Cancelling job", "worker_id", w.workerID, "job_id", id)
 		jc.cancel()
 	}
 	w.jobMutex.Unlock()
 
 	w.wg.Wait()
 	w.lockManager.Close()
-	log.Printf("[WORKER] Shutdown complete | worker_id=%s", w.workerID)
+	slog.Info("Shutdown complete", "worker_id", w.workerID)
 }
 
 func (w *WorkerOrchestrator) heartbeatLoop() {
@@ -265,7 +266,7 @@ func (w *WorkerOrchestrator) checkQuotaAlerts() {
 	}
 	alerts, err := w.diskQuotaService.CheckAllLibraryQuotas()
 	if err != nil {
-		log.Printf("[QUOTA] Error checking quotas: %v", err)
+		slog.Error("Error checking quotas", "error", err)
 		return
 	}
 	for _, alert := range alerts {
@@ -277,7 +278,7 @@ func (w *WorkerOrchestrator) checkQuotaAlerts() {
 }
 
 func (w *WorkerOrchestrator) zombieCleanupLoop() {
-	log.Printf("[WORKER] Starting zombie cleanup loop | worker_id=%s", w.workerID)
+	slog.Info("Starting zombie cleanup loop", "worker_id", w.workerID)
 	ticker := time.NewTicker(1 * time.Minute)
 	for {
 		select {
@@ -289,12 +290,12 @@ func (w *WorkerOrchestrator) zombieCleanupLoop() {
 			var zombieJobs []database.Job
 			err := w.db.Where("state = ? AND heartbeat_at < ?", "running", staleThreshold).Find(&zombieJobs).Error
 			if err != nil {
-				log.Printf("[WORKER] Error searching for zombie jobs | worker_id=%s | error=%v", w.workerID, err)
+				slog.Error("Error searching for zombie jobs", "worker_id", w.workerID, "error", err)
 				continue
 			}
 
 			for _, job := range zombieJobs {
-				log.Printf("[WORKER] Resetting zombie job | worker_id=%s | job_id=%d | last_heartbeat=%v", w.workerID, job.ID, job.HeartbeatAt)
+				slog.Warn("Resetting zombie job", "worker_id", w.workerID, "job_id", job.ID, "last_heartbeat", job.HeartbeatAt)
 
 				w.db.Model(&job).Updates(map[string]interface{}{
 					"state":        "queued",
@@ -330,7 +331,7 @@ func (w *WorkerOrchestrator) updateHeartbeats() {
 }
 
 func (w *WorkerOrchestrator) schedulerLoop() {
-	log.Printf("[SCHEDULER] Starting scheduler loop | worker_id=%s", w.workerID)
+	slog.Info("Starting scheduler loop", "worker_id", w.workerID)
 	ticker := time.NewTicker(30 * time.Second)
 
 	for {
@@ -345,12 +346,12 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 			// Find due schedules
 			err := w.db.Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
 			if err != nil {
-				log.Printf("[SCHEDULER] Error fetching schedules | worker_id=%s | error=%v", w.workerID, err)
+				slog.Error("Error fetching schedules", "worker_id", w.workerID, "error", err)
 				continue
 			}
 
 			for _, s := range schedules {
-				log.Printf("[SCHEDULER] Executing schedule | worker_id=%s | schedule_id=%d | watchlist_id=%s", w.workerID, s.ID, s.WatchlistID)
+				slog.Info("Executing schedule", "worker_id", w.workerID, "schedule_id", s.ID, "watchlist_id", s.WatchlistID)
 
 				// Enqueue sync job
 				job := database.Job{
@@ -364,14 +365,14 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 				}
 
 				if err := w.db.Create(&job).Error; err != nil {
-					log.Printf("[SCHEDULER] Error enqueuing job | worker_id=%s | schedule_id=%d | error=%v", w.workerID, s.ID, err)
+					slog.Error("Error enqueuing scheduled job", "worker_id", w.workerID, "schedule_id", s.ID, "error", err)
 					continue
 				}
 
 				// Compute next run at
 				sched, err := cron.ParseStandard(s.CronExpr)
 				if err != nil {
-					log.Printf("[SCHEDULER] Invalid cron expression | worker_id=%s | schedule_id=%d | cron=%s | error=%v", w.workerID, s.ID, s.CronExpr, err)
+					slog.Error("Invalid cron expression", "worker_id", w.workerID, "schedule_id", s.ID, "cron", s.CronExpr, "error", err)
 					w.db.Model(&s).Update("enabled", false)
 					continue
 				}
@@ -417,7 +418,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
-			log.Printf("[WORKER] Error claiming job | worker_id=%s | error=%v", w.workerID, err)
+			slog.Error("Error claiming job", "worker_id", w.workerID, "error", err)
 		}
 		return
 	}
@@ -425,18 +426,18 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	// Acquire advisory lock for scope
 	lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
 	if err != nil {
-		log.Printf("[WORKER] Error computing lock key | worker_id=%s | job_id=%d | error=%v", w.workerID, job.ID, err)
+		slog.Error("Error computing lock key", "worker_id", w.workerID, "job_id", job.ID, "error", err)
 		return
 	}
 
 	acquired, err := w.lockManager.AcquireTryLock(context.Background(), lockKey)
 	if err != nil {
-		log.Printf("[WORKER] Error acquiring advisory lock | worker_id=%s | job_id=%d | error=%v", w.workerID, job.ID, err)
+		slog.Error("Error acquiring advisory lock", "worker_id", w.workerID, "job_id", job.ID, "error", err)
 		return
 	}
 
 	if !acquired {
-		log.Printf("[WORKER] Scope locked, requeueing | worker_id=%s | job_id=%d | scope_type=%s | scope_id=%s", w.workerID, job.ID, job.ScopeType, job.ScopeID)
+		slog.Info("Scope locked, requeueing", "worker_id", w.workerID, "job_id", job.ID, "scope_type", job.ScopeType, "scope_id", job.ScopeID)
 		w.db.Model(&job).Updates(map[string]interface{}{
 			"state":      "queued",
 			"worker_id":  nil,
@@ -458,7 +459,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	w.activeJobs[job.ID] = jc
 	w.jobMutex.Unlock()
 
-	log.Printf("[WORKER] Claimed job | worker_id=%s | job_id=%d | job_type=%s", w.workerID, job.ID, job.Type)
+	slog.Info("Claimed job", "worker_id", w.workerID, "job_id", job.ID, "job_type", job.Type)
 }
 
 func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
@@ -508,7 +509,7 @@ func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	// Claim next item
 	itemID, err := w.claimNextJobItem(jc.job.ID)
 	if err != nil {
-		log.Printf("[WORKER] Error claiming item | worker_id=%s | job_id=%d | error=%v", w.workerID, jc.job.ID, err)
+		slog.Error("Error claiming item", "worker_id", w.workerID, "job_id", jc.job.ID, "error", err)
 		return
 	}
 
@@ -520,7 +521,7 @@ func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 
 	err = w.acqHandler.ExecuteItem(jc.ctx, jc.job.ID, itemID)
 	if err != nil {
-		log.Printf("[WORKER] Error processing item | worker_id=%s | job_id=%d | item_id=%d | error=%v", w.workerID, jc.job.ID, itemID, err)
+		slog.Error("Error processing item", "worker_id", w.workerID, "job_id", jc.job.ID, "item_id", itemID, "error", err)
 	}
 }
 
@@ -558,7 +559,7 @@ func (w *WorkerOrchestrator) claimNextJobItem(jobID uint64) (uint64, error) {
 }
 
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
-	log.Printf("[WORKER] Executing monolithic job | worker_id=%s | job_id=%d | job_type=%s", w.workerID, jc.job.ID, jc.job.Type)
+	slog.Info("Executing monolithic job", "worker_id", w.workerID, "job_id", jc.job.ID, "job_type", jc.job.Type)
 
 	var err error
 	switch jc.job.Type {
@@ -568,7 +569,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 	case "release_monitor":
 		err = w.rmService.CheckAllArtists()
 	case "index_refresh":
-		log.Printf("[WORKER] Triggering Gonic index refresh | worker_id=%s | job_id=%d", w.workerID, jc.job.ID)
+		slog.Info("Triggering Gonic index refresh", "worker_id", w.workerID, "job_id", jc.job.ID)
 		// Placeholder for actual refresh call via GonicClient
 		w.mbService.HealthCheck() // Just a dummy call to use a service
 	case "scan":
@@ -584,7 +585,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 			w.finishJob(jc.job.ID, err)
 			return
 		}
-		log.Printf("[WORKER] Scanning library %s at path %s", library.Name, library.Path)
+		slog.Info("Scanning library", "name", library.Name, "path", library.Path)
 		err = w.scanService.ScanLibrary(jc.ctx, libraryID, library.Path)
 		if err == nil {
 			w.checkQuotaAlerts() // Check disk quotas after a successful scan
@@ -597,7 +598,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 			w.finishJob(jc.job.ID, err)
 			return
 		}
-		log.Printf("[WORKER] Starting metadata enrichment for library %s", libraryID)
+		slog.Info("Starting metadata enrichment for library", "library_id", libraryID)
 
 		// Get library
 		var library database.Library
@@ -622,7 +623,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 			// Try to enrich from Discogs
 			enrichedData, err := w.discogs.EnrichTrack(track.Artist, track.Title)
 			if err != nil {
-				log.Printf("[WORKER] Could not enrich %s - %s: %v", track.Artist, track.Title, err)
+				slog.Warn("Could not enrich track", "artist", track.Artist, "title", track.Title, "error", err)
 				continue
 			}
 
@@ -642,7 +643,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		}
 
 	doneEnrich:
-		log.Printf("[WORKER] Enriched %d tracks for library %s", enriched, library.Name)
+		slog.Info("Enriched tracks for library", "count", enriched, "library", library.Name)
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}
@@ -679,18 +680,20 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 
 	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
 
-	log.Printf("[WORKER] Finished job | worker_id=%s | job_id=%d | state=%s", w.workerID, jobID, finalState)
+	slog.Info("Finished job", "worker_id", w.workerID, "job_id", jobID, "state", finalState)
 }
 
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Error("Failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
 	worker := NewWorkerOrchestrator(cfg, db)
@@ -700,7 +703,7 @@ func main() {
 
 	go worker.Start()
 
-	log.Println("[WORKER] Worker process running. Press Ctrl+C to stop.")
+	slog.Info("Worker process running. Press Ctrl+C to stop.")
 	<-stop
 	worker.Stop()
 }

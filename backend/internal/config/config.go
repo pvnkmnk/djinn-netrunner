@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 
@@ -79,7 +79,8 @@ type Config struct {
 func generateSecureSecret() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		log.Fatal("failed to generate secure secret: ", err)
+		slog.Error("Failed to generate secure secret", "error", err)
+		os.Exit(1)
 	}
 	return hex.EncodeToString(b)
 }
@@ -98,14 +99,14 @@ func Load(filenames ...string) (*Config, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = generateSecureSecret()
-		log.Println("[WARN] JWT_SECRET not set — generated random secret. Set JWT_SECRET in .env for persistence across restarts.")
+		slog.Warn("JWT_SECRET not set — generated random secret. Set JWT_SECRET in .env for persistence across restarts.")
 	}
 
 	// SECURITY: Gonic credentials must be explicitly set. Never use hardcoded defaults.
 	gonicUser := os.Getenv("GONIC_USER")
 	gonicPass := os.Getenv("GONIC_PASS")
 	if gonicUser == "" || gonicPass == "" {
-		log.Println("[WARN] GONIC_USER or GONIC_PASS not set — Gonic integration will fail until credentials are configured.")
+		slog.Warn("GONIC_USER or GONIC_PASS not set — Gonic integration will fail until credentials are configured.")
 	}
 
 	cfg := &Config{

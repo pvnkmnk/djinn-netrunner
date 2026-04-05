@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -44,12 +44,12 @@ func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
 
 	lists, err := h.service.GetWatchlists()
 	if err != nil {
-		log.Printf("Error getting watchlists: %v", err)
+		slog.Error("Error getting watchlists", "error", err)
 		lists = []database.Watchlist{}
 	}
 	var profiles []database.QualityProfile
 	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
-		log.Printf("Error getting profiles: %v", err)
+		slog.Error("Error getting profiles", "error", err)
 	}
 	return RenderPage(c, "watchlists", "pages/watchlists", fiber.Map{
 		"watchlists": lists,
@@ -75,7 +75,7 @@ func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
 
 	var libs []database.Library
 	if err := h.db.Order("name").Find(&libs).Error; err != nil {
-		log.Printf("Error getting libraries: %v", err)
+		slog.Error("Error getting libraries", "error", err)
 	}
 	return RenderPage(c, "libraries", "pages/libraries", fiber.Map{"libraries": libs})
 }
@@ -98,7 +98,7 @@ func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
 
 	var profiles []database.QualityProfile
 	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
-		log.Printf("Error getting profiles: %v", err)
+		slog.Error("Error getting profiles", "error", err)
 	}
 	return RenderPage(c, "profiles", "pages/profiles", fiber.Map{"profiles": profiles})
 }
@@ -121,11 +121,11 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 
 	var scheds []database.Schedule
 	if err := h.db.Preload("Watchlist").Order("created_at desc").Find(&scheds).Error; err != nil {
-		log.Printf("Error getting schedules: %v", err)
+		slog.Error("Error getting schedules", "error", err)
 	}
 	var watchlists []database.Watchlist
 	if err := h.db.Order("name").Find(&watchlists).Error; err != nil {
-		log.Printf("Error getting watchlists: %v", err)
+		slog.Error("Error getting watchlists", "error", err)
 	}
 	return RenderPage(c, "schedules", "pages/schedules", fiber.Map{
 		"schedules":  scheds,
@@ -156,7 +156,7 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&artists).Error; err != nil {
-		log.Printf("Error getting artists: %v", err)
+		slog.Error("Error getting artists", "error", err)
 	}
 	return RenderPage(c, "artists", "pages/artists", fiber.Map{"artists": artists})
 }
@@ -179,7 +179,7 @@ func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
 
 	var jobs []database.Job
 	if err := h.db.Order("requested_at DESC").Limit(50).Find(&jobs).Error; err != nil {
-		log.Printf("Error getting jobs: %v", err)
+		slog.Error("Error getting jobs", "error", err)
 	}
 	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs})
 }

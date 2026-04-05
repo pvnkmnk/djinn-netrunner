@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -263,7 +263,7 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 
 	var profiles []database.QualityProfile
 	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
-		log.Printf("Error fetching profiles for watchlist form: %v", err)
+		slog.Error("Error fetching profiles for watchlist form", "error", err)
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
 
@@ -308,7 +308,7 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&watchlists).Error; err != nil {
-		log.Printf("Error fetching watchlists: %v", err)
+		slog.Error("Error fetching watchlists", "error", err)
 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
 	}
 

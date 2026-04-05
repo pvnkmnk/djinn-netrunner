@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -297,7 +297,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 		wQuery = wQuery.Where("owner_user_id = ?", user.ID)
 	}
 	if err := wQuery.Find(&watchlists).Error; err != nil {
-		log.Printf("Error fetching watchlists for schedule form: %v", err)
+		slog.Error("Error fetching watchlists for schedule form", "error", err)
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
 

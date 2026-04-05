@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -78,7 +78,7 @@ func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&jobs).Error; err != nil {
-		log.Printf("Error fetching jobs: %v", err)
+		slog.Error("Error fetching jobs", "error", err)
 		return c.SendString("<div class=\"error\">Error loading jobs.</div>")
 	}
 

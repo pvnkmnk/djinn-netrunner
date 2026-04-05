@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"gorm.io/gorm"
@@ -23,7 +23,7 @@ func NewLockManager(db *gorm.DB) LockManager {
 	if dbType == "postgres" {
 		return &PostgresLockManager{db: db}
 	}
-	log.Println("[LOCK] Using table-based lock manager for SQLite")
+	slog.Info("Using table-based lock manager for SQLite")
 	return &TableLockManager{db: db}
 }
 

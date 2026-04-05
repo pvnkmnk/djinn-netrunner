@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/google/uuid"
@@ -29,12 +29,14 @@ var rootCmd = &cobra.Command{
 		var err error
 		cfg, err = config.Load()
 		if err != nil {
-			log.Fatalf("Failed to load config: %v", err)
+			slog.Error("Failed to load config", "error", err)
+			os.Exit(1)
 		}
 
 		db, err = database.Connect(cfg)
 		if err != nil {
-			log.Fatalf("Failed to connect to database: %v", err)
+			slog.Error("Failed to connect to database", "error", err)
+			os.Exit(1)
 		}
 	},
 }

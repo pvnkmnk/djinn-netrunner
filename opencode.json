@@ -1,16 +1,83 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "chrome-devtools": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "chrome-devtools-mcp@latest",
-        "--browserUrl",
-        "http://127.0.0.1:9222"
-      ],
-      "enabled": true
+  "model": "opencode/mimo-v2-pro-free",
+  "small_model": "opencode/big-pickle",
+  "instructions": [
+    "AGENTS.md",
+    "docs/ARCHITECTURE.md",
+    "docs/API_CONTRACTS.md"
+  ],
+  "plugin": [
+    "oh-my-opencode-slim"
+  ],
+  "agent": {
+    "build": {
+      "description": "Primary implementer for djinn-netrunner features \u2014 FastAPI routes, DB migrations, Docker services, HTMX components.",
+      "model": "opencode/qwen3.6-plus-free",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "ask",
+          "poetry install *": "allow",
+          "pip install *": "allow",
+          "alembic upgrade *": "allow",
+          "alembic revision *": "allow",
+          "docker compose up *": "allow",
+          "docker compose down": "allow",
+          "pytest *": "allow",
+          "rm -rf *": "deny",
+          "sudo *": "deny",
+          "drop table *": "deny"
+        }
+      }
+    },
+    "plan": {
+      "description": "Designs and documents features, writes RFCs, proposes DB schemas and API contracts for djinn-netrunner. Read + write docs only.",
+      "model": "opencode/qwen3.6-plus-free",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "deny"
+        }
+      }
+    },
+    "review": {
+      "description": "Code review, security audits, RBAC/JWT validation, and PR feedback for djinn-netrunner. No edits or bash \u2014 analysis only.",
+      "model": "opencode/nemotron-3-super-free",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny"
+        }
+      }
+    },
+    "infra": {
+      "description": "Manages Docker Compose stacks, PostgreSQL, Redis, Nginx configs, and deployment scripts for djinn-netrunner self-hosted environment.",
+      "model": "opencode/mimo-v2-pro-free",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "ask",
+          "docker *": "allow",
+          "docker compose *": "allow",
+          "psql *": "allow",
+          "redis-cli *": "allow",
+          "systemctl status *": "allow",
+          "rm -rf *": "deny",
+          "sudo *": "deny",
+          "DROP *": "deny"
+        }
+      }
+    },
+    "netrunner": {
+      "description": "Research and discovery agent for djinn-netrunner: API documentation lookup, library evaluation, CVE scanning, and dependency research.",
+      "model": "opencode/nemotron-3-super-free",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny"
+        }
+      }
     }
-  }
+  },
 }

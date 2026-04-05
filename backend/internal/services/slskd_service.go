@@ -12,6 +12,7 @@ import (
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"gorm.io/gorm"
 )
 
 type DownloadState string
@@ -126,6 +127,44 @@ func (r *SearchResult) CalculateScore(profile *database.QualityProfile) {
 	r.Score = score
 }
 
+// ApplyPeerReputation adjusts a SearchResult's score based on the peer's
+// historical reliability. Called after CalculateScore.
+func (r *SearchResult) ApplyPeerReputation(rep *database.PeerReputation) {
+	if rep == nil {
+		return
+	}
+
+	// Ignore peers with consistently poor track record
+	if rep.IsIgnored() {
+		r.Score -= 200
+		return
+	}
+
+	// New or low-sample peers get neutral treatment
+	if rep.TotalDownloads < 3 {
+		return
+	}
+
+	// Adjust score based on success rate
+	rate := rep.SuccessRate()
+	if rate >= 0.95 {
+		r.Score += 15 // Reliable peer bonus
+	} else if rate >= 0.80 {
+		r.Score += 5 // Decent peer bonus
+	} else if rate < 0.50 {
+		r.Score -= 30 // Unreliable peer penalty
+	}
+
+	// Speed bonus from historical data
+	if rep.AvgSpeed > 5*1024*1024 { // >5 MB/s
+		r.Score += 10
+	} else if rep.AvgSpeed > 1*1024*1024 { // >1 MB/s
+		r.Score += 5
+	} else if rep.AvgSpeed < 100*1024 { // <100 KB/s
+		r.Score -= 10
+	}
+}
+
 type Download struct {
 	ID              string        `json:"id"`
 	Username        string        `json:"username"`
@@ -141,6 +180,7 @@ type SlskdService struct {
 	cfg         *config.Config
 	httpClient  *http.Client
 	rateLimiter *searchRateLimiter
+	db          *gorm.DB
 }
 
 // searchRateLimiter enforces slskd's search rate limit (34 searches per 220 seconds).
@@ -175,7 +215,7 @@ func (rl *searchRateLimiter) Wait() {
 	<-rl.tokens
 }
 
-func NewSlskdService(cfg *config.Config) *SlskdService {
+func NewSlskdService(cfg *config.Config, db *gorm.DB) *SlskdService {
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -193,6 +233,7 @@ func NewSlskdService(cfg *config.Config) *SlskdService {
 		cfg:         cfg,
 		httpClient:  client,
 		rateLimiter: newSearchRateLimiter(),
+		db:          db,
 	}
 }
 
@@ -284,6 +325,14 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 				Length:      f.Length,
 			}
 			sr.CalculateScore(profile)
+
+			// Apply peer reputation adjustment
+			if s.db != nil {
+				var rep database.PeerReputation
+				s.db.Where("username = ?", res.Username).First(&rep)
+				sr.ApplyPeerReputation(&rep)
+			}
+
 			results = append(results, sr)
 		}
 	}
@@ -364,11 +413,15 @@ func (s *SlskdService) WaitForDownload(username, filename string, timeout time.D
 	defer ticker.Stop()
 
 	start := time.Now()
+	var lastBytes int64
+	var lastProgress time.Time
+	stallThreshold := 90 * time.Second // Consider stalled if no progress for 90s
+
 	for {
 		select {
 		case <-ticker.C:
 			if time.Since(start) > timeout {
-				return nil, fmt.Errorf("download timeout")
+				return nil, fmt.Errorf("download timeout after %v", timeout)
 			}
 
 			d, err := s.GetDownload(username, filename)
@@ -384,6 +437,16 @@ func (s *SlskdService) WaitForDownload(username, filename string, timeout time.D
 			}
 			if d.State == DownloadStateCancelled || d.State == DownloadStateErrored {
 				return nil, fmt.Errorf("download failed: %s", d.State)
+			}
+
+			// Stalled download detection: track bytes downloaded over time
+			if d.State == DownloadStateInProgress {
+				if d.BytesDownloaded > lastBytes {
+					lastBytes = d.BytesDownloaded
+					lastProgress = time.Now()
+				} else if time.Since(lastProgress) > stallThreshold {
+					return nil, fmt.Errorf("download stalled (no progress for %v)", stallThreshold)
+				}
 			}
 		}
 	}

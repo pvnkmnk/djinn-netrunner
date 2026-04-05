@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -287,7 +287,7 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
 			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
 		Scan(&stats).Error; err != nil {
-		log.Printf("Error fetching stats: %v", err)
+		slog.Error("Error fetching stats", "error", err)
 		return c.SendString("<div class=\"error\">Error loading stats.</div>")
 	}
 

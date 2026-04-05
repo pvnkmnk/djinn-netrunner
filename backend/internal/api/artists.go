@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -85,8 +85,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	// MusicBrainz search returns results sorted by relevance
 	// Log ambiguous results for debugging
 	if len(results) > 1 {
-		log.Printf("[ARTISTS] Ambiguous search for '%s' — got %d results, using first: %s",
-			payload.Name, len(results), results[0].Name)
+		slog.Warn("Ambiguous artist search", "query", payload.Name, "results", len(results), "selected", results[0].Name)
 	}
 
 	// Get quality profile
@@ -103,7 +102,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		if err := h.db.Where("is_default = ?", true).First(&profile).Error; err == nil {
 			profileID = profile.ID
 		} else if err != gorm.ErrRecordNotFound {
-			log.Printf("Error fetching default profile: %v", err)
+			slog.Error("Error fetching default profile", "error", err)
 		}
 	}
 
@@ -217,7 +216,7 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 
 	var profiles []database.QualityProfile
 	if err := h.db.Find(&profiles).Error; err != nil {
-		log.Printf("Error fetching profiles for artist form: %v", err)
+		slog.Error("Error fetching profiles for artist form", "error", err)
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
 
@@ -256,7 +255,7 @@ func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&artists).Error; err != nil {
-		log.Printf("Error fetching artists: %v", err)
+		slog.Error("Error fetching artists", "error", err)
 		return c.SendString("<div class=\"error\">Error loading artists.</div>")
 	}
 	return c.Render("partials/artists", fiber.Map{"artists": artists})
