@@ -5,3 +5,7 @@
 ## 2026-03-26 - [UX: Visual Feedback for HTMX Interactions]
 **Learning:** Providing immediate visual feedback for HTMX-driven actions (like Sync or Scan) using the `.htmx-request` class in CSS is an effective, low-effort way to indicate background processing. Combining `opacity` and `cursor: wait` on the triggering element prevents users from wondering if their click was registered.
 **Action:** Utilize the `.htmx-request` class in `styles.css` for consistent loading state feedback across all asynchronous UI interactions.
+
+## 2026-04-05 - [Accessibility & Safety: Context-Aware Action Buttons]
+**Learning:** For destructive or state-toggling actions, using generic labels like "Delete" or "Enable" is insufficient for accessibility. Including the object's name (e.g., "Delete schedule for My Watchlist") in `aria-label` and `hx-confirm` provides critical context for screen reader users and prevents accidental errors.
+**Action:** Always include the specific object name in `aria-label` and `hx-confirm` attributes for action buttons to ensure clarity and safety.
