@@ -73,7 +73,7 @@ func TestAuthFlow(t *testing.T) {
 	req = httptest.NewRequest("POST", "/login", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ = app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 302, resp.StatusCode)
 
 	// Extract cookie
 	var cookieStr string
