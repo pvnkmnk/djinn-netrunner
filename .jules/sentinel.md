@@ -29,3 +29,8 @@
 **Vulnerability:** HTMX partials for forms (like Watchlist edit) could be accessed by ID without ownership checks, leaking configuration details.
 **Learning:** HTMX handlers often return 200 OK with an error snippet instead of 403/404 to provide better UX (inline errors instead of broken modals). This requires the underlying query to be ownership-aware so that unauthorized access is treated as a "Not Found" event.
 **Prevention:** In handlers serving HTMX partials, incorporate ownership filters (e.g., `.Where("owner_user_id = ?", user.ID)`) directly into the `First()` or `Find()` queries to ensure that missing ownership results in a standard "record not found" error, which can then be rendered as a user-friendly error snippet.
+
+## 2026-04-06 - [Privilege Escalation via Default Flags]
+**Vulnerability:** Non-admin users could promote their own Quality Profiles to the system-wide default by setting `IsDefault: true` during creation or update.
+**Learning:** Broad authorization checks (like ownership) do not automatically cover field-level permissions for sensitive flags that affect global system state.
+**Prevention:** Explicitly validate that only users with sufficient privileges (e.g., 'admin' role) can modify fields that have global system impact, such as `IsDefault`, `IsSystem`, or `Enabled` flags on shared resources.
