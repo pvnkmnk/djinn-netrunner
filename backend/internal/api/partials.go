@@ -64,7 +64,8 @@ type StatsData struct {
 // RenderJobsPartial returns jobs HTML for HTMX
 func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
 	var jobs []database.Job
-	query := h.db.Order("requested_at DESC").Limit(50)
+	// Bolt Optimization: Select only necessary columns to reduce memory allocation and database I/O.
+	query := h.db.Select("id, job_type, state, requested_at, created_by").Order("requested_at DESC").Limit(50)
 
 	// Apply filters if provided
 	jobType := c.Query("job_type")
