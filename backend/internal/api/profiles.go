@@ -100,6 +100,11 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		}
 	}
 
+	// ✅ SECURITY: Only admins can set a profile as the system default.
+	if input.IsDefault && user.Role != "admin" {
+		return c.Status(403).JSON(fiber.Map{"error": "forbidden: only administrators can set default quality profiles"})
+	}
+
 	// If setting as default, use transaction to ensure atomicity
 	if input.IsDefault {
 		var profile database.QualityProfile
@@ -197,6 +202,10 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 
 	// Handle default setting with transaction
 	if input.IsDefault != nil && *input.IsDefault && !profile.IsDefault {
+		// ✅ SECURITY: Only admins can change a profile's default status.
+		if user.Role != "admin" {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden: only administrators can change default quality profiles"})
+		}
 		if err := h.db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
 				return err
@@ -246,6 +255,10 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		profile.CoverArtSources = *input.CoverArtSources
 	}
 	if input.IsDefault != nil {
+		// ✅ SECURITY: Only admins can change a profile's default status.
+		if *input.IsDefault != profile.IsDefault && user.Role != "admin" {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden: only administrators can change default quality profiles"})
+		}
 		profile.IsDefault = *input.IsDefault
 	}
 
