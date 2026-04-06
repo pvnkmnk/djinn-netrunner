@@ -278,7 +278,12 @@ func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
 	}
 
 	var schedules []database.Schedule
-	query := h.db.Preload("Watchlist").Order("schedules.created_at desc")
+	// Bolt Optimization: Select only necessary columns and optimize preload with targeted columns.
+	query := h.db.Select("schedules.id, schedules.watchlist_id, schedules.cron_expr, schedules.next_run_at, schedules.enabled").
+		Preload("Watchlist", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name")
+		}).
+		Order("schedules.created_at desc")
 	if user.Role != "admin" {
 		query = query.Joins("JOIN watchlists ON watchlists.id = schedules.watchlist_id").Where("watchlists.owner_user_id = ?", user.ID)
 	}
