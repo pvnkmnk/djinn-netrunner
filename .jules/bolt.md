@@ -29,3 +29,7 @@
 ## 2026-04-01 - Redundant Initial Dashboard Load Queries
 **Learning:** The dashboard's initial synchronous render was performing four separate database queries to fetch stats, recent jobs, watchlists, and quality profiles. However, these variables were never actually used in the `index.html` template, as the dashboard relies on HTMX to load this data asynchronously via partials.
 **Action:** Removed the redundant database queries from `DashboardHandler.RenderIndex` and updated the fiber render map. This reduces the database load by 4 queries per dashboard visit and improves the initial page load time.
+
+## 2026-04-07 - Large Blob Omission in Job List
+**Learning:** The job list partial was performing a `SELECT *` on the `jobs` table, fetching large `Params` (JSONB) and `ErrorDetail` (text) fields for every row, even though the UI only displays metadata. Using `.Omit()` is more maintainable than `.Select()` for this purpose as it remains resilient to UI changes while still providing the performance win of skipping heavy blobs.
+**Action:** Applied `.Omit("params", "error_detail")` to the `RenderJobsPartial` query in `backend/internal/api/partials.go`.
