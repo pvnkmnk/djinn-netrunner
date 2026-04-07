@@ -84,6 +84,11 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
+	// ✅ SECURITY: Prevent privilege escalation by restricting default profile creation to admins
+	if input.IsDefault && user.Role != "admin" {
+		return c.Status(403).JSON(fiber.Map{"error": "only administrators can set a default profile"})
+	}
+
 	if input.Name == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
 	}
@@ -193,6 +198,13 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	// ✅ SECURITY: Prevent privilege escalation by restricting default profile modification to admins
+	if input.IsDefault != nil && *input.IsDefault != profile.IsDefault {
+		if user.Role != "admin" {
+			return c.Status(403).JSON(fiber.Map{"error": "only administrators can change the default status"})
+		}
 	}
 
 	// Handle default setting with transaction
