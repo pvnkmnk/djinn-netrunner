@@ -102,6 +102,11 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 
 	// If setting as default, use transaction to ensure atomicity
 	if input.IsDefault {
+		// ✅ SECURITY: Only admins can set a profile as the system default
+		if user.Role != "admin" {
+			return c.Status(403).JSON(fiber.Map{"error": "only administrators can set a profile as default"})
+		}
+
 		var profile database.QualityProfile
 		err := h.db.Transaction(func(tx *gorm.DB) error {
 			// Clear existing defaults
@@ -197,6 +202,11 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 
 	// Handle default setting with transaction
 	if input.IsDefault != nil && *input.IsDefault && !profile.IsDefault {
+		// ✅ SECURITY: Only admins can set a profile as the system default
+		if user.Role != "admin" {
+			return c.Status(403).JSON(fiber.Map{"error": "only administrators can set a profile as default"})
+		}
+
 		if err := h.db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
 				return err
