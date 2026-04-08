@@ -25,7 +25,9 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	var authUserID string
 	sessionID := c.Cookies(sessionCookieName)
 	if sessionID != "" {
+		// Bolt Optimization: Select only required columns for initial dashboard load.
 		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Select("users.id, users.email, users.role").
 			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
 			First(&user).Error
 		if err == nil {
@@ -34,7 +36,10 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	}
 
 	return c.Render("index", fiber.Map{
-		"User":       user,
+		"User": fiber.Map{
+			"Email": user.Email,
+			"Role":  user.Role,
+		},
 		"authUserID": authUserID,
 	})
 }
