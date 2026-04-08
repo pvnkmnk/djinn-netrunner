@@ -29,3 +29,7 @@
 ## 2026-04-01 - Redundant Initial Dashboard Load Queries
 **Learning:** The dashboard's initial synchronous render was performing four separate database queries to fetch stats, recent jobs, watchlists, and quality profiles. However, these variables were never actually used in the `index.html` template, as the dashboard relies on HTMX to load this data asynchronously via partials.
 **Action:** Removed the redundant database queries from `DashboardHandler.RenderIndex` and updated the fiber render map. This reduces the database load by 4 queries per dashboard visit and improves the initial page load time.
+
+## 2026-04-03 - Targeted Column Selection for Job Lists
+**Learning:** Job lists in `JobsPage` and `RenderJobsPartial` were fetching the full `Job` struct, including `params` (large JSON) and `error_detail` (potentially large error strings). These fields are not displayed in the list view but significantly increase database I/O and memory allocation.
+**Action:** Implemented `.Omit("params", "error_detail")` in job list queries. This reduces the data transferred for each of the 50 jobs typically fetched, improving performance of job dashboard views.

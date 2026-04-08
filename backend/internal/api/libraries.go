@@ -50,7 +50,9 @@ func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
 	}
 
 	var libraries []database.Library
-	query := h.db.Order("name")
+	// Bolt Optimization: Use targeted column selection to reduce memory allocation.
+	// BOLA: Filter by owner_user_id for non-admin users.
+	query := h.db.Order("name").Select("id", "name", "path")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}

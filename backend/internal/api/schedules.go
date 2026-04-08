@@ -278,7 +278,13 @@ func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
 	}
 
 	var schedules []database.Schedule
-	query := h.db.Preload("Watchlist").Order("schedules.created_at desc")
+	// Bolt Optimization: Preload only necessary fields from the Watchlist table.
+	// Also use targeted column selection for schedules to reduce memory allocation.
+	// BOLA: Filter by owner_user_id through join for non-admin users.
+	query := h.db.Preload("Watchlist", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id, name")
+	}).Order("schedules.created_at desc").Select("id", "watchlist_id", "cron_expr", "next_run_at", "enabled")
+
 	if user.Role != "admin" {
 		query = query.Joins("JOIN watchlists ON watchlists.id = schedules.watchlist_id").Where("watchlists.owner_user_id = ?", user.ID)
 	}
