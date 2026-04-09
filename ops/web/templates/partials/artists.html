@@ -21,10 +21,10 @@
             </div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-patch="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm" hx-patch="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" aria-label="{% if artist.Monitored %}Pause monitoring for {{ artist.Name }}{% else %}Resume monitoring for {{ artist.Name }}{% endif %}">
                 {% if artist.Monitored %}Pause{% else %}Resume{% endif %}
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to remove {{ artist.Name }}?" aria-label="Remove {{ artist.Name }} from monitoring">
                 Remove
             </button>
         </div>
