@@ -1,8 +1,6 @@
 package api
 
 import (
-	"log"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
@@ -23,112 +21,60 @@ func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) erro
 
 // WatchlistsPage renders the watchlists page
 func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Bolt Optimization: Removed redundant database queries.
+	// Data is loaded asynchronously via HTMX in the template.
+	if _, ok := c.Locals("user").(database.User); !ok {
 		return c.Redirect("/", 302)
 	}
-
-	lists, err := h.service.GetWatchlists()
-	if err != nil {
-		log.Printf("Error getting watchlists: %v", err)
-		lists = []database.Watchlist{}
-	}
-	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
-		log.Printf("Error getting profiles: %v", err)
-	}
-	return RenderPage(c, "watchlists", "pages/watchlists", fiber.Map{
-		"watchlists": lists,
-		"profiles":   profiles,
-	})
+	return RenderPage(c, "watchlists", "pages/watchlists", fiber.Map{})
 }
 
 // LibrariesPage renders the libraries page
 func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Bolt Optimization: Removed redundant database queries.
+	// Data is loaded asynchronously via HTMX in the template.
+	if _, ok := c.Locals("user").(database.User); !ok {
 		return c.Redirect("/", 302)
 	}
-
-	var libs []database.Library
-	query := h.db.Order("name")
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
-	}
-	if err := query.Find(&libs).Error; err != nil {
-		log.Printf("Error getting libraries: %v", err)
-	}
-	return RenderPage(c, "libraries", "pages/libraries", fiber.Map{"libraries": libs})
+	return RenderPage(c, "libraries", "pages/libraries", fiber.Map{})
 }
 
 // ProfilesPage renders the profiles page
 func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Bolt Optimization: Removed redundant database queries.
+	// Data is loaded asynchronously via HTMX in the template.
+	if _, ok := c.Locals("user").(database.User); !ok {
 		return c.Redirect("/", 302)
 	}
-
-	var profiles []database.QualityProfile
-	query := h.db.Order("name")
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
-	}
-	if err := query.Find(&profiles).Error; err != nil {
-		log.Printf("Error getting profiles: %v", err)
-	}
-	return RenderPage(c, "profiles", "pages/profiles", fiber.Map{"profiles": profiles})
+	return RenderPage(c, "profiles", "pages/profiles", fiber.Map{})
 }
 
 // SchedulesPage renders the schedules page
 func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Bolt Optimization: Removed redundant database queries.
+	// Data is loaded asynchronously via HTMX in the template.
+	if _, ok := c.Locals("user").(database.User); !ok {
 		return c.Redirect("/", 302)
 	}
-
-	var scheds []database.Schedule
-	if err := h.db.Preload("Watchlist").Order("created_at desc").Find(&scheds).Error; err != nil {
-		log.Printf("Error getting schedules: %v", err)
-	}
-	var watchlists []database.Watchlist
-	if err := h.db.Order("name").Find(&watchlists).Error; err != nil {
-		log.Printf("Error getting watchlists: %v", err)
-	}
-	return RenderPage(c, "schedules", "pages/schedules", fiber.Map{
-		"schedules":  scheds,
-		"watchlists": watchlists,
-	})
+	return RenderPage(c, "schedules", "pages/schedules", fiber.Map{})
 }
 
 // ArtistsPage renders the artists page
 func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Bolt Optimization: Removed redundant database queries.
+	// Data is loaded asynchronously via HTMX in the template.
+	if _, ok := c.Locals("user").(database.User); !ok {
 		return c.Redirect("/", 302)
 	}
-
-	var artists []database.MonitoredArtist
-	query := h.db.Order("name")
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
-	}
-
-	if err := query.Find(&artists).Error; err != nil {
-		log.Printf("Error getting artists: %v", err)
-	}
-	return RenderPage(c, "artists", "pages/artists", fiber.Map{"artists": artists})
+	return RenderPage(c, "artists", "pages/artists", fiber.Map{})
 }
 
 // JobsPage renders the jobs page
 func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Bolt Optimization: Removed redundant database queries.
+	// Data is loaded asynchronously via HTMX in the template.
+	if _, ok := c.Locals("user").(database.User); !ok {
 		return c.Redirect("/", 302)
 	}
-
-	var jobs []database.Job
-	if err := h.db.Order("requested_at DESC").Limit(50).Find(&jobs).Error; err != nil {
-		log.Printf("Error getting jobs: %v", err)
-	}
-	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs})
+	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{})
 }
