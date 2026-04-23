@@ -537,11 +537,16 @@ body {
 }
 .watchlist-preview {
     margin-top: 0.5rem;
-    padding: 0.5rem;
     background: var(--bg-secondary);
     border-radius: 4px;
     font-size: 0.8rem;
-    max-height: 200px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+}
+.watchlist-preview:not(:empty) {
+    padding: 0.5rem;
+    max-height: 300px;
     overflow-y: auto;
 }
 .watchlist-preview .track {

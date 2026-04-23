@@ -4,7 +4,7 @@
 </div>
 {% for track in Tracks %}
 <div class="track">
-    {% if track.CoverURL %}<span class="track-cover" data-cover="{{ track.CoverURL }}"></span>{% endif %}
+    {% if track.CoverURL %}<span class="track-cover" data-cover="{{ track.CoverURL }}" role="img" aria-label="Cover art for {{ track.Title }} by {{ track.Artist }}"></span>{% endif %}
     <span class="track-info">
         <span class="track-title">{{ track.Title }}</span>
         <span class="track-artist">{{ track.Artist }}</span>

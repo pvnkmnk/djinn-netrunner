@@ -2,13 +2,13 @@
     <div class="modal">
         <div class="modal-header">
             <h3>{% if ID %}Edit{% else %}Add{% endif %} Schedule</h3>
-            <button class="modal-close" data-close-modal>&times;</button>
+            <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
         <form hx-post="/api/schedules" hx-target="#schedules-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
             {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
             <div class="form-group">
                 <label for="watchlist_id">Watchlist</label>
-                <select id="watchlist_id" name="watchlist_id" required>
+                <select id="watchlist_id" name="watchlist_id" required aria-required="true">
                     {% for watchlist in watchlists %}
                     <option value="{{ watchlist.ID }}" {% if watchlist.ID == WatchlistID %}selected{% endif %}>{{ watchlist.Name }}</option>
                     {% endfor %}
@@ -16,7 +16,7 @@
             </div>
             <div class="form-group">
                 <label for="cron_expr">Cron Expression</label>
-                <input type="text" id="cron_expr" name="cron_expr" value="{{ CronExpr }}" required placeholder="0 6 * * *">
+                <input type="text" id="cron_expr" name="cron_expr" value="{{ CronExpr }}" required aria-required="true" placeholder="0 6 * * *">
                 <small class="text-secondary">Format: minute hour day month weekday</small>
             </div>
             <div class="form-group">

@@ -35,7 +35,7 @@
                 <span class="toggle-slider"></span>
             </label>
         </div>
-        <div id="watchlist-preview-{{ watchlist.ID }}" class="watchlist-preview"></div>
+        <div id="watchlist-preview-{{ watchlist.ID }}" class="watchlist-preview" aria-live="polite"></div>
     </div>
     {% empty %}
     <p class="empty-state">No watchlists configured</p>

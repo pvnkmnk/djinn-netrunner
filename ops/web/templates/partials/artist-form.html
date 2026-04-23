@@ -7,7 +7,7 @@
         <form hx-post="/api/artists" hx-target="#artists-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
             <div class="form-group">
                 <label for="name">Artist Name</label>
-                <input type="text" id="name" name="name" required placeholder="Enter artist name">
+                <input type="text" id="name" name="name" required aria-required="true" placeholder="Enter artist name">
             </div>
             <div class="form-group">
                 <label for="quality_profile_id">Quality Profile</label>
