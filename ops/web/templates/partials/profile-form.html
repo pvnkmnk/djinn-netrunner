@@ -1,9 +1,8 @@
-<div class="modal-overlay" id="modal-overlay" 
-     hx-on:click="if(event.target === this) htmx.removeClass(htmx.find('#modal-container'), 'active')">
+<div class="modal-overlay" data-close-modal>
     <div class="modal">
         <div class="modal-header">
             <h3>{% if ID %}Edit{% else %}Add{% endif %} Profile</h3>
-            <button class="modal-close" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active')">&times;</button>
+            <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
         <form hx-post="/api/profiles" hx-target="#profiles-list" hx-swap="outerHTML">
             {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
@@ -13,7 +12,7 @@
             </div>
             <div class="form-group">
                 <label for="description">Description</label>
-                <input type="text" id="description" value="{{ Description }}">
+                <input type="text" id="description" name="description" value="{{ Description }}">
             </div>
             <div class="form-group">
                 <label class="checkbox-label">
@@ -47,7 +46,7 @@
                 <small class="text-secondary">Order: source (watchlist URL), musicbrainz, discogs</small>
             </div>
             <div class="form-actions">
-                <button type="button" class="btn" hx-on:click="htmx.removeClass(htmx.find('#modal-container'), 'active')">Cancel</button>
+                <button type="button" class="btn" data-close-modal>Cancel</button>
                 <button type="submit" class="btn btn-primary">Save</button>
             </div>
         </form>

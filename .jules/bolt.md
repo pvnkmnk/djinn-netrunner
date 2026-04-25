@@ -29,3 +29,7 @@
 ## 2026-04-01 - Redundant Initial Dashboard Load Queries
 **Learning:** The dashboard's initial synchronous render was performing four separate database queries to fetch stats, recent jobs, watchlists, and quality profiles. However, these variables were never actually used in the `index.html` template, as the dashboard relies on HTMX to load this data asynchronously via partials.
 **Action:** Removed the redundant database queries from `DashboardHandler.RenderIndex` and updated the fiber render map. This reduces the database load by 4 queries per dashboard visit and improves the initial page load time.
+
+## 2026-04-06 - Targeted Column Selection in Dashboard Partials
+**Learning:** Found that dashboard partials (Watchlists, Artists, Schedules, Libraries, Jobs) were performing "SELECT *" queries, fetching large blobs and unused fields. Additionally, some partials were performing unnecessary or inefficient preloads (e.g., fetching full QualityProfiles when only the name was needed, or when not needed at all).
+**Action:** Applied `.Select()` to all dashboard partial handlers to fetch only the columns required by the Pongo2 templates. Optimized the `Watchlist` preload in `RenderSchedulesPartial` to only fetch `id` and `name`, and removed the `QualityProfile` preload from `RenderWatchlistsPartial`. This reduces memory allocation and database I/O for the most frequently polled endpoints in the application.
