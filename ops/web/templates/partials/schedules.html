@@ -20,13 +20,13 @@
             </div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-patch="/api/schedules/{{ schedule.ID }}/toggle" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm" hx-patch="/api/schedules/{{ schedule.ID }}/toggle" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML" aria-label="{% if schedule.Enabled %}Disable{% else %}Enable{% endif %} schedule for {{ schedule.Watchlist.Name }}">
                 {% if schedule.Enabled %}Disable{% else %}Enable{% endif %}
             </button>
-            <button class="btn btn-sm" hx-get="/api/schedules/form?id={{ schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML">
+            <button class="btn btn-sm" hx-get="/api/schedules/form?id={{ schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit schedule for {{ schedule.Watchlist.Name }}">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ schedule.ID }}" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ schedule.ID }}" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete the schedule for {{ schedule.Watchlist.Name }}?" aria-label="Delete schedule for {{ schedule.Watchlist.Name }}">
                 Delete
             </button>
         </div>
