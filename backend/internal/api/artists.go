@@ -199,7 +199,9 @@ func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
 	}
 
 	var artists []database.MonitoredArtist
-	query := h.db.Model(&database.MonitoredArtist{})
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Model(&database.MonitoredArtist{}).
+		Select("id, name, monitored, music_brainz_id, acquired_releases, total_releases, last_scan_date")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}

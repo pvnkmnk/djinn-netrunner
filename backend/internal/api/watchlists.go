@@ -233,7 +233,8 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 	}
 
 	var watchlists []database.Watchlist
-	query := h.db.Order("name").Preload("QualityProfile")
+	// Bolt Optimization: Select only necessary columns and remove unnecessary Preload to reduce database I/O and memory usage.
+	query := h.db.Select("id, name, source_type, source_uri, enabled").Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
