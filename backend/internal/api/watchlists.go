@@ -183,7 +183,11 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 	}
 
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&profiles).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(profiles)
@@ -267,7 +271,11 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 	}
 
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&profiles).Error; err != nil {
 		slog.Error("Error fetching profiles for watchlist form", "error", err)
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
