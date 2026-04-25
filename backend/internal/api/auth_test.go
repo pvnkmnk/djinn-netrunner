@@ -5,39 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
-
-func setupTestDB(t *testing.T) *gorm.DB {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("DATABASE_URL not set, skipping integration test")
-	}
-
-	var dialector gorm.Dialector
-	if strings.HasPrefix(dbURL, "postgres") {
-		dialector = postgres.Open(dbURL)
-	} else {
-		dialector = sqlite.Open(dbURL)
-	}
-
-	db, err := gorm.Open(dialector, &gorm.Config{})
-	if err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
-	}
-
-	database.Migrate(db)
-	return db
-}
 
 // setupTestDBForAuth creates an in-memory SQLite database for complete test isolation
 func setupTestDBForAuth(t *testing.T) *gorm.DB {
@@ -50,7 +26,7 @@ func setupTestDBForAuth(t *testing.T) *gorm.DB {
 }
 
 func TestAuthFlow(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupTestDBForAuth(t)
 	app := fiber.New()
 	auth := NewAuthHandler(db)
 
@@ -60,7 +36,8 @@ func TestAuthFlow(t *testing.T) {
 		return c.SendString("ok")
 	})
 
-	email := "test@example.com"
+	// Use UUID-based email for test isolation
+	email := "test-" + uuid.New().String() + "@example.com"
 	password := "password123"
 
 	// 1. Register
