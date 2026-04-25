@@ -1,32 +1,35 @@
-# djinn-netrunner Agent Rules
+# netrunner Agent Rules
 
 ## Project overview
-djinn-netrunner is a multi-agent AI CLI / agentic coding platform.
-Stack: FastAPI, Python 3.12+, PostgreSQL, Redis, Docker/Compose, HTMX/Jinja2, JWT+RBAC, self-host-ready.
+netrunner is a Soulseek file management and automation system.
+Stack: Go, Fiber, PostgreSQL, Redis, Docker/Compose, HTMX/Jinja2, JWT+RBAC, self-host-ready.
 
 ## Module ownership
-- `api/` — FastAPI routes and OpenAPI schemas
-- `agents/` — Agent definitions, skills, MCP wiring
-- `db/` — SQLAlchemy models + Alembic migrations
-- `auth/` — JWT issuance, RBAC middleware
-- `frontend/` — HTMX templates + Jinja2 layouts
-- `infra/` — Docker Compose, Nginx, Redis configs
+- `backend/cmd/` — CLI entrypoints (agent, cli, server, worker)
+- `backend/internal/api/` — Fiber HTTP handlers and routes
+- `backend/internal/services/` — Business logic services (slskd, transcoder, etc.)
+- `backend/internal/database/` — GORM models and queries
+- `backend/internal/agent/` — MCP server implementation
+- `ops/` — Docker Compose, Nginx, PostgreSQL configs
 
 ## Agent role assignments
-- **build** → feature implementation, routes, migrations
+- **build** → feature implementation, routes, database migrations
 - **plan** → RFC writing, schema design, API contracts
 - **review** → security audit, RBAC/JWT checks, PR feedback
 - **infra** → Docker, Postgres, Redis, deployment
 - **netrunner** → research, library eval, CVE lookup
 
 ## Coding standards
-- All endpoints require JWT auth unless marked `@public`
-- RBAC: roles defined in `auth/roles.py`; never hardcode role names in routes
-- Migrations: always use Alembic; never ALTER TABLE manually in prod
-- All secrets via `{env:VAR}` or `.env` (never committed)
-- Tests in `tests/`; run `pytest` before any PR
+- Use `log/slog` for structured logging (never `log` or `fmt` for output)
+- All endpoints require JWT/session auth unless marked `@public`
+- RBAC: roles defined in `backend/internal/database/`; never hardcode role names
+- Migrations: use GORM AutoMigrate or add SQL migrations in `ops/db/init/migrations/`
+- All secrets via environment variables or `.env` (never committed)
+- Tests in `backend/internal/*/*_test.go`; run `go test ./...` before any PR
+- Use `gorm.io/gorm` for database operations; never raw `database/sql`
 
 ## Security
-- Validate all inputs with Pydantic v2 models
+- Validate all inputs with strict type checking
 - Rate-limit all public endpoints via Redis
 - Audit log all state-changing operations
+- Use `filepath.Rel` for path traversal validation (never string prefix checks)

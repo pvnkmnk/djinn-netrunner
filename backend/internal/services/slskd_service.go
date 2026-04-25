@@ -311,8 +311,31 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		return nil, err
 	}
 
+	// Batch fetch peer reputations to avoid N+1 query problem
+	peerReputations := make(map[string]database.PeerReputation)
+	if s.db != nil {
+		usernames := make([]string, 0, len(resultsData.Responses))
+		seen := make(map[string]bool)
+		for _, res := range resultsData.Responses {
+			if !seen[res.Username] {
+				usernames = append(usernames, res.Username)
+				seen[res.Username] = true
+			}
+		}
+		if len(usernames) > 0 {
+			var reps []database.PeerReputation
+			s.db.Where("username IN ?", usernames).Find(&reps)
+			for _, rep := range reps {
+				peerReputations[rep.Username] = rep
+			}
+		}
+	}
+
 	var results []SearchResult
 	for _, res := range resultsData.Responses {
+		// Get reputation once per user (not per file)
+		rep, hasRep := peerReputations[res.Username]
+
 		for _, f := range res.Files {
 			sr := SearchResult{
 				Username:    res.Username,
@@ -326,10 +349,8 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 			}
 			sr.CalculateScore(profile)
 
-			// Apply peer reputation adjustment
-			if s.db != nil {
-				var rep database.PeerReputation
-				s.db.Where("username = ?", res.Username).First(&rep)
+			// Apply peer reputation adjustment using pre-fetched data
+			if hasRep {
 				sr.ApplyPeerReputation(&rep)
 			}
 
@@ -414,7 +435,7 @@ func (s *SlskdService) WaitForDownload(username, filename string, timeout time.D
 
 	start := time.Now()
 	var lastBytes int64
-	var lastProgress time.Time
+	lastProgress := time.Now() // Initialize to start time to avoid false stall detection
 	stallThreshold := 90 * time.Second // Consider stalled if no progress for 90s
 
 	for {

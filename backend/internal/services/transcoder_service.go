@@ -44,9 +44,16 @@ func (s *TranscoderService) Transcode(inputPath, outputFormat string) (string, e
 	// Generate output path by replacing extension
 	outputPath := strings.TrimSuffix(inputPath, filepath.Ext(inputPath)) + "." + outputFormat
 
-	// SECURITY: Validate output path stays within expected directory
-	cleanOutput := filepath.Clean(outputPath)
-	if !strings.HasPrefix(cleanOutput, filepath.Clean(filepath.Dir(inputPath))) {
+	// SECURITY: Validate output path stays within expected directory using filepath.Rel
+	// This properly handles edge cases like "../" escapes and symlinks
+	inputDir := filepath.Dir(inputPath)
+	relPath, err := filepath.Rel(inputDir, outputPath)
+	if err != nil || strings.HasPrefix(relPath, "..") {
+		return "", errors.New("output path would escape input directory")
+	}
+	// Additional check: ensure the resolved path is still within input directory
+	resolvedOutput := filepath.Join(inputDir, relPath)
+	if filepath.Clean(resolvedOutput) != filepath.Clean(outputPath) {
 		return "", errors.New("output path would escape input directory")
 	}
 
