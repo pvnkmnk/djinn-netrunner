@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/csrf"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -24,24 +25,27 @@ func main() {
 	// 1. Load Config
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Error("Failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	// 2. Connect Database
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
 	// 3. Run migrations (creates users, quality_profiles, etc.)
 	if err := database.Migrate(db); err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
+		slog.Error("Failed to run migrations", "error", err)
+		os.Exit(1)
 	}
 
 	// 4. Seed default quality profiles
 	profileService := services.NewProfileService(db)
 	if _, err := profileService.EnsureDefaultProfile(); err != nil {
-		log.Printf("warning: failed to ensure default profile: %v", err)
+		slog.Warn("Failed to ensure default profile", "error", err)
 	}
 
 	// 5. Initialize Services
@@ -52,7 +56,7 @@ func main() {
 	// 6. Initialize Fiber with pongo2 (Jinja2-compatible) template engine
 	engine := templates.NewPongo2(cfg.TemplatesPath, ".html")
 	if err := engine.LoadFromDir(); err != nil {
-		log.Printf("warning: failed to preload templates: %v", err)
+		slog.Warn("Failed to preload templates", "error", err)
 	}
 
 	app := fiber.New(fiber.Config{
@@ -63,6 +67,26 @@ func main() {
 	app.Use(recover.New())
 	app.Use(logger.New())
 	app.Static("/static", cfg.StaticFilesPath)
+
+	// SECURITY: CSRF protection for state-changing operations
+	// Uses cookie-based storage with HTMX-compatible header matching
+	app.Use(csrf.New(csrf.Config{
+		KeyLookup:      "header:X-CSRF-Token",
+		CookieName:     "csrf_",
+		CookieSameSite: "Lax",
+		Expiration:     24 * time.Hour,
+		ContextKey:     "csrf",
+	}))
+
+	// SECURITY: Add security headers to all responses
+	app.Use(func(c *fiber.Ctx) error {
+		c.Set("X-Content-Type-Options", "nosniff")
+		c.Set("X-Frame-Options", "DENY")
+		c.Set("X-XSS-Protection", "1; mode=block")
+		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		return c.Next()
+	})
 
 	// Handlers
 	authHandler := api.NewAuthHandler(db)
@@ -86,7 +110,7 @@ func main() {
 	// Start server
 	go func() {
 		if err := app.Listen(":8080"); err != nil {
-			log.Printf("Server failed: %v", err)
+			slog.Error("Server failed", "error", err)
 		}
 	}()
 
@@ -95,7 +119,7 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	log.Println("Shutting down server...")
+	slog.Info("Shutting down server...")
 	app.Shutdown()
 }
 

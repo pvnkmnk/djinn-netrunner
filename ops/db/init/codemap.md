@@ -1,19 +1,22 @@
 # ops/db/init/
 
-<!-- Explorer: Fill in this section with architectural understanding -->
-
 ## Responsibility
-
-<!-- What is this folder's job in the system? -->
+Initial database setup: schema, functions, and migrations for fresh PostgreSQL deployments.
 
 ## Design
-
-<!-- Key patterns, abstractions, architectural decisions -->
+| File | Role |
+|------|------|
+| `01-schema.sql` | Creates tables: jobs, jobitems, joblogs, acquisitions, sources + indexes |
+| `02-functions.sql` | DB functions: job claiming, logging helpers, notification triggers |
+| `MIGRATION_POLICY.md` | Documents dual strategy (AutoMigrate + SQL init) |
+| `migrations/` | Incremental schema changes for existing databases |
 
 ## Flow
-
-<!-- How does data/control flow through this module? -->
+1. Runs once on first database container start (Docker entrypoint)
+2. Creates enums: jobtype, jobstate, jobitemstatus
+3. Sets up triggers for pg_notify on job events
+4. Defines SKIP LOCKED pattern for concurrent job claiming
 
 ## Integration
-
-<!-- How does it connect to other parts of the system? -->
+- **PostgreSQL**: Initializes fresh `musicops` database
+- **Backend**: Schema is source of truth for GORM models

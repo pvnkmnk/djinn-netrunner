@@ -1,21 +1,22 @@
 # ops/db/
 
 ## Responsibility
-Database initialization scripts and SQL migrations for PostgreSQL deployments.
+Database initialization scripts and migration management for NETRUNNER's PostgreSQL database.
 
 ## Design
-- `init/` — startup scripts run by Docker PostgreSQL entrypoint
-  - `01-schema.sql` — base table definitions
-  - `02-functions.sql` — SQL helper functions (reaper functions for zombie job cleanup)
-  - `policy` — row-level security policies
-- `init/migrations/` — versioned SQL migration files for schema evolution
-- Migrations are safe/idempotent where feasible
+| File/Directory | Role |
+|----------------|------|
+| `init/01-schema.sql` | Core schema: jobs, jobitems, joblogs, acquisitions, sources tables |
+| `init/02-functions.sql` | Helper functions: job claiming (SKIP LOCKED), notifications, logging |
+| `init/MIGRATION_POLICY.md` | Documentation of migration strategy |
+| `init/migrations/` | Incremental SQL migrations for schema changes |
 
 ## Flow
-1. Docker PostgreSQL starts → runs `init/*.sql` in alphabetical order
-2. Schema created → functions registered → policies applied
-3. Application connects → GORM AutoMigrate handles Go-side schema updates
+1. `01-schema.sql` + `02-functions.sql` run once on fresh database init (docker-entrypoint-initdb.d)
+2. Runtime migrations handled by GORM AutoMigrate (see `backend/internal/database/migrate.go`)
+3. Migrations in `migrations/` add columns via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
 
 ## Integration
-- **Consumed by**: Docker Compose (PostgreSQL service), `cmd/server`/`cmd/worker` (GORM connection)
-- **Complementary**: Go-side migrations via `internal/database/migrate.go`
+- **Consumed by**: PostgreSQL container via Docker entrypoint
+- **Backend**: GORM models in `backend/internal/database/models.go` define authoritative schema
+- **Workers**: Use `claim_next_job()` and `claim_next_jobitem()` functions for queue processing

@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -30,7 +30,7 @@ type ScanJob struct {
 }
 
 func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, path string) error {
-	log.Printf("[SCANNER] Starting scan | library_id=%s | path=%s", libraryID, path)
+	slog.Info("Starting scan", "library_id", libraryID, "path", path)
 
 	// 1. Worker Pool Setup
 	numWorkers := 4
@@ -67,7 +67,7 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 	close(jobs)
 	wg.Wait()
 
-	log.Printf("[SCANNER] Finished scan | library_id=%s | path=%s", libraryID, path)
+	slog.Info("Finished scan", "library_id", libraryID, "path", path)
 	return err
 }
 
@@ -75,7 +75,7 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 	// Extract metadata
 	meta, err := s.metadata.Extract(path)
 	if err != nil {
-		log.Printf("[SCANNER] Error extracting metadata | library_id=%s | path=%s | error=%v", libraryID, path, err)
+		slog.Error("Error extracting metadata", "library_id", libraryID, "path", path, "error", err)
 		return
 	}
 
@@ -105,7 +105,7 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 			Fingerprint: fingerprint,
 		}
 		if err := s.db.Create(&track).Error; err != nil {
-			log.Printf("[SCANNER] Error saving track | library_id=%s | path=%s | error=%v", libraryID, path, err)
+			slog.Error("Error saving track", "library_id", libraryID, "path", path, "error", err)
 		}
 		return
 	}
@@ -134,7 +134,7 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 }
 
 func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) error {
-	log.Printf("[SCANNER] Starting prune | library_id=%s", libraryID)
+	slog.Info("Starting prune", "library_id", libraryID)
 
 	// Bolt Optimization: Select only necessary fields and use batch DELETE
 	// to reduce memory overhead and database roundtrips.
@@ -156,7 +156,7 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) e
 			return ctx.Err()
 		default:
 			if _, err := os.Stat(t.Path); os.IsNotExist(err) {
-				log.Printf("[SCANNER] Pruning missing file | library_id=%s | path=%s", libraryID, t.Path)
+				slog.Warn("Pruning missing file", "library_id", libraryID, "path", t.Path)
 				toDelete = append(toDelete, t.ID)
 			}
 		}
@@ -168,7 +168,7 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) e
 		}
 	}
 
-	log.Printf("[SCANNER] Prune complete | library_id=%s | removed=%d", libraryID, len(toDelete))
+	slog.Info("Prune complete", "library_id", libraryID, "removed", len(toDelete))
 	return nil
 }
 

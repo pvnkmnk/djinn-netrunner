@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -61,7 +61,7 @@ func SafeGet(rawURL string) (*http.Response, error) {
 	}
 
 	if u.Scheme != "http" && u.Scheme != "https" {
-		log.Printf("[SSRF] Blocked unsupported scheme | url=%s scheme=%s", rawURL, u.Scheme)
+		slog.Warn("Blocked unsupported scheme", "url", rawURL, "scheme", u.Scheme)
 		return nil, fmt.Errorf("ssrf: unsupported scheme %q", u.Scheme)
 	}
 

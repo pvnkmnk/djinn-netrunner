@@ -1,25 +1,33 @@
 # backend/cmd/server/
 
 ## Responsibility
-HTTP server entry point. Initializes Fiber with Pongo2 templates, registers all API routes, WebSocket endpoints, and serves the HTMX-based web UI.
+Provides the HTTP API and web UI server for NetRunner. Serves HTMX-rendered HTML pages, REST API endpoints, and WebSocket connections for real-time job log streaming. This is the primary interface for human operators accessing the system through a browser.
 
 ## Design
-- Sequential initialization: config → database → migrations → seed profiles → services → Fiber app → routes → graceful shutdown
-- Fiber app with `logger` and `recover` middleware
-- Pongo2 (Jinja2-compatible) template engine via `internal/api/templates`
-- Static file serving from `ops/web/static/`
-- WebSocket endpoint at `/ws` for real-time job log streaming
-- Route groups: `/auth`, `/api`, page routes (watchlists, libraries, profiles, schedules, artists, jobs)
-- Graceful shutdown on SIGINT/SIGTERM with `app.Shutdown()`
+- **Entry Point**: `main.go` - Fiber app setup with middleware, service initialization, route definitions
+- **Framework**: Fiber v2 with pongo2 template engine (Jinja2-compatible)
+- **Middleware Stack**: recover (panic recovery) → logger → static files
+- **Handler Pattern**: Individual handler structs per resource domain
+- **Service Initialization**: MusicBrainzService, ArtistTrackingService, ScannerService, WatchlistService, ProfileService
+- **WebSocket Manager**: Handles real-time event streaming via `/ws/events` and job console via `/ws/jobs/:job_id`
+- **Auth Pattern**: Session-based auth with `AuthMiddleware` protecting most routes
 
 ## Flow
-1. `config.Load()` → `database.Connect()` → `database.Migrate()` → seed default profile
-2. Initialize services: MusicBrainz, ArtistTracking, Scanner, Watchlist, Slskd, Gonic, Spotify, etc.
-3. Create Fiber app with Pongo2 engine, register template functions
-4. Mount static files, auth routes, API routes, page routes, WebSocket
-5. `app.Listen(":8080")` → blocks until signal → `app.Shutdown()`
+1. Load config via `config.Load()`
+2. Connect to database via `database.Connect(cfg)`
+3. Run migrations via `database.Migrate(db)`
+4. Seed default quality profile via `profileService.EnsureDefaultProfile()`
+5. Initialize services (MusicBrainz, ArtistTracking, Scanner, Watchlist)
+6. Create pongo2 template engine and pre-load templates
+7. Initialize Fiber app with template engine
+8. Add middleware: recover, logger, static files
+9. Initialize handlers (Auth, Dashboard, Stats, Library, Profile, Watchlist, Artists, Schedules)
+10. Start WebSocket log listener goroutine
+11. Call `setupRoutes()` to register all API and page routes
+12. Start HTTP server on port 8080 in goroutine
+13. Block on signal handler (SIGINT/SIGTERM) for graceful shutdown
 
 ## Integration
-- **Consumes**: All `internal/*` packages, `ops/web/` templates and static assets
-- **Consumed by**: Web browsers (HTMX UI), API clients, WebSocket consumers
-- **External**: Proxies to slskd, Gonic, Spotify, MusicBrainz via services
+- **Depends On**: `internal/config`, `internal/database`, `internal/services`, `internal/api`, `internal/api/templates`
+- **External**: Gonic server (music library), Spotify API, MusicBrainz API
+- **What Uses It**: Browser-based UI accessed at http://localhost:8080, REST API consumers, WebSocket clients

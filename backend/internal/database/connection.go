@@ -2,7 +2,7 @@ package database
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -18,7 +18,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 
 	if strings.HasPrefix(cfg.DatabaseURL, "postgres://") || strings.HasPrefix(cfg.DatabaseURL, "postgresql://") {
-		log.Println("[DB] Connecting to PostgreSQL...")
+		slog.Info("Connecting to PostgreSQL...")
 		dialector = postgres.Open(cfg.DatabaseURL)
 	} else {
 		// Default to SQLite
@@ -26,7 +26,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		if !strings.HasSuffix(dbPath, ".db") && !strings.Contains(dbPath, ":") {
 			dbPath = "netrunner.db"
 		}
-		log.Printf("[DB] Connecting to SQLite (%s)...", dbPath)
+		slog.Info("Connecting to SQLite", "path", dbPath)
 		dialector = sqlite.Open(dbPath)
 	}
 

@@ -47,7 +47,7 @@ func ProbeSystem(db *gorm.DB, cfg *config.Config) (*SystemStatus, error) {
 
 	// 3. Check Slskd
 	if cfg.SlskdURL != "" {
-		slskdClient := services.NewSlskdService(cfg)
+		slskdClient := services.NewSlskdService(cfg, db)
 		if slskdClient.HealthCheck() {
 			status.SlskdConnected = true
 		}

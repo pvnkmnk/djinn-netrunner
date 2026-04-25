@@ -3,7 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -43,7 +43,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	// Check if user exists — return identical response to prevent user enumeration
 	var existing database.User
 	if err := h.db.Where("email = ?", payload.Email).First(&existing).Error; err == nil {
-		log.Printf("[AUTH] Duplicate registration attempt | email=%s ip=%s", payload.Email, c.IP())
+		slog.Info("Duplicate registration attempt", "email", payload.Email, "ip", c.IP())
 		return c.Status(201).JSON(fiber.Map{"status": "ok"})
 	}
 
@@ -109,13 +109,17 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	now := time.Now()
 	h.db.Model(&user).Update("last_login_at", &now)
 
-	// Set cookie — no SameSite restriction for local dev (works with HTTP localhost)
+	// Set cookie with security best practices
+	// SECURITY: SameSite=Lax prevents CSRF while allowing normal navigation
+	// Secure flag is set based on environment (true in production, false for local HTTP dev)
+	secure := c.Protocol() == "https"
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookie,
 		Value:    sessionID,
 		Expires:  expiresAt,
 		HTTPOnly: true,
-		SameSite: "",
+		Secure:   secure,
+		SameSite: "Lax",
 		Path:     "/",
 	})
 

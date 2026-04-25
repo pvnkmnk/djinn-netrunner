@@ -1,15 +1,20 @@
 # ops/web/
 
 ## Responsibility
-Web frontend assets root. Contains static files (CSS, JS) and Pongo2 HTML templates for the HTMX-based UI.
+Root of web assets: static files and templates served by the Go backend.
 
 ## Design
-- `static/css/` — Single CSS file (`styles.css`) with cyberpunk terminal palette
-- `static/js/` — Minimal vanilla JS (`app.js`) for modals, console, filters
-- `templates/layouts/` — Base layout (`base.html`) with common head/nav/footer
-- `templates/pages/` — Full page templates (watchlists, libraries, profiles, schedules, artists, jobs, dashboard)
-- `templates/partials/` — HTMX partial fragments for dynamic DOM updates
+| Directory | Contents |
+|-----------|----------|
+| `static/` | CSS, JS, images |
+| `templates/` | HTML with Go template syntax (extends, block, partial) |
+
+## Flow
+1. Backend serves `/static/*` from `static/` directory
+2. Templates use Go template inheritance (layouts → pages → partials)
+3. HTMX triggers refresh partials via `/partials/*` endpoints
+4. WebSocket at `/ws/jobs` streams job logs to console
 
 ## Integration
-- **Consumed by**: `cmd/server` (Fiber static middleware + Pongo2 engine)
-- **Pattern**: Server-rendered HTMX — no SPA framework, no build step
+- **Backend**: Fiber app serves these files (STATIC_FILES_PATH, TEMPLATES_PATH env)
+- **Frontend**: HTMX loads partials, WebSocket streams live logs

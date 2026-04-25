@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -47,7 +47,7 @@ func TestMultiNodeJobClaim(t *testing.T) {
 
 	// 4. Concurrent claim test
 	var wg sync.WaitGroup
-	
+
 	claimFunc := func(w *WorkerOrchestrator) {
 		defer wg.Done()
 		for i := 0; i < numJobs; i++ {
@@ -83,7 +83,7 @@ func TestMultiNodeJobClaim(t *testing.T) {
 		}
 	}
 
-	log.Printf("[TEST] Total jobs: %d, Claimed: %d (W1: %d, W2: %d)", numJobs, claimedCount, worker1Count, worker2Count)
+	slog.Info("Multi-node job claim results", "total_jobs", numJobs, "claimed", claimedCount, "worker1", worker1Count, "worker2", worker2Count)
 
 	if claimedCount != numJobs {
 		t.Errorf("expected %d claimed jobs, got %d", numJobs, claimedCount)

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -60,13 +60,13 @@ func (s *NotificationService) NotifyJobCompletion(jobID uint64, jobType, state, 
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("[NOTIFY] Failed to marshal webhook payload: %v", err)
+		slog.Error("Failed to marshal webhook payload", "error", err)
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodPost, s.webhookURL, bytes.NewReader(body))
 	if err != nil {
-		log.Printf("[NOTIFY] Failed to create webhook request: %v", err)
+		slog.Error("Failed to create webhook request", "error", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -74,18 +74,18 @@ func (s *NotificationService) NotifyJobCompletion(jobID uint64, jobType, state, 
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		log.Printf("[NOTIFY] Webhook POST failed: %v", err)
+		slog.Error("Webhook POST failed", "error", err)
 		return
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body) // drain body
 
 	if resp.StatusCode >= 300 {
-		log.Printf("[NOTIFY] Webhook returned non-success status: %d", resp.StatusCode)
+		slog.Warn("Webhook returned non-success status", "status", resp.StatusCode)
 		return
 	}
 
-	log.Printf("[NOTIFY] Job %d notification sent successfully", jobID)
+	slog.Info("Job notification sent", "job_id", jobID)
 }
 
 // NotifyQuotaWarning sends a webhook alert when a library exceeds its quota threshold.
@@ -105,13 +105,13 @@ func (s *NotificationService) NotifyQuotaWarning(usage *LibraryUsage, thresholdP
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("[NOTIFY] Failed to marshal quota alert payload: %v", err)
+		slog.Error("Failed to marshal quota alert payload", "error", err)
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodPost, s.webhookURL, bytes.NewReader(body))
 	if err != nil {
-		log.Printf("[NOTIFY] Failed to create quota alert request: %v", err)
+		slog.Error("Failed to create quota alert request", "error", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -120,16 +120,16 @@ func (s *NotificationService) NotifyQuotaWarning(usage *LibraryUsage, thresholdP
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		log.Printf("[NOTIFY] Quota alert webhook POST failed: %v", err)
+		slog.Error("Quota alert webhook POST failed", "error", err)
 		return
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode >= 300 {
-		log.Printf("[NOTIFY] Quota alert webhook returned non-success status: %d", resp.StatusCode)
+		slog.Warn("Quota alert webhook returned non-success status", "status", resp.StatusCode)
 		return
 	}
 
-	log.Printf("[NOTIFY] Quota warning sent for library %s (%d%%)", usage.LibraryName, usage.UsedPct)
+	slog.Warn("Quota warning sent", "library", usage.LibraryName, "used_pct", usage.UsedPct)
 }

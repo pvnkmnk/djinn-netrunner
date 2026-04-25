@@ -1,19 +1,19 @@
 # ops/web/templates/layouts/
 
-<!-- Explorer: Fill in this section with architectural understanding -->
-
 ## Responsibility
-
-<!-- What is this folder's job in the system? -->
+Base layout template inherited by all pages.
 
 ## Design
-
-<!-- Key patterns, abstractions, architectural decisions -->
+| File | Purpose |
+|------|---------|
+| `base.html` | Common structure: header (logo + nav), main slot, footer, CSS/JS includes |
 
 ## Flow
-
-<!-- How does data/control flow through this module? -->
+- All pages start with `{% extends "layouts/base.html" %}`
+- Defines `{% block title %}` and `{% block content %}` slots
+- Nav links: Dashboard, Watchlists, Libraries, Profiles, Schedules, Artists, Jobs
+- Includes: htmx.org CDN, styles.css, app.js
 
 ## Integration
-
-<!-- How does it connect to other parts of the system? -->
+- **Backend**: Renders extended template with page-specific content
+- **HTMX**: Uses `hx-get` on nav links (full page loads)

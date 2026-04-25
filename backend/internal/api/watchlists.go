@@ -1,7 +1,8 @@
 package api
 
 import (
-	"log"
+	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -24,8 +25,17 @@ func NewWatchlistHandler(db *gorm.DB, service *services.WatchlistService) *Watch
 
 // ListWatchlists returns all watchlists for the current user
 func (h *WatchlistHandler) ListWatchlists(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -45,8 +55,17 @@ func (h *WatchlistHandler) ListWatchlists(c *fiber.Ctx) error {
 
 // CreateWatchlist creates a new automated watchlist
 func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -71,8 +90,17 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 
 // UpdateWatchlist updates an existing watchlist
 func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -109,8 +137,17 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 
 // DeleteWatchlist removes a watchlist
 func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -131,13 +168,26 @@ func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
 // Profile endpoints
 
 func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&profiles).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(profiles)
@@ -145,8 +195,17 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 
 // ToggleWatchlist toggles enabled state
 func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -173,10 +232,20 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 
 // GetForm returns the watchlist form for add/edit
 func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
-	_, ok := c.Locals("user").(database.User)
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !ok {
+	if !hasAuth {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -191,20 +260,23 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 		if err != nil {
 			return c.SendString("<div class=\"error\">Invalid ID.</div>")
 		}
-
-		query := h.db.Model(&database.Watchlist{}).Where("id = ?", uuid)
-		if user, ok := c.Locals("user").(database.User); ok && user.Role != "admin" {
+		// BOLA: Verify ownership before fetching
+		query := h.db.Where("id = ?", uuid)
+		if user.Role != "admin" {
 			query = query.Where("owner_user_id = ?", user.ID)
 		}
-
 		if err := query.First(&wl).Error; err != nil {
 			return c.SendString("<div class=\"error\">Watchlist not found.</div>")
 		}
 	}
 
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
-		log.Printf("Error fetching profiles for watchlist form: %v", err)
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&profiles).Error; err != nil {
+		slog.Error("Error fetching profiles for watchlist form", "error", err)
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
 
@@ -222,10 +294,20 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderWatchlistsPartial returns watchlists HTML for HTMX
 func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !ok {
+	if !hasAuth {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -240,7 +322,7 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&watchlists).Error; err != nil {
-		log.Printf("Error fetching watchlists: %v", err)
+		slog.Error("Error fetching watchlists", "error", err)
 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
 	}
 

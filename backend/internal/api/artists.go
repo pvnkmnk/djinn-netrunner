@@ -1,7 +1,8 @@
 package api
 
 import (
-	"log"
+	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -22,9 +23,17 @@ func NewArtistsHandler(db *gorm.DB, at *services.ArtistTrackingService, mb *serv
 
 // GET /api/artists - List monitored artists
 func (h *ArtistsHandler) List(c *fiber.Ctx) error {
-	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -37,9 +46,17 @@ func (h *ArtistsHandler) List(c *fiber.Ctx) error {
 
 // POST /api/artists - Add new artist by name
 func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
-	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -68,8 +85,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	// MusicBrainz search returns results sorted by relevance
 	// Log ambiguous results for debugging
 	if len(results) > 1 {
-		log.Printf("[ARTISTS] Ambiguous search for '%s' — got %d results, using first: %s",
-			payload.Name, len(results), results[0].Name)
+		slog.Warn("Ambiguous artist search", "query", payload.Name, "results", len(results), "selected", results[0].Name)
 	}
 
 	// Get quality profile
@@ -86,7 +102,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		if err := h.db.Where("is_default = ?", true).First(&profile).Error; err == nil {
 			profileID = profile.ID
 		} else if err != gorm.ErrRecordNotFound {
-			log.Printf("Error fetching default profile: %v", err)
+			slog.Error("Error fetching default profile", "error", err)
 		}
 	}
 
@@ -101,9 +117,17 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 
 // DELETE /api/artists/:id - Remove monitored artist
 func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
-	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -121,9 +145,17 @@ func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
 
 // PATCH /api/artists/:id - Update artist monitoring settings
 func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
-	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -162,11 +194,20 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 
 // GetForm returns the artist form
 func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
-	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
-	_, ok := c.Locals("user").(database.User)
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !ok {
+	if !hasAuth {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -175,7 +216,7 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 
 	var profiles []database.QualityProfile
 	if err := h.db.Find(&profiles).Error; err != nil {
-		log.Printf("Error fetching profiles for artist form: %v", err)
+		slog.Error("Error fetching profiles for artist form", "error", err)
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
 
@@ -187,11 +228,20 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderPartial returns artists HTML for HTMX
 func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
-	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
-	user, ok := c.Locals("user").(database.User)
+	// Auth check
+	sessionID := c.Cookies("session_id")
+	var user database.User
+	hasAuth := false
+	if sessionID != "" {
+		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+			First(&user).Error
+		hasAuth = (err == nil)
+	}
+
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !ok {
+	if !hasAuth {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -207,7 +257,7 @@ func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&artists).Error; err != nil {
-		log.Printf("Error fetching artists: %v", err)
+		slog.Error("Error fetching artists", "error", err)
 		return c.SendString("<div class=\"error\">Error loading artists.</div>")
 	}
 	return c.Render("partials/artists", fiber.Map{"artists": artists})

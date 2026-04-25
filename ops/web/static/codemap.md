@@ -1,19 +1,18 @@
 # ops/web/static/
 
-<!-- Explorer: Fill in this section with architectural understanding -->
-
 ## Responsibility
-
-<!-- What is this folder's job in the system? -->
+Static assets served by the web application.
 
 ## Design
-
-<!-- Key patterns, abstractions, architectural decisions -->
+| Directory | Contents |
+|-----------|----------|
+| `css/` | Stylesheets (styles.css) |
+| `js/` | Client-side JavaScript (app.js) |
 
 ## Flow
-
-<!-- How does data/control flow through this module? -->
+- Served at `/static/css/*` and `/static/js/*`
+- Referenced in base.html layout
 
 ## Integration
-
-<!-- How does it connect to other parts of the system? -->
+- **Base layout**: `<link rel="stylesheet" href="/static/css/styles.css">`
+- **Base layout**: `<script src="/static/js/app.js" defer></script>`

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
@@ -21,31 +21,35 @@ func main() {
 	// 2. Connect
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("Failed to connect to SQLite: %v", err)
+		slog.Error("Failed to connect to SQLite", "error", err)
+		os.Exit(1)
 	}
 
 	// 3. Migrate
 	err = database.Migrate(db)
 	if err != nil {
-		log.Fatalf("Failed to migrate SQLite: %v", err)
+		slog.Error("Failed to migrate SQLite", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("Successfully connected and migrated SQLite database!")
+	slog.Info("Successfully connected and migrated SQLite database!")
 
 	// 4. Test LockManager
 	lm := database.NewLockManager(db)
 	ctx := context.Background()
-	
+
 	key, _ := lm.GetScopeLockKey(ctx, "artist", "test-123")
 	acquired, err := lm.AcquireTryLock(ctx, key)
 	if err != nil || !acquired {
-		log.Fatalf("Failed to acquire lock: %v", err)
+		slog.Error("Failed to acquire lock", "error", err)
+		os.Exit(1)
 	}
-	log.Printf("Successfully acquired lock: %d", key)
+	slog.Info("Successfully acquired lock", "key", key)
 
 	err = lm.ReleaseLock(ctx, key)
 	if err != nil {
-		log.Fatalf("Failed to release lock: %v", err)
+		slog.Error("Failed to release lock", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Successfully released lock!")
+	slog.Info("Successfully released lock!")
 }

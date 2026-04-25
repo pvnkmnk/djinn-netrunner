@@ -244,7 +244,13 @@ func (e *MetadataExtractor) HashFile(path string) (string, error) {
 }
 
 func (e *MetadataExtractor) Fingerprint(path string) (string, int, error) {
-	cmd := exec.Command("fpcalc", "-json", path)
+	// SECURITY: Validate path exists and is clean before passing to fpcalc
+	cleanPath := filepath.Clean(path)
+	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
+		return "", 0, fmt.Errorf("file does not exist: %s", path)
+	}
+
+	cmd := exec.Command("fpcalc", "-json", cleanPath)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", 0, fmt.Errorf("fpcalc failed: %w", err)

@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -15,6 +15,10 @@ type PageData struct {
 // RenderPage renders a page with common layout
 func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) error {
 	base := fiber.Map{"Page": page}
+	// SECURITY: Expose CSRF token to templates for HTMX state-changing requests
+	if csrf := c.Locals("csrf"); csrf != nil {
+		base["CSRFToken"] = csrf
+	}
 	for k, v := range data {
 		base[k] = v
 	}
@@ -30,12 +34,16 @@ func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
 
 	lists, err := h.service.GetWatchlists(user.ID, user.Role)
 	if err != nil {
-		log.Printf("Error getting watchlists: %v", err)
+		slog.Error("Error getting watchlists", "error", err)
 		lists = []database.Watchlist{}
 	}
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
-		log.Printf("Error getting profiles: %v", err)
+	profileQuery := h.db.Order("name")
+	if user.Role != "admin" {
+		profileQuery = profileQuery.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	if err := profileQuery.Find(&profiles).Error; err != nil {
+		slog.Error("Error getting profiles", "error", err)
 	}
 	return RenderPage(c, "watchlists", "pages/watchlists", fiber.Map{
 		"watchlists": lists,
@@ -45,6 +53,7 @@ func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
 
 // LibrariesPage renders the libraries page
 func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
+	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Redirect("/", 302)
@@ -56,13 +65,14 @@ func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
 	if err := query.Find(&libs).Error; err != nil {
-		log.Printf("Error getting libraries: %v", err)
+		slog.Error("Error getting libraries", "error", err)
 	}
 	return RenderPage(c, "libraries", "pages/libraries", fiber.Map{"libraries": libs})
 }
 
 // ProfilesPage renders the profiles page
 func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
+	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Redirect("/", 302)
@@ -74,7 +84,7 @@ func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
 		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
 	}
 	if err := query.Find(&profiles).Error; err != nil {
-		log.Printf("Error getting profiles: %v", err)
+		slog.Error("Error getting profiles", "error", err)
 	}
 	return RenderPage(c, "profiles", "pages/profiles", fiber.Map{"profiles": profiles})
 }
@@ -92,7 +102,7 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 		query = query.Joins("JOIN watchlists ON watchlists.id = schedules.watchlist_id").Where("watchlists.owner_user_id = ?", user.ID)
 	}
 	if err := query.Find(&scheds).Error; err != nil {
-		log.Printf("Error getting schedules: %v", err)
+		slog.Error("Error getting schedules", "error", err)
 	}
 
 	var watchlists []database.Watchlist
@@ -101,7 +111,7 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 		wQuery = wQuery.Where("owner_user_id = ?", user.ID)
 	}
 	if err := wQuery.Find(&watchlists).Error; err != nil {
-		log.Printf("Error getting watchlists: %v", err)
+		slog.Error("Error getting watchlists", "error", err)
 	}
 	return RenderPage(c, "schedules", "pages/schedules", fiber.Map{
 		"schedules":  scheds,
@@ -111,6 +121,7 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 
 // ArtistsPage renders the artists page
 func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
+	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Redirect("/", 302)
@@ -123,7 +134,7 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&artists).Error; err != nil {
-		log.Printf("Error getting artists: %v", err)
+		slog.Error("Error getting artists", "error", err)
 	}
 	return RenderPage(c, "artists", "pages/artists", fiber.Map{"artists": artists})
 }
@@ -141,7 +152,7 @@ func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
 	if err := query.Find(&jobs).Error; err != nil {
-		log.Printf("Error getting jobs: %v", err)
+		slog.Error("Error getting jobs", "error", err)
 	}
 	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs})
 }

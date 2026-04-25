@@ -65,7 +65,7 @@ func TestSlskdServiceHealthCheck(t *testing.T) {
 				SlskdURL:    server.URL,
 				SlskdAPIKey: tt.apiKey,
 			}
-			svc := NewSlskdService(cfg)
+			svc := NewSlskdService(cfg, nil)
 
 			if got := svc.HealthCheck(); got != tt.want {
 				t.Errorf("HealthCheck() = %v, want %v", got, tt.want)
@@ -137,7 +137,7 @@ func TestSlskdServiceSearch(t *testing.T) {
 		SlskdURL:    server.URL,
 		SlskdAPIKey: testAPIKey,
 	}
-	svc := NewSlskdService(cfg)
+	svc := NewSlskdService(cfg, nil)
 
 	results, err := svc.Search("test artist test song", 0, nil)
 	if err != nil {
@@ -218,7 +218,7 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 				SlskdURL:    server.URL,
 				SlskdAPIKey: tt.apiKey,
 			}
-			svc := NewSlskdService(cfg)
+			svc := NewSlskdService(cfg, nil)
 
 			gotID, err := svc.EnqueueDownload("testuser", "test_song.mp3")
 			if (err != nil) != tt.wantErr {
@@ -252,7 +252,7 @@ func TestSlskdService_EnqueueDownload_ErrorStatusCodes(t *testing.T) {
 			defer server.Close()
 
 			cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
-			svc := NewSlskdService(cfg)
+			svc := NewSlskdService(cfg, nil)
 
 			_, err := svc.EnqueueDownload("username", "filename.mp3")
 			if (err != nil) != tt.wantErr {
@@ -317,7 +317,7 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 				SlskdURL:    server.URL,
 				SlskdAPIKey: tt.apiKey,
 			}
-			svc := NewSlskdService(cfg)
+			svc := NewSlskdService(cfg, nil)
 
 			dl, err := svc.GetDownload("testuser", "test song.mp3")
 			if (err != nil) != tt.wantErr {

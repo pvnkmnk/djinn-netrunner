@@ -2,7 +2,7 @@ package services
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -184,7 +184,7 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 	// Bolt Optimization: Use CreateInBatches for bulk inserts
 	if len(releasesToCreate) > 0 {
 		if err := s.db.CreateInBatches(releasesToCreate, 100).Error; err != nil {
-			log.Printf("[ARTIST] Error batch creating releases: %v", err)
+			slog.Error("Error batch creating releases", "error", err)
 		}
 	}
 
@@ -209,7 +209,7 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 		}
 
 		if err := s.db.Create(&job).Error; err != nil {
-			log.Printf("[ARTIST] Error creating acquisition job: %v", err)
+			slog.Error("Error creating acquisition job", "error", err)
 		} else {
 			var jobItems []database.JobItem
 			var releaseIDsToMarkQueued []uuid.UUID
@@ -232,7 +232,7 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 
 			// Bolt Optimization: Batch create job items
 			if err := s.db.CreateInBatches(jobItems, 100).Error; err != nil {
-				log.Printf("[ARTIST] Error batch creating job items: %v", err)
+				slog.Error("Error batch creating job items", "error", err)
 			}
 
 			// Bolt Optimization: Bulk update release status
@@ -242,7 +242,7 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 					Update("status", "queued")
 			}
 
-			log.Printf("[ARTIST] Created acquisition job %d with %d items for artist %s", job.ID, len(newReleasesForJob), artist.Name)
+			slog.Info("Created acquisition job", "job_id", job.ID, "items", len(newReleasesForJob), "artist", artist.Name)
 		}
 	}
 

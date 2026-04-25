@@ -1,20 +1,28 @@
 # backend/internal/interfaces/
 
 ## Responsibility
-Interface definitions establishing abstraction boundaries between packages. Defines contracts for external service providers.
+Defines abstraction boundaries for external music services. Allows pluggable implementations for different music sources and authentication methods.
 
 ## Design
-- **spotify.go**: `SpotifyClientProvider` interface — methods for OAuth2 token management, playlist fetching, user profile
-- **watchlist.go**: `WatchlistProvider` interface — methods for pluggable music source providers (fetch tracks, validate config)
-- Interfaces enable dependency inversion: services depend on interfaces, not concrete implementations
-- Concrete implementations in `internal/services/` (e.g., `SpotifyService` implements `SpotifyClientProvider`)
+
+### SpotifyClientProvider (spotify.go)
+- **Interface**: `GetClient(ctx context.Context, userID uint64) (*spotify.Client, error)`
+- **Purpose**: Abstracts Spotify OAuth client retrieval for user-specific API access
+- **Implementers**: Concrete implementation in services package provides authenticated client
+
+### WatchlistProvider (watchlist.go)
+- **Interface**: 
+  - `FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error)`
+  - `ValidateConfig(config string) error`
+- **Purpose**: Abstracts music source (Spotify playlist, liked songs, etc.)
+- **Implementers**: Spotify provider fetches tracks; validates source URIs
 
 ## Flow
-1. Consumer (e.g., `WatchlistService`) depends on `WatchlistProvider` interface
-2. Concrete provider (e.g., `SpotifyProvider`) injected at initialization
-3. Consumer calls interface methods without knowing implementation details
+1. **Services** depend on interfaces, not concrete implementations
+2. **WatchlistService** uses `WatchlistProvider` to fetch current track lists
+3. **Spotify auth** uses `SpotifyClientProvider` to get user-specific clients
+4. Providers are injected at runtime, enabling testing with mocks
 
 ## Integration
-- **Consumed by**: `internal/services` (WatchlistService, SpotifyService)
-- **Implemented by**: `internal/services` (SpotifyProvider, LastFMProvider, etc.)
-- **Pattern**: Dependency Inversion / Strategy pattern
+- **Dependencies**: github.com/zmb3/spotify/v2, internal/database
+- **Consumers**: internal/services/watchlist_service.go, internal/services/spotify_service.go

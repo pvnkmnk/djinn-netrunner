@@ -97,7 +97,7 @@ func (h *SpotifyAuthHandler) Callback(c *fiber.Ctx) error {
 
 	token, err := h.config.Exchange(context.Background(), code)
 	if err != nil {
-		return c.Status(500).SendString(fmt.Sprintf("Token exchange failed: %v", err))
+		return c.Status(500).SendString("Token exchange failed")
 	}
 
 	u := c.Locals("user")

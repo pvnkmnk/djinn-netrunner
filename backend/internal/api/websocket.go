@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"log"
+	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,7 +60,7 @@ func (m *WebSocketManager) Broadcast(jobID string, message string) {
 
 	for client := range clients {
 		if err := client.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
-			log.Printf("[WS] broadcast error to job %s: %v", jobID, err)
+			slog.Error("WS broadcast error", "job_id", jobID, "error", err)
 		}
 	}
 }
@@ -73,17 +74,18 @@ type JobLogEvent struct {
 func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 	reportProblem := func(ev pq.ListenerEventType, err error) {
 		if err != nil {
-			log.Printf("[NOTIFY] Log listener error: %v", err)
+			slog.Error("Log listener error", "error", err)
 		}
 	}
 
 	listener := pq.NewListener(dbURL, 10*time.Second, time.Minute, reportProblem)
 	err := listener.Listen("opsevents")
 	if err != nil {
-		log.Fatalf("[NOTIFY] Failed to listen for logs: %v", err)
+		slog.Error("Failed to listen for logs", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("[NOTIFY] Listening for 'opsevents' log notifications")
+	slog.Info("Listening for opsevents log notifications")
 
 	for {
 		select {

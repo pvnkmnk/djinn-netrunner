@@ -1,14 +1,18 @@
 # ops/web/static/css/
 
 ## Responsibility
-Single-file CSS stylesheet for the entire web UI.
+Stylesheets for the NETRUNNER UI.
 
 ## Design
-- `styles.css` — terminal/cyberpunk aesthetic with sharp edges, minimal animation
-- CSS custom properties for theming (dark palette by default)
-- No CSS framework, no preprocessors, no build step
-- Responsive layout via CSS Grid/Flexbox
+| File | Purpose |
+|------|---------|
+| `styles.css` | Full cyberpunk theme: dark backgrounds, neon accents, terminal palette |
+
+## Flow
+- Loaded in `layouts/base.html` head
+- CSS variables define theme (colors, fonts, spacing)
+- Classes: `.stat-card`, `.watchlist-card`, `.job-card`, `.console-*`, etc.
 
 ## Integration
-- **Consumed by**: `layouts/base.html` (linked in `<head>`)
-- **Invariant**: Single CSS file — do not split per AGENTS.md
+- **Used by**: All pages extending `layouts/base.html`
+- **Theme**: Cyan/magenta neon accents on dark backgrounds
