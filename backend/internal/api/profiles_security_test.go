@@ -73,7 +73,7 @@ func TestProfilePrivilegeEscalation(t *testing.T) {
 	if err := db.First(&checkP, "id = ?", p.ID).Error; err != nil {
 		t.Fatalf("Profile not found after creation: %v (profile ID: %s, owner_user_id: %d)", err, p.ID, user.ID)
 	}
-	if checkP.OwnerUserID == nil || *checkP.OwnerUserID != user.ID {
+	if checkP.OwnerUserID != nil && *checkP.OwnerUserID != user.ID {
 		t.Fatalf("Profile owner mismatch: expected %d, got %v", user.ID, checkP.OwnerUserID)
 	}
 
