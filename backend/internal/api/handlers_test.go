@@ -142,6 +142,9 @@ func TestAuthMiddleware_InvalidCookie(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
+// TestStatsHandler_* tests require authentication (BOLA protection)
+// These tests verify that unauthenticated requests are properly rejected with 401
+
 func TestStatsHandler_GetJobStats(t *testing.T) {
 	db := setupAPITestDB(t)
 	app := fiber.New()
@@ -150,7 +153,8 @@ func TestStatsHandler_GetJobStats(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/stats/jobs", nil)
 	resp, _ := app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	// BOLA: Unauthenticated requests should return 401
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestStatsHandler_GetLibraryStats(t *testing.T) {
@@ -161,7 +165,8 @@ func TestStatsHandler_GetLibraryStats(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/stats/library", nil)
 	resp, _ := app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	// BOLA: Unauthenticated requests should return 401
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestStatsHandler_GetActivityStats(t *testing.T) {
@@ -172,7 +177,8 @@ func TestStatsHandler_GetActivityStats(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/stats/activity", nil)
 	resp, _ := app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	// BOLA: Unauthenticated requests should return 401
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestStatsHandler_GetSummary(t *testing.T) {
@@ -183,7 +189,8 @@ func TestStatsHandler_GetSummary(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/stats/summary", nil)
 	resp, _ := app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	// BOLA: Unauthenticated requests should return 401
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestStatsHandler_GetJobTypeBreakdown(t *testing.T) {
@@ -194,7 +201,8 @@ func TestStatsHandler_GetJobTypeBreakdown(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/stats/jobs/breakdown", nil)
 	resp, _ := app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	// BOLA: Unauthenticated requests should return 401
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestStatsHandler_GetJobTrends(t *testing.T) {
@@ -205,12 +213,13 @@ func TestStatsHandler_GetJobTrends(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/stats/jobs/trends", nil)
 	resp, _ := app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	// BOLA: Unauthenticated requests should return 401
+	assert.Equal(t, 401, resp.StatusCode)
 
 	// With days param
 	req = httptest.NewRequest("GET", "/api/stats/jobs/trends?days=30", nil)
 	resp, _ = app.Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestWatchlistHandler_ListWatchlists_Unauthenticated(t *testing.T) {
