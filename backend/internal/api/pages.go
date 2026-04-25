@@ -38,7 +38,11 @@ func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
 		lists = []database.Watchlist{}
 	}
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+	profileQuery := h.db.Order("name")
+	if user.Role != "admin" {
+		profileQuery = profileQuery.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	if err := profileQuery.Find(&profiles).Error; err != nil {
 		slog.Error("Error getting profiles", "error", err)
 	}
 	return RenderPage(c, "watchlists", "pages/watchlists", fiber.Map{
