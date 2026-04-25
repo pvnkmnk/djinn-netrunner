@@ -17,7 +17,7 @@ import (
 )
 
 func TestWatchlistBOLA(t *testing.T) {
-	db := setupInMemoryDB(t)
+	db := setupTestDBForAuth(t)
 	// Use Pongo2 engine for HTMX partials
 	engine := templates.NewPongo2("../../../ops/web/templates", ".html")
 	app := fiber.New(fiber.Config{
@@ -35,28 +35,37 @@ func TestWatchlistBOLA(t *testing.T) {
 	app.Get("/api/watchlists/:id/preview", watchlistPreviewHandler.GetPreview)
 	app.Get("/api/watchlists/form", watchlistHandler.GetForm)
 
-	// Setup users
-	user1 := database.User{Email: "user1@example.com", PasswordHash: "hash", Role: "user"}
-	user2 := database.User{Email: "user2@example.com", PasswordHash: "hash", Role: "user"}
+	// Use unique emails with UUID for test isolation
+	testID := uuid.New().String()
+	user1 := database.User{Email: "user1-" + testID + "@example.com", PasswordHash: "hash", Role: "user"}
+	user2 := database.User{Email: "user2-" + testID + "@example.com", PasswordHash: "hash", Role: "user"}
 	db.Create(&user1)
 	db.Create(&user2)
 
 	// Setup sessions
-	sess1 := database.Session{SessionID: "sess1", UserID: user1.ID, ExpiresAt: time.Now().Add(24 * 7 * time.Hour)}
-	sess2 := database.Session{SessionID: "sess2", UserID: user2.ID, ExpiresAt: time.Now().Add(24 * 7 * time.Hour)}
+	sess1 := database.Session{SessionID: "sess1-" + testID, UserID: user1.ID, ExpiresAt: time.Now().Add(24 * 7 * time.Hour)}
+	sess2 := database.Session{SessionID: "sess2-" + testID, UserID: user2.ID, ExpiresAt: time.Now().Add(24 * 7 * time.Hour)}
 	db.Create(&sess1)
 	db.Create(&sess2)
 
-	// Setup quality profile
-	qp := database.QualityProfile{Name: "Test Profile for Watchlists"}
+	// Cleanup function to remove test data
+	defer func() {
+		db.Delete(&database.Session{}, "session_id LIKE ?", "%"+testID)
+		db.Delete(&database.Watchlist{}, "name LIKE ?", "%"+testID+"%")
+		db.Delete(&database.QualityProfile{}, "name LIKE ?", "%"+testID+"%")
+		db.Delete(&database.User{}, "email LIKE ?", "%"+testID+"@%")
+	}()
+
+	// Setup quality profile with unique name
+	qp := database.QualityProfile{Name: "Test Profile for Watchlists-" + testID}
 	db.Create(&qp)
 
 	// Setup watchlist for user1
 	wl1 := database.Watchlist{
 		ID:               uuid.New(),
-		Name:             "User1 Watchlist",
+		Name:             "User1 Watchlist-" + testID,
 		SourceType:       "local_file",
-		SourceURI:        "test.txt",
+		SourceURI:        "test-" + testID + ".txt",
 		QualityProfileID: qp.ID,
 		OwnerUserID:      &user1.ID,
 		Enabled:          true,
@@ -65,7 +74,7 @@ func TestWatchlistBOLA(t *testing.T) {
 
 	// 1. User2 tries to preview User1's watchlist - SHOULD FAIL with 403 or 404
 	req := httptest.NewRequest("GET", "/api/watchlists/"+wl1.ID.String()+"/preview", nil)
-	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess2"})
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
 	resp, _ := app.Test(req)
 
 	// Expect failure (403 Forbidden or 404 Not Found)
@@ -73,7 +82,7 @@ func TestWatchlistBOLA(t *testing.T) {
 
 	// 2. User2 tries to get form for User1's watchlist - SHOULD FAIL or return error snippet
 	req = httptest.NewRequest("GET", "/api/watchlists/form?id="+wl1.ID.String(), nil)
-	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess2"})
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
 	req.Header.Set("Htmx-Request", "true")
 	resp, _ = app.Test(req)
 

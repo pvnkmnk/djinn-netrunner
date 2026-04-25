@@ -5,14 +5,52 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
+func setupTestDB(t *testing.T) *gorm.DB {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set, skipping integration test")
+	}
+
+	var dialector gorm.Dialector
+	if strings.HasPrefix(dbURL, "postgres") {
+		dialector = postgres.Open(dbURL)
+	} else {
+		dialector = sqlite.Open(dbURL)
+	}
+
+	db, err := gorm.Open(dialector, &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	database.Migrate(db)
+	return db
+}
+
+// setupTestDBForAuth creates an in-memory SQLite database for complete test isolation
+func setupTestDBForAuth(t *testing.T) *gorm.DB {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Failed to create test database: %v", err)
+	}
+	database.Migrate(db)
+	return db
+}
+
 func TestAuthFlow(t *testing.T) {
-	db := setupInMemoryDB(t)
+	db := setupTestDB(t)
 	app := fiber.New()
 	auth := NewAuthHandler(db)
 

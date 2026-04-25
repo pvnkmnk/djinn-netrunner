@@ -16,7 +16,7 @@ import (
 )
 
 func TestSchedulesAuthorization(t *testing.T) {
-	db := setupInMemoryDB(t)
+	db := setupTestDBForAuth(t)
 	app := fiber.New()
 
 	auth := NewAuthHandler(db)
@@ -28,28 +28,38 @@ func TestSchedulesAuthorization(t *testing.T) {
 	app.Delete("/api/schedules/:id", schedulesHandler.Delete)
 	app.Patch("/api/schedules/:id", schedulesHandler.Update)
 
-	// Setup users
-	user1 := database.User{Email: "user1@example.com", PasswordHash: "hash", Role: "user"}
-	user2 := database.User{Email: "user2@example.com", PasswordHash: "hash", Role: "user"}
+	// Use unique emails with UUID for test isolation
+	testID := uuid.New().String()
+	user1 := database.User{Email: "user1-" + testID + "@example.com", PasswordHash: "hash", Role: "user"}
+	user2 := database.User{Email: "user2-" + testID + "@example.com", PasswordHash: "hash", Role: "user"}
 	db.Create(&user1)
 	db.Create(&user2)
 
 	// Setup sessions
-	sess1 := database.Session{SessionID: "sess1", UserID: user1.ID, ExpiresAt: time.Now().Add(24 * 7 * time.Hour)}
-	sess2 := database.Session{SessionID: "sess2", UserID: user2.ID, ExpiresAt: time.Now().Add(24 * 7 * time.Hour)}
+	sess1 := database.Session{SessionID: "sess1-" + testID, UserID: user1.ID, ExpiresAt: time.Now().Add(24 * 7 * time.Hour)}
+	sess2 := database.Session{SessionID: "sess2-" + testID, UserID: user2.ID, ExpiresAt: time.Now().Add(24 * 7 * time.Hour)}
 	db.Create(&sess1)
 	db.Create(&sess2)
 
-	// Setup quality profile
-	qp := database.QualityProfile{Name: "Test Profile for Sched"}
+	// Cleanup function to remove test data
+	defer func() {
+		db.Delete(&database.Session{}, "session_id LIKE ?", "%"+testID)
+		db.Delete(&database.Schedule{}, "watchlist_id IN (SELECT id FROM watchlists WHERE name LIKE ?)", "%"+testID+"%")
+		db.Delete(&database.Watchlist{}, "name LIKE ?", "%"+testID+"%")
+		db.Delete(&database.QualityProfile{}, "name LIKE ?", "%"+testID+"%")
+		db.Delete(&database.User{}, "email LIKE ?", "%"+testID+"@%")
+	}()
+
+	// Setup quality profile with unique name
+	qp := database.QualityProfile{Name: "Test Profile for Sched-" + testID}
 	db.Create(&qp)
 
 	// Setup watchlist for user1
 	wl1 := database.Watchlist{
 		ID:               uuid.New(),
-		Name:             "User1 Watchlist",
+		Name:             "User1 Watchlist-" + testID,
 		SourceType:       "spotify",
-		SourceURI:        "spotify:playlist:1",
+		SourceURI:        "spotify:playlist:" + testID,
 		QualityProfileID: qp.ID,
 		OwnerUserID:      &user1.ID,
 	}
@@ -66,7 +76,7 @@ func TestSchedulesAuthorization(t *testing.T) {
 
 	// 1. User2 tries to list schedules - should NOT see User1's schedule
 	req := httptest.NewRequest("GET", "/api/schedules", nil)
-	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess2"})
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
 	resp, _ := app.Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 	var schedules []database.Schedule
@@ -81,13 +91,13 @@ func TestSchedulesAuthorization(t *testing.T) {
 	body, _ := json.Marshal(payload)
 	req = httptest.NewRequest("POST", "/api/schedules", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess2"})
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
 	resp, _ = app.Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 
 	// 3. User2 tries to delete User1's schedule - should be 403
 	req = httptest.NewRequest("DELETE", "/api/schedules/"+strconv.FormatUint(sched1.ID, 10), nil)
-	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess2"})
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
 	resp, _ = app.Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 
@@ -101,7 +111,7 @@ func TestSchedulesAuthorization(t *testing.T) {
 	body, _ = json.Marshal(updatePayload)
 	req = httptest.NewRequest("PATCH", "/api/schedules/"+strconv.FormatUint(sched1.ID, 10), bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess2"})
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
 	resp, _ = app.Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 
