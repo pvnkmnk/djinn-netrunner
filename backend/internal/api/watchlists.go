@@ -225,7 +225,10 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 	}
 
 	wl.Enabled = !wl.Enabled
-	h.db.Save(&wl)
+	if err := h.db.Save(&wl).Error; err != nil {
+		slog.Error("Failed to toggle watchlist enabled state", "error", err, "watchlistID", wl.ID)
+		return c.Status(500).SendString("<div class=\"error\">Failed to update watchlist.</div>")
+	}
 
 	return c.Render("partials/watchlists", fiber.Map{"watchlists": []database.Watchlist{wl}})
 }
