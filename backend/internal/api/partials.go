@@ -63,8 +63,21 @@ type StatsData struct {
 
 // RenderJobsPartial returns jobs HTML for HTMX
 func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
+	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
 	var jobs []database.Job
-	query := h.db.Order("requested_at DESC").Limit(50)
+	// Bolt Optimization: Select only necessary columns and enforce BOLA.
+	query := h.db.Model(&database.Job{}).
+		Select("id, job_type, state, requested_at, created_by").
+		Order("requested_at DESC").Limit(50)
+
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
 
 	// Apply filters if provided
 	jobType := c.Query("job_type")

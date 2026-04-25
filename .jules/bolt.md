@@ -29,3 +29,7 @@
 ## 2026-04-01 - Redundant Initial Dashboard Load Queries
 **Learning:** The dashboard's initial synchronous render was performing four separate database queries to fetch stats, recent jobs, watchlists, and quality profiles. However, these variables were never actually used in the `index.html` template, as the dashboard relies on HTMX to load this data asynchronously via partials.
 **Action:** Removed the redundant database queries from `DashboardHandler.RenderIndex` and updated the fiber render map. This reduces the database load by 4 queries per dashboard visit and improves the initial page load time.
+
+## 2026-04-05 - Selective Column Fetching and BOLA in Partials
+**Learning:** While removing synchronous database queries from page handlers (`backend/internal/api/pages.go`) might seem like an optimization, it can break initial server-side rendering (SSR) if templates expect that data. A safer and effective optimization is to target specific database queries in partials (like `RenderJobsPartial`) by selecting only necessary columns and enforcing BOLA, which reduces both I/O and result set size without altering the page loading architecture.
+**Action:** When optimizing, prefer refining existing queries (selective columns, BOLA filtering) over refactoring the data-loading strategy unless the templates are also updated and verified. Always check if a page handler's data is truly redundant or if it's used for the initial "Time to First Byte" render.
