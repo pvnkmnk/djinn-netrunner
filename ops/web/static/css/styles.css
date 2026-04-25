@@ -133,21 +133,21 @@ body {
     transition: opacity 0.2s;
 }
 
-.stat-card:hover,
-.watchlist-card:hover,
-.library-card:hover,
-.profile-card:hover,
-.schedule-card:hover,
-.artist-card:hover,
-.job-card:hover {
+.stat-card:hover, .stat-card:focus-within,
+.watchlist-card:hover, .watchlist-card:focus-within,
+.library-card:hover, .library-card:focus-within,
+.profile-card:hover, .profile-card:focus-within,
+.schedule-card:hover, .schedule-card:focus-within,
+.artist-card:hover, .artist-card:focus-within,
+.job-card:hover, .job-card:focus-within {
     border-color: var(--accent-cyan);
     transform: translateX(4px);
     box-shadow: 0 0 20px rgba(0, 255, 245, 0.15);
 }
 
-.stat-card:hover::before,
-.watchlist-card:hover::before,
-.library-card:hover::before {
+.stat-card:hover::before, .stat-card:focus-within::before,
+.watchlist-card:hover::before, .watchlist-card:focus-within::before,
+.library-card:hover::before, .library-card:focus-within::before {
     opacity: 1;
 }
 
