@@ -40,11 +40,11 @@ func TestProfilePrivilegeEscalation(t *testing.T) {
 		t.Fatalf("Failed to create session: %v", err)
 	}
 
-	// Cleanup function
+	// Cleanup function (using GORM Delete for consistency with other auth tests)
 	defer func() {
-		db.Exec("DELETE FROM sessions WHERE session_id LIKE ?", "%"+testID)
-		db.Exec("DELETE FROM quality_profiles WHERE name LIKE ?", "%"+testID)
-		db.Exec("DELETE FROM users WHERE id = ?", user.ID)
+		db.Delete(&database.Session{}, "session_id LIKE ?", "%"+testID)
+		db.Delete(&database.QualityProfile{}, "name LIKE ?", "%"+testID)
+		db.Delete(&database.User{}, "id = ?", user.ID)
 	}()
 
 	// 1. Try to CREATE a default profile as non-admin
