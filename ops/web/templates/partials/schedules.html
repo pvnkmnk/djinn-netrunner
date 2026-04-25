@@ -16,7 +16,7 @@
             </div>
             <div class="details">
                 <span>Cron: {{ schedule.CronExpr }}</span>
-                 <span>Next: {{ schedule.NextRunAt | date "Jan 02 15:04" }}</span>
+                 <span>Next: {{ schedule.NextRunAt | date:"Jan 02 15:04" }}</span>
             </div>
         </div>
         <div class="actions">
@@ -31,7 +31,7 @@
             </button>
         </div>
     </div>
-    {% else %}
+    {% empty %}
     <p class="empty-state">No schedules configured</p>
     {% endfor %}
     </div>

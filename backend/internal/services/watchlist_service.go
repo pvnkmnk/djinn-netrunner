@@ -167,8 +167,8 @@ func (s *WatchlistService) GetNewTracks(ctx context.Context, watchlist *database
 	}
 
 	var acquired []database.Acquisition
-	// Bolt Fix: Add error handling to prevent duplicate acquisitions on DB failure
-	if err := s.db.Where("owner_user_id = ? AND LOWER(artist) IN ?", watchlist.OwnerUserID, artists).Find(&acquired).Error; err != nil {
+	// Bolt Optimization: Select only necessary columns to reduce memory allocation
+	if err := s.db.Select("artist, track_title").Where("owner_user_id = ? AND LOWER(artist) IN ?", watchlist.OwnerUserID, artists).Find(&acquired).Error; err != nil {
 		// Returning empty slice to prevent creating duplicate jobs on DB error.
 		// Consider changing the function signature to return an error for better handling.
 		return []map[string]string{}
@@ -209,8 +209,8 @@ func (s *WatchlistService) FilterExistingTracks(ctx context.Context, tracks []ma
 
 	// 2. Bulk fetch existing tracks from library
 	var existingTracks []database.Track
-	// Bolt Fix: Add error handling to prevent duplicate acquisitions on DB failure
-	if err := s.db.Where("LOWER(artist) IN ?", artists).Find(&existingTracks).Error; err != nil {
+	// Bolt Optimization: Select only necessary columns to reduce memory allocation
+	if err := s.db.Select("artist, title").Where("LOWER(artist) IN ?", artists).Find(&existingTracks).Error; err != nil {
 		// Returning empty slice to prevent creating duplicate jobs on DB error.
 		return []map[string]string{}
 	}
@@ -223,8 +223,8 @@ func (s *WatchlistService) FilterExistingTracks(ctx context.Context, tracks []ma
 
 	// 3. Bulk fetch active job items
 	var activeItems []database.JobItem
-	// Bolt Fix: Add error handling to prevent duplicate acquisitions on DB failure
-	if err := s.db.Where("LOWER(artist) IN ? AND status != 'failed'", artists).Find(&activeItems).Error; err != nil {
+	// Bolt Optimization: Select only necessary columns to reduce memory allocation
+	if err := s.db.Select("artist, track_title").Where("LOWER(artist) IN ? AND status != 'failed'", artists).Find(&activeItems).Error; err != nil {
 		// Returning empty slice to prevent creating duplicate jobs on DB error.
 		return []map[string]string{}
 	}

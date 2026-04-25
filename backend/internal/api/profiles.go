@@ -1,8 +1,6 @@
 package api
 
 import (
-	"time"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -19,22 +17,17 @@ func NewProfileHandler(db *gorm.DB) *ProfileHandler {
 
 // List returns all quality profiles
 func (h *ProfileHandler) List(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
 	var profiles []database.QualityProfile
-	if err := h.db.Order("name").Find(&profiles).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	if err := query.Find(&profiles).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(profiles)
@@ -42,17 +35,8 @@ func (h *ProfileHandler) List(c *fiber.Ctx) error {
 
 // Get returns a single profile by ID
 func (h *ProfileHandler) Get(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -62,7 +46,11 @@ func (h *ProfileHandler) Get(c *fiber.Ctx) error {
 	}
 
 	var profile database.QualityProfile
-	if err := h.db.First(&profile, "id = ?", id).Error; err != nil {
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	if err := query.First(&profile).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
 		}
@@ -74,17 +62,8 @@ func (h *ProfileHandler) Get(c *fiber.Ctx) error {
 
 // Create creates a new quality profile
 func (h *ProfileHandler) Create(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -142,6 +121,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 				PreferWebReleases:   input.PreferWebReleases,
 				CoverArtSources:     input.CoverArtSources,
 				IsDefault:           input.IsDefault,
+				OwnerUserID:         &user.ID,
 			}
 
 			return tx.Create(&profile).Error
@@ -164,6 +144,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		PreferWebReleases:   input.PreferWebReleases,
 		CoverArtSources:     input.CoverArtSources,
 		IsDefault:           input.IsDefault,
+		OwnerUserID:         &user.ID,
 	}
 
 	if err := h.db.Create(&profile).Error; err != nil {
@@ -175,17 +156,8 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 
 // Update updates an existing profile
 func (h *ProfileHandler) Update(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -195,7 +167,11 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var profile database.QualityProfile
-	if err := h.db.First(&profile, "id = ?", id).Error; err != nil {
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID) // cannot update system default unless admin
+	}
+	if err := query.First(&profile).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
 		}
@@ -282,17 +258,8 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 
 // Delete deletes a profile
 func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-	if !hasAuth {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
@@ -302,7 +269,11 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 	}
 
 	var profile database.QualityProfile
-	if err := h.db.First(&profile, "id = ?", id).Error; err != nil {
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&profile).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
 		}
@@ -334,20 +305,10 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 
 // GetForm returns the profile form for add/edit
 func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -362,7 +323,11 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		if err != nil {
 			return c.SendString("<div class=\"error\">Invalid ID.</div>")
 		}
-		if err := h.db.First(&profile, "id = ?", uuid).Error; err != nil {
+		query := h.db.Where("id = ?", uuid)
+		if user.Role != "admin" {
+			query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+		}
+		if err := query.First(&profile).Error; err != nil {
 			return c.SendString("<div class=\"error\">Profile not found.</div>")
 		}
 	}

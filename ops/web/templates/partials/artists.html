@@ -17,7 +17,7 @@
             <div class="details">
                 <span>MBID: {{ artist.MusicBrainzID }}</span>
                 <span>Releases: {{ artist.AcquiredReleases }}/{{ artist.TotalReleases }}</span>
-                 <span>Last Scan: {{ artist.LastScanDate | date "Jan 02 15:04" }}</span>
+                 <span>Last Scan: {{ artist.LastScanDate | date:"Jan 02 15:04" }}</span>
             </div>
         </div>
         <div class="actions">
@@ -29,7 +29,7 @@
             </button>
         </div>
     </div>
-    {% else %}
+    {% empty %}
     <p class="empty-state">No artists being monitored</p>
     {% endfor %}
     </div>
