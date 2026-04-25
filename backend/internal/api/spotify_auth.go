@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/gofiber/fiber/v2"
@@ -161,7 +162,9 @@ func (h *SpotifyAuthHandler) GetClient(ctx context.Context, userID uint64) (*spo
 			token.RefreshToken = newToken.RefreshToken
 		}
 		token.Expiry = newToken.Expiry
-		h.db.Save(&token)
+		if err := h.db.Save(&token).Error; err != nil {
+			slog.Error("Failed to save refreshed Spotify token", "error", err, "userID", userID)
+		}
 	}
 
 	// Use the token to create a client
