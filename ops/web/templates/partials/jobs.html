@@ -26,7 +26,7 @@
         </div>
         <div class="job-meta">
             <span>{{ job.RequestedAt | date:"Jan 02 15:04" }}</span>
-            <span>By: {{ job.CreatedBy }}</span>
+            <span>By: {{ job.CreatedBy | escape }}</span>
         </div>
         <div class="actions">
             <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ job.ID }}" hx-target="#job-logs-container" hx-swap="innerHTML" aria-label="View logs for job #{{ job.ID }}">
