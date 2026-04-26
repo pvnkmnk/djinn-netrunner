@@ -16,7 +16,7 @@ import (
 )
 
 func TestSchedulesAuthorization(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupInMemoryDB(t)
 	app := fiber.New()
 
 	auth := NewAuthHandler(db)
