@@ -14,7 +14,7 @@ import (
 )
 
 func TestProfilePrivilegeEscalation(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupInMemoryDB(t)
 	// Clean up database tables for this test
 	db.Exec("DELETE FROM sessions")
 	db.Exec("DELETE FROM users")

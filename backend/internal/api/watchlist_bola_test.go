@@ -17,7 +17,7 @@ import (
 )
 
 func TestWatchlistBOLA(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupInMemoryDB(t)
 	// Use Pongo2 engine for HTMX partials
 	engine := templates.NewPongo2("../../../ops/web/templates", ".html")
 	app := fiber.New(fiber.Config{
