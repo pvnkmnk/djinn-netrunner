@@ -182,60 +182,38 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 
 	var stats LibraryStats
 
-	// Build base query with BOLA filtering for non-admin users
-	// Non-admin users should only see stats for their own libraries
-	baseQuery := h.db.Model(&database.Track{})
-	if user.Role != "admin" {
-		// Only count tracks in libraries owned by this user
-		baseQuery = baseQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
-	}
-
-	// Total tracks and size
-	baseQuery.Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&stats)
-
-	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
-
-	// Format breakdown - with BOLA filtering
+	// Bolt Optimization: Consolidate database queries from 4 to 2.
+	// 1. Fetch format breakdown and calculate global totals in-memory.
 	formatQuery := h.db.Model(&database.Track{})
 	if user.Role != "admin" {
 		formatQuery = formatQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
 			Where("libraries.owner_user_id = ?", user.ID)
 	}
-	formatQuery.Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
+	if err := formatQuery.Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
 		Group("format").
 		Order("count DESC").
-		Scan(&stats.FormatBreakdown)
+		Scan(&stats.FormatBreakdown).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 
-	// Library breakdown - with BOLA filtering
-	libQuery := h.db.Model(&database.Track{})
+	for _, f := range stats.FormatBreakdown {
+		stats.TotalTracks += f.Count
+		stats.TotalSize += f.TotalSize
+	}
+	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
+
+	// 2. Fetch library breakdown joined with library names in a single query.
+	libQuery := h.db.Table("tracks").
+		Select("tracks.library_id, libraries.name as library_name, COUNT(*) as track_count, COALESCE(SUM(tracks.file_size), 0) as total_size").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id")
+
 	if user.Role != "admin" {
-		libQuery = libQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
-	}
-	libQuery.Select("library_id, COUNT(*) as track_count, COALESCE(SUM(file_size), 0) as total_size").
-		Group("library_id").
-		Scan(&stats.LibraryBreakdown)
-
-	// Get library names in a single query to avoid N+1
-	// BOLA: Only fetch libraries for this user (or all for admin)
-	var libraries []database.Library
-	libQuery2 := h.db
-	if user.Role != "admin" {
-		libQuery2 = libQuery2.Where("owner_user_id = ?", user.ID)
-	}
-	libQuery2.Find(&libraries)
-	libraryNames := make(map[string]string)
-	for _, lib := range libraries {
-		libraryNames[lib.ID.String()] = lib.Name
+		libQuery = libQuery.Where("libraries.owner_user_id = ?", user.ID)
 	}
 
-	// Map library names
-	for i := range stats.LibraryBreakdown {
-		if name, ok := libraryNames[stats.LibraryBreakdown[i].LibraryID]; ok {
-			stats.LibraryBreakdown[i].LibraryName = name
-		}
+	if err := libQuery.Group("tracks.library_id, libraries.name").
+		Scan(&stats.LibraryBreakdown).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return c.JSON(stats)
@@ -359,20 +337,11 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 
 // RenderStatsPartial returns stats HTML for HTMX
 func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
+	_, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
