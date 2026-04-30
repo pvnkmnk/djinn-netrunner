@@ -235,20 +235,11 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 
 // GetForm returns the watchlist form for add/edit
 func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -276,7 +267,7 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 	var profiles []database.QualityProfile
 	query := h.db.Order("name")
 	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
+		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
 	}
 	if err := query.Find(&profiles).Error; err != nil {
 		slog.Error("Error fetching profiles for watchlist form", "error", err)
@@ -297,20 +288,11 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderWatchlistsPartial returns watchlists HTML for HTMX
 func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}

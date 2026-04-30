@@ -359,20 +359,11 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 
 // RenderStatsPartial returns stats HTML for HTMX
 func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
+	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
+	user, ok := c.Locals("user").(database.User)
 	isHtmx := c.Get("Htmx-Request") == "true"
 
-	if !hasAuth {
+	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
@@ -383,12 +374,17 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 
 	since := time.Now().Add(-24 * time.Hour)
 
+	// BOLA: Add owner_user_id filtering for non-admin users
+	query := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+
 	// Use conditional aggregation for efficient single-query stats
-	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
-			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
+	if err := query.Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
+		"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
+		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
+		"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
 		Scan(&stats).Error; err != nil {
 		slog.Error("Error fetching stats", "error", err)
 		return c.SendString("<div class=\"error\">Error loading stats.</div>")
