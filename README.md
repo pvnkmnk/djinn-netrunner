@@ -68,8 +68,12 @@ SLSKD_USERNAME=your_username
 SLSKD_PASSWORD=your_password
 SLSKD_API_KEY=your_random_api_key
 
-# Database (Defaults to SQLite if empty)
-DATABASE_URL=netrunner.db
+# Database
+POSTGRES_PASSWORD=your_secure_password
+DATABASE_URL=postgresql://musicops:your_secure_password@postgres:5432/musicops?sslmode=disable
+
+# Session/auth secret
+JWT_SECRET=replace_with_a_long_random_secret
 
 # Library Path
 MUSIC_LIBRARY=/music
@@ -80,43 +84,47 @@ ACOUSTID_API_KEY=your_acoustid_api_key
 
 ### 3. Launch the Appliance
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
-Access the management console at `http://localhost:8080`.
+Access the management console at `http://localhost`.
 
 ---
 
 ## 🛠️ Management CLI
 
-NetRunner includes a powerful Go-native CLI for manual management and automation.
+NetRunner includes a Go-native CLI for manual management and automation.
 
 ```bash
-# Enter the API container
-docker exec -it netrunner-api sh
+# Run from source checkout
+cd backend
 
 # List all watchlists
-netrunner-cli watchlist list
+go run ./cmd/cli watchlist list
 
 # Add a new Spotify watchlist
-netrunner-cli watchlist add "My Playlist" "spotify_playlist" "https://open.spotify.com/playlist/..."
+go run ./cmd/cli watchlist add "My Playlist" "spotify_playlist" "spotify:playlist:..."
 
 # Trigger a sync for a specific watchlist
-netrunner-cli watchlist sync <watchlist-uuid>
-
-# List monitored artists
-netrunner-cli artist list
-
-# Add an artist to monitoring
-netrunner-cli artist add "Artist Name"
-
-# List schedules
-netrunner-cli schedule list
-
-# Create a schedule
-netrunner-cli schedule add <watchlist-uuid> "0 6 * * *"  # Daily at 6am
+go run ./cmd/cli watchlist sync <watchlist-uuid>
 
 # Check system status
-netrunner-cli status
+go run ./cmd/cli status
+```
+
+For full CLI command coverage, run:
+```bash
+cd backend
+go run ./cmd/cli --help
+```
+
+### Validation
+Use the repo validation scripts before submitting changes:
+```bash
+# PowerShell
+pwsh -File scripts/validate.ps1
+
+# Bash
+bash scripts/validate.sh
 ```
 
 ---

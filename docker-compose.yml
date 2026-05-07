@@ -33,12 +33,14 @@ services:
       GONIC_DB_PATH: /data/gonic.db
       GONIC_MUSIC_PATH: /music
       GONIC_PODCAST_PATH: /podcasts
+      GONIC_PLAYLIST_PATH: /playlists
       GONIC_CACHE_PATH: /cache
     volumes:
       - netrunner-gonic-data:/data
       - netrunner-gonic-cache:/cache
       - netrunner-music:/music:ro
       - netrunner-podcasts:/podcasts
+      - netrunner-gonic-playlists:/playlists
     restart: unless-stopped
 
   caddy:
@@ -94,6 +96,7 @@ volumes:
   netrunner-slskd-data:
   netrunner-gonic-data:
   netrunner-gonic-cache:
+  netrunner-gonic-playlists:
   netrunner-caddy-data:
   netrunner-caddy-config:
   netrunner-config:

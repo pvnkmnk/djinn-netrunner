@@ -3,7 +3,10 @@
 
 {$DOMAIN:localhost} {
 # Gonic streaming server (Subsonic API)
-handle /music/* /rest/* {
+handle /music/* {
+    reverse_proxy gonic:4747
+}
+handle /rest/* {
     reverse_proxy gonic:4747
 }
 

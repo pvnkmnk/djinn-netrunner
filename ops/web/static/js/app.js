@@ -1,6 +1,15 @@
 // NETRUNNER - Minimal Console JS
 // Following docs: minimal JS only for console controls
 
+function getCookie(name) {
+    const value = "; " + document.cookie;
+    const parts = value.split("; " + name + "=");
+    if (parts.length === 2) {
+        return parts.pop().split(";").shift();
+    }
+    return "";
+}
+
 // Modal management
 function closeModal() {
     const container = document.getElementById('modal-container');
@@ -30,6 +39,14 @@ function openModalFromHTMX(target) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Add CSRF token to all HTMX requests.
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+        const csrfToken = getCookie('csrf_');
+        if (csrfToken) {
+            evt.detail.headers['X-CSRF-Token'] = csrfToken;
+        }
+    });
+
     // Listen for HTMX modal trigger headers
     document.body.addEventListener('htmx:afterOnLoad', function(evt) {
         const xhr = evt.detail.xhr;
@@ -195,7 +212,10 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 var resp = await fetch('/api/auth/login', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCookie('csrf_')
+                    },
                     body: JSON.stringify({email: email, password: password})
                 });
                 if (resp.ok) {
@@ -221,13 +241,19 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 var resp = await fetch('/api/auth/register', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCookie('csrf_')
+                    },
                     body: JSON.stringify({email: email, password: password})
                 });
                 if (resp.ok) {
                     var loginResp = await fetch('/api/auth/login', {
                         method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': getCookie('csrf_')
+                        },
                         body: JSON.stringify({email: email, password: password})
                     });
                     if (loginResp.ok) {
