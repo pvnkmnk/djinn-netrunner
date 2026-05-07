@@ -33,3 +33,7 @@
 ## 2026-04-06 - Targeted Column Selection in Dashboard Partials
 **Learning:** Found that dashboard partials (Watchlists, Artists, Schedules, Libraries, Jobs) were performing "SELECT *" queries, fetching large blobs and unused fields. Additionally, some partials were performing unnecessary or inefficient preloads (e.g., fetching full QualityProfiles when only the name was needed, or when not needed at all).
 **Action:** Applied `.Select()` to all dashboard partial handlers to fetch only the columns required by the Pongo2 templates. Optimized the `Watchlist` preload in `RenderSchedulesPartial` to only fetch `id` and `name`, and removed the `QualityProfile` preload from `RenderWatchlistsPartial`. This reduces memory allocation and database I/O for the most frequently polled endpoints in the application.
+
+## 2026-05-07 - In-memory Aggregation and Join Optimization
+**Learning:** Aggregation endpoints like `GetLibraryStats` often perform multiple queries to get totals and breakdowns separately. By fetching the breakdown first, global totals can be calculated in-memory, saving a query. Furthermore, joining reference tables (like `libraries`) during the aggregation query avoids the need for a second query to resolve names from IDs.
+**Action:** Refactored `GetLibraryStats` to fetch format breakdown first and sum totals in-memory. Combined the library breakdown query with a `JOIN` to `libraries` to fetch names in one go. Reduced database roundtrips from 4 to 2.

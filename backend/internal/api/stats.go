@@ -191,52 +191,34 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 			Where("libraries.owner_user_id = ?", user.ID)
 	}
 
-	// Total tracks and size
-	baseQuery.Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&stats)
-
-	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
-
-	// Format breakdown - with BOLA filtering
-	formatQuery := h.db.Model(&database.Track{})
+	// Bolt Optimization: Reduce database roundtrips from 4 to 2.
+	// 1. Fetch format breakdown (with BOLA filtering)
+	formatQuery := h.db.Model(&database.Track{}).
+		Joins("JOIN libraries ON libraries.id = tracks.library_id")
 	if user.Role != "admin" {
-		formatQuery = formatQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
+		formatQuery = formatQuery.Where("libraries.owner_user_id = ?", user.ID)
 	}
 	formatQuery.Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
 		Group("format").
 		Order("count DESC").
 		Scan(&stats.FormatBreakdown)
 
-	// Library breakdown - with BOLA filtering
-	libQuery := h.db.Model(&database.Track{})
-	if user.Role != "admin" {
-		libQuery = libQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
+	// Calculate totals in-memory from format breakdown to save a query
+	for _, f := range stats.FormatBreakdown {
+		stats.TotalTracks += f.Count
+		stats.TotalSize += f.TotalSize
 	}
-	libQuery.Select("library_id, COUNT(*) as track_count, COALESCE(SUM(file_size), 0) as total_size").
-		Group("library_id").
+	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
+
+	// 2. Fetch library breakdown with names in a single query using JOIN
+	libQuery := h.db.Model(&database.Track{}).
+		Joins("JOIN libraries ON libraries.id = tracks.library_id")
+	if user.Role != "admin" {
+		libQuery = libQuery.Where("libraries.owner_user_id = ?", user.ID)
+	}
+	libQuery.Select("tracks.library_id, libraries.name as library_name, COUNT(*) as track_count, COALESCE(SUM(tracks.file_size), 0) as total_size").
+		Group("tracks.library_id, libraries.name").
 		Scan(&stats.LibraryBreakdown)
-
-	// Get library names in a single query to avoid N+1
-	// BOLA: Only fetch libraries for this user (or all for admin)
-	var libraries []database.Library
-	libQuery2 := h.db
-	if user.Role != "admin" {
-		libQuery2 = libQuery2.Where("owner_user_id = ?", user.ID)
-	}
-	libQuery2.Find(&libraries)
-	libraryNames := make(map[string]string)
-	for _, lib := range libraries {
-		libraryNames[lib.ID.String()] = lib.Name
-	}
-
-	// Map library names
-	for i := range stats.LibraryBreakdown {
-		if name, ok := libraryNames[stats.LibraryBreakdown[i].LibraryID]; ok {
-			stats.LibraryBreakdown[i].LibraryName = name
-		}
-	}
 
 	return c.JSON(stats)
 }
@@ -359,21 +341,10 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 
 // RenderStatsPartial returns stats HTML for HTMX
 func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
-	isHtmx := c.Get("Htmx-Request") == "true"
-
-	if !hasAuth {
-		if isHtmx {
+	// Bolt Optimization: Use user from context to avoid redundant session lookup.
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		if c.Get("Htmx-Request") == "true" {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
 		return c.Redirect("/", 302)
@@ -384,11 +355,16 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 	since := time.Now().Add(-24 * time.Hour)
 
 	// Use conditional aggregation for efficient single-query stats
-	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since).
-		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
-			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
+	// BOLA: Filter by owner_user_id for non-admin users.
+	jobQuery := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+	if user.Role != "admin" {
+		jobQuery = jobQuery.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := jobQuery.Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
+		"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
+		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
+		"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
 		Scan(&stats).Error; err != nil {
 		slog.Error("Error fetching stats", "error", err)
 		return c.SendString("<div class=\"error\">Error loading stats.</div>")

@@ -20,16 +20,24 @@ func NewDashboardHandler(db *gorm.DB) *DashboardHandler {
 }
 
 func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
-	// Try to get user from session (optional auth)
+	// Bolt Optimization: Use user from context if available, fallback to manual lookup
+	// for the index page which may not have AuthMiddleware applied yet or needs to handle
+	// unauthenticated state gracefully.
 	var user database.User
 	var authUserID string
-	sessionID := c.Cookies(sessionCookieName)
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		if err == nil {
-			authUserID = strconv.FormatUint(user.ID, 10)
+
+	if ctxUser, ok := c.Locals("user").(database.User); ok {
+		user = ctxUser
+		authUserID = strconv.FormatUint(user.ID, 10)
+	} else {
+		sessionID := c.Cookies(sessionCookieName)
+		if sessionID != "" {
+			err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+				Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+				First(&user).Error
+			if err == nil {
+				authUserID = strconv.FormatUint(user.ID, 10)
+			}
 		}
 	}
 

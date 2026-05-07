@@ -235,21 +235,10 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 
 // GetForm returns the watchlist form for add/edit
 func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
-	isHtmx := c.Get("Htmx-Request") == "true"
-
-	if !hasAuth {
-		if isHtmx {
+	// Bolt Optimization: Use user from context to avoid redundant session lookup.
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		if c.Get("Htmx-Request") == "true" {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
 		return c.Redirect("/", 302)
@@ -297,21 +286,10 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderWatchlistsPartial returns watchlists HTML for HTMX
 func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
-	isHtmx := c.Get("Htmx-Request") == "true"
-
-	if !hasAuth {
-		if isHtmx {
+	// Bolt Optimization: Use user from context to avoid redundant session lookup.
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		if c.Get("Htmx-Request") == "true" {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
 		return c.Redirect("/", 302)

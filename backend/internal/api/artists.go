@@ -194,28 +194,22 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 
 // GetForm returns the artist form
 func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
-	isHtmx := c.Get("Htmx-Request") == "true"
-
-	if !hasAuth {
-		if isHtmx {
+	// Bolt Optimization: Use user from context to avoid redundant session lookup.
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		if c.Get("Htmx-Request") == "true" {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
 		return c.Redirect("/", 302)
 	}
 
 	var profiles []database.QualityProfile
-	if err := h.db.Find(&profiles).Error; err != nil {
+	// BOLA: Filter profiles by owner_user_id for non-admin users.
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&profiles).Error; err != nil {
 		slog.Error("Error fetching profiles for artist form", "error", err)
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
@@ -228,21 +222,10 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderPartial returns artists HTML for HTMX
 func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
-
-	isHtmx := c.Get("Htmx-Request") == "true"
-
-	if !hasAuth {
-		if isHtmx {
+	// Bolt Optimization: Use user from context to avoid redundant session lookup.
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		if c.Get("Htmx-Request") == "true" {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
 		return c.Redirect("/", 302)
