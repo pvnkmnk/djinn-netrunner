@@ -17,6 +17,13 @@ import (
 	"gorm.io/gorm"
 )
 
+func nonExistentAbsPath(t *testing.T) string {
+	t.Helper()
+	base := t.TempDir()
+	// Generate a path guaranteed not to exist under a real absolute base path.
+	return filepath.Join(base, "does-not-exist-"+uuid.NewString())
+}
+
 // ---- Unit tests for validateLibraryPath ----
 
 func TestValidateLibraryPath_ValidDirectory(t *testing.T) {
@@ -47,7 +54,7 @@ func TestValidateLibraryPath_DotPath(t *testing.T) {
 }
 
 func TestValidateLibraryPath_NonExistentPath(t *testing.T) {
-	err := validateLibraryPath("/this/path/does/not/exist/xyz987abc")
+	err := validateLibraryPath(nonExistentAbsPath(t))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "library path does not exist")
 }
@@ -64,9 +71,10 @@ func TestValidateLibraryPath_FileNotDirectory(t *testing.T) {
 }
 
 func TestValidateLibraryPath_TraversalResolvesToNonExistent(t *testing.T) {
-	// A path with traversal segments that resolves to a path that doesn't exist.
-	// filepath.Clean will resolve the ".." components.
-	err := validateLibraryPath("/tmp/netrunner-nonexistent-xyz987/../../../this-does-not-exist-abc123")
+	// Build an absolute path with traversal segments that resolves to a missing path.
+	base := t.TempDir()
+	traversalPath := filepath.Join(base, "..", "this-does-not-exist-"+uuid.NewString())
+	err := validateLibraryPath(traversalPath)
 	require.Error(t, err)
 	// The cleaned path won't exist, so we expect a "does not exist" error.
 	assert.Contains(t, err.Error(), "library path does not exist")
@@ -156,10 +164,11 @@ func TestCreateLibrary_RelativePath(t *testing.T) {
 
 func TestCreateLibrary_NonExistentPath(t *testing.T) {
 	app, _, _ := setupLibraryTestApp(t)
+	missingPath := nonExistentAbsPath(t)
 
 	body, _ := json.Marshal(map[string]string{
 		"name": "My Music",
-		"path": "/this/path/does/not/exist/xyz123abc",
+		"path": missingPath,
 	})
 
 	req := httptest.NewRequest("POST", "/api/libraries", bytes.NewReader(body))
@@ -306,7 +315,7 @@ func TestUpdateLibrary_NonExistentPath(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&lib).Error)
 
-	body, _ := json.Marshal(map[string]string{"path": "/nonexistent/path/xyz987"})
+	body, _ := json.Marshal(map[string]string{"path": nonExistentAbsPath(t)})
 
 	req := httptest.NewRequest("PUT", "/api/libraries/"+lib.ID.String(), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

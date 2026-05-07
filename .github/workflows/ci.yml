@@ -30,6 +30,13 @@ jobs:
         env:
           CGO_ENABLED: 0
 
+      - name: Vulnerability scan (non-blocking)
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
