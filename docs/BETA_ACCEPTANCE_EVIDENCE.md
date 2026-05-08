@@ -15,27 +15,27 @@ Environment: local docker compose / Windows PowerShell / Caddy+Postgres+slskd+go
 
 | Scenario | Expected | Result (Pass/Fail/Blocked) | Evidence |
 |---|---|---|---|
-| Auth login/logout/register | Session flow works, protected routes accessible after auth | Blocked | `netrunner` container in restart loop; `/api/health` returns `502` via Caddy |
-| Watchlist create/edit/sync/preview | CRUD + sync + preview updates | Blocked | App service unavailable due to migration crash loop |
-| Library add/scan | Library created and scan job completes | Blocked | App service unavailable due to migration crash loop |
-| Artist CRUD | Add/update/delete works with ownership checks | Blocked | App service unavailable due to migration crash loop |
-| Schedule CRUD | Create/update/delete and scoped visibility | Blocked | App service unavailable due to migration crash loop |
-| Job execution + console stream | Logs stream, filter/copy/clear/resume behavior works | Blocked | App service unavailable due to migration crash loop |
-| Role/tenant isolation | Non-admin cannot read/modify other user resources | Blocked | API/UI runtime blocked by migration failure |
-| Webhook smoke test | Completion webhook emitted with expected payload shape | Blocked | App service unavailable due to migration crash loop |
-| Quota warning smoke test | Quota threshold warning generated and observable | Blocked | App service unavailable due to migration crash loop |
+| Auth login/logout/register | Session flow works, protected routes accessible after auth | Pass (scripted) | Registration/login succeeded via CSRF + Origin/Referer headers |
+| Watchlist create/edit/sync/preview | CRUD + sync + preview updates | Partial | Authenticated watchlist list endpoint returned expected payload; full browser CRUD pending |
+| Library add/scan | Library created and scan job completes | Pending | Not fully exercised in this pass |
+| Artist CRUD | Add/update/delete works with ownership checks | Pending | Not fully exercised in this pass |
+| Schedule CRUD | Create/update/delete and scoped visibility | Pending | Not fully exercised in this pass |
+| Job execution + console stream | Logs stream, filter/copy/clear/resume behavior works | Partial | Worker/job logs observed in container logs; UI console behavior pending browser walkthrough |
+| Role/tenant isolation | Non-admin cannot read/modify other user resources | Partial | Owner-scoped API handlers and tests pass; live two-user browser verification pending |
+| Webhook smoke test | Completion webhook emitted with expected payload shape | Pending | Not fully exercised in this pass |
+| Quota warning smoke test | Quota threshold warning generated and observable | Pending | Not fully exercised in this pass |
 
 ## 3) Frontend beta usability checks
-- [ ] Mobile nav toggle works on narrow viewport
-- [ ] Keyboard-only path works for primary actions
+- [ ] Mobile nav toggle works on narrow viewport (requires browser walkthrough)
+- [ ] Keyboard-only path works for primary actions (requires browser walkthrough)
 - [x] Focus states are visible on links/buttons/forms (implemented in CSS; runtime verification blocked)
 - [x] Loading/empty/error states are readable and non-blocking (implemented; runtime verification blocked)
 - [x] No JS console errors on non-dashboard pages (guarded by null-safe checks; runtime verification blocked)
 
 ## 4) Notes / regressions / follow-up
 - Blockers:
-  - Docker acceptance blocked by migration failure: `ERROR: column "job_type" of relation "jobs" contains null values (SQLSTATE 23502)` in `internal/database/migrate.go` during container startup.
+  - No runtime blocker currently; app reached healthy state and worker processed jobs after one-time DB fix.
 - Known limitations:
   - UI runtime verification requires healthy `netrunner` service; currently blocked.
 - Follow-up issues:
-  - Add migration backfill strategy for legacy `jobs` rows before `NOT NULL` `job_type` enforcement.
+  - Keep one-time SQL backfill in release notes for existing Docker volumes with legacy `jobs` schema/data.
