@@ -2,7 +2,6 @@ package api
 
 import (
 	"log/slog"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -25,16 +24,7 @@ func NewWatchlistHandler(db *gorm.DB, service *services.WatchlistService) *Watch
 
 // ListWatchlists returns all watchlists for the current user
 func (h *WatchlistHandler) ListWatchlists(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -55,16 +45,7 @@ func (h *WatchlistHandler) ListWatchlists(c *fiber.Ctx) error {
 
 // CreateWatchlist creates a new automated watchlist
 func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -90,16 +71,7 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 
 // UpdateWatchlist updates an existing watchlist
 func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -137,16 +109,7 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 
 // DeleteWatchlist removes a watchlist
 func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -168,16 +131,7 @@ func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
 // Profile endpoints
 
 func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -195,16 +149,7 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 
 // ToggleWatchlist toggles enabled state
 func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -235,16 +180,7 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 
 // GetForm returns the watchlist form for add/edit
 func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 
 	isHtmx := c.Get("Htmx-Request") == "true"
 
@@ -297,16 +233,7 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderWatchlistsPartial returns watchlists HTML for HTMX
 func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 
 	isHtmx := c.Get("Htmx-Request") == "true"
 

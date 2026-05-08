@@ -88,6 +88,32 @@ docker compose up -d --build
 ```
 Access the management console at `http://localhost`.
 
+## ✅ Beta Operator Guide
+
+### What Works In Beta
+- Session-cookie auth with per-user owner scoping and admin overrides.
+- Full watchlist/library/profile/schedule/artist CRUD flows.
+- Job lifecycle operations with live console streaming and filters.
+- MCP operations for watchlists, libraries, monitored artists, and job cancel/retry.
+- Cover art source priority, quota warnings, and fingerprint persistence paths.
+
+### Known Limits
+- Beta targets single-node operator deployments.
+- Visual system is intentionally utilitarian; UX polish focuses on operations reliability.
+- Dependency-vulnerability follow-up is tracked separately from this beta readiness pass.
+
+### Beta Acceptance Steps
+1. Run `pwsh -File scripts/validate.ps1 -SkipVulnCheck`.
+2. Start stack with `docker compose up -d --build`.
+3. Validate operator flows: auth, watchlist sync, library scan, artist/schedule CRUD, job logs.
+4. Verify tenant isolation with separate non-admin users.
+5. Verify webhook + quota-warning smoke checks.
+
+### Rollback Basics
+1. Revert to previous known-good image/tag for `ops-web` and `ops-worker`.
+2. Keep database snapshots/backups before schema-affecting upgrades.
+3. Use `docker compose down` + restore `.env`/compose config from last release commit.
+
 ---
 
 ## 🛠️ Management CLI

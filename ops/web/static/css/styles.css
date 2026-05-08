@@ -76,12 +76,56 @@ body {
     padding: 0.5rem 0;
     border-bottom: 2px solid transparent;
 }
+.app-header nav a:focus-visible,
+.btn:focus-visible,
+.filter-btn:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.nav-toggle:focus-visible {
+    outline: 2px solid var(--accent-cyan);
+    outline-offset: 2px;
+}
 
 .app-header nav a:hover, 
 .app-header nav a.active {
     color: var(--accent-cyan);
     border-bottom-color: var(--accent-cyan);
     text-shadow: 0 0 8px var(--accent-cyan);
+}
+.skip-link {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.25rem;
+    z-index: 2000;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--accent-cyan);
+}
+.sr-only-focusable {
+    clip: rect(0, 0, 0, 0);
+}
+.sr-only-focusable:focus {
+    clip: auto;
+    width: auto;
+    height: auto;
+    margin: 0;
+    white-space: normal;
+}
+.nav-toggle {
+    display: none;
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 0.45rem 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 0.72rem;
+}
+.primary-nav {
+    display: flex;
+    gap: 0.75rem;
 }
 
 .app-main { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
@@ -262,6 +306,13 @@ body {
 .state-running { background: var(--accent-primary); color: var(--bg-primary); }
 .state-succeeded { background: var(--accent-success); color: var(--bg-primary); }
 .state-failed { background: var(--accent-error); color: white; }
+.job-card-running {
+    border-left: 3px solid var(--accent-cyan);
+}
+.job-card-failed {
+    border-left: 3px solid var(--accent-error);
+    box-shadow: 0 0 0 1px rgba(255, 0, 64, 0.2);
+}
 
 .job-meta {
     flex: 1;
@@ -558,5 +609,43 @@ body {
     font-size: 0.75rem;
     text-align: center;
     padding: 0.25rem;
+}
+.loading,
+.stats-loading,
+.watchlists-loading {
+    color: var(--text-secondary);
+    border: 1px dashed var(--border-color);
+    padding: 0.75rem;
+    text-align: center;
+}
+@media (max-width: 980px) {
+    .app-header {
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        padding: 1rem;
+    }
+    .nav-toggle {
+        display: inline-block;
+    }
+    .primary-nav {
+        width: 100%;
+        display: none;
+        flex-direction: column;
+        gap: 0.4rem;
+        padding-top: 0.35rem;
+    }
+    .primary-nav.nav-open {
+        display: flex;
+    }
+    .app-header nav a {
+        margin-left: 0;
+        padding: 0.6rem 0.25rem;
+    }
+    .app-main {
+        padding: 1rem;
+    }
+    .jobs-region .filters {
+        flex-direction: column;
+    }
 }
 

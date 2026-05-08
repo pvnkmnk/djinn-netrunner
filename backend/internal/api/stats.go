@@ -359,21 +359,7 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 
 // RenderStatsPartial returns stats HTML for HTMX
 func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
-	// Prefer authenticated user from middleware; fall back to session lookup when missing.
-	var user database.User
-	hasAuth := false
-	if localUser, ok := c.Locals("user").(database.User); ok && localUser.ID != 0 {
-		user = localUser
-		hasAuth = true
-	} else if localUser, ok := c.Locals("user").(*database.User); ok && localUser != nil && localUser.ID != 0 {
-		user = *localUser
-		hasAuth = true
-	} else if sessionID := c.Cookies("session_id"); sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := currentUserFromLocals(c)
 
 	isHtmx := c.Get("Htmx-Request") == "true"
 

@@ -39,6 +39,16 @@ function openModalFromHTMX(target) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    const navToggle = document.getElementById('nav-toggle');
+    const primaryNav = document.getElementById('primary-nav');
+    if (navToggle && primaryNav) {
+        navToggle.addEventListener('click', function() {
+            const expanded = navToggle.getAttribute('aria-expanded') === 'true';
+            navToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+            primaryNav.classList.toggle('nav-open', !expanded);
+        });
+    }
+
     // Add CSRF token to all HTMX requests.
     document.body.addEventListener('htmx:configRequest', function(evt) {
         const csrfToken = getCookie('csrf_');
@@ -80,19 +90,22 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     const consoleLogs = document.getElementById('console-logs');
+    const hasConsolePage = Boolean(consoleLogs);
     const filterBtns = document.querySelectorAll('.filter-btn');
     let autoScroll = true;
     let filter = 'all';
     
     // Filter buttons
-    filterBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            filterBtns.forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            filter = this.dataset.filter;
-            applyFilter();
+    if (hasConsolePage) {
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                filterBtns.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                filter = this.dataset.filter;
+                applyFilter();
+            });
         });
-    });
+    }
     
     function applyFilter() {
         const lines = consoleLogs.querySelectorAll('.log-line');
@@ -133,7 +146,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Copy Last 200 button
     const copyBtn = document.getElementById('btn-copy');
     const statusAnnouncer = document.getElementById('status-announcer');
-    if (copyBtn) {
+    if (copyBtn && hasConsolePage) {
         copyBtn.addEventListener('click', function() {
             const lines = Array.from(consoleLogs.querySelectorAll('.log-line'))
                 .slice(-200)
@@ -153,16 +166,18 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Clear button
     const clearBtn = document.getElementById('btn-clear');
-    if (clearBtn) {
+    if (clearBtn && hasConsolePage) {
         clearBtn.addEventListener('click', function() {
-            consoleLogs.innerHTML = '';
+            if (consoleLogs) {
+                consoleLogs.innerHTML = '';
+            }
         });
     }
     
     // WebSocket message handler (if using htmx ws)
     document.body.addEventListener('htmx:wsMessage', function(evt) {
         const msg = evt.detail.message;
-        if (msg && consoleLogs) {
+        if (msg && hasConsolePage && consoleLogs) {
             // Use DOMParser to safely parse HTML and prevent XSS
             const parser = new DOMParser();
             const doc = parser.parseFromString(msg, 'text/html');
