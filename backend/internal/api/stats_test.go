@@ -261,3 +261,33 @@ func TestStatsHandler_BOLA_Integration(t *testing.T) {
 	assert.Equal(t, int64(0), library.TotalTracks)
 	assert.Len(t, library.LibraryBreakdown, 0)
 }
+
+func TestStatsHandler_RenderStatsPartial_RejectsEmptyLocalsUser(t *testing.T) {
+	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	database.Migrate(db)
+	handler := NewStatsHandler(db)
+
+	testCases := []struct {
+		name      string
+		localUser interface{}
+	}{
+		{name: "empty value user", localUser: database.User{}},
+		{name: "empty pointer user", localUser: &database.User{}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			app.Use(func(c *fiber.Ctx) error {
+				c.Locals("user", tc.localUser)
+				return c.Next()
+			})
+			app.Get("/partials/stats", handler.RenderStatsPartial)
+
+			req := httptest.NewRequest("GET", "/partials/stats", nil)
+			resp, err := app.Test(req)
+			assert.NoError(t, err)
+			assert.Equal(t, 302, resp.StatusCode)
+		})
+	}
+}

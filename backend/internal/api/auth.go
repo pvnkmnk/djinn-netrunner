@@ -15,6 +15,7 @@ import (
 const (
 	SessionCookie = "session_id"
 	SessionTTL    = 7 * 24 * time.Hour
+	BcryptCost    = 12
 )
 
 type AuthHandler struct {
@@ -48,7 +49,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	// Hash password with secure cost factor (OWASP recommended: 12+)
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(payload.Password), 12)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(payload.Password), BcryptCost)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to hash password"})
 	}
