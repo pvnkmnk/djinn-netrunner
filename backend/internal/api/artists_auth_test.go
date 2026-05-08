@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +15,26 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/stretchr/testify/assert"
 )
+
+type captureViews struct {
+	lastTemplate string
+	lastBinding  fiber.Map
+}
+
+func (v *captureViews) Load() error {
+	return nil
+}
+
+func (v *captureViews) Render(w io.Writer, template string, binding interface{}, _ ...string) error {
+	v.lastTemplate = template
+	if m, ok := binding.(fiber.Map); ok {
+		v.lastBinding = m
+	} else {
+		v.lastBinding = fiber.Map{}
+	}
+	_, err := w.Write([]byte("rendered"))
+	return err
+}
 
 func TestArtistsAuthorization(t *testing.T) {
 	db := setupInMemoryDB(t)
@@ -90,4 +111,100 @@ func TestArtistsAuthorization(t *testing.T) {
 
 	db.First(&checkArtist, "id = ?", artist1.ID)
 	assert.True(t, checkArtist.Monitored)
+}
+
+func TestArtistsGetForm_NonAdminPrefersLocalsAndFiltersProfiles(t *testing.T) {
+	db := setupInMemoryDB(t)
+	sqlDB, err := db.DB()
+	assert.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+
+	views := &captureViews{}
+	app := fiber.New(fiber.Config{Views: views})
+
+	mbService := services.NewMusicBrainzService(nil)
+	atService := services.NewArtistTrackingService(db, mbService)
+	artistsHandler := NewArtistsHandler(db, atService, mbService)
+
+	user1 := database.User{Email: "user1-form@example.com", PasswordHash: "hash", Role: "user"}
+	user2 := database.User{Email: "user2-form@example.com", PasswordHash: "hash", Role: "user"}
+	assert.NoError(t, db.Create(&user1).Error)
+	assert.NoError(t, db.Create(&user2).Error)
+
+	sess2 := database.Session{SessionID: "sess-form-user2", UserID: user2.ID, ExpiresAt: time.Now().Add(24 * time.Hour)}
+	assert.NoError(t, db.Create(&sess2).Error)
+
+	assert.NoError(t, db.Create(&database.QualityProfile{Name: "User1 Owned Profile", OwnerUserID: &user1.ID}).Error)
+	assert.NoError(t, db.Create(&database.QualityProfile{Name: "Shared Profile"}).Error)
+	assert.NoError(t, db.Create(&database.QualityProfile{Name: "Default Profile", OwnerUserID: &user2.ID, IsDefault: true}).Error)
+	assert.NoError(t, db.Create(&database.QualityProfile{Name: "User2 Private Profile", OwnerUserID: &user2.ID}).Error)
+
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", user1)
+		return c.Next()
+	})
+	app.Get("/api/artists/form", artistsHandler.GetForm)
+
+	req := httptest.NewRequest("GET", "/api/artists/form", nil)
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "sess-form-user2"})
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	assert.Equal(t, "partials/artist-form", views.lastTemplate)
+	profiles, ok := views.lastBinding["profiles"].([]database.QualityProfile)
+	assert.True(t, ok)
+	names := make([]string, 0, len(profiles))
+	for _, p := range profiles {
+		names = append(names, p.Name)
+	}
+	assert.Contains(t, names, "User1 Owned Profile")
+	assert.Contains(t, names, "Shared Profile")
+	assert.Contains(t, names, "Default Profile")
+	assert.NotContains(t, names, "User2 Private Profile")
+}
+
+func TestArtistsGetForm_AdminSeesAllProfiles(t *testing.T) {
+	db := setupInMemoryDB(t)
+	sqlDB, err := db.DB()
+	assert.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+
+	views := &captureViews{}
+	app := fiber.New(fiber.Config{Views: views})
+
+	mbService := services.NewMusicBrainzService(nil)
+	atService := services.NewArtistTrackingService(db, mbService)
+	artistsHandler := NewArtistsHandler(db, atService, mbService)
+
+	admin := database.User{Email: "admin-form@example.com", PasswordHash: "hash", Role: "admin"}
+	other := database.User{Email: "other-form@example.com", PasswordHash: "hash", Role: "user"}
+	assert.NoError(t, db.Create(&admin).Error)
+	assert.NoError(t, db.Create(&other).Error)
+
+	assert.NoError(t, db.Create(&database.QualityProfile{Name: "Admin View Shared"}).Error)
+	assert.NoError(t, db.Create(&database.QualityProfile{Name: "Admin View Other Owned", OwnerUserID: &other.ID}).Error)
+	assert.NoError(t, db.Create(&database.QualityProfile{Name: "Admin View Default", OwnerUserID: &other.ID, IsDefault: true}).Error)
+
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", admin)
+		return c.Next()
+	})
+	app.Get("/api/artists/form", artistsHandler.GetForm)
+
+	req := httptest.NewRequest("GET", "/api/artists/form", nil)
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	assert.Equal(t, "partials/artist-form", views.lastTemplate)
+	profiles, ok := views.lastBinding["profiles"].([]database.QualityProfile)
+	assert.True(t, ok)
+	names := make([]string, 0, len(profiles))
+	for _, p := range profiles {
+		names = append(names, p.Name)
+	}
+	assert.Contains(t, names, "Admin View Shared")
+	assert.Contains(t, names, "Admin View Other Owned")
+	assert.Contains(t, names, "Admin View Default")
 }

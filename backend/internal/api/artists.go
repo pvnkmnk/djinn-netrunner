@@ -21,18 +21,33 @@ func NewArtistsHandler(db *gorm.DB, at *services.ArtistTrackingService, mb *serv
 	return &ArtistsHandler{db: db, atService: at, mbService: mb}
 }
 
+func (h *ArtistsHandler) resolveAuthenticatedUser(c *fiber.Ctx) (database.User, bool) {
+	if localUser, ok := c.Locals("user").(database.User); ok && localUser.ID != 0 {
+		return localUser, true
+	}
+	if localUser, ok := c.Locals("user").(*database.User); ok && localUser != nil && localUser.ID != 0 {
+		return *localUser, true
+	}
+
+	sessionID := c.Cookies("session_id")
+	if sessionID == "" {
+		return database.User{}, false
+	}
+
+	var user database.User
+	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+		First(&user).Error
+	if err != nil {
+		return database.User{}, false
+	}
+
+	return user, true
+}
+
 // GET /api/artists - List monitored artists
 func (h *ArtistsHandler) List(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := h.resolveAuthenticatedUser(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -46,16 +61,7 @@ func (h *ArtistsHandler) List(c *fiber.Ctx) error {
 
 // POST /api/artists - Add new artist by name
 func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := h.resolveAuthenticatedUser(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -117,16 +123,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 
 // DELETE /api/artists/:id - Remove monitored artist
 func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := h.resolveAuthenticatedUser(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -145,16 +142,7 @@ func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
 
 // PATCH /api/artists/:id - Update artist monitoring settings
 func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := h.resolveAuthenticatedUser(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -194,16 +182,7 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 
 // GetForm returns the artist form
 func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := h.resolveAuthenticatedUser(c)
 
 	isHtmx := c.Get("Htmx-Request") == "true"
 
@@ -215,7 +194,11 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 	}
 
 	var profiles []database.QualityProfile
-	if err := h.db.Find(&profiles).Error; err != nil {
+	query := h.db.Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?", user.ID, true)
+	}
+	if err := query.Find(&profiles).Error; err != nil {
 		slog.Error("Error fetching profiles for artist form", "error", err)
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
@@ -228,16 +211,7 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderPartial returns artists HTML for HTMX
 func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
-	var user database.User
-	hasAuth := false
-	if sessionID != "" {
-		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-			First(&user).Error
-		hasAuth = (err == nil)
-	}
+	user, hasAuth := h.resolveAuthenticatedUser(c)
 
 	isHtmx := c.Get("Htmx-Request") == "true"
 

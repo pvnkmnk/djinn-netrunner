@@ -359,11 +359,16 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 
 // RenderStatsPartial returns stats HTML for HTMX
 func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
-	// Auth check
-	sessionID := c.Cookies("session_id")
+	// Prefer authenticated user from middleware; fall back to session lookup when missing.
 	var user database.User
 	hasAuth := false
-	if sessionID != "" {
+	if localUser, ok := c.Locals("user").(database.User); ok {
+		user = localUser
+		hasAuth = true
+	} else if localUser, ok := c.Locals("user").(*database.User); ok && localUser != nil {
+		user = *localUser
+		hasAuth = true
+	} else if sessionID := c.Cookies("session_id"); sessionID != "" {
 		err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
 			Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
 			First(&user).Error
@@ -384,7 +389,12 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 	since := time.Now().Add(-24 * time.Hour)
 
 	// Use conditional aggregation for efficient single-query stats
-	if err := h.db.Model(&database.Job{}).Where("requested_at > ?", since).
+	jobQuery := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+	if user.Role != "admin" {
+		jobQuery = jobQuery.Where("owner_user_id = ?", user.ID)
+	}
+
+	if err := jobQuery.
 		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
 			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
 			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
