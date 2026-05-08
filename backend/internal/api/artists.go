@@ -2,7 +2,6 @@ package api
 
 import (
 	"log/slog"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -28,21 +27,7 @@ func (h *ArtistsHandler) resolveAuthenticatedUser(c *fiber.Ctx) (database.User, 
 	if localUser, ok := c.Locals("user").(*database.User); ok && localUser != nil && localUser.ID != 0 {
 		return *localUser, true
 	}
-
-	sessionID := c.Cookies("session_id")
-	if sessionID == "" {
-		return database.User{}, false
-	}
-
-	var user database.User
-	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-		First(&user).Error
-	if err != nil {
-		return database.User{}, false
-	}
-
-	return user, true
+	return database.User{}, false
 }
 
 // GET /api/artists - List monitored artists

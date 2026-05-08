@@ -362,10 +362,10 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 	// Prefer authenticated user from middleware; fall back to session lookup when missing.
 	var user database.User
 	hasAuth := false
-	if localUser, ok := c.Locals("user").(database.User); ok {
+	if localUser, ok := c.Locals("user").(database.User); ok && localUser.ID != 0 {
 		user = localUser
 		hasAuth = true
-	} else if localUser, ok := c.Locals("user").(*database.User); ok && localUser != nil {
+	} else if localUser, ok := c.Locals("user").(*database.User); ok && localUser != nil && localUser.ID != 0 {
 		user = *localUser
 		hasAuth = true
 	} else if sessionID := c.Cookies("session_id"); sessionID != "" {
