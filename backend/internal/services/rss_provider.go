@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/mmcdole/gofeed"
@@ -18,8 +19,19 @@ func NewRSSProvider() *RSSProvider {
 }
 
 func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
+	// SECURITY: Use SafeGetWithContext to prevent SSRF attacks when fetching RSS feeds from user-supplied URIs.
+	resp, err := SafeGetWithContext(ctx, watchlist.SourceURI)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to fetch RSS feed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("RSS feed source returned status: %d", resp.StatusCode)
+	}
+
 	fp := gofeed.NewParser()
-	feed, err := fp.ParseURLWithContext(watchlist.SourceURI, ctx)
+	feed, err := fp.Parse(resp.Body)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to parse RSS feed: %w", err)
 	}

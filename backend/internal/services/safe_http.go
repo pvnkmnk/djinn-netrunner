@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 // privateCIDRs contains CIDR ranges that should never be reachable via outbound HTTP.
@@ -26,6 +25,8 @@ var privateCIDRs = []string{
 // parsedCIDRs is populated at init time.
 var parsedCIDRs []*net.IPNet
 
+var allowLoopback bool // For testing only
+
 func init() {
 	for _, cidr := range privateCIDRs {
 		_, network, err := net.ParseCIDR(cidr)
@@ -38,6 +39,9 @@ func init() {
 
 // isPrivateIP returns true if ip is in a private/loopback/link-local range.
 func isPrivateIP(ip net.IP) bool {
+	if allowLoopback && (ip.IsLoopback() || ip.String() == "127.0.0.1" || ip.String() == "::1") {
+		return false
+	}
 	for _, network := range parsedCIDRs {
 		if network.Contains(ip) {
 			return true
@@ -47,6 +51,12 @@ func isPrivateIP(ip net.IP) bool {
 }
 
 // SafeGet performs an HTTP GET after verifying the target does not resolve to a
+// private IP address.
+func SafeGet(rawURL string) (*http.Response, error) {
+	return SafeGetWithContext(context.Background(), rawURL)
+}
+
+// SafeGetWithContext performs an HTTP GET after verifying the target does not resolve to a
 // private IP address. This prevents SSRF (Server-Side Request Forgery) attacks
 // where an attacker supplies a URL pointing to internal services.
 //
@@ -54,7 +64,7 @@ func isPrivateIP(ip net.IP) bool {
 // and dialing directly to the verified IP via a custom transport. Redirects
 // are disabled to prevent redirect-based SSRF.
 // See: https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
-func SafeGet(rawURL string) (*http.Response, error) {
+func SafeGetWithContext(ctx context.Context, rawURL string) (*http.Response, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: invalid URL: %w", err)
@@ -99,7 +109,8 @@ func SafeGet(rawURL string) (*http.Response, error) {
 	dialAddr := net.JoinHostPort(safeIP.String(), port)
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return net.Dial("tcp", dialAddr)
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", dialAddr)
 		},
 		TLSClientConfig: &tls.Config{
 			ServerName: hostname, // SNI must match the original hostname for HTTPS
@@ -107,7 +118,6 @@ func SafeGet(rawURL string) (*http.Response, error) {
 	}
 
 	client := &http.Client{
-		Timeout:   30 * time.Second,
 		Transport: transport,
 		// Disable redirects — an attacker could redirect a safe URL to an internal one
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -115,5 +125,10 @@ func SafeGet(rawURL string) (*http.Response, error) {
 		},
 	}
 
-	return client.Get(rawURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return client.Do(req)
 }

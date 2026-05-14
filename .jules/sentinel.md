@@ -34,3 +34,8 @@
 **Vulnerability:** Non-admin users could promote their own quality profiles to system-wide defaults by setting the `is_default` flag in create/update requests.
 **Learning:** Resource attributes that affect global system state (like a 'default' flag) must be explicitly protected by role-based checks in the API handlers.
 **Prevention:** In handlers that accept boolean flags for global settings, verify that the authenticated user has the necessary administrative role before allowing those flags to be modified.
+
+## 2026-05-14 - [SSRF in RSS Feed Provider]
+**Vulnerability:** `RSSProvider` used `gofeed.ParseURLWithContext` which performed direct HTTP fetches, bypassing the application's centralized SSRF protections.
+**Learning:** Third-party libraries that perform network I/O must be carefully reviewed. If they offer "convenience" methods that take URLs, they often bypass custom safe HTTP clients or transport validations.
+**Prevention:** Always fetch external content using a hardened, centralized safe HTTP client (e.g., `SafeGetWithContext`) and then pass the response body/reader to the library's parsing methods instead of letting the library handle the fetch.

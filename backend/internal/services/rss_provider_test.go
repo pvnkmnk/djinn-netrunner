@@ -11,6 +11,9 @@ import (
 )
 
 func TestRSSProvider_FetchTracks(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	// Mock Bandcamp-style RSS feed
 	mockRSS := `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
