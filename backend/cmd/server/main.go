@@ -251,8 +251,17 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	// Jobs
 	jobRoutes := apiProtected.Group("/jobs")
 	jobRoutes.Get("/", func(c *fiber.Ctx) error {
+		user, ok := c.Locals("user").(database.User)
+		if !ok {
+			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+		}
+
 		var jobs []database.Job
-		if err := db.Order("requested_at DESC").Limit(50).Find(&jobs).Error; err != nil {
+		q := db.Order("requested_at DESC").Limit(50)
+		if user.Role != "admin" {
+			q = q.Where("owner_user_id = ?", user.ID)
+		}
+		if err := q.Find(&jobs).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(jobs)
@@ -269,6 +278,17 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
 		}
+		user, ok := c.Locals("user").(database.User)
+		if !ok {
+			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+		}
+		var job database.Job
+		if err := db.First(&job, jobID).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "job not found"})
+		}
+		if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+		}
 		if err := agent.RetryJob(db, jobID); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -278,6 +298,17 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		jobID, err := parseUint64(c.Params("id"))
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
+		}
+		user, ok := c.Locals("user").(database.User)
+		if !ok {
+			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+		}
+		var job database.Job
+		if err := db.First(&job, jobID).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "job not found"})
+		}
+		if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 		}
 		if err := agent.CancelJob(db, jobID); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})

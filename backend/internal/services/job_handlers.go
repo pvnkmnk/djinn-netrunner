@@ -820,12 +820,6 @@ func (h *AcquisitionHandler) failItem(jobID uint64, itemID uint64, reason string
 			"retry_count":    item.RetryCount + 1,
 			"finished_at":    time.Now(),
 		})
-		// Mark the parent job as abandoned too
-		h.db.Model(&database.Job{}).Where("id = ?", jobID).Updates(map[string]interface{}{
-			"state":        "abandoned",
-			"error_detail": reason,
-			"finished_at":  time.Now(),
-		})
 		return
 	}
 
