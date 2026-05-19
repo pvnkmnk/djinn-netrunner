@@ -5,7 +5,7 @@ This document defines the UI patterns and contracts for the NETRUNNER operations
 ## Principles
 - Console-first UX: logs are the progress visualization; avoid progress bars/spinners as primary UI.
 - HTMX server-rendered partials: keep UI logic on the server; minimal JS only for console controls.
-- Event-driven updates: use PostgreSQL LISTEN/NOTIFY + WebSockets; do not poll the database for console output.
+- Event-driven updates: use PostgreSQL LISTEN/NOTIFY + WebSockets for console output on the production stack; do not add UI polling loops. SQLite dev mode may use worker polling instead of NOTIFY (see `docs/WHITEPAPER.md` deployment modes).
 
 ## Page structure
 The main page is a server-rendered shell with:

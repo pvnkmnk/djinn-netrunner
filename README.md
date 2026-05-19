@@ -55,8 +55,8 @@ NetRunner 2.2 is a security-hardened, performance-optimized evolution of the mus
 
 ### 1. Clone & Configure
 ```bash
-git clone https://github.com/pvnkmnk/netrunner.git
-cd netrunner
+git clone https://github.com/pvnkmnk/djinn-netrunner.git
+cd djinn-netrunner
 cp .env.example .env
 ```
 

@@ -11,9 +11,10 @@ Core identity: console-first, operator-centric appliance; logs are the primary p
 Non-negotiable constraints:
 - Keep HTMX server-rendered UI; do not introduce a SPA framework.
 - Keep styling in a single CSS file and minimal JS; do not split into component systems.
-- Keep PostgreSQL as the system-of-record; avoid introducing external queues/caches.
+- Use PostgreSQL as the system-of-record for production (Docker Compose); SQLite is supported for local single-binary dev only.
+- Avoid introducing external queues/caches (Redis is reserved, not required today).
 - Preserve deterministic work: jobitems are durable plans created before execution; requeues resume and never regenerate.
-- Preserve event-driven updates via LISTEN/NOTIFY; avoid UI polling loops.
+- Preserve event-driven console updates via LISTEN/NOTIFY on PostgreSQL; avoid UI polling loops. SQLite dev may use worker polling instead of NOTIFY.
 
 Docs to read before making changes:
 - docs/MANIFEST.md

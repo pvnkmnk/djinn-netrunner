@@ -13,6 +13,14 @@ The core UX is a “protocol console”: structured logs are the primary progres
 - Not a general-purpose media manager with heavy client apps or a large SPA frontend.
 - Not a distributed queue platform; external queues/caches are intentionally avoided in the baseline design.
 
+## Deployment modes (database)
+| Mode | `DATABASE_URL` | Worker wakeups | Typical use |
+|------|----------------|----------------|-------------|
+| **Production stack** | `postgresql://...` (Docker Compose default) | `LISTEN/NOTIFY` + WebSockets | Multi-service appliance behind Caddy |
+| **Local dev** | SQLite file path (e.g. `netrunner.db`) | Polling loops (no Postgres NOTIFY) | Single-binary `go run ./cmd/server` + worker |
+
+Both modes share the same schema and GORM models. Production invariants (row locks, advisory locks, NOTIFY fanout) apply fully only on PostgreSQL.
+
 ## System overview
 NETRUNNER runs as a small container stack:
 - Caddy: edge proxy + TLS termination

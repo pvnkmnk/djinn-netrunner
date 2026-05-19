@@ -83,7 +83,7 @@ The worker orchestrates multiple specialized services:
 NetRunner implements an embedded **Model Context Protocol (MCP)** server at `backend/cmd/agent`. This allows AI agents to:
 - **Probe System**: Check connectivity and resource health (`probe_system`).
 - **Manage Watchlists**: Add, list, or trigger sync on automated discovery sources (`add_watchlist`, `list_watchlists`, `sync_watchlist`).
-- **Monitor Pipeline**: View real-time job logs and statuses (`get_job`, `get_job_logs`).
+- **Monitor Pipeline**: View real-time job logs and statuses (`list_jobs`, `get_job_logs`).
 - **Search Library**: Query the combined Gonic and local indices (`search_library`).
 - **Manage Libraries**: Scan or add library paths (`scan_library`, `add_library`).
 - **Manage Artists**: List monitored artists (`list_monitored_artists`).
