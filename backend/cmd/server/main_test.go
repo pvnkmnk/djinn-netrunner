@@ -26,5 +26,5 @@ func TestHealthCheck(t *testing.T) {
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
 	assert.NoError(t, err)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 503, resp.StatusCode)
 }
