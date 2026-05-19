@@ -99,7 +99,7 @@ func SetupIntegrationHarness(t *testing.T) *IntegrationHarness {
 	
 	harness.DB = db
 	harness.Config = cfg
-	harness.Slskd = services.NewSlskdService(cfg)
+	harness.Slskd = services.NewSlskdService(cfg, db)
 	
 	// Wait for slskd to be healthy
 	if err := harness.waitForSlskd(t); err != nil {

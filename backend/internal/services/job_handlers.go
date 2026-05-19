@@ -799,6 +799,36 @@ func (h *AcquisitionHandler) failItem(jobID uint64, itemID uint64, reason string
 		return
 	}
 
+	// Check job-level max attempts to determine if item should be abandoned
+	var job database.Job
+	abandoned := false
+	if err := h.db.First(&job, jobID).Error; err == nil {
+		maxAttempts := job.MaxAttempts
+		if maxAttempts <= 0 {
+			maxAttempts = 3 // safety default
+		}
+		if item.RetryCount+1 >= maxAttempts {
+			abandoned = true
+		}
+	}
+
+	if abandoned {
+		slog.Warn("Item exceeded max retries, abandoning", "job_id", jobID, "item_id", itemID, "retries", item.RetryCount+1)
+		h.db.Model(&database.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
+			"status":         "abandoned",
+			"failure_reason": reason,
+			"retry_count":    item.RetryCount + 1,
+			"finished_at":    time.Now(),
+		})
+		// Mark the parent job as abandoned too
+		h.db.Model(&database.Job{}).Where("id = ?", jobID).Updates(map[string]interface{}{
+			"state":        "abandoned",
+			"error_detail": reason,
+			"finished_at":  time.Now(),
+		})
+		return
+	}
+
 	backoff := database.CalculateBackoff(item.RetryCount)
 	nextAttempt := time.Now().Add(backoff)
 

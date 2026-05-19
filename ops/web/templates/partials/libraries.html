@@ -14,6 +14,9 @@
             <div class="path">{{ library.Path }}</div>
         </div>
         <div class="actions">
+            <button class="btn btn-sm" hx-get="/partials/libraries/{{ library.ID }}/browse" hx-target="#libraries-region" hx-swap="innerHTML" aria-label="Browse library {{ library.Name }}">
+                Browse
+            </button>
             <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/scan" hx-target="#console-logs" aria-label="Scan library {{ library.Name }}">
                 Scan
             </button>

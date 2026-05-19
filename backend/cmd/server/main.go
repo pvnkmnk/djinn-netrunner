@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/pvnkmnk/netrunner/backend/internal/agent"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
@@ -179,6 +182,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/partials/artists", auth.AuthMiddleware, artistsHandler.RenderPartial)
 	app.Get("/partials/artist-form", auth.AuthMiddleware, artistsHandler.GetForm)
 	app.Get("/partials/jobs", auth.AuthMiddleware, stats.RenderJobsPartial)
+	app.Get("/partials/libraries/:id/browse", auth.AuthMiddleware, library.BrowseTracks)
+	app.Get("/partials/tracks/:id", auth.AuthMiddleware, library.TrackDetail)
 
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
@@ -231,6 +236,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	libraryRoutes.Delete("/:id", library.DeleteLibrary)
 	libraryRoutes.Post("/:id/scan", library.TriggerScan)
 	libraryRoutes.Post("/:id/enrich", library.TriggerEnrich)
+	libraryRoutes.Post("/:id/prune", library.TriggerPrune)
 	libraryRoutes.Get("/:id/tracks", library.ListTracks)
 
 	// Stats
@@ -244,13 +250,39 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 
 	// Jobs
 	jobRoutes := apiProtected.Group("/jobs")
-	jobRoutes.Get("/", func(c *fiber.Ctx) error { return nil })
+	jobRoutes.Get("/", func(c *fiber.Ctx) error {
+		var jobs []database.Job
+		if err := db.Order("requested_at DESC").Limit(50).Find(&jobs).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(jobs)
+	})
 	jobRoutes.Post("/sync", func(c *fiber.Ctx) error {
 		watchlistID := c.Query("watchlist_id")
 		if watchlistID != "" {
 			return c.JSON(fiber.Map{"status": "watchlist_sync_triggered", "id": watchlistID})
 		}
 		return c.Status(400).JSON(fiber.Map{"error": "no scope specified"})
+	})
+	jobRoutes.Post("/:id/retry", func(c *fiber.Ctx) error {
+		jobID, err := parseUint64(c.Params("id"))
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
+		}
+		if err := agent.RetryJob(db, jobID); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "retry_queued", "job_id": jobID})
+	})
+	jobRoutes.Post("/:id/cancel", func(c *fiber.Ctx) error {
+		jobID, err := parseUint64(c.Params("id"))
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
+		}
+		if err := agent.CancelJob(db, jobID); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "cancelled", "job_id": jobID})
 	})
 
 	// WebSockets
@@ -280,4 +312,12 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		}
 		return c.JSON(fiber.Map{"status": "scan_triggered"})
 	})
+}
+
+func parseUint64(s string) (uint64, error) {
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid uint64: %s", s)
+	}
+	return n, nil
 }

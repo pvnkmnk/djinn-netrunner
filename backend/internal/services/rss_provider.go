@@ -36,6 +36,9 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 		if len(parts) == 2 {
 			artist = strings.TrimSpace(parts[0])
 			title = strings.TrimSpace(parts[1])
+		} else {
+			// Fallback: use feed/channel title as artist (for Bandcamp-style feeds)
+			artist = strings.TrimSpace(feed.Title)
 		}
 
 		coverURL := ""

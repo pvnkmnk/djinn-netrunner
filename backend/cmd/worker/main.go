@@ -644,6 +644,20 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 
 	doneEnrich:
 		slog.Info("Enriched tracks for library", "count", enriched, "library", library.Name)
+	case "prune":
+		libraryID, err := uuid.Parse(jc.job.ScopeID)
+		if err != nil {
+			err = fmt.Errorf("invalid library UUID: %w", err)
+			w.finishJob(jc.job.ID, err)
+			return
+		}
+		var library database.Library
+		if err := w.db.First(&library, "id = ?", libraryID).Error; err != nil {
+			w.finishJob(jc.job.ID, err)
+			return
+		}
+		slog.Info("Pruning library", "name", library.Name, "library_id", libraryID)
+		err = w.scanService.PruneTracks(jc.ctx, libraryID)
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}

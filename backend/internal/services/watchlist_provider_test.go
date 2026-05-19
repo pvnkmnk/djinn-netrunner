@@ -6,30 +6,17 @@ import (
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/interfaces"
+	"github.com/pvnkmnk/netrunner/backend/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
-type MockProvider struct {
-	tracks []map[string]string
-	snapID string
-	err    error
-}
-
-func (m *MockProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
-	return m.tracks, m.snapID, m.err
-}
-
-func (m *MockProvider) ValidateConfig(config string) error {
-	return nil
-}
-
 func TestProviderInterface(t *testing.T) {
 	// This test simply ensures the interface is usable as expected
-	var provider interfaces.WatchlistProvider = &MockProvider{
-		tracks: []map[string]string{
+	var provider interfaces.WatchlistProvider = &testutil.MockProvider{
+		Tracks: []map[string]string{
 			{"artist": "Test Artist", "title": "Test Track"},
 		},
-		snapID: "test-snap",
+		SnapID: "test-snap",
 	}
 
 	tracks, snap, err := provider.FetchTracks(context.Background(), &database.Watchlist{})
