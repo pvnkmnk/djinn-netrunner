@@ -1,8 +1,8 @@
 package api
 
 import (
-	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -20,8 +20,9 @@ type HealthHandler struct {
 
 // HealthCheck represents the status of a single dependency.
 type HealthCheck struct {
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // HealthResponse is the top-level health payload.
@@ -62,11 +63,13 @@ func (h *HealthHandler) GetHealth(c *fiber.Ctx) error {
 	}
 
 	status := "ok"
+	code := fiber.StatusOK
 	if dbCheck := checks["database"]; dbCheck.Status != "ok" {
 		status = "degraded"
+		code = fiber.StatusServiceUnavailable
 	}
 
-	return c.JSON(HealthResponse{
+	return c.Status(code).JSON(HealthResponse{
 		Status: status,
 		Checks: checks,
 	})
@@ -92,26 +95,22 @@ func (h *HealthHandler) checkHTTP(url string, timeout time.Duration) HealthCheck
 	if err != nil {
 		return HealthCheck{Status: "error", Error: err.Error()}
 	}
-	resp.Body.Close()
-	if resp.StatusCode >= 500 {
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
 		return HealthCheck{Status: "error", Error: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
 	return HealthCheck{Status: "ok"}
 }
 
 func (h *HealthHandler) checkDisk(path string) HealthCheck {
-	var stat sql.NullInt64
-	// Best-effort disk usage via OS-specific statfs; fall back to a simple
-	// directory readability check when the system call is unavailable.
-	if err := h.db.Raw("SELECT NULL").Scan(&stat).Error; err != nil {
-		// not a real error — just a sanity probe that the handler is wired correctly
-		_ = err
-	}
-
-	// Check we can read the directory (fast surface-level check).
-	entries, err := os.ReadDir(path)
+	dir, err := os.Open(path)
 	if err != nil {
 		return HealthCheck{Status: "error", Error: err.Error()}
 	}
-	return HealthCheck{Status: "ok", Error: fmt.Sprintf("%d entries", len(entries))}
+	defer dir.Close()
+
+	if _, err := dir.Readdirnames(1); err != nil && err != io.EOF {
+		return HealthCheck{Status: "error", Error: err.Error()}
+	}
+	return HealthCheck{Status: "ok", Message: "directory accessible"}
 }
