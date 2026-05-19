@@ -9,19 +9,23 @@
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
-    <header class="app-header">
+    <a class="sr-only sr-only-focusable skip-link" href="#main-content">Skip to main content</a>
+    <header class="app-header" role="banner">
         <h1>NETRUNNER</h1>
-        <nav>
-            <a href="/" {% if Page == "dashboard" %}class="active"{% endif %}>Dashboard</a>
-            <a href="/watchlists" {% if Page == "watchlists" %}class="active"{% endif %}>Watchlists</a>
-            <a href="/libraries" {% if Page == "libraries" %}class="active"{% endif %}>Libraries</a>
-            <a href="/profiles" {% if Page == "profiles" %}class="active"{% endif %}>Profiles</a>
-            <a href="/schedules" {% if Page == "schedules" %}class="active"{% endif %}>Schedules</a>
-            <a href="/artists" {% if Page == "artists" %}class="active"{% endif %}>Artists</a>
-            <a href="/jobs" {% if Page == "jobs" %}class="active"{% endif %}>Jobs</a>
+        <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav" aria-label="Toggle navigation">
+            Menu
+        </button>
+        <nav id="primary-nav" class="primary-nav" aria-label="Primary">
+            <a href="/" {% if Page == "dashboard" %}class="active" aria-current="page"{% endif %}>Dashboard</a>
+            <a href="/watchlists" {% if Page == "watchlists" %}class="active" aria-current="page"{% endif %}>Watchlists</a>
+            <a href="/libraries" {% if Page == "libraries" %}class="active" aria-current="page"{% endif %}>Libraries</a>
+            <a href="/profiles" {% if Page == "profiles" %}class="active" aria-current="page"{% endif %}>Profiles</a>
+            <a href="/schedules" {% if Page == "schedules" %}class="active" aria-current="page"{% endif %}>Schedules</a>
+            <a href="/artists" {% if Page == "artists" %}class="active" aria-current="page"{% endif %}>Artists</a>
+            <a href="/jobs" {% if Page == "jobs" %}class="active" aria-current="page"{% endif %}>Jobs</a>
         </nav>
     </header>
-    <main class="app-main">
+    <main id="main-content" class="app-main" role="main" tabindex="-1">
         {% block content %}{% endblock %}
     </main>
     <footer class="app-footer">

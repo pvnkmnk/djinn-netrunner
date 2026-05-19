@@ -26,8 +26,26 @@ func Migrate(db *gorm.DB) error {
 		// All steps are idempotent — they safely handle fresh DBs, partially migrated
 		// DBs, and fully migrated DBs.
 
-		// Step 1: Drop GORM's duplicate job_type column if it exists alongside jobtype.
-		db.Exec("ALTER TABLE jobs DROP COLUMN IF EXISTS job_type")
+		// Step 1: Handle legacy jobtype/job_type safely.
+		// If both columns exist, keep job_type and only drop the legacy enum-backed
+		// jobtype after backfilling missing values from it.
+		var hasJobType, hasLegacyJobtype bool
+		db.Raw(`
+			SELECT EXISTS(
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'job_type'
+			)`).Scan(&hasJobType)
+		db.Raw(`
+			SELECT EXISTS(
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'jobtype'
+			)`).Scan(&hasLegacyJobtype)
+
+		if hasJobType && hasLegacyJobtype {
+			db.Exec("ALTER TABLE jobs ALTER COLUMN jobtype TYPE text USING jobtype::text")
+			db.Exec("UPDATE jobs SET job_type = COALESCE(NULLIF(job_type, ''), jobtype) WHERE job_type IS NULL OR job_type = ''")
+			db.Exec("ALTER TABLE jobs DROP COLUMN IF EXISTS jobtype")
+		}
 
 		// Step 2: Rename jobtype → job_type and convert to text.
 		// Only runs if jobtype column exists and is the ENUM type.
@@ -39,14 +57,20 @@ func Migrate(db *gorm.DB) error {
 			JOIN pg_namespace ON relnamespace = pg_namespace.oid
 			WHERE attname = 'jobtype' AND relname = 'jobs' AND nspname = 'public'`).
 			Scan(&jobtypeType)
-		if jobtypeType == "jobtype" {
-			if err := db.Exec("ALTER TABLE jobs ALTER COLUMN jobtype TYPE text USING jobtype::text").Error; err != nil {
-				return fmt.Errorf("failed to convert jobs.jobtype enum to text: %w", err)
+		if !hasJobType && hasLegacyJobtype {
+			if jobtypeType == "jobtype" {
+				if err := db.Exec("ALTER TABLE jobs ALTER COLUMN jobtype TYPE text USING jobtype::text").Error; err != nil {
+					return fmt.Errorf("failed to convert jobs.jobtype enum to text: %w", err)
+				}
 			}
 			if err := db.Exec("ALTER TABLE jobs RENAME COLUMN jobtype TO job_type").Error; err != nil {
 				return fmt.Errorf("failed to rename jobs.jobtype to job_type: %w", err)
 			}
 		}
+
+		// Step 2b: Ensure job_type is backfilled before AutoMigrate can enforce NOT NULL.
+		// Legacy rows can exist with NULL/blank type due to partial migrations.
+		db.Exec("UPDATE jobs SET job_type = COALESCE(NULLIF(job_type, ''), 'sync') WHERE job_type IS NULL OR job_type = ''")
 
 		// Step 3: Convert remaining ENUM columns to text (idempotent if already text or gone).
 		for _, m := range []struct{ table, column, enumType string }{

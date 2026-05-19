@@ -80,6 +80,22 @@ Weekly:
 - Check disk space for downloads + library paths.
 - Review failed jobs and error patterns.
 
+## Beta release checklist (operator)
+1. Automated gate:
+   - `pwsh -File scripts/validate.ps1 -SkipVulnCheck`
+2. Manual Docker acceptance:
+   - Login/logout and registration flow.
+   - Watchlist create/edit/sync/preview.
+   - Library create/scan and job completion.
+   - Artist + schedule CRUD.
+   - Live console attach/filter/copy/clear behavior.
+3. Security/tenancy checks:
+   - Non-admin cannot access other users' watchlists/libraries/jobs/partials.
+   - Admin can view global data and event stream as expected.
+4. Notification/quotas:
+   - Webhook completion payload observed.
+   - Quota warning path exercised and logged.
+
 Optional cleanup:
 delete from joblogs
 where ts < now() - interval '30 days';

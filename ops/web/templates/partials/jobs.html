@@ -18,7 +18,7 @@
     
     <div id="jobs-list">
     {% for job in jobs %}
-    <div class="job-card" id="job-{{ job.ID }}">
+    <div class="job-card {% if job.State == "failed" %}job-card-failed{% endif %}{% if job.State == "running" %} job-card-running{% endif %}" id="job-{{ job.ID }}">
         <div class="job-info">
             <div class="job-id">#{{ job.ID }}</div>
             <div class="job-type">{{ job.Type }}</div>
