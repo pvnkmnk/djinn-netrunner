@@ -30,8 +30,7 @@ jobs:
         env:
           CGO_ENABLED: 0
 
-      - name: Vulnerability scan (non-blocking)
-        continue-on-error: true
+      - name: Vulnerability scan
         working-directory: backend
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest

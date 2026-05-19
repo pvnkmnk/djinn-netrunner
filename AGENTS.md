@@ -191,8 +191,9 @@ Schema/migration sources:
 - Coverage:
   - CI uses `go test ./... -coverprofile=coverage.out`
 
-Known caveat (2026-05-07):
-- `go test ./...` currently fails in `internal/api` on path-validation expectation mismatches in `libraries_test.go` on this Windows workspace.
+Known caveat (2026-05-07, resolved 2026-05-19):
+- ~~`go test ./...` currently fails in `internal/api` on path-validation expectation mismatches in `libraries_test.go` on this Windows workspace.~~
+- **RESOLVED**: Commit `1250fe4` fixed cross-platform path handling in `libraries_test.go`. All tests pass on both Windows and Linux.
 
 ## Common Agent Tasks
 
@@ -245,9 +246,9 @@ Known caveat (2026-05-07):
 - `<!-- OUTDATED: prior guide states Redis-backed rate limiting is mandatory. Current auth limiter in server setup uses Fiber limiter defaults and does not wire Redis storage. -->`
 - `<!-- OUTDATED: prior guide references Nginx ownership in ops. Current reverse proxy config is Caddy (`ops/caddy/Caddyfile`). -->`
 - `<!-- OUTDATED: prior guide says avoid hardcoded role names absolutely. Current code still has explicit role checks (e.g., "admin") in handlers; keep behavior consistent unless performing coordinated RBAC refactor. -->`
-- Full test suite currently reports known failures in `internal/api/libraries_test.go` on this Windows environment.
+- <!-- RESOLVED 2026-05-19: library test path failures fixed in commit 1250fe4. All tests pass cross-platform. -->
 - `database.Migrate` contains PostgreSQL enum-to-text conversions; read it before modifying job state columns.
-- `backend/entrypoint.sh` starts both worker and server in the same container. For local debugging, running binaries separately is often clearer.
+- `backend/entrypoint.sh` is a single-process bootstrap for Docker (creates dirs, logs, exec). The Docker Compose stack runs `ops-web` and `ops-worker` as separate services with different `command` overrides. For local debugging, run binaries directly with `go run ./cmd/server` or `go run ./cmd/worker`.
 - Spotify OAuth defaults callback to `http://localhost:8080/api/auth/spotify/callback` unless `SPOTIFY_REDIRECT_URI` is set.
 
 ## Skill Index
