@@ -11,7 +11,7 @@ require (
 	github.com/go-flac/flacpicture/v2 v2.0.2
 	github.com/go-flac/go-flac/v2 v2.0.4
 	github.com/gofiber/contrib/websocket v1.3.4
-	github.com/gofiber/fiber/v2 v2.52.12
+	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.11.2
