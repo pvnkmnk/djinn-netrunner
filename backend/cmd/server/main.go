@@ -89,6 +89,7 @@ func main() {
 	})
 
 	// Handlers
+	healthHandler := api.NewHealthHandler(db, cfg)
 	authHandler := api.NewAuthHandler(db)
 	dashHandler := api.NewDashboardHandler(db)
 	statsHandler := api.NewStatsHandler(db)
@@ -100,6 +101,9 @@ func main() {
 	wsManager := api.NewWebSocketManager()
 	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
 	schedulesHandler := api.NewSchedulesHandler(db)
+
+	// Health check (public, no authentication)
+	app.Get("/api/health", healthHandler.GetHealth)
 
 	// Start log listener
 	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
@@ -126,11 +130,6 @@ func main() {
 func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
-
-	// Health check
-	apiPublic.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
-	})
 
 	// Auth routes
 	authRoutes := apiPublic.Group("/auth")

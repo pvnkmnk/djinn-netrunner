@@ -61,11 +61,11 @@ EXPOSE 8080
 # Create volumes for persistent data
 VOLUME /app/config /app/data /app/logs /app/downloads /app/music
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 CMD wget -qO- http://localhost:8080/api/health || exit 1
-
 # Switch to non-root user
 USER netrunner
 
-# Use entrypoint script directly (no tini needed for Go apps)
+# Entrypoint handles directory setup, then runs the command
 ENTRYPOINT ["/entrypoint.sh"]
+
+# Default command: start the server
+CMD ["./netrunner-server"]

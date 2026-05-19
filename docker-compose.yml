@@ -55,15 +55,18 @@ services:
       - "443:443"
       - "443:443/udp"
     depends_on:
-      - netrunner
-      - gonic
+      ops-web:
+        condition: service_healthy
+      gonic:
+        condition: service_started
     restart: unless-stopped
 
-  netrunner:
+  ops-web:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: netrunner
+    container_name: ops-web
+    command: ["./netrunner-server"]
     environment:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030
@@ -76,7 +79,6 @@ services:
       TEMPLATES_PATH: /app/templates
       DOWNLOAD_STAGING: /app/downloads
       MUSIC_LIBRARY: /app/music
-      WORKER_ID: ${HOSTNAME:-netrunner-1}
     volumes:
       - netrunner-config:/app/config
       - netrunner-logs:/app/logs
@@ -88,8 +90,47 @@ services:
       slskd:
         condition: service_started
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  ops-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ops-worker
+    command: ["./netrunner-worker"]
+    environment:
+      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
+      SLSKD_URL: http://netrunner-slskd:5030
+      SLSKD_API_KEY: ${SLSKD_API_KEY}
+      GONIC_URL: http://netrunner-gonic:4747
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      MUSIC_LIBRARY: /app/music
+      WORKER_ID: ${HOSTNAME:-ops-worker-1}
+    volumes:
+      - netrunner-config:/app/config
+      - netrunner-logs:/app/logs
+      - netrunner-downloads:/app/downloads
+      - netrunner-music:/app/music
+    depends_on:
+      postgres:
+        condition: service_healthy
+      slskd:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
 
 volumes:
   netrunner-postgres-data:

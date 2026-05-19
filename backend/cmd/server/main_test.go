@@ -20,6 +20,8 @@ func TestHealthCheck(t *testing.T) {
 		AuthRateLimitMax:        10,
 		AuthRateLimitExpiration: "1m",
 	}
+	healthHandler := api.NewHealthHandler(nil, cfg)
+	app.Get("/api/health", healthHandler.GetHealth)
 	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler)
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
