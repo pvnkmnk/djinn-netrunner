@@ -19,6 +19,9 @@ gonic-data/
 download-staging/
 music-library/
 
+# Local tool artifacts
+.gitnexus/
+
 # IDE
 .vscode/
 .idea/
