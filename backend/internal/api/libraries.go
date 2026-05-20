@@ -26,7 +26,7 @@ func validateLibraryPath(path string) error {
 
 	info, err := os.Stat(cleanPath)
 	if err != nil {
-		return fmt.Errorf("library path does not exist: %w", err)
+		return fmt.Errorf("library path does not exist or is inaccessible")
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("library path must be a directory")
@@ -58,7 +58,7 @@ func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&libraries).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(libraries)
@@ -86,7 +86,7 @@ func (h *LibraryHandler) GetLibrary(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(library)
@@ -126,7 +126,7 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&library).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.Status(201).JSON(library)
@@ -153,7 +153,7 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	var input struct {
@@ -200,7 +200,7 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Save(&library).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(library)
@@ -227,7 +227,7 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	// Delete associated tracks and library in a transaction
@@ -237,7 +237,7 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 		}
 		return tx.Delete(&library).Error
 	}); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.SendStatus(204)
@@ -264,7 +264,7 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	// Create scan job
@@ -279,7 +279,7 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&job).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.Status(202).JSON(fiber.Map{
@@ -309,7 +309,7 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	// Create enrich job
@@ -324,7 +324,7 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&job).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.Status(202).JSON(fiber.Map{
@@ -354,7 +354,7 @@ func (h *LibraryHandler) TriggerPrune(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	// Create prune job
@@ -369,7 +369,7 @@ func (h *LibraryHandler) TriggerPrune(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&job).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.Status(202).JSON(fiber.Map{
@@ -400,12 +400,12 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	var tracks []database.Track
 	if err := h.db.Where("library_id = ?", libraryID).Order("artist, album, track_num").Find(&tracks).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(tracks)

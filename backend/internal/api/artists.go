@@ -39,7 +39,7 @@ func (h *ArtistsHandler) List(c *fiber.Ctx) error {
 
 	artists, err := h.atService.GetMonitoredArtists(user.ID, user.Role == "admin")
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 	return c.JSON(artists)
 }
@@ -100,7 +100,8 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	// Create monitored artist with name and sort name
 	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName, &user.ID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		slog.Error("Failed to add monitored artist", "error", err)
+		return c.Status(400).JSON(fiber.Map{"error": "failed to add artist"})
 	}
 
 	return c.Status(201).JSON(monitored)
@@ -119,7 +120,7 @@ func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
 	}
 
 	if err := h.atService.DeleteMonitoredArtist(id, user.ID, user.Role == "admin"); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(fiber.Map{"status": "deleted"})
@@ -147,7 +148,7 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 
 	if payload.Monitored != nil {
 		if err := h.atService.UpdateArtistStatus(id, *payload.Monitored, user.ID, user.Role == "admin"); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return internalServerError(c, err)
 		}
 	}
 

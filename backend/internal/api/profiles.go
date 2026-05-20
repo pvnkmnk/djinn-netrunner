@@ -28,7 +28,7 @@ func (h *ProfileHandler) List(c *fiber.Ctx) error {
 		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
 	}
 	if err := query.Find(&profiles).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 	return c.JSON(profiles)
 }
@@ -54,7 +54,7 @@ func (h *ProfileHandler) Get(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(profile)
@@ -132,7 +132,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 			return tx.Create(&profile).Error
 		})
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return internalServerError(c, err)
 		}
 		return c.Status(201).JSON(profile)
 	}
@@ -153,7 +153,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&profile).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.Status(201).JSON(profile)
@@ -180,7 +180,7 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	var input struct {
@@ -216,7 +216,7 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 			profile.IsDefault = true
 			return tx.Save(&profile).Error
 		}); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return internalServerError(c, err)
 		}
 		return c.JSON(profile)
 	}
@@ -262,7 +262,7 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Save(&profile).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(profile)
@@ -289,27 +289,27 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	// Check if profile is in use
 	var count int64
 	if err := h.db.Model(&database.Watchlist{}).Where("quality_profile_id = ?", id).Count(&count).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 	if count > 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "profile is in use by watchlists"})
 	}
 
 	if err := h.db.Model(&database.MonitoredArtist{}).Where("quality_profile_id = ?", id).Count(&count).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 	if count > 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "profile is in use by monitored artists"})
 	}
 
 	if err := h.db.Delete(&profile).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.SendStatus(204)
