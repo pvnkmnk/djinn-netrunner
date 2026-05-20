@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -158,6 +159,17 @@ func Load(filenames ...string) (*Config, error) {
 	// Validate required fields
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	// Validate proxy URL if set
+	if cfg.ProxyURL != "" {
+		proxyURL, err := url.Parse(cfg.ProxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("PROXY_URL is not a valid URL: %w", err)
+		}
+		if proxyURL.Scheme == "" {
+			return nil, fmt.Errorf("PROXY_URL must include a scheme (e.g., http://, socks5://)")
+		}
 	}
 
 	return cfg, nil

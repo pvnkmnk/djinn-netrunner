@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -222,7 +223,9 @@ func NewSlskdService(cfg *config.Config, db *gorm.DB) *SlskdService {
 
 	if cfg.ProxyURL != "" {
 		proxyURL, err := url.Parse(cfg.ProxyURL)
-		if err == nil {
+		if err != nil {
+			slog.Warn("Invalid PROXY_URL, running without proxy", "error", err)
+		} else {
 			client.Transport = &http.Transport{
 				Proxy: http.ProxyURL(proxyURL),
 			}
