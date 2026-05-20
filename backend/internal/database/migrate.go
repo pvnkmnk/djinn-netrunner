@@ -90,14 +90,16 @@ func Migrate(db *gorm.DB) error {
 				JOIN pg_namespace ON relnamespace = pg_namespace.oid
 				WHERE attname = $1 AND relname = $2 AND nspname = 'public'`,
 				m.column, m.table).Scan(&colType)
-			if colType == m.enumType {
-				sql := fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN %s TYPE text USING %s::text`, m.table, m.column, m.column)
-				if err := db.Exec(sql).Error; err != nil {
-					return fmt.Errorf("failed to convert %s.%s enum to text: %w", m.table, m.column, err)
-				}
+		if colType == m.enumType {
+			// Identifiers from hardcoded struct literal — use quoted identifiers for safety
+			if err := db.Exec(
+				`ALTER TABLE "` + m.table + `" ALTER COLUMN "` + m.column + `" TYPE text USING "` + m.column + `"::text`,
+			).Error; err != nil {
+				return fmt.Errorf("failed to convert %s.%s enum to text: %w", m.table, m.column, err)
 			}
-			// Drop the unused ENUM type (CASCADE drops dependent defaults).
-			db.Exec(fmt.Sprintf("DROP TYPE IF EXISTS %s", m.enumType))
+		}
+		// Drop the unused ENUM type (CASCADE drops dependent defaults).
+		db.Exec(`DROP TYPE IF EXISTS "` + m.enumType + `"`)
 		}
 	}
 

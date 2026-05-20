@@ -22,7 +22,14 @@ function closeModal() {
 function openModal(html) {
     const container = document.getElementById('modal-container');
     if (container) {
-        container.innerHTML = html;
+        // Safely parse HTML to prevent XSS
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const fragment = document.createDocumentFragment();
+        while (doc.body.firstChild) {
+            fragment.appendChild(doc.body.firstChild);
+        }
+        container.appendChild(fragment);
         // Trigger reflow
         container.offsetHeight;
         container.classList.add('active');
@@ -32,7 +39,8 @@ function openModal(html) {
 function openModalFromHTMX(target) {
     const container = document.getElementById('modal-container');
     if (container && target) {
-        container.innerHTML = target;
+        // target is a DOM element reference from HTMX; clone safely
+        container.appendChild(target.cloneNode(true));
         container.offsetHeight;
         container.classList.add('active');
     }
