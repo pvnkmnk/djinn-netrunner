@@ -182,6 +182,30 @@ func ScanLibrary(db *gorm.DB, libraryID uuid.UUID) (*database.Job, error) {
 	return &job, nil
 }
 
+// PruneLibrary triggers a prune job for a specific library
+func PruneLibrary(db *gorm.DB, libraryID uuid.UUID) (*database.Job, error) {
+	// Verify library exists
+	var library database.Library
+	if err := db.First(&library, "id = ?", libraryID).Error; err != nil {
+		return nil, err
+	}
+
+	job := database.Job{
+		Type:        "prune",
+		State:       "queued",
+		ScopeType:   "library",
+		ScopeID:     libraryID.String(),
+		RequestedAt: time.Now(),
+		CreatedBy:   "cli",
+	}
+
+	if err := db.Create(&job).Error; err != nil {
+		return nil, err
+	}
+
+	return &job, nil
+}
+
 // ListMonitoredArtists returns all monitored artists with their release counts.
 func ListMonitoredArtists(db *gorm.DB) ([]database.MonitoredArtist, error) {
 	var artists []database.MonitoredArtist

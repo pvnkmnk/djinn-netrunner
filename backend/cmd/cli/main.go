@@ -306,6 +306,31 @@ func libraryCmd() *cobra.Command {
 	})
 
 	cmd.AddCommand(&cobra.Command{
+		Use:   "prune [id]",
+		Short: "Trigger a prune (remove missing files) for a library",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid UUID: %w", err))
+				return
+			}
+
+			job, err := agent.PruneLibrary(db, id)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(job)
+			} else {
+				fmt.Printf("Successfully queued prune job: %d\n", job.ID)
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
 		Use:   "rm [id]",
 		Short: "Remove a library",
 		Args:  cobra.ExactArgs(1),

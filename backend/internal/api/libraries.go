@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -332,6 +333,51 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 	})
 }
 
+// TriggerPrune creates a prune job for the library
+func (h *LibraryHandler) TriggerPrune(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid library ID"})
+	}
+
+	var library database.Library
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&library).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Create prune job
+	job := database.Job{
+		Type:        "prune",
+		State:       "queued",
+		ScopeType:   "library",
+		ScopeID:     library.ID.String(),
+		RequestedAt: time.Now(),
+		CreatedBy:   "api",
+		OwnerUserID: &user.ID,
+	}
+
+	if err := h.db.Create(&job).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.Status(202).JSON(fiber.Map{
+		"message": "prune job queued",
+		"job_id":  job.ID,
+	})
+}
+
 // ListTracks returns all tracks for a library
 func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
@@ -425,5 +471,142 @@ func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 
 	return c.Render("partials/libraries", fiber.Map{
 		"libraries": libraries,
+	})
+}
+
+// BrowseTracks returns HTML partial with searchable, sortable, paginated track listing
+func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	isHtmx := c.Get("Htmx-Request") == "true"
+	if !ok {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
+	libraryID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.SendString("<div class=\"error\">Invalid library ID.</div>")
+	}
+
+	var library database.Library
+	query := h.db.Where("id = ?", libraryID)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&library).Error; err != nil {
+		return c.SendString("<div class=\"error\">Library not found.</div>")
+	}
+
+	// Query params
+	search := c.Query("search", "")
+	sortBy := c.Query("sort_by", "artist")
+	sortDir := c.Query("sort_dir", "asc")
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	pageSize, _ := strconv.Atoi(c.Query("page_size", "50"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 50
+	}
+
+	// Whitelist sort columns to prevent SQL injection via column name
+	allowedSorts := map[string]bool{
+		"title": true, "artist": true, "album": true,
+		"track_num": true, "format": true, "file_size": true,
+		"year": true, "genre": true,
+	}
+	if !allowedSorts[sortBy] {
+		sortBy = "artist"
+	}
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "asc"
+	}
+
+	// Build query with search filter
+	tx := h.db.Where("library_id = ?", libraryID)
+	if search != "" {
+		like := "%" + search + "%"
+		tx = tx.Where("(LOWER(title) LIKE LOWER(?) OR LOWER(artist) LIKE LOWER(?) OR LOWER(album) LIKE LOWER(?) OR LOWER(genre) LIKE LOWER(?))", like, like, like, like)
+	}
+
+	// Count total matching tracks
+	var total int64
+	tx.Model(&database.Track{}).Count(&total)
+
+	// Fetch paginated results
+	offset := (page - 1) * pageSize
+	order := sortBy + " " + sortDir + ", track_num"
+	var tracks []database.Track
+	if err := tx.Order(order).Offset(offset).Limit(pageSize).Find(&tracks).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading tracks.</div>")
+	}
+
+	totalPages := int(total) / pageSize
+	if int(total)%pageSize > 0 {
+		totalPages++
+	}
+
+	// Compute next sort direction for each column
+	sortToggle := map[string]string{}
+	for _, col := range []string{"title", "artist", "album", "track_num", "format", "file_size", "year", "genre"} {
+		if col == sortBy {
+			if sortDir == "asc" {
+				sortToggle[col] = "desc"
+			} else {
+				sortToggle[col] = "asc"
+			}
+		} else {
+			sortToggle[col] = "asc"
+		}
+	}
+
+	return c.Render("partials/library-browse", fiber.Map{
+		"library":     library,
+		"tracks":      tracks,
+		"search":      search,
+		"sort_by":     sortBy,
+		"sort_dir":    sortDir,
+		"sortToggle":  sortToggle,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       int(total),
+		"total_pages": totalPages,
+	})
+}
+
+// TrackDetail returns HTML partial with full track metadata (for modal display)
+func (h *LibraryHandler) TrackDetail(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	isHtmx := c.Get("Htmx-Request") == "true"
+	if !ok {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
+	trackID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.SendString("<div class=\"error\">Invalid track ID.</div>")
+	}
+
+	var track database.Track
+	if err := h.db.Preload("Library").First(&track, "id = ?", trackID).Error; err != nil {
+		return c.SendString("<div class=\"error\">Track not found.</div>")
+	}
+
+	// Non-admin users can only see tracks in their own libraries
+	if user.Role != "admin" {
+		if track.Library.OwnerUserID == nil || *track.Library.OwnerUserID != user.ID {
+			return c.SendString("<div class=\"error\">Track not found.</div>")
+		}
+	}
+
+	c.Set("HX-Trigger", "openModal")
+	return c.Render("partials/track-detail", fiber.Map{
+		"track": track,
 	})
 }

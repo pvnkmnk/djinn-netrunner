@@ -7,6 +7,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/zmb3/spotify/v2"
 	"gorm.io/gorm"
@@ -89,11 +90,11 @@ func TestWatchlistService(t *testing.T) {
 	})
 
 	t.Run("Register and Fetch from Mock Provider", func(t *testing.T) {
-		mock := &MockProvider{
-			tracks: []map[string]string{
+		mock := &testutil.MockProvider{
+			Tracks: []map[string]string{
 				{"artist": "Mock Artist", "title": "Mock Track"},
 			},
-			snapID: "mock-snap",
+			SnapID: "mock-snap",
 		}
 		service.RegisterProvider("mock_source", mock)
 
