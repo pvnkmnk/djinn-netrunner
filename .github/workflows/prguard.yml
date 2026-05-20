@@ -1,0 +1,19 @@
+name: PRGuard Review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PRGuard Rules Review
+        uses: 1137043480/PRGuard@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
