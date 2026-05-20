@@ -8,6 +8,7 @@
 //   3. Download failure handling
 //   4. Metadata enrichment fallback
 //   5. Concurrent job execution
+//   6. Library prune removes stale track records and writes job logs
 //
 package integration
 
@@ -512,4 +513,100 @@ func TestPipelineConcurrentSyncJobs(t *testing.T) {
 	require.NoError(t, harness.DB.Where("job_id = ?", acqJob2.ID).Find(&items2).Error)
 	assert.Len(t, items2, 1)
 	assert.Equal(t, "Beta Artist", items2[0].Artist)
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AC 6: Library Prune — Stale Record Removal
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Prune should remove Track records whose files no longer exist on disk,
+// keep records for files that still exist, and record per-file status in
+// job logs.
+//
+func TestLibraryPrune(t *testing.T) {
+	harness := SetupIntegrationHarness(t)
+	defer harness.Teardown(t)
+	defer cleanupPipelineData(t, harness.DB)
+
+	// ── Create a test library ────────────────────────────────────────────
+	libRoot := filepath.Join(t.TempDir(), "prune_lib")
+	require.NoError(t, os.MkdirAll(libRoot, 0755))
+
+	library := &database.Library{
+		Name: "Prune Test Library",
+		Path: libRoot,
+	}
+	require.NoError(t, harness.DB.Create(library).Error)
+
+	// ── Create test files and matching Track records ─────────────────────
+	existingFile := filepath.Join(libRoot, "keep_me.mp3")
+	require.NoError(t, os.WriteFile(existingFile, []byte("fake audio data"), 0644))
+
+	staleFile := filepath.Join(libRoot, "delete_me.mp3")
+	// Deliberately do NOT create the file on disk
+
+	existingTrack := &database.Track{
+		LibraryID: library.ID,
+		Title:     "Keep Me",
+		Artist:    "Test Artist",
+		Album:     "Test Album",
+		Path:      existingFile,
+		Format:    "mp3",
+		FileSize:  1024,
+		FileHash:  "abc123",
+	}
+	require.NoError(t, harness.DB.Create(existingTrack).Error)
+
+	staleTrack := &database.Track{
+		LibraryID: library.ID,
+		Title:     "Delete Me",
+		Artist:    "Test Artist",
+		Album:     "Test Album",
+		Path:      staleFile,
+		Format:    "mp3",
+		FileSize:  2048,
+		FileHash:  "def456",
+	}
+	require.NoError(t, harness.DB.Create(staleTrack).Error)
+
+	// ── Create a prune job so we can verify job logs ─────────────────────
+	job := &database.Job{
+		Type: "prune", State: "queued",
+		ScopeType: "library", ScopeID: library.ID.String(),
+		RequestedAt: time.Now(), CreatedBy: "integration_test",
+	}
+	require.NoError(t, harness.DB.Create(job).Error)
+
+	// ── Execute prune ────────────────────────────────────────────────────
+	scanSvc := services.NewScannerService(harness.DB)
+	ctx := context.Background()
+	err := scanSvc.PruneTracks(ctx, library.ID, job.ID)
+	require.NoError(t, err)
+
+	// ── Verify: existing track kept, stale track removed ─────────────────
+	var remainingTracks []database.Track
+	require.NoError(t, harness.DB.Where("library_id = ?", library.ID).Find(&remainingTracks).Error)
+	require.Len(t, remainingTracks, 1, "only the track with an existing file should remain")
+	assert.Equal(t, "Keep Me", remainingTracks[0].Title)
+
+	// ── Verify: job logs were written for removed file ───────────────────
+	var logs []database.JobLog
+	require.NoError(t, harness.DB.Where("job_id = ?", job.ID).Find(&logs).Error)
+	require.NotEmpty(t, logs, "job logs should be written during prune")
+
+	foundRemove := false
+	foundSummary := false
+	for _, log := range logs {
+		if log.Level == "OK" && strings.Contains(log.Message, "Removed:") {
+			foundRemove = true
+		}
+		if log.Level == "INFO" && strings.Contains(log.Message, "Prune complete") {
+			foundSummary = true
+		}
+	}
+	assert.True(t, foundRemove, "should have a log entry for the removed file")
+	assert.True(t, foundSummary, "should have a summary log entry")
+
+	// ── Cleanup ──────────────────────────────────────────────────────────
+	os.RemoveAll(libRoot)
 }

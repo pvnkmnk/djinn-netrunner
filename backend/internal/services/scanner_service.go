@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -133,8 +134,8 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 	}).Save(&existing)
 }
 
-func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) error {
-	slog.Info("Starting prune", "library_id", libraryID)
+func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID, jobID uint64) error {
+	slog.Info("Starting prune", "library_id", libraryID, "job_id", jobID)
 
 	// Bolt Optimization: Select only necessary fields and use batch DELETE
 	// to reduce memory overhead and database roundtrips.
@@ -150,25 +151,32 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID) e
 	}
 
 	var toDelete []uuid.UUID
+	var removed, errors int
 	for _, t := range tracks {
 		select {
 		case <-ctx.Done():
+			database.AppendJobLog(s.db, jobID, "INFO", fmt.Sprintf("Prune interrupted: %d removed, %d errors", removed, errors), nil)
 			return ctx.Err()
 		default:
 			if _, err := os.Stat(t.Path); os.IsNotExist(err) {
 				slog.Warn("Pruning missing file", "library_id", libraryID, "path", t.Path)
+				database.AppendJobLog(s.db, jobID, "OK", fmt.Sprintf("Removed: %s", t.Path), nil)
 				toDelete = append(toDelete, t.ID)
+				removed++
 			}
 		}
 	}
 
 	if len(toDelete) > 0 {
 		if err := s.db.Delete(&database.Track{}, "id IN ?", toDelete).Error; err != nil {
+			database.AppendJobLog(s.db, jobID, "ERR", fmt.Sprintf("Database delete failed: %v", err), nil)
 			return err
 		}
 	}
 
-	slog.Info("Prune complete", "library_id", libraryID, "removed", len(toDelete))
+	kept := len(tracks) - removed
+	database.AppendJobLog(s.db, jobID, "INFO", fmt.Sprintf("Prune complete: %d kept, %d removed, %d errors", kept, removed, errors), nil)
+	slog.Info("Prune complete", "library_id", libraryID, "removed", removed)
 	return nil
 }
 
