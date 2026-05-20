@@ -99,7 +99,9 @@ func Migrate(db *gorm.DB) error {
 			}
 		}
 		// Drop the unused ENUM type (CASCADE drops dependent defaults).
-		db.Exec(`DROP TYPE IF EXISTS "` + m.enumType + `"`)
+		if err := db.Exec(`DROP TYPE IF EXISTS "` + m.enumType + `"`).Error; err != nil {
+			return fmt.Errorf("failed to drop enum %s: %w", m.enumType, err)
+		}
 		}
 	}
 

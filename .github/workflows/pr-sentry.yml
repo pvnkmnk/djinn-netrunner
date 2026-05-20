@@ -10,11 +10,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: PR-Sentry AI Review
-        if: ${{ secrets.DEEPSEEK_API_KEY != '' || secrets.ANTHROPIC_API_KEY != '' || secrets.OPENAI_API_KEY != '' }}
+        if: env.DEEPSEEK_API_KEY != '' || env.ANTHROPIC_API_KEY != '' || env.OPENAI_API_KEY != ''
         uses: Ebuodinde/PR_SENTRY@v1
         continue-on-error: true
         with:
@@ -23,7 +27,7 @@ jobs:
           locale: en
 
       - name: Skip notice
-        if: ${{ secrets.DEEPSEEK_API_KEY == '' && secrets.ANTHROPIC_API_KEY == '' && secrets.OPENAI_API_KEY == '' }}
+        if: env.DEEPSEEK_API_KEY == '' && env.ANTHROPIC_API_KEY == '' && env.OPENAI_API_KEY == ''
         run: |
           echo "::notice::PR-Sentry skipped: no LLM API key configured."
           echo "Set DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in repo secrets to enable."

@@ -29,6 +29,7 @@ function openModal(html) {
         while (doc.body.firstChild) {
             fragment.appendChild(doc.body.firstChild);
         }
+        container.innerHTML = '';
         container.appendChild(fragment);
         // Trigger reflow
         container.offsetHeight;
@@ -39,6 +40,7 @@ function openModal(html) {
 function openModalFromHTMX(target) {
     const container = document.getElementById('modal-container');
     if (container && target) {
+        container.innerHTML = '';
         // target is a DOM element reference from HTMX; clone safely
         container.appendChild(target.cloneNode(true));
         container.offsetHeight;
