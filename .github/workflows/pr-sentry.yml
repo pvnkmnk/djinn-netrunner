@@ -18,8 +18,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: PR-Sentry AI Review
-        if: env.DEEPSEEK_API_KEY != '' || env.ANTHROPIC_API_KEY != '' || env.OPENAI_API_KEY != ''
-        uses: Ebuodinde/PR_SENTRY@v1
+        if: env.DEEPSEEK_API_KEY != ''
+        uses: Ebuodinde/PR_SENTRY@35c89b2d5985060c1906fbf04ed4e9e450ca940e # v3.0.0
         continue-on-error: true
         with:
           provider: deepseek

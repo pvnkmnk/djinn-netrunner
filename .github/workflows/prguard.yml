@@ -14,6 +14,6 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: PRGuard Rules Review
-        uses: 1137043480/PRGuard@v1
+        uses: 1137043480/PRGuard@b0b402d4e62cd4b32afad83d6a25f7d2f3190731 # v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -22,15 +22,18 @@ function closeModal() {
 function openModal(html) {
     const container = document.getElementById('modal-container');
     if (container) {
-        // Safely parse HTML to prevent XSS
+        // NOTE: DOMParser prevents <script> execution but inline handlers
+        // (onerror, onclick, etc.) in the parsed HTML remain active once
+        // inserted. Currently unused — HTML source is server-generated and
+        // trusted. If refactored to accept user-supplied HTML, add a
+        // sanitizer (e.g. DOMPurify) before the replaceChildren call.
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         const fragment = document.createDocumentFragment();
         while (doc.body.firstChild) {
             fragment.appendChild(doc.body.firstChild);
         }
-        container.innerHTML = '';
-        container.appendChild(fragment);
+        container.replaceChildren(fragment);
         // Trigger reflow
         container.offsetHeight;
         container.classList.add('active');
@@ -40,9 +43,8 @@ function openModal(html) {
 function openModalFromHTMX(target) {
     const container = document.getElementById('modal-container');
     if (container && target) {
-        container.innerHTML = '';
         // target is a DOM element reference from HTMX; clone safely
-        container.appendChild(target.cloneNode(true));
+        container.replaceChildren(target.cloneNode(true));
         container.offsetHeight;
         container.classList.add('active');
     }
