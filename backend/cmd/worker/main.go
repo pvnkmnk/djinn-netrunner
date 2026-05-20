@@ -657,7 +657,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 			return
 		}
 		slog.Info("Pruning library", "name", library.Name, "library_id", libraryID)
-		err = w.scanService.PruneTracks(jc.ctx, libraryID)
+		err = w.scanService.PruneTracks(jc.ctx, libraryID, jc.job.ID)
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}
@@ -686,11 +686,15 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	}
 
 	now := time.Now()
-	w.db.Model(&database.Job{}).Where("id = ?", jobID).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"state":       finalState,
 		"finished_at": &now,
 		"summary":     summary,
-	})
+	}
+	if err != nil {
+		updates["error_detail"] = err.Error()
+	}
+	w.db.Model(&database.Job{}).Where("id = ?", jobID).Updates(updates)
 
 	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
 
