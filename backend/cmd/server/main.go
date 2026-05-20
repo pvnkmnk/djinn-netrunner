@@ -108,8 +108,14 @@ func main() {
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
 
-	// Start log listener
-	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
+	// Start log listener with retry loop (avoids os.Exit(1) crash on transient DB failure)
+	go func() {
+		for {
+			wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
+			slog.Warn("Log listener exited, restarting in 5s")
+			time.Sleep(5 * time.Second)
+		}
+	}()
 
 	// Routes
 	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)

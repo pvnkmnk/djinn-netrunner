@@ -406,14 +406,22 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 			return err // Will rollback and we'll try again next tick
 		}
 
-		// 2. Mark as running
+		// 2. Mark as running — guard with state='queued' to prevent two workers
+		//    claiming the same job (see also DJI-331 for item-level fix).
 		now := time.Now()
-		return tx.Model(&job).Updates(map[string]interface{}{
+		result := tx.Model(&job).Where("state = ?", "queued").Updates(map[string]interface{}{
 			"state":        "running",
 			"worker_id":    w.workerID,
 			"started_at":   &now,
 			"heartbeat_at": &now,
-		}).Error
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound // already claimed by another worker
+		}
+		return nil
 	})
 
 	if err != nil {
@@ -541,14 +549,18 @@ func (w *WorkerOrchestrator) claimNextJobItem(jobID uint64) (uint64, error) {
 			return err
 		}
 
-		// Mark as running
+		// Mark as running — guard with status check to prevent two workers
+		// claiming the same item (TOCTOU race).
 		now := time.Now()
-		err = tx.Model(&item).Updates(map[string]interface{}{
+		result := tx.Model(&item).Where("status = ? OR (status = 'failed' AND next_attempt_at <= ?)", "queued", time.Now()).Updates(map[string]interface{}{
 			"status":     "running",
 			"started_at": &now,
-		}).Error
-		if err != nil {
-			return err
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound // already claimed by another worker
 		}
 
 		itemID = item.ID

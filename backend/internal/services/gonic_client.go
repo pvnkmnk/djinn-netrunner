@@ -1,6 +1,9 @@
 package services
 
 import (
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -162,8 +165,11 @@ func (c *GonicClient) doRequest(endpoint string, params url.Values, target inter
 		params = url.Values{}
 	}
 
+	// Subsonic token-based auth (keeps password out of URL query params / server logs)
+	s := salt()
 	params.Add("u", c.username)
-	params.Add("p", c.password)
+	params.Add("t", tokenFromPassword(c.password, s))
+	params.Add("s", s)
 	params.Add("v", "1.16.1")
 	params.Add("c", "netrunner")
 	params.Add("f", "json")
@@ -201,4 +207,19 @@ func (c *GonicClient) HealthCheck() bool {
 	}
 
 	return resp.SubsonicResponse.Status == "ok"
+}
+
+// tokenFromPassword generates a Subsonic token = hex(md5(password + salt)).
+func tokenFromPassword(password, s string) string {
+	h := md5.Sum([]byte(password + s))
+	return hex.EncodeToString(h[:])
+}
+
+// salt generates a random hex string for Subsonic token-based auth.
+func salt() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
