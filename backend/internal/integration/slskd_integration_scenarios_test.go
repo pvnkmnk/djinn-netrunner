@@ -153,7 +153,7 @@ func TestSlskdDownloadLifecycle(t *testing.T) {
 	
 	completed := make(chan *services.Download, 1)
 	go func() {
-		d, err := harness.Slskd.WaitForDownload(testUsername, testFilename, 5*time.Second)
+		d, err := harness.Slskd.WaitForDownload(ctx, testUsername, testFilename, 5*time.Second)
 		if err == nil && d != nil && d.State == services.DownloadStateCompleted {
 			completed <- d
 		}

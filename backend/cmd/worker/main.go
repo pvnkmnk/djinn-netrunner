@@ -57,10 +57,11 @@ type WorkerOrchestrator struct {
 }
 
 type jobContext struct {
-	job     database.Job
-	cancel  context.CancelFunc
-	ctx     context.Context
-	lockKey int64
+	job        database.Job
+	cancel     context.CancelFunc
+	ctx        context.Context
+	lockKey    int64
+	processing bool // true when a goroutine is actively processing this job
 }
 
 func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator {
@@ -111,21 +112,39 @@ func (w *WorkerOrchestrator) Start() {
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	slog.Info("Starting worker", "worker_id", w.workerID)
 
-	// Start background tasks
-	go w.heartbeatLoop()
+	// Start background tasks — all tracked in WaitGroup for graceful shutdown
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		w.heartbeatLoop()
+	}()
 
 	if w.litefs.IsPrimary() {
-		go w.schedulerLoop()
-		go w.watchlistPollingLoop()
-		go w.zombieCleanupLoop()
-		go w.rmService.StartBackgroundTask()
+		w.wg.Add(3)
+		go func() {
+			defer w.wg.Done()
+			w.schedulerLoop()
+		}()
+		go func() {
+			defer w.wg.Done()
+			w.watchlistPollingLoop()
+		}()
+		go func() {
+			defer w.wg.Done()
+			w.zombieCleanupLoop()
+		}()
+		w.rmService.StartBackgroundTask(w.ctx, &w.wg)
 	} else {
 		slog.Info("Running in replica mode. Skipping scheduler and watchlist poller.", "worker_id", w.workerID)
 	}
 
 	// listenForWakeup only works for Postgres, for SQLite we rely on polling
 	if w.db.Dialector.Name() == "postgres" {
-		go w.listenForWakeup()
+		w.wg.Add(1)
+		go func() {
+			defer w.wg.Done()
+			w.listenForWakeup()
+		}()
 	}
 
 	// Main job loop with round-robin item processing
@@ -244,6 +263,7 @@ func (w *WorkerOrchestrator) Stop() {
 	w.jobMutex.Unlock()
 
 	w.wg.Wait()
+	w.slskd.Stop()
 	w.lockManager.Close()
 	slog.Info("Shutdown complete", "worker_id", w.workerID)
 }
@@ -431,14 +451,14 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		return
 	}
 
-	// Acquire advisory lock for scope
-	lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
+	// Acquire advisory lock for scope (use worker context to allow cancellation)
+	lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
 	if err != nil {
 		slog.Error("Error computing lock key", "worker_id", w.workerID, "job_id", job.ID, "error", err)
 		return
 	}
 
-	acquired, err := w.lockManager.AcquireTryLock(context.Background(), lockKey)
+	acquired, err := w.lockManager.AcquireTryLock(w.ctx, lockKey)
 	if err != nil {
 		slog.Error("Error acquiring advisory lock", "worker_id", w.workerID, "job_id", job.ID, "error", err)
 		return
@@ -454,7 +474,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(w.ctx)
 
 	jc := &jobContext{
 		job:     job,
@@ -464,6 +484,17 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	}
 
 	w.jobMutex.Lock()
+	// Re-check capacity while holding lock — prevents race between check and insertion (DJI-339)
+	if len(w.activeJobs) >= MaxConcurrentJobs {
+		w.jobMutex.Unlock()
+		cancel()
+		w.lockManager.ReleaseLock(context.Background(), lockKey)
+		w.db.Model(&job).Updates(map[string]interface{}{
+			"state": "queued", "worker_id": nil, "started_at": nil,
+		})
+		slog.Info("Capacity reached, requeued job", "worker_id", w.workerID, "job_id", job.ID)
+		return
+	}
 	w.activeJobs[job.ID] = jc
 	w.jobMutex.Unlock()
 
@@ -481,6 +512,13 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 	for _, id := range activeIDs {
 		w.jobMutex.Lock()
 		jc, ok := w.activeJobs[id]
+		if ok && jc.processing {
+			w.jobMutex.Unlock()
+			continue
+		}
+		if ok {
+			jc.processing = true
+		}
 		w.jobMutex.Unlock()
 
 		if !ok {
@@ -493,12 +531,22 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 			// Process one item
 			w.wg.Add(1)
 			go func(jc *jobContext) {
+				defer func() {
+					w.jobMutex.Lock()
+					jc.processing = false
+					w.jobMutex.Unlock()
+				}()
 				defer w.wg.Done()
 				w.processAcquisitionItem(jc)
 			}(jc)
 		case "sync":
 			w.wg.Add(1)
 			go func(jc *jobContext) {
+				defer func() {
+					w.jobMutex.Lock()
+					jc.processing = false
+					w.jobMutex.Unlock()
+				}()
 				defer w.wg.Done()
 				err := w.syncHandler.Execute(jc.ctx, jc.job.ID, jc.job)
 				w.finishJob(jc.job.ID, err)
@@ -506,6 +554,11 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 		default:
 			w.wg.Add(1)
 			go func(jc *jobContext) {
+				defer func() {
+					w.jobMutex.Lock()
+					jc.processing = false
+					w.jobMutex.Unlock()
+				}()
 				defer w.wg.Done()
 				w.runMonolithicJob(jc)
 			}(jc)
@@ -687,7 +740,7 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	delete(w.activeJobs, jobID)
 	w.jobMutex.Unlock()
 
-	// Release lock
+	// Release lock (use background context since worker may be shutting down)
 	w.lockManager.ReleaseLock(context.Background(), jc.lockKey)
 
 	finalState := "succeeded"

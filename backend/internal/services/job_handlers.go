@@ -232,6 +232,7 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 
 // acquisitionPipeline carries state between pipeline stages.
 type acquisitionPipeline struct {
+	ctx        context.Context
 	item       database.JobItem
 	job        database.Job
 	profile    *database.QualityProfile
@@ -250,7 +251,7 @@ type acquisitionPipeline struct {
 //  5. downloadFile     — queue and wait for download
 //  6. importAndEnrich  — import to library, enrich metadata
 func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, itemID uint64) error {
-	p := &acquisitionPipeline{}
+	p := &acquisitionPipeline{ctx: ctx}
 
 	if skip, err := h.stageLoadItemContext(p, itemID); err != nil {
 		return err
@@ -428,7 +429,7 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 
 	h.Log(p.item.JobID, "INFO", "Download queued", &p.item.ID)
 
-	download, err := h.slskd.WaitForDownload(p.best.Username, p.best.Filename, 10*time.Minute)
+	download, err := h.slskd.WaitForDownload(p.ctx, p.best.Username, p.best.Filename, 10*time.Minute)
 	if err != nil {
 		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed or timed out: %v", err))
 		return true, nil

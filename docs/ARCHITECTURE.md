@@ -90,6 +90,54 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 - **Manage Jobs**: Cancel or retry jobs (`cancel_job`, `retry_job`).
 - **Query System**: Get stats summaries, quality profiles, and configured libraries (`get_stats`, `list_quality_profiles`, `list_libraries`).
 
+## Security Posture
+
+### Session & Auth
+- **Session tokens**: 128-bit cryptographically random (crypto/rand), hex-encoded, stored in DB with 7-day TTL.
+- **Cookie security**: HttpOnly enabled, SameSite=Lax, Secure flag set dynamically based on protocol (HTTPS in prod, HTTP for local dev).
+- **Password storage**: bcrypt hashing (no plaintext).
+- **Auth rate limiting**: Fiber rate limiter on `/api/auth/login` and `/api/auth/register` (default: 10 req/min).
+
+### CSRF Protection
+- **Double-submit cookie pattern**: JS reads `csrf_` cookie and attaches it as `X-CSRF-Token` header on all HTMX and Fetch requests.
+- CSRF cookie uses SameSite=Lax; CookieSecure not explicitly set (follows cookie middleware defaults — prod deployments behind TLS should verify this is applied).
+- No server-rendered hidden CSRF input fields (forms rely entirely on JS header injection).
+
+### XSS Prevention
+- **Pongo2 templates**: All user-supplied values rendered in templates use the `| escape` filter explicitly.
+- **WebSocket log streaming**: Uses `html.EscapeString()` before broadcasting to clients.
+- **Scope**: Track metadata (title, artist, album, genre, composer, cover URLs), artist names, watchlist names, library names, profile names, schedule names, search strings, file paths, SourceType, and all aria-label/hx-confirm attributes that include user data are escaped.
+- **Not auto-escaped by default**: Pongo2 engine has no global autoescape — escaping is applied per-variable. Any new template variable rendering user data must use `| escape`.
+
+### SQL Injection Prevention
+- All database queries use **GORM parameterization** — no raw SQL string concatenation in production code paths.
+- User-supplied filter/sort values are validated against whitelists before use in queries.
+
+### File Path Traversal
+- Library paths validated with `filepath.IsAbs()` + `filepath.Clean()` before use.
+- Scanner uses `filepath.WalkDir` under the validated library root — no symlink escalation risk from the validated path boundary.
+
+### SSRF / Outbound HTTP
+- **Unified safe HTTP transport** (`safe_http.go`): All outbound HTTP clients (Spotify, MusicBrainz, Discogs, slskd, gonic, navidrome, cover art fetches) use a shared `http.Transport` with:
+  - DNS rebinding protection (IP resolution before dial)
+  - Private IP range blocking (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1)
+- `docker-compose.yml` no longer has `extra_hosts: ["host.docker.internal:host-gateway"]` (removed in Cycle 5).
+
+### OOM Prevention
+- Cover art responses limited to **10MB** via `io.LimitReader`.
+- File size limits on upload/scan paths where applicable.
+
+### Credential Leakage
+- Subsonic clients (gonic, navidrome) use **token-based auth** (`t` + `s` params) instead of password in query string (`p` param).
+- No credentials in URLs, logs, or error messages returned to clients.
+
+### Vulnerability Scanning
+- `govulncheck ./...` reports **no reachable vulnerabilities**.
+
+### Dependency Security
+- Go module dependencies vetted via `go mod verify` and periodic `govulncheck` runs.
+- No known-CVE dependencies in the dependency tree (as of last audit).
+
 ## DB Connection Model
 The system uses a unified GORM connection with specific optimizations for SQLite:
 - **WAL Mode**: Enabled for high-concurrency read/write operations.

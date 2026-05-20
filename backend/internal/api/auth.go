@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -39,6 +40,11 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 
 	if payload.Email == "" || payload.Password == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
+	}
+
+	// Validate email format
+	if !strings.Contains(payload.Email, "@") {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid email format"})
 	}
 
 	// Check if user exists — return identical response to prevent user enumeration
@@ -111,8 +117,8 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	h.db.Model(&user).Update("last_login_at", &now)
 
 	// Set cookie with security best practices
-	// SECURITY: SameSite=Lax prevents CSRF while allowing normal navigation
-	// Secure flag is set based on environment (true in production, false for local HTTP dev)
+	// SECURITY: SameSite=Strict prevents CSRF (no cross-site top-level GET navigations)
+	// Secure flag set dynamically: false for local HTTP dev, true for HTTPS behind Caddy
 	secure := c.Protocol() == "https"
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookie,
@@ -120,7 +126,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		Expires:  expiresAt,
 		HTTPOnly: true,
 		Secure:   secure,
-		SameSite: "Lax",
+		SameSite: "Strict",
 		Path:     "/",
 	})
 

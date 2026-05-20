@@ -82,12 +82,14 @@ func main() {
 	}))
 
 	// SECURITY: Add security headers to all responses
+	// CSP is set here (not just in Caddy) to protect direct :8080 access
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("X-Content-Type-Options", "nosniff")
 		c.Set("X-Frame-Options", "DENY")
 		c.Set("X-XSS-Protection", "1; mode=block")
 		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: https:; font-src 'self' data:;")
 		return c.Next()
 	})
 
@@ -153,7 +155,12 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return 1 * time.Minute // fallback
 		}(),
 		KeyGenerator: func(c *fiber.Ctx) string {
-			return c.IP()
+			// Use real connection IP to prevent X-Forwarded-For spoofing on direct :8080 access
+			// Behind Caddy, X-Real-IP is set by the proxy
+			if ip := c.Get("X-Real-IP"); ip != "" {
+				return ip
+			}
+			return c.Context().Conn().RemoteAddr().String()
 		},
 		LimitReached: func(c *fiber.Ctx) error {
 			return c.Status(429).JSON(fiber.Map{"error": "too many requests, please try again later"})

@@ -14,7 +14,7 @@
                 <select id="quality_profile_id" name="quality_profile_id">
                     <option value="">Default</option>
                     {% for profile in profiles %}
-                    <option value="{{ profile.ID }}">{{ profile.Name }}</option>
+                    <option value="{{ profile.ID }}">{{ profile.Name | escape }}</option>
                     {% endfor %}
                 </select>
             </div>
