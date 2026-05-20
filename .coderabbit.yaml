@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  path_filters:
+    - "!backend/go.sum"
+    - "!**/node_modules/**"
+    - "!**/vendor/**"
+    - "!ops/db/init/migrations/*.sql"
+  path_instructions:
+    - path: "backend/**/*.go"
+      instructions: |
+        Review Go code for idiomatic usage, error handling (no silent swallows),
+        proper context propagation, and alignment with existing patterns in the
+        codebase (GORM queries, Fiber handlers, service layer abstractions).
+        Flag any unused code or dead parameters.
+    - path: "ops/web/templates/**"
+      instructions: |
+        Check HTMX partials for hx-* attribute correctness, proper OOB swaps,
+        and consistent template structure. Ensure pongo2 syntax is valid.
+    - path: "ops/**/*.sql"
+      instructions: |
+        Verify PostgreSQL migrations are backward-compatible. Flag destructive
+        operations (DROP, ALTER COLUMN TYPE) on non-empty tables without a
+        migration path. Check for missing `IF NOT EXISTS` / `IF EXISTS` clauses.
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - master
+      - main
+chat:
+  auto_reply: true

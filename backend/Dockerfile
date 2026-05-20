@@ -27,7 +27,7 @@ COPY backend/entrypoint.sh ./entrypoint.sh
 RUN chmod +x entrypoint.sh
 
 # Stage 2: Runtime
-FROM alpine:latest
+FROM alpine:3.21
 
 # Install wget for healthcheck
 RUN apk add --no-cache wget
