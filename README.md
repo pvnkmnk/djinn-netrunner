@@ -4,16 +4,16 @@
 
 NetRunner is a modern, Go-native system for automated music discovery, download, organization, and streaming. Built for performance and privacy, it transforms your server into a resilient music acquisition terminal.
 
-![Status](https://img.shields.io/badge/status-v2.2.0--security--hardening-green)
+![Status](https://img.shields.io/badge/status-v0.0.1--release-green)
 ![Architecture](https://img.shields.io/badge/architecture-standalone--sqlite-blue)
 ![UI](https://img.shields.io/badge/ui-htmx--cyberpunk-magenta)
-![Security](https://img.shields.io/badge/security-BOLA%20hardened-brightgreen)
+![Security](https://img.shields.io/badge/security-session--auth-brightgreen)
 
 ---
 
 ## 🎯 What is NETRUNNER?
 
-NetRunner 2.2 is a security-hardened, performance-optimized evolution of the music acquisition pipeline. It provides a "zero-config" standalone experience with a high-fidelity operations console, intelligent library curation, and comprehensive multi-user data isolation.
+NetRunner is a security-hardened, performance-optimized music acquisition pipeline. It provides a "zero-config" standalone experience with a high-fidelity operations console, intelligent library curation, and comprehensive multi-user data isolation.
 
 - 📥 **Acquisition**: Seamless integration with Soulseek (via `slskd`).
 - 🏗️ **Standalone Architecture**: Single-binary focus with CGO-free SQLite (WAL mode) or PostgreSQL.
@@ -88,32 +88,6 @@ docker compose up -d --build
 ```
 Access the management console at `http://localhost`.
 
-## ✅ Beta Operator Guide
-
-### What Works In Beta
-- Session-cookie auth with per-user owner scoping and admin overrides.
-- Full watchlist/library/profile/schedule/artist CRUD flows.
-- Job lifecycle operations with live console streaming and filters.
-- MCP operations for watchlists, libraries, monitored artists, and job cancel/retry.
-- Cover art source priority, quota warnings, and fingerprint persistence paths.
-
-### Known Limits
-- Beta targets single-node operator deployments.
-- Visual system is intentionally utilitarian; UX polish focuses on operations reliability.
-- Dependency-vulnerability follow-up is tracked separately from this beta readiness pass.
-
-### Beta Acceptance Steps
-1. Run `pwsh -File scripts/validate.ps1 -SkipVulnCheck`.
-2. Start stack with `docker compose up -d --build`.
-3. Validate operator flows: auth, watchlist sync, library scan, artist/schedule CRUD, job logs.
-4. Verify tenant isolation with separate non-admin users.
-5. Verify webhook + quota-warning smoke checks.
-
-### Rollback Basics
-1. Revert to previous known-good image/tag for `ops-web` and `ops-worker`.
-2. Keep database snapshots/backups before schema-affecting upgrades.
-3. Use `docker compose down` + restore `.env`/compose config from last release commit.
-
 ---
 
 ## 🛠️ Management CLI
@@ -179,10 +153,10 @@ NetRunner 2.0 uses a unified Go 1.25 backend:
 │       ├── interfaces/      # Interface definitions
 │       └── services/        # Business logic (Spotify, slskd, Gonic)
 ├── ops/
-    │   ├── web/
-    │   │   ├── static/          # CSS/JS assets
-    │   │   └── templates/       # HTMX templates
-    │   └── caddy/               # Reverse proxy config
+│   ├── web/
+│   │   ├── static/              # CSS/JS assets
+│   │   └── templates/           # HTMX templates
+│   └── caddy/                   # Reverse proxy config
 
 ```
 
@@ -208,4 +182,4 @@ We welcome contributions that align with our "Console-First" and "Standalone" de
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
-**Build status**: Finalized | **Architecture**: Go 1.25, SQLite, Fiber, HTMX | **Built with**: Claude Code
+**Architecture**: Go 1.25, SQLite, Fiber, HTMX
