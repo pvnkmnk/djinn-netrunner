@@ -288,7 +288,7 @@ func (h *StatsHandler) GetActivityStats(c *fiber.Ctx) error {
 	}
 
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(stats)

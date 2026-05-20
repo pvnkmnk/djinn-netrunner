@@ -66,6 +66,7 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 		"--output", outputTemplate,
 		"--no-playlist",
 		"--print", "after_move:filepath",
+		"--",
 		url,
 	)
 

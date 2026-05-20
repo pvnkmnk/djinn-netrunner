@@ -32,7 +32,7 @@ func (h *SchedulesHandler) List(c *fiber.Ctx) error {
 		query = query.Joins("JOIN watchlists ON watchlists.id = schedules.watchlist_id").Where("watchlists.owner_user_id = ?", user.ID)
 	}
 	if err := query.Find(&schedules).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 	return c.JSON(schedules)
 }
@@ -92,7 +92,7 @@ func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&schedule).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.Status(201).JSON(schedule)
@@ -123,7 +123,7 @@ func (h *SchedulesHandler) Delete(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Delete(&database.Schedule{}, "id = ?", id).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(fiber.Map{"status": "deleted"})
@@ -178,7 +178,7 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Model(&database.Schedule{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(fiber.Map{"status": "updated"})
@@ -209,7 +209,7 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 	// Toggle the enabled state
 	sched.Enabled = !sched.Enabled
 	if err := h.db.Save(&sched).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	// sched still has preloaded Watchlist from initial fetch, no need to reload

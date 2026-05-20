@@ -250,7 +250,7 @@ func (e *MetadataExtractor) Fingerprint(path string) (string, int, error) {
 		return "", 0, fmt.Errorf("file does not exist: %s", path)
 	}
 
-	cmd := exec.Command("fpcalc", "-json", cleanPath)
+	cmd := exec.Command("fpcalc", "-json", "--", cleanPath)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", 0, fmt.Errorf("fpcalc failed: %w", err)

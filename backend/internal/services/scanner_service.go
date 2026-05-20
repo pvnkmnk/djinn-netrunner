@@ -161,12 +161,12 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID, j
 			if _, err := os.Stat(t.Path); err != nil {
 				if os.IsNotExist(err) {
 					slog.Warn("Pruning missing file", "library_id", libraryID, "path", t.Path)
-					database.AppendJobLog(s.db, jobID, "OK", fmt.Sprintf("Removed: %s", t.Path), nil)
+					database.AppendJobLog(s.db, jobID, "OK", fmt.Sprintf("Removed: %s", filepath.Base(t.Path)), nil)
 					toDelete = append(toDelete, t.ID)
 					removed++
 				} else {
 					slog.Error("Error checking file during prune", "path", t.Path, "error", err)
-					database.AppendJobLog(s.db, jobID, "ERR", fmt.Sprintf("Error checking file %s: %v", t.Path, err), nil)
+					database.AppendJobLog(s.db, jobID, "ERR", fmt.Sprintf("Error checking file %s: %v", filepath.Base(t.Path), err), nil)
 					errors++
 				}
 			}
@@ -175,7 +175,7 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID, j
 
 	if len(toDelete) > 0 {
 		if err := s.db.Delete(&database.Track{}, "id IN ?", toDelete).Error; err != nil {
-			database.AppendJobLog(s.db, jobID, "ERR", fmt.Sprintf("Database delete failed: %v", err), nil)
+			database.AppendJobLog(s.db, jobID, "ERR", "Database delete operation failed", nil)
 			return err
 		}
 	}

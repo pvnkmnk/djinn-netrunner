@@ -37,7 +37,7 @@ func (h *WatchlistHandler) ListWatchlists(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&watchlists).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(watchlists)
@@ -63,7 +63,8 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 
 	watchlist, err := h.service.CreateWatchlist(input.Name, input.SourceType, input.SourceURI, input.QualityProfileID, &user.ID)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		slog.Error("Failed to create watchlist", "error", err)
+		return c.Status(400).JSON(fiber.Map{"error": "failed to create watchlist"})
 	}
 
 	return c.Status(201).JSON(watchlist)
@@ -101,7 +102,7 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Save(watchlist).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(watchlist)
@@ -122,7 +123,7 @@ func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
 	}
 
 	if err := query.Delete(&database.Watchlist{}).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 
 	return c.Status(204).Send(nil)
@@ -142,7 +143,7 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
 	if err := query.Find(&profiles).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return internalServerError(c, err)
 	}
 	return c.JSON(profiles)
 }

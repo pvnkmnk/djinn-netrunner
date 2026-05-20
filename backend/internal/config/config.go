@@ -105,7 +105,11 @@ func Load(filenames ...string) (*Config, error) {
 	// SECURITY: Gonic credentials must be explicitly set. Never use hardcoded defaults.
 	gonicUser := os.Getenv("GONIC_USER")
 	gonicPass := os.Getenv("GONIC_PASS")
+	env := getEnv("ENVIRONMENT", "development")
 	if gonicUser == "" || gonicPass == "" {
+		if env == "production" {
+			return nil, fmt.Errorf("GONIC_USER and GONIC_PASS are required in production")
+		}
 		slog.Warn("GONIC_USER or GONIC_PASS not set — Gonic integration will fail until credentials are configured.")
 	}
 
