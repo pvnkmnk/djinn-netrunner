@@ -687,9 +687,10 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 
 	now := time.Now()
 	updates := map[string]interface{}{
-		"state":       finalState,
-		"finished_at": &now,
-		"summary":     summary,
+		"state":        finalState,
+		"finished_at":  &now,
+		"summary":      summary,
+		"error_detail": "",
 	}
 	if err != nil {
 		updates["error_detail"] = err.Error()

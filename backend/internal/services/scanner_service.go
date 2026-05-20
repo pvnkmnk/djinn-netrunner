@@ -155,14 +155,20 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID, j
 	for _, t := range tracks {
 		select {
 		case <-ctx.Done():
-			database.AppendJobLog(s.db, jobID, "INFO", fmt.Sprintf("Prune interrupted: %d removed, %d errors", removed, errors), nil)
+			database.AppendJobLog(s.db, jobID, "INFO", fmt.Sprintf("Prune interrupted: %d items identified for removal, %d errors", removed, errors), nil)
 			return ctx.Err()
 		default:
-			if _, err := os.Stat(t.Path); os.IsNotExist(err) {
-				slog.Warn("Pruning missing file", "library_id", libraryID, "path", t.Path)
-				database.AppendJobLog(s.db, jobID, "OK", fmt.Sprintf("Removed: %s", t.Path), nil)
-				toDelete = append(toDelete, t.ID)
-				removed++
+			if _, err := os.Stat(t.Path); err != nil {
+				if os.IsNotExist(err) {
+					slog.Warn("Pruning missing file", "library_id", libraryID, "path", t.Path)
+					database.AppendJobLog(s.db, jobID, "OK", fmt.Sprintf("Removed: %s", t.Path), nil)
+					toDelete = append(toDelete, t.ID)
+					removed++
+				} else {
+					slog.Error("Error checking file during prune", "path", t.Path, "error", err)
+					database.AppendJobLog(s.db, jobID, "ERR", fmt.Sprintf("Error checking file %s: %v", t.Path, err), nil)
+					errors++
+				}
 			}
 		}
 	}
