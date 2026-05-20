@@ -1,130 +1,48 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## v0.0.1 (2026-05-19) — Initial Release
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Cycle C — Release Preparation
 
-## [Unreleased]
+- **DJI-320**: Remove legacy `conductor/` directory (archived planning docs)
+- **DJI-317**: Add ProxyURL validation at startup with `net/url.Parse` check
+- **DJI-317**: Log warning in slskd_service.go on invalid proxy URL (was silently ignored)
+- **DJI-318**: Add contextual action hints to all empty states in partial templates
+- **DJI-314**: Clean up README — remove stale beta/2.2 references, fix badge to v0.0.1, fix tree indentation
+- **DJI-315**: Add bash smoke test (`scripts/smoke-test.sh`) and Go integration smoke tests
 
-## [2.3.0] - 2026-04-01
+### Cycle 6 Security (PR #136)
 
-### 🛡️ Security
+- **DJI-321**: Replace 39 `err.Error()` leaks across 6 API handler files with server-logged generic responses; add `internalServerError` helper; fix `validateLibraryPath` filesystem path leak
+- **DJI-322**: Make empty `GONIC_USER`/`GONIC_PASS` a fatal startup error in production mode
+- **DJI-323**: Add `--` separator before URL in yt-dlp `exec.Command` to prevent option injection
+- **DJI-324**: Add `--` separator before file path in fpcalc `exec.Command`
+- **DJI-325**: SameSite=Lax already set on auth cookies (verified, no change needed)
 
-- **CRITICAL — JWT Secret Hardcoded**: Replaced hardcoded `dev-secret-do-not-use-in-prod` with cryptographically secure auto-generated random secret. Warns on startup if `JWT_SECRET` not set.
-- **CRITICAL — yt-dlp Command Injection**: Added URL validation (scheme check, `url.ParseRequestURI`) and audio format whitelist to prevent command injection via crafted URLs.
-- **HIGH — Gonic Default Credentials**: Removed hardcoded `admin/admin` defaults. Now requires explicit `GONIC_USER`/`GONIC_PASS` environment variables with startup warning if unset.
-- **HIGH — Missing CSRF Protection**: Added Fiber CSRF middleware with HTMX-compatible `X-CSRF-Token` header support.
-- **HIGH — Insecure Session Cookies**: Added `SameSite=Lax` and `Secure` (HTTPS-aware) flags to session cookies.
-- **HIGH — Verbose Error Messages**: Sanitized 39 error responses across all API handlers to return generic messages instead of internal error details.
-- **HIGH — FFmpeg Command Injection**: Added output format whitelist and path validation to transcoder service.
-- **MEDIUM — fpcalc Path Validation**: Added path existence check and `filepath.Clean` before passing to fpcalc.
-- **MEDIUM — Security Headers**: Added `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, and `Permissions-Policy` headers to all responses.
+### Cycle B (PR #133, #134)
 
-### 🧪 Testing
+- **DJI-308**: Profile service CGO fix — switch from `gorm.io/driver/sqlite` to `glebarez/sqlite` (pure Go); extract `MockProvider` to shared `testutil` package
+- **DJI-309**: Integration pipeline tests — 5 AC scenarios (sync→acquisition, full pipeline, download failure, metadata enrichment fallback, concurrent jobs)
+- **DJI-310**: Fix stale `NewSlskdService` constructor in integration harness
+- **DJI-311**: Library Browse UI — searchable/sortable/paginated track table with HTMX partial updates and detail modal
+- **DJI-312**: PruneTracks job logging — jobID parameter, per-file JobLog entries (OK/ERR/INFO summary), `error_detail` on failure
+- **DJI-313**: Bandcamp RSS support with channel-title-as-artist fallback
+- Job UI improvements: cancel (hx-delete → hx-post /cancel), Retry button for failed jobs, Attempt/ErrorDetail display
+- Ownership scoping: non-admin users only see their own jobs; ownership validation on retry/cancel
 
-- All 12 test packages pass with zero failures.
+### Cycle A — Foundation & CI/CD (PR #131)
 
----
+- **DJI-303**: Split server/worker in Docker Compose; simplified `entrypoint.sh` to single-process bootstrap
+- **DJI-305**: Audit Go dependencies; `govulncheck` clean after bumping `golang.org/x/net`
+- **DJI-302**: Docker CI — build and push to GHCR on main push and v\* tags (Buildx + GHA cache)
+- **DJI-304**: Enhanced health endpoint (`/api/health`) with per-dependency checks (db, slskd, gonic, disk); returns ok/degraded status
+- **DJI-306**: Blocking `govulncheck` in CI (no longer `continue-on-error`)
+- **DJI-307**: Compose healthchecks — wget for ops-web, `kill -0 1` for ops-worker; Caddy depends-on `service_healthy`
 
-## [2.2.0] - 2026-04-01
+### Pre-Cycle Foundation
 
-### 🛡️ Security
-
-- **BOLA Protection for Watchlists**: Added ownership verification to `GetPreview` and `GetForm` endpoints. Non-admin users can only access watchlists they own. Unauthorized access returns 403 Forbidden or "Watchlist not found" error snippets for HTMX partials.
-- **BOLA Protection for Statistics**: All aggregate statistics and jobs listing endpoints now filter by `owner_user_id`. Non-admin users see only their own resource counts and data. Admins retain global visibility.
-- **BOLA Protection for Libraries and Quality Profiles**: Ownership tracking enforced across library and quality profile endpoints.
-- **Library Path Validation**: Added `validateLibraryPath()` to prevent path traversal attacks. Ensures library paths are absolute, exist, and are directories. All paths stored in canonical cleaned form via `filepath.Clean()`.
-- **HTMX Partial Security**: HTMX form partials now incorporate ownership filters directly into queries, ensuring unauthorized access is treated as "Not Found" rather than leaking configuration details.
-
-### ⚡ Performance
-
-- **Eliminated Redundant Auth Lookups**: Removed duplicate database session lookups in `ArtistsHandler`, `StatsHandler`, `WatchlistPreviewHandler`, and `DashboardHandler`. All handlers now use `c.Locals("user")` populated by `AuthMiddleware`, saving 1+ database roundtrip per request.
-- **Consolidated Stats Queries**: Replaced multiple sequential `COUNT` queries in `StatsHandler` with single SQL statements using subqueries and conditional aggregation (`COUNT(*) FILTER`). Reduced database roundtrips from up to 6 down to 1 for dashboard endpoints.
-- **Optimized Watchlist Filtering**: Improved memory usage in watchlist filtering operations.
-
-### ♿ Accessibility & UX
-
-- **Contextual ARIA Labels**: Added descriptive `aria-label` attributes to all action buttons (Edit, Delete, Sync, Scan, Enrich) including the item name for screen reader context.
-- **Specific Confirmation Messages**: Updated `hx-confirm` dialogs for destructive actions to include the specific item name being deleted, reducing accidental deletions.
-- **HTMX Visual Feedback**: Added global `.htmx-request` CSS style that reduces opacity and changes cursor to 'wait' during background requests.
-- **Form Accessibility**: Added `aria-label` to the "Enabled" toggle in watchlists and "Add" buttons across all management sections.
-- **Missing Confirmation Added**: Added `hx-confirm` dialog to the "Delete" button in Schedules view.
-
-### 🧪 Testing
-
-- **BOLA Integration Tests**: Added comprehensive test suites (`watchlist_bola_test.go`, `stats_bola_test.go`, `stats_auth_test.go`, `stats_auth_repro_test.go`) verifying cross-user data isolation.
-- **Library Path Validation Tests**: Added unit and integration tests for `validateLibraryPath()` covering relative paths, non-existent paths, file-vs-directory, and traversal scenarios.
-- **Test Field Name Fixes**: Corrected JSON field name assertions in `libraries_test.go` to use capitalized field names matching the database model.
-- **Auth Test Alignment**: Updated `stats_test.go` and `auth_test.go` to align with new authentication requirements.
-
-### 📝 Documentation
-
-- Updated `.jules/sentinel.md` with BOLA vulnerability learnings and prevention strategies.
-- Updated `.jules/bolt.md` with performance optimization patterns.
-- Updated `.jules/palette.md` with accessibility patterns and HTMX feedback conventions.
-
-### 🐛 Bug Fixes
-
-- Fixed UUID type mismatches in test suites.
-- Fixed User struct field assertions in tests.
-- Fixed misplaced `//go:build` comments.
-- Removed unused imports (`net/http`, `ctx` in tests).
-
----
-
-## [2.1.0] - 2026-03-26
-
-### Added
-- Phase 2: Pipeline Architecture + Quality System (DJI-21 through DJI-24)
-- Phase 1: Security Hardening + Test Foundation (DJI-9 through DJI-20)
-- Phase 0: Harden sprint fixes (DJI-5..DJI-8)
-- Integration test harness
-- Repository cartography with hierarchical codemaps
-
-### Security
-- Fixed BOLA in Libraries and Quality Profiles
-- Fixed BOLA in monitored artists management
-- Fixed BOLA in schedules management
-
-### Performance
-- Optimized library scanner performance
-- Optimized SyncDiscography N+1 queries
-- Consolidated dashboard stats queries
-- Batch job item creation and consolidated progress queries
-
-### UI/UX
-- Enhanced artist monitoring accessibility and clarity
-- Enhanced dashboard accessibility and feedback
-- Added confirmation dialogs for destructive actions
-- Improved HTMX feedback and accessibility labels
-
----
-
-## [2.0.0] - 2026-03-17
-
-### Added
-- Phase 7: System hardening and polish
-- Phase 6: UI Implementation
-- Phase 5: Quality Profiles CRUD API
-- Phase 4: Add library scanning (scan job type, API, CLI)
-- Phase 3 & 4: Statistics/Dashboard + Metadata Enrichment
-- Phase 3: Polish & Hardening
-- Phase 2: UI Operational
-- Artist tracking and scheduler implementation
-- Disk quota service, quota alerts, and AcoustID score storage
-- MCP tools — scan_library, add_library, list_monitored_artists, cancel_job, retry_job
-- Cover art image caching and MIME detection
-- Configurable cover art source priority per quality profile
-- Total track count and source badge to watchlist preview
-
-### Security
-- Fixed privilege escalation in registration
-- Fixed XSS in log streaming and secured WebSocket routes
-- Fixed N+1 queries in watchlist filtering
-
-### Infrastructure
-- Unified server+worker in single container
-- Migrated to pongo2 (Jinja2) templates
-- Dynamic library routing via MUSIC_LIBRARY environment variable
-- Parallel scanning with concurrent IO worker pool
+- Comprehensive test isolation: SQLite `:memory:` for auth/authorization tests, UUID-based test data, defer cleanup
+- Cross-platform fixes: `os.TempDir()` for library path tests, nil-checks for ListenNotify
+- Security hardening: bcrypt cost 10→12, XSS escape in job templates, cookie Secure/SameSite configuration
+- Dependency bump: `gofiber/fiber/v2` to v2.52.13 (CVE-2026-42554)
+- Docs reconciliation: `.env.example`, AGENTS.md, ARCHITECTURE.md alignment with runtime behavior

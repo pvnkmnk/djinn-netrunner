@@ -170,7 +170,7 @@ Cycle A targeted the foundation layer — Docker packaging, CI/CD, dependency he
 - [x] Caddy reverse proxy with CSP
 
 ### Known Issues
-- Legacy `conductor/` directory still present (archived planning tracks)
+- [x] Legacy `conductor/` directory removed (Cycle C cleanup)
 
 ---
 

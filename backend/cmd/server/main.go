@@ -262,7 +262,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			q = q.Where("owner_user_id = ?", user.ID)
 		}
 		if err := q.Find(&jobs).Error; err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			slog.Error("Failed to fetch jobs", "error", err)
+			return c.Status(500).JSON(fiber.Map{"error": "failed to fetch jobs"})
 		}
 		return c.JSON(jobs)
 	})
@@ -290,7 +291,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 		}
 		if err := agent.RetryJob(db, jobID); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+			slog.Error("Failed to retry job", "job_id", jobID, "error", err)
+			return c.Status(400).JSON(fiber.Map{"error": "failed to retry job"})
 		}
 		return c.JSON(fiber.Map{"status": "retry_queued", "job_id": jobID})
 	})
@@ -311,7 +313,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 		}
 		if err := agent.CancelJob(db, jobID); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+			slog.Error("Failed to cancel job", "job_id", jobID, "error", err)
+			return c.Status(400).JSON(fiber.Map{"error": "failed to cancel job"})
 		}
 		return c.JSON(fiber.Map{"status": "cancelled", "job_id": jobID})
 	})
