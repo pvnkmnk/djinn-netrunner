@@ -90,18 +90,18 @@ func Migrate(db *gorm.DB) error {
 				JOIN pg_namespace ON relnamespace = pg_namespace.oid
 				WHERE attname = $1 AND relname = $2 AND nspname = 'public'`,
 				m.column, m.table).Scan(&colType)
-		if colType == m.enumType {
-			// Identifiers from hardcoded struct literal — use quoted identifiers for safety
-			if err := db.Exec(
-				`ALTER TABLE "` + m.table + `" ALTER COLUMN "` + m.column + `" TYPE text USING "` + m.column + `"::text`,
-			).Error; err != nil {
-				return fmt.Errorf("failed to convert %s.%s enum to text: %w", m.table, m.column, err)
+			if colType == m.enumType {
+				// Identifiers from hardcoded struct literal — use quoted identifiers for safety
+				if err := db.Exec(
+					`ALTER TABLE "` + m.table + `" ALTER COLUMN "` + m.column + `" TYPE text USING "` + m.column + `"::text`,
+				).Error; err != nil {
+					return fmt.Errorf("failed to convert %s.%s enum to text: %w", m.table, m.column, err)
+				}
 			}
-		}
-		// Drop the unused ENUM type (CASCADE drops dependent defaults).
-		if err := db.Exec(`DROP TYPE IF EXISTS "` + m.enumType + `"`).Error; err != nil {
-			return fmt.Errorf("failed to drop enum %s: %w", m.enumType, err)
-		}
+			// Drop the unused ENUM type (CASCADE drops dependent defaults).
+			if err := db.Exec(`DROP TYPE IF EXISTS "` + m.enumType + `"`).Error; err != nil {
+				return fmt.Errorf("failed to drop enum %s: %w", m.enumType, err)
+			}
 		}
 	}
 
