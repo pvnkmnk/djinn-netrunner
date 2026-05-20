@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -81,10 +82,12 @@ func (h *HealthHandler) checkDatabase() HealthCheck {
 	}
 	raw, err := h.db.DB()
 	if err != nil {
-		return HealthCheck{Status: "error", Error: err.Error()}
+		slog.Error("Health check: database connection failed", "error", err)
+		return HealthCheck{Status: "error", Error: "database check failed"}
 	}
 	if err := raw.Ping(); err != nil {
-		return HealthCheck{Status: "error", Error: err.Error()}
+		slog.Error("Health check: database ping failed", "error", err)
+		return HealthCheck{Status: "error", Error: "database check failed"}
 	}
 	return HealthCheck{Status: "ok"}
 }
@@ -93,7 +96,8 @@ func (h *HealthHandler) checkHTTP(url string, timeout time.Duration) HealthCheck
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Get(url)
 	if err != nil {
-		return HealthCheck{Status: "error", Error: err.Error()}
+		slog.Error("Health check: HTTP request failed", "url", url, "error", err)
+		return HealthCheck{Status: "error", Error: "service unreachable"}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -105,12 +109,14 @@ func (h *HealthHandler) checkHTTP(url string, timeout time.Duration) HealthCheck
 func (h *HealthHandler) checkDisk(path string) HealthCheck {
 	dir, err := os.Open(path)
 	if err != nil {
-		return HealthCheck{Status: "error", Error: err.Error()}
+		slog.Error("Health check: disk open failed", "path", path, "error", err)
+		return HealthCheck{Status: "error", Error: "disk check failed"}
 	}
 	defer dir.Close()
 
 	if _, err := dir.Readdirnames(1); err != nil && err != io.EOF {
-		return HealthCheck{Status: "error", Error: err.Error()}
+		slog.Error("Health check: disk read failed", "path", path, "error", err)
+		return HealthCheck{Status: "error", Error: "disk check failed"}
 	}
 	return HealthCheck{Status: "ok", Message: "directory accessible"}
 }
