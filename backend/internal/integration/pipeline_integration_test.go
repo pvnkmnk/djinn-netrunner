@@ -8,7 +8,7 @@
 //   3. Download failure handling
 //   4. Metadata enrichment fallback
 //   5. Concurrent job execution
-//   6. Library prune removes stale track records and writes job logs
+//   6. Library prune removes stale track records
 //
 package integration
 
@@ -589,7 +589,7 @@ func TestLibraryPrune(t *testing.T) {
 	require.Len(t, remainingTracks, 1, "only the track with an existing file should remain")
 	assert.Equal(t, "Keep Me", remainingTracks[0].Title)
 
-	// ── Verify: job logs were written for removed file ───────────────────
+	// ── Verify: job logs were written ────────────────────────────────────
 	var logs []database.JobLog
 	require.NoError(t, harness.DB.Where("job_id = ?", job.ID).Find(&logs).Error)
 	require.NotEmpty(t, logs, "job logs should be written during prune")
