@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,7 +81,7 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 	err := listener.Listen("opsevents")
 	if err != nil {
 		slog.Error("Failed to listen for logs", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	slog.Info("Listening for opsevents log notifications")

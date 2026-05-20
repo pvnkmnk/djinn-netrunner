@@ -11,8 +11,8 @@ import (
 func TestNavidromeClient_TriggerScan(t *testing.T) {
 	// Create a mock Navidrome server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check for required parameters
-		if r.URL.Query().Get("u") != "testuser" || r.URL.Query().Get("p") != "testpass" {
+		// Check for required parameters (token-based auth, 'p' param replaced by 't'+'s')
+		if r.URL.Query().Get("u") != "testuser" || r.URL.Query().Get("t") == "" || r.URL.Query().Get("s") == "" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

@@ -43,6 +43,11 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
 				s.processFile(job.Path, job.LibraryID)
 			}
 		}()

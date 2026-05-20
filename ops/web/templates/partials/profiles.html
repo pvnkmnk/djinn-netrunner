@@ -11,27 +11,27 @@
     <div class="profile-card" id="profile-{{ profile.ID }}">
         <div class="profile-info">
             <div class="name">
-                {{ profile.Name }}
+                {{ profile.Name | escape }}
                 {% if profile.IsDefault %}<span class="badge">Default</span>{% endif %}
             </div>
-            <div class="description">{{ profile.Description }}</div>
+            <div class="description">{{ profile.Description | escape }}</div>
             <div class="details">
                 <span>Lossless: {{ profile.PreferLossless }}</span>
-                <span>Formats: {{ profile.AllowedFormats }}</span>
+                <span>Formats: {{ profile.AllowedFormats | escape }}</span>
                 <span>Min Bitrate: {{ profile.MinBitrate }}</span>
-                <span>Cover Art: {% if profile.CoverArtSources %}{{ profile.CoverArtSources }}{% else %}source,musicbrainz,discogs{% endif %}</span>
+                <span>Cover Art: {% if profile.CoverArtSources %}{{ profile.CoverArtSources | escape }}{% else %}source,musicbrainz,discogs{% endif %}</span>
             </div>
         </div>
         <div class="actions">
             {% if not profile.IsDefault %}
-            <button class="btn btn-sm" hx-post="/api/profiles/{{ profile.ID }}/set-default" hx-target="#profiles-list" hx-swap="outerHTML" aria-label="Set {{ profile.Name }} as default profile">
+            <button class="btn btn-sm" hx-post="/api/profiles/{{ profile.ID }}/set-default" hx-target="#profiles-list" hx-swap="outerHTML" aria-label="Set {{ profile.Name | escape }} as default profile">
                 Set Default
             </button>
             {% endif %}
-            <button class="btn btn-sm" hx-get="/partials/profile-form?id={{ profile.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit profile {{ profile.Name }}">
+            <button class="btn btn-sm" hx-get="/partials/profile-form?id={{ profile.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit profile {{ profile.Name | escape }}">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/profiles/{{ profile.ID }}" hx-target="#profile-{{ profile.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete profile {{ profile.Name }}?" aria-label="Delete profile {{ profile.Name }}">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/profiles/{{ profile.ID }}" hx-target="#profile-{{ profile.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete profile {{ profile.Name | escape }}?" aria-label="Delete profile {{ profile.Name | escape }}">
                 Delete
             </button>
         </div>

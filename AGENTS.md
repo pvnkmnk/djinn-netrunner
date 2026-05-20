@@ -25,7 +25,7 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `.github/workflows/` | CI/CD | Go CI (`go vet`, `go test`, coverage artifact) | Yes |
 | `scripts/` | Ops scripts | Integration test orchestration helper (`integration-tests.sh`) | Yes |
 | `docs/` | Documentation | Architecture/plans/runbooks | Yes |
-| `conductor/` | Docs/archive | Legacy/archived docs area (removed Cycle C) | Sometimes |
+| `conductor/` | (removed) | Legacy/archived docs area — content captured in Linear | No |
 | `examples/` | Examples | Sample content and helper artifacts | Sometimes |
 
 ## Quickstart for Agents

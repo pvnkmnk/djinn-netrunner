@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -187,24 +188,32 @@ type SlskdService struct {
 // searchRateLimiter enforces slskd's search rate limit (34 searches per 220 seconds).
 type searchRateLimiter struct {
 	tokens chan struct{}
+	stop   chan struct{}
 }
 
 func newSearchRateLimiter() *searchRateLimiter {
 	rl := &searchRateLimiter{
 		tokens: make(chan struct{}, 34),
+		stop:   make(chan struct{}),
 	}
 	// Fill initial tokens
 	for i := 0; i < 34; i++ {
 		rl.tokens <- struct{}{}
 	}
-	// Refill 34 tokens every 220 seconds
+	// Refill 34 tokens every 220 seconds; stops when stop channel is closed
 	go func() {
 		ticker := time.NewTicker(220 * time.Second)
-		for range ticker.C {
-			for i := 0; i < 34; i++ {
-				select {
-				case rl.tokens <- struct{}{}:
-				default:
+		defer ticker.Stop()
+		for {
+			select {
+			case <-rl.stop:
+				return
+			case <-ticker.C:
+				for i := 0; i < 34; i++ {
+					select {
+					case rl.tokens <- struct{}{}:
+					default:
+					}
 				}
 			}
 		}
@@ -212,8 +221,17 @@ func newSearchRateLimiter() *searchRateLimiter {
 	return rl
 }
 
+func (rl *searchRateLimiter) Stop() {
+	close(rl.stop)
+}
+
 func (rl *searchRateLimiter) Wait() {
 	<-rl.tokens
+}
+
+// Stop shuts down the background rate limiter goroutine.
+func (s *SlskdService) Stop() {
+	s.rateLimiter.Stop()
 }
 
 func NewSlskdService(cfg *config.Config, db *gorm.DB) *SlskdService {
@@ -432,7 +450,7 @@ func (s *SlskdService) GetDownload(username, filename string) (*Download, error)
 	return &d, nil
 }
 
-func (s *SlskdService) WaitForDownload(username, filename string, timeout time.Duration) (*Download, error) {
+func (s *SlskdService) WaitForDownload(ctx context.Context, username, filename string, timeout time.Duration) (*Download, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -443,6 +461,8 @@ func (s *SlskdService) WaitForDownload(username, filename string, timeout time.D
 
 	for {
 		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		case <-ticker.C:
 			if time.Since(start) > timeout {
 				return nil, fmt.Errorf("download timeout after %v", timeout)
