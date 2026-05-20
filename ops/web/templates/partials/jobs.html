@@ -27,14 +27,27 @@
         <div class="job-meta">
             <span>{{ job.RequestedAt | date:"Jan 02 15:04" }}</span>
             <span>By: {{ job.CreatedBy | escape }}</span>
+            {% if job.Attempt > 0 and job.MaxAttempts > 0 %}
+            <span class="job-attempt">Attempt: {{ job.Attempt }}/{{ job.MaxAttempts }}</span>
+            {% endif %}
         </div>
+        {% if job.State == "failed" and job.ErrorDetail %}
+        <div class="job-error-detail" title="{{ job.ErrorDetail | escape }}">
+            {{ job.ErrorDetail | escape }}
+        </div>
+        {% endif %}
         <div class="actions">
             <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ job.ID }}" hx-target="#job-logs-container" hx-swap="innerHTML" aria-label="View logs for job #{{ job.ID }}">
                 View Logs
             </button>
             {% if job.State == "queued" %}
-            <button class="btn btn-sm btn-danger" hx-delete="/api/jobs/{{ job.ID }}" hx-target="#job-{{ job.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to cancel job #{{ job.ID }}?" aria-label="Cancel job #{{ job.ID }}">
+            <button class="btn btn-sm btn-danger" hx-post="/api/jobs/{{ job.ID }}/cancel" hx-target="#job-{{ job.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to cancel job #{{ job.ID }}?" aria-label="Cancel job #{{ job.ID }}">
                 Cancel
+            </button>
+            {% endif %}
+            {% if job.State == "failed" %}
+            <button class="btn btn-sm btn-warning" hx-post="/api/jobs/{{ job.ID }}/retry" hx-target="#job-{{ job.ID }}" hx-swap="outerHTML" hx-confirm="Retry job #{{ job.ID }}?" aria-label="Retry job #{{ job.ID }}">
+                Retry
             </button>
             {% endif %}
         </div>
