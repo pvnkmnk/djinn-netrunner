@@ -68,7 +68,7 @@ services:
     container_name: ops-web
     command: ["./netrunner-server"]
     environment:
-      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
+      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
       GONIC_URL: http://netrunner-gonic:4747
@@ -106,7 +106,7 @@ services:
     container_name: ops-worker
     command: ["./netrunner-worker"]
     environment:
-      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
+      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
       GONIC_URL: http://netrunner-gonic:4747

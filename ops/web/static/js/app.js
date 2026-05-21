@@ -32,10 +32,25 @@ function openModal(html) {
 function openModalFromHTMX(target) {
     const container = document.getElementById('modal-container');
     if (container && target) {
-        container.innerHTML = target;
+        // target is a DOM element reference from HTMX; clone safely.
+        // Deep-clone keeps element state (input values, scroll position) but
+        // duplicates IDs — prefix them to avoid HTML spec violations.
+        const clone = target.cloneNode(true);
+        clone.querySelectorAll('[id]').forEach(function(el) {
+            el.id = 'modal-' + el.id;
+        });
+        // Update label[for] attributes pointing to now-prefixed IDs within the clone.
+        clone.querySelectorAll('label[for]').forEach(function(el) {
+            var targetId = el.getAttribute('for');
+            if (clone.querySelector('#' + CSS.escape(targetId))) {
+                el.setAttribute('for', 'modal-' + targetId);
+            }
+        });
+        container.replaceChildren(clone);
         container.offsetHeight;
         container.classList.add('active');
     }
+}
 }
 
 document.addEventListener('DOMContentLoaded', function() {

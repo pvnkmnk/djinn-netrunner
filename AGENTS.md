@@ -78,7 +78,7 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `NOTIFICATION_WEBHOOK_URL` | Conditional | empty | Notification sink URL |
 | `AUTH_RATE_LIMIT_MAX` | No | `10` | Auth endpoint rate-limit max requests |
 | `AUTH_RATE_LIMIT_EXPIRATION` | No | `1m` | Auth rate-limit window |
-| `POSTGRES_PASSWORD` | Docker-only | `changeme` fallback | Postgres password for compose stack |
+| `POSTGRES_PASSWORD` | Docker-only | (required) | Postgres password for compose stack |
 | `SLSKD_USERNAME` | Docker-only | none | slskd Soulseek username |
 | `SLSKD_PASSWORD` | Docker-only | none | slskd Soulseek password |
 | `SLSKD_TEST_USERNAME` | Integration-only | `testuser` | Integration slskd user |

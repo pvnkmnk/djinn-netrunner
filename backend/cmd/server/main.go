@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -108,8 +111,34 @@ func main() {
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
 
-	// Start log listener
-	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
+	// Start log listener with graceful shutdown and exponential backoff
+	listenerCtx, listenerCancel := context.WithCancel(context.Background())
+	go func() {
+		backoff := 1 * time.Second
+		const maxBackoff = 30 * time.Second
+		for {
+			wsManager.ListenForJobLogs(listenerCtx, cfg.DatabaseURL, db)
+
+			select {
+			case <-listenerCtx.Done():
+				slog.Info("Log listener retry loop stopped")
+				return
+			default:
+			}
+
+			slog.Warn("Log listener exited, restarting", "backoff", backoff)
+			select {
+			case <-time.After(backoff):
+			case <-listenerCtx.Done():
+				slog.Info("Log listener retry loop stopped")
+				return
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}()
 
 	// Routes
 	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
@@ -127,6 +156,7 @@ func main() {
 	<-stop
 
 	slog.Info("Shutting down server...")
+	listenerCancel()
 	app.Shutdown()
 }
 
@@ -147,6 +177,25 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return 1 * time.Minute // fallback
 		}(),
 		KeyGenerator: func(c *fiber.Ctx) string {
+			// Only trust X-Real-IP when it comes from a private/loopback source
+			// (i.e., a known reverse proxy). Otherwise fall back to c.IP().
+			remoteAddr := c.IP()
+			if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+				remoteAddr = host
+			}
+			if ip := net.ParseIP(remoteAddr); ip != nil && ip.IsPrivate() {
+				if forwarded := c.Get("X-Real-IP"); forwarded != "" {
+					// Strip port if present
+					if host, _, err := net.SplitHostPort(forwarded); err == nil {
+						forwarded = host
+					}
+					return strings.TrimSpace(forwarded)
+				}
+			}
+			// Strip port from c.IP() for consistent keying
+			if host, _, err := net.SplitHostPort(c.IP()); err == nil {
+				return host
+			}
 			return c.IP()
 		},
 		LimitReached: func(c *fiber.Ctx) error {

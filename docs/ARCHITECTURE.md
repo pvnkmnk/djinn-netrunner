@@ -90,6 +90,15 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 - **Manage Jobs**: Cancel or retry jobs (`cancel_job`, `retry_job`).
 - **Query System**: Get stats summaries, quality profiles, and configured libraries (`get_stats`, `list_quality_profiles`, `list_libraries`).
 
+## Security
+- **Session Auth**: Cookie-based (`session_id`) with `HTTPOnly`, `Secure` (HTTPS-only), and `SameSite=Lax` flags.
+- **CSRF Protection**: Double-submit cookie pattern via `X-CSRF-Token` header on all state-changing requests.
+- **SSRF Prevention**: `SafeGet` validates outbound URLs against private CIDR ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `0.0.0.0/8`, `::1/128`, `fc00::/7`) with DNS-rebinding protection via direct IP dial.
+- **Rate Limiting**: Auth endpoints use IP-based rate limiting with port-stripped keys; `X-Real-IP` only trusted from private sources.
+- **Email Validation**: RFC 5322 validation via `net/mail.ParseAddress`.
+- **Security Headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy` on all responses.
+- **Cover Art Size Limit**: 10 MB maximum for all cover art fetchers (consistent constant).
+
 ## DB Connection Model
 The system uses a unified GORM connection with specific optimizations for SQLite:
 - **WAL Mode**: Enabled for high-concurrency read/write operations.

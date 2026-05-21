@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"net/mail"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -39,6 +40,11 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 
 	if payload.Email == "" || payload.Password == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
+	}
+
+	// Validate email format using net/mail.ParseAddress (RFC 5322)
+	if _, err := mail.ParseAddress(payload.Email); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid email format"})
 	}
 
 	// Check if user exists — return identical response to prevent user enumeration
