@@ -192,11 +192,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 					return strings.TrimSpace(forwarded)
 				}
 			}
-			// Strip port from c.IP() for consistent keying
-			if host, _, err := net.SplitHostPort(c.IP()); err == nil {
-				return host
-			}
-			return c.IP()
+			// Fall back to normalized remoteAddr (already stripped of port)
+			return remoteAddr
 		},
 		LimitReached: func(c *fiber.Ctx) error {
 			return c.Status(429).JSON(fiber.Map{"error": "too many requests, please try again later"})

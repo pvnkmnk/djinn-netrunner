@@ -36,13 +36,19 @@ function openModalFromHTMX(target) {
         // Deep-clone keeps element state (input values, scroll position) but
         // duplicates IDs — prefix them to avoid HTML spec violations.
         const clone = target.cloneNode(true);
+        // Prefix the root element's own id too.
+        if (clone.id) {
+            clone.id = 'modal-' + clone.id;
+        }
         clone.querySelectorAll('[id]').forEach(function(el) {
             el.id = 'modal-' + el.id;
         });
         // Update label[for] attributes pointing to now-prefixed IDs within the clone.
+        // We control the cloned markup, so we can confidently remap all label "for"
+        // attributes without needing a CSS.escape-based existence check.
         clone.querySelectorAll('label[for]').forEach(function(el) {
             var targetId = el.getAttribute('for');
-            if (clone.querySelector('#' + CSS.escape(targetId))) {
+            if (targetId) {
                 el.setAttribute('for', 'modal-' + targetId);
             }
         });
@@ -50,7 +56,6 @@ function openModalFromHTMX(target) {
         container.offsetHeight;
         container.classList.add('active');
     }
-}
 }
 
 document.addEventListener('DOMContentLoaded', function() {

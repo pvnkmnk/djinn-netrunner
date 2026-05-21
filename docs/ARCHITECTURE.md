@@ -91,7 +91,7 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 - **Query System**: Get stats summaries, quality profiles, and configured libraries (`get_stats`, `list_quality_profiles`, `list_libraries`).
 
 ## Security
-- **Session Auth**: Cookie-based (`session_id`) with `HTTPOnly`, `Secure` (HTTPS-only), and `SameSite=Lax` flags.
+- **Session Auth**: Cookie-based (`session_id`) with `HttpOnly`, `Secure` (enabled for HTTPS/prod, disabled for local HTTP dev), and `SameSite=Lax` flags.
 - **CSRF Protection**: Double-submit cookie pattern via `X-CSRF-Token` header on all state-changing requests.
 - **SSRF Prevention**: `SafeGet` validates outbound URLs against private CIDR ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `0.0.0.0/8`, `::1/128`, `fc00::/7`) with DNS-rebinding protection via direct IP dial.
 - **Rate Limiting**: Auth endpoints use IP-based rate limiting with port-stripped keys; `X-Real-IP` only trusted from private sources.

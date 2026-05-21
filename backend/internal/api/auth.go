@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -42,10 +43,12 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
 	}
 
-	// Validate email format using net/mail.ParseAddress (RFC 5322)
-	if _, err := mail.ParseAddress(payload.Email); err != nil {
+	// Validate and normalize email format using net/mail.ParseAddress (RFC 5322)
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid email format"})
 	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
 
 	// Check if user exists — return identical response to prevent user enumeration
 	var existing database.User
@@ -83,6 +86,13 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	if err := c.BodyParser(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
+
+	// Normalize email before DB lookup
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
+	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
 
 	var user database.User
 	if err := h.db.Where("email = ?", payload.Email).First(&user).Error; err != nil {
