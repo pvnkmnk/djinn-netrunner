@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
@@ -71,7 +72,9 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 		req.Header.Set("Authorization", "Token "+p.Token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	// ✅ SECURITY: Use safe HTTP client to prevent SSRF
+	client := NewSafeHTTPClient(30 * time.Second)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", err
 	}

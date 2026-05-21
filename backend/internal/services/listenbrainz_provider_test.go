@@ -38,6 +38,9 @@ func TestListenBrainzProvider_FetchTracks(t *testing.T) {
 	}))
 	defer server.Close()
 
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	provider := &ListenBrainzProvider{
 		Token:   "test-token",
 		BaseURL: server.URL,

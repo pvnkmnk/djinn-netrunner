@@ -31,6 +31,9 @@ func TestRSSProvider_FetchTracks(t *testing.T) {
 	}))
 	defer server.Close()
 
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	provider := &RSSProvider{}
 
 	watchlist := &database.Watchlist{
@@ -48,6 +51,8 @@ func TestRSSProvider_FetchTracks(t *testing.T) {
 }
 
 func TestRSSProvider_MalformedFeed(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/rss+xml")
 		w.Write([]byte(`this is not valid xml`))
@@ -61,6 +66,8 @@ func TestRSSProvider_MalformedFeed(t *testing.T) {
 }
 
 func TestRSSProvider_EmptyFeed(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
 	emptyRSS := `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -90,6 +97,8 @@ func TestRSSProvider_NetworkError(t *testing.T) {
 }
 
 func TestRSSProvider_NoMediaContent(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
 	rssNoMedia := `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -119,6 +128,8 @@ func TestRSSProvider_NoMediaContent(t *testing.T) {
 }
 
 func TestRSSProvider_MultipleItems(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
 	multiRSS := `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
    <channel>
@@ -160,6 +171,8 @@ func TestRSSProvider_MultipleItems(t *testing.T) {
 
 // TestRSSProvider_BandcampFeed tests Bandcamp-style RSS feed with track-only titles
 func TestRSSProvider_BandcampFeed(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
 	// Mock Bandcamp-style RSS feed with track-only titles and enclosure for audio
 	bandcampRSS := `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
@@ -215,6 +228,8 @@ func TestRSSProvider_BandcampFeed(t *testing.T) {
 
 // TestRSSProvider_HTTPError tests HTTP error handling (404)
 func TestRSSProvider_HTTPError(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound) // 404
 		w.Write([]byte(`not found`))

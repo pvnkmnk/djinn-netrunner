@@ -37,6 +37,9 @@ func init() {
 
 // isPrivateIP returns true if ip is in a private/loopback/link-local range.
 func isPrivateIP(ip net.IP) bool {
+	if allowLoopback && (ip.IsLoopback() || ip.String() == "::1" || ip.String() == "127.0.0.1") {
+		return false
+	}
 	for _, network := range parsedCIDRs {
 		if network.Contains(ip) {
 			return true
@@ -53,6 +56,8 @@ func isPrivateIP(ip net.IP) bool {
 // and dialing directly to the verified IP via a custom transport. Redirects
 // are disabled to prevent redirect-based SSRF.
 // See: https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
+var allowLoopback bool
+
 // safeTransport is a shared HTTP transport that validates all outbound
 // connections against private IP ranges to prevent SSRF.
 var safeTransport = &http.Transport{

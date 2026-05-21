@@ -38,6 +38,9 @@ func TestDiscogsProvider_FetchTracks(t *testing.T) {
 	}))
 	defer server.Close()
 
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	provider := &DiscogsProvider{
 		Token:   "test-token",
 		BaseURL: server.URL,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mmcdole/gofeed"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -19,6 +20,8 @@ func NewRSSProvider() *RSSProvider {
 
 func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
 	fp := gofeed.NewParser()
+	// ✅ SECURITY: Use safe HTTP client to prevent SSRF
+	fp.Client = NewSafeHTTPClient(30 * time.Second)
 	feed, err := fp.ParseURLWithContext(watchlist.SourceURI, ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to parse RSS feed: %w", err)

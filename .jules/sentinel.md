@@ -30,6 +30,11 @@
 **Learning:** HTMX handlers often return 200 OK with an error snippet instead of 403/404 to provide better UX (inline errors instead of broken modals). This requires the underlying query to be ownership-aware so that unauthorized access is treated as a "Not Found" event.
 **Prevention:** In handlers serving HTMX partials, incorporate ownership filters (e.g., `.Where("owner_user_id = ?", user.ID)`) directly into the `First()` or `Find()` queries to ensure that missing ownership results in a standard "record not found" error, which can then be rendered as a user-friendly error snippet.
 
+## 2026-05-21 - [SSRF Protection in Data Providers]
+**Vulnerability:** External data providers (RSS, Last.fm, ListenBrainz, Discogs) used `http.DefaultClient`, allowing attackers to trigger requests to internal network services via user-supplied URIs or metadata fields.
+**Learning:** Centralized SSRF protection using `SafeHTTPClient` is effective but can break integration tests that rely on `httptest.NewServer` (loopback). A controlled `allowLoopback` flag within the service package allows tests to pass without weakening production security.
+**Prevention:** Always use `NewSafeHTTPClient` for outbound requests. In tests, temporarily set `allowLoopback = true` and ensure it is reset via `defer`.
+
 ## 2026-04-07 - [Privilege Escalation in Quality Profiles]
 **Vulnerability:** Non-admin users could promote their own quality profiles to system-wide defaults by setting the `is_default` flag in create/update requests.
 **Learning:** Resource attributes that affect global system state (like a 'default' flag) must be explicitly protected by role-based checks in the API handlers.
