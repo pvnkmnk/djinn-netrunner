@@ -127,8 +127,8 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	h.db.Model(&user).Update("last_login_at", &now)
 
 	// Set cookie with security best practices
-	// SECURITY: SameSite=Lax prevents CSRF while allowing normal navigation
-	// Secure flag is set based on environment (true in production, false for local HTTP dev)
+	// SECURITY: SameSite=Strict prevents CSRF (no cross-site top-level GET navigations)
+	// Secure flag set dynamically: false for local HTTP dev, true for HTTPS behind Caddy
 	secure := c.Protocol() == "https"
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookie,
@@ -136,7 +136,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		Expires:  expiresAt,
 		HTTPOnly: true,
 		Secure:   secure,
-		SameSite: "Lax",
+		SameSite: "Strict",
 		Path:     "/",
 	})
 

@@ -85,12 +85,14 @@ func main() {
 	}))
 
 	// SECURITY: Add security headers to all responses
+	// CSP is set here (not just in Caddy) to protect direct :8080 access
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("X-Content-Type-Options", "nosniff")
 		c.Set("X-Frame-Options", "DENY")
 		c.Set("X-XSS-Protection", "1; mode=block")
 		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: https:; font-src 'self' data:;")
 		return c.Next()
 	})
 

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
@@ -54,6 +53,49 @@ func isPrivateIP(ip net.IP) bool {
 // and dialing directly to the verified IP via a custom transport. Redirects
 // are disabled to prevent redirect-based SSRF.
 // See: https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
+// safeTransport is a shared HTTP transport that validates all outbound
+// connections against private IP ranges to prevent SSRF.
+var safeTransport = &http.Transport{
+	DialContext: safeDialContext,
+}
+
+// safeDialContext resolves DNS, verifies the resolved IP is not in a private
+// range, and dials directly. This prevents SSRF via DNS rebinding or direct
+// private IP access.
+func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("ssrf: invalid address %q: %w", addr, err)
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
+	}
+	var safeIP net.IP
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			continue
+		}
+		safeIP = ip
+		break
+	}
+	if safeIP == nil {
+		return nil, fmt.Errorf("ssrf: no public IP found for %s", host)
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, network, net.JoinHostPort(safeIP.String(), port))
+}
+
+// NewSafeHTTPClient creates an *http.Client whose transport prevents
+// connections to private/internal IP addresses. Use this for all outbound
+// HTTP clients to guard against SSRF.
+func NewSafeHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout:    timeout,
+		Transport: safeTransport,
+	}
+}
+
 func SafeGet(rawURL string) (*http.Response, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -94,22 +136,11 @@ func SafeGet(rawURL string) (*http.Response, error) {
 		}
 	}
 
-	// Build a transport that dials directly to the verified IP, preventing
-	// DNS rebinding (TOCTOU) where a second DNS lookup could return a private IP.
-	dialAddr := net.JoinHostPort(safeIP.String(), port)
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return net.Dial("tcp", dialAddr)
-		},
-		TLSClientConfig: &tls.Config{
-			ServerName: hostname, // SNI must match the original hostname for HTTPS
-		},
-	}
-
+	// Use the shared safeTransport which validates IPs on every dial.
+	// Also disable redirects — an attacker could redirect a safe URL to an internal one.
 	client := &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: transport,
-		// Disable redirects — an attacker could redirect a safe URL to an internal one
+		Transport: safeTransport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

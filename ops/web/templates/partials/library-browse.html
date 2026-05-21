@@ -1,6 +1,6 @@
 <div class="browse-region">
     <div class="section-header">
-        <h2>Browse: {{ library.Name }}</h2>
+        <h2>Browse: {{ library.Name | escape }}</h2>
         <button class="btn btn-sm" hx-get="/partials/libraries" hx-target="#libraries-region" hx-swap="innerHTML" aria-label="Back to libraries list">
             &larr; Back
         </button>
@@ -8,7 +8,7 @@
 
     <div class="browse-search">
         <input type="text" name="search" class="search-input" placeholder="Search by title, artist, album, or genre..."
-               value="{{ search }}"
+               value="{{ search | escape }}"
                hx-get="/partials/libraries/{{ library.ID }}/browse?page=1&amp;sort_by={{ sort_by }}&amp;sort_dir={{ sort_dir }}&amp;page_size={{ page_size }}"
                hx-trigger="keyup changed delay:500ms, search"
                hx-target="#browse-content"
@@ -21,7 +21,7 @@
     {% if tracks %}
     <div class="browse-meta">
         <span class="track-count">{{ total }} track{% if total != 1 %}s{% endif %}</span>
-        {% if search %}<span class="search-info">matching "{{ search }}"</span>{% endif %}
+        {% if search %}        <span class="search-info">matching "{{ search | escape }}"</span>{% endif %}
     </div>
 
     <table class="track-table">
@@ -54,18 +54,18 @@
         <tbody>
             {% for track in tracks %}
             <tr class="track-row">
-                <td class="cell-title">{{ track.Title }}</td>
-                <td class="cell-artist">{{ track.Artist }}</td>
-                <td class="cell-album">{{ track.Album }}</td>
+                <td class="cell-title">{{ track.Title | escape }}</td>
+                <td class="cell-artist">{{ track.Artist | escape }}</td>
+                <td class="cell-album">{{ track.Album | escape }}</td>
                 <td class="cell-num">{% if track.TrackNum %}{{ track.TrackNum }}{% if track.DiscNum %}.{{ track.DiscNum }}{% endif %}{% endif %}</td>
-                <td class="cell-format">{{ track.Format }}</td>
+                <td class="cell-format">{{ track.Format | escape }}</td>
                 <td class="cell-size">{{ track.FileSize / 1048576 }} MB</td>
                 <td class="cell-actions">
                     <button class="btn btn-sm"
                             hx-get="/partials/tracks/{{ track.ID }}"
                             hx-target="#modal-container"
                             hx-swap="innerHTML"
-                            aria-label="Details for {{ track.Title }}">
+                            aria-label="Details for {{ track.Title | escape }}">
                         Details
                     </button>
                 </td>
@@ -94,7 +94,7 @@
     {% else %}
     <div class="empty-state">
         {% if search %}
-        <p>No tracks match "{{ search }}"</p>
+        <p>No tracks match "{{ search | escape }}"</p>
         {% else %}
         <p>No tracks in this library yet</p>
         <p class="text-secondary">Run a scan to populate the library.</p>

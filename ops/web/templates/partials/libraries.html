@@ -10,23 +10,23 @@
     {% for library in libraries %}
     <div class="library-card" id="library-{{ library.ID }}">
         <div class="library-info">
-            <div class="name">{{ library.Name }}</div>
-            <div class="path">{{ library.Path }}</div>
+            <div class="name">{{ library.Name | escape }}</div>
+            <div class="path">{{ library.Path | escape }}</div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm" hx-get="/partials/libraries/{{ library.ID }}/browse" hx-target="#libraries-region" hx-swap="innerHTML" aria-label="Browse library {{ library.Name }}">
+            <button class="btn btn-sm" hx-get="/partials/libraries/{{ library.ID }}/browse" hx-target="#libraries-region" hx-swap="innerHTML" aria-label="Browse library {{ library.Name | escape }}">
                 Browse
             </button>
-            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/scan" hx-target="#console-logs" aria-label="Scan library {{ library.Name }}">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/scan" hx-target="#console-logs" aria-label="Scan library {{ library.Name | escape }}">
                 Scan
             </button>
-            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/enrich" hx-target="#console-logs" aria-label="Enrich library {{ library.Name }}">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/enrich" hx-target="#console-logs" aria-label="Enrich library {{ library.Name | escape }}">
                 Enrich
             </button>
-            <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ library.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit library {{ library.Name }}">
+            <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ library.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit library {{ library.Name | escape }}">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ library.ID }}" hx-target="#library-{{ library.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete library {{ library.Name }}?" aria-label="Delete library {{ library.Name }}">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ library.ID }}" hx-target="#library-{{ library.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete library {{ library.Name | escape }}?" aria-label="Delete library {{ library.Name | escape }}">
                 Delete
             </button>
         </div>

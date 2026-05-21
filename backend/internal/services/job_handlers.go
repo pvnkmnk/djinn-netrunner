@@ -232,6 +232,7 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 
 // acquisitionPipeline carries state between pipeline stages.
 type acquisitionPipeline struct {
+	ctx        context.Context
 	item       database.JobItem
 	job        database.Job
 	profile    *database.QualityProfile
@@ -250,7 +251,7 @@ type acquisitionPipeline struct {
 //  5. downloadFile     — queue and wait for download
 //  6. importAndEnrich  — import to library, enrich metadata
 func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, itemID uint64) error {
-	p := &acquisitionPipeline{}
+	p := &acquisitionPipeline{ctx: ctx}
 
 	if skip, err := h.stageLoadItemContext(p, itemID); err != nil {
 		return err
@@ -428,7 +429,7 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 
 	h.Log(p.item.JobID, "INFO", "Download queued", &p.item.ID)
 
-	download, err := h.slskd.WaitForDownload(p.best.Username, p.best.Filename, 10*time.Minute)
+	download, err := h.slskd.WaitForDownload(p.ctx, p.best.Username, p.best.Filename, 10*time.Minute)
 	if err != nil {
 		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed or timed out: %v", err))
 		return true, nil
@@ -533,9 +534,14 @@ func (h *AcquisitionHandler) fetchCoverFromSourceURL(ctx context.Context, item *
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("source URL returned %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(resp.Body)
+	const maxCoverSize = 10 << 20 // 10 MB
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverSize+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > maxCoverSize {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("cover art from source URL exceeds %d bytes", maxCoverSize)
 	}
 	return data, nil
 }
@@ -566,7 +572,7 @@ func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				data, err := io.ReadAll(resp.Body)
+				data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 				if err == nil && len(data) > 0 {
 					h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", img.Image), &item.ID)
 					return data, nil
@@ -582,7 +588,7 @@ func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
-			data, err := io.ReadAll(resp.Body)
+			data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 			if err == nil && len(data) > 0 {
 				h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", release.Images[0].Image), &item.ID)
 				return data, nil
@@ -609,7 +615,7 @@ func (h *AcquisitionHandler) fetchCoverFromDiscogs(ctx context.Context, item *da
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Discogs returned %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil {
 		return nil, err
 	}
