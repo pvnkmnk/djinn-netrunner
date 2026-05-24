@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -42,14 +43,17 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
 	}
 
-	// Validate email format
-	if !strings.Contains(payload.Email, "@") {
+	// Validate and normalize email format using net/mail.ParseAddress (RFC 5322)
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid email format"})
 	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
 
 	// Check if user exists — return identical response to prevent user enumeration
+	// Use case/whitespace-insensitive match for transitional safety with legacy non-normalized data.
 	var existing database.User
-	if err := h.db.Where("email = ?", payload.Email).First(&existing).Error; err == nil {
+	if err := h.db.Where("LOWER(TRIM(email)) = ?", payload.Email).First(&existing).Error; err == nil {
 		slog.Info("Duplicate registration attempt", "email", payload.Email, "ip", c.IP())
 		return c.Status(201).JSON(fiber.Map{"status": "ok"})
 	}
@@ -84,8 +88,16 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
+	// Normalize email before DB lookup
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
+	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
+
 	var user database.User
-	if err := h.db.Where("email = ?", payload.Email).First(&user).Error; err != nil {
+	// Use case/whitespace-insensitive match for transitional safety with legacy non-normalized data.
+	if err := h.db.Where("LOWER(TRIM(email)) = ?", payload.Email).First(&user).Error; err != nil {
 		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
 	}
 

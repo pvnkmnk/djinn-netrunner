@@ -43,8 +43,38 @@ function openModal(html) {
 function openModalFromHTMX(target) {
     const container = document.getElementById('modal-container');
     if (container && target) {
-        // target is a DOM element reference from HTMX; clone safely
-        container.replaceChildren(target.cloneNode(true));
+        // target is a DOM element reference from HTMX; clone safely.
+        // Deep-clone keeps element state (input values, scroll position) but
+        // duplicates IDs — prefix them to avoid HTML spec violations.
+        const clone = target.cloneNode(true);
+        // Prefix the root element's own id too.
+        if (clone.id) {
+            clone.id = 'modal-' + clone.id;
+        }
+        clone.querySelectorAll('[id]').forEach(function(el) {
+            el.id = 'modal-' + el.id;
+        });
+        // Update label[for] attributes pointing to now-prefixed IDs within the clone.
+        // We control the cloned markup, so we can confidently remap all label "for"
+        // attributes without needing a CSS.escape-based existence check.
+        clone.querySelectorAll('label[for]').forEach(function(el) {
+            var targetId = el.getAttribute('for');
+            if (targetId) {
+                el.setAttribute('for', 'modal-' + targetId);
+            }
+        });
+        // Remap ARIA ID-reference attributes (aria-labelledby, aria-describedby, etc.)
+        // within the clone so they continue to reference the prefixed element IDs.
+        ['aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns', 'aria-activedescendant'].forEach(function(attr) {
+            clone.querySelectorAll('[' + attr + ']').forEach(function(el) {
+                var val = el.getAttribute(attr);
+                if (val) {
+                    var prefixed = val.split(/\s+/).map(function(id) { return 'modal-' + id; }).join(' ');
+                    el.setAttribute(attr, prefixed);
+                }
+            });
+        });
+        container.replaceChildren(clone);
         container.offsetHeight;
         container.classList.add('active');
     }

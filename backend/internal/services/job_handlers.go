@@ -472,7 +472,10 @@ func parseCoverArtSources(s string) []string {
 	return sources
 }
 
-const coverArtCacheTTL = 168 * time.Hour // 1 week, same as MusicBrainz cache TTL
+const (
+	coverArtCacheTTL = 168 * time.Hour // 1 week, same as MusicBrainz cache TTL
+	maxCoverSize     = 10 << 20        // 10 MB
+)
 
 // coverArtCacheKey generates a cache key for cover art lookups.
 func coverArtCacheKey(artist, album, source string) string {
@@ -534,7 +537,6 @@ func (h *AcquisitionHandler) fetchCoverFromSourceURL(ctx context.Context, item *
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("source URL returned %d", resp.StatusCode)
 	}
-	const maxCoverSize = 10 << 20 // 10 MB
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverSize+1))
 	if err != nil {
 		return nil, err
@@ -572,7 +574,10 @@ func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+				data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverSize+1))
+				if err == nil && len(data) > maxCoverSize {
+					continue
+				}
 				if err == nil && len(data) > 0 {
 					h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", img.Image), &item.ID)
 					return data, nil
@@ -588,8 +593,11 @@ func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
-			data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
-			if err == nil && len(data) > 0 {
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverSize+1))
+		if err == nil && len(data) > maxCoverSize {
+			return nil, fmt.Errorf("cover art from MusicBrainz exceeds %d bytes", maxCoverSize)
+		}
+		if err == nil && len(data) > 0 {
 				h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from MusicBrainz: %s", release.Images[0].Image), &item.ID)
 				return data, nil
 			}
@@ -615,9 +623,12 @@ func (h *AcquisitionHandler) fetchCoverFromDiscogs(ctx context.Context, item *da
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Discogs returned %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverSize+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > maxCoverSize {
+		return nil, fmt.Errorf("cover art from Discogs exceeds %d bytes", maxCoverSize)
 	}
 	h.Log(item.JobID, "INFO", fmt.Sprintf("Cover art from Discogs: %s", coverURL), &item.ID)
 	return data, nil

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -63,8 +66,17 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		Views:       engine,
-		ProxyHeader: fiber.HeaderXForwardedFor,
+		Views:                   engine,
+		ProxyHeader:             fiber.HeaderXForwardedFor,
+		EnableTrustedProxyCheck: true,
+		TrustedProxies: []string{
+			"127.0.0.0/8",    // IPv4 loopback
+			"10.0.0.0/8",     // RFC1918 private
+			"172.16.0.0/12",  // RFC1918 private
+			"192.168.0.0/16", // RFC1918 private
+			"::1/128",        // IPv6 loopback
+			"fc00::/7",       // IPv6 unique local
+		},
 	})
 
 	app.Use(recover.New())
@@ -110,12 +122,32 @@ func main() {
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
 
-	// Start log listener with retry loop (avoids os.Exit(1) crash on transient DB failure)
+	// Start log listener with graceful shutdown and exponential backoff
+	listenerCtx, listenerCancel := context.WithCancel(context.Background())
 	go func() {
+		backoff := 1 * time.Second
+		const maxBackoff = 30 * time.Second
 		for {
-			wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
-			slog.Warn("Log listener exited, restarting in 5s")
-			time.Sleep(5 * time.Second)
+			wsManager.ListenForJobLogs(listenerCtx, cfg.DatabaseURL, db)
+
+			select {
+			case <-listenerCtx.Done():
+				slog.Info("Log listener retry loop stopped")
+				return
+			default:
+			}
+
+			slog.Warn("Log listener exited, restarting", "backoff", backoff)
+			select {
+			case <-time.After(backoff):
+			case <-listenerCtx.Done():
+				slog.Info("Log listener retry loop stopped")
+				return
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}()
 
@@ -135,6 +167,7 @@ func main() {
 	<-stop
 
 	slog.Info("Shutting down server...")
+	listenerCancel()
 	app.Shutdown()
 }
 
@@ -155,12 +188,24 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return 1 * time.Minute // fallback
 		}(),
 		KeyGenerator: func(c *fiber.Ctx) string {
-			// Use real connection IP to prevent X-Forwarded-For spoofing on direct :8080 access
-			// Behind Caddy, X-Real-IP is set by the proxy
-			if ip := c.Get("X-Real-IP"); ip != "" {
-				return ip
+			// Get raw TCP connection address — c.IP() may already apply
+			// trusted-proxy logic, making the X-Real-IP trust check circular.
+			rawAddr := c.Context().RemoteAddr().String()
+			remoteAddr := rawAddr
+			if host, _, err := net.SplitHostPort(rawAddr); err == nil {
+				remoteAddr = host
 			}
-			return c.Context().Conn().RemoteAddr().String()
+			if ip := net.ParseIP(remoteAddr); ip != nil && (ip.IsPrivate() || ip.IsLoopback()) {
+				if forwarded := c.Get("X-Real-IP"); forwarded != "" {
+					// Strip port if present
+					if host, _, err := net.SplitHostPort(forwarded); err == nil {
+						forwarded = host
+					}
+					return strings.TrimSpace(forwarded)
+				}
+			}
+			// Fall back to normalized remoteAddr (already stripped of port)
+			return remoteAddr
 		},
 		LimitReached: func(c *fiber.Ctx) error {
 			return c.Status(429).JSON(fiber.Map{"error": "too many requests, please try again later"})

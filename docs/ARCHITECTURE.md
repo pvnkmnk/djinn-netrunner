@@ -94,13 +94,13 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 
 ### Session & Auth
 - **Session tokens**: 128-bit cryptographically random (crypto/rand), hex-encoded, stored in DB with 7-day TTL.
-- **Cookie security**: HttpOnly enabled, SameSite=Lax, Secure flag set dynamically based on protocol (HTTPS in prod, HTTP for local dev).
+- **Cookie security**: `HttpOnly` enabled, `SameSite=Strict`, `Secure` flag set dynamically based on protocol (HTTPS in prod, HTTP for local dev).
 - **Password storage**: bcrypt hashing (no plaintext).
-- **Auth rate limiting**: Fiber rate limiter on `/api/auth/login` and `/api/auth/register` (default: 10 req/min).
+- **Auth rate limiting**: Fiber rate limiter on `/api/auth/login` and `/api/auth/register` (default: 10 req/min) with port-stripped IP keys; `X-Real-IP` only trusted from private/loopback sources.
 
 ### CSRF Protection
 - **Double-submit cookie pattern**: JS reads `csrf_` cookie and attaches it as `X-CSRF-Token` header on all HTMX and Fetch requests.
-- CSRF cookie uses SameSite=Lax; CookieSecure not explicitly set (follows cookie middleware defaults — prod deployments behind TLS should verify this is applied).
+- CSRF cookie uses SameSite=Strict; CookieSecure not explicitly set (follows cookie middleware defaults — prod deployments behind TLS should verify this is applied).
 - No server-rendered hidden CSRF input fields (forms rely entirely on JS header injection).
 
 ### XSS Prevention
@@ -108,6 +108,10 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 - **WebSocket log streaming**: Uses `html.EscapeString()` before broadcasting to clients.
 - **Scope**: Track metadata (title, artist, album, genre, composer, cover URLs), artist names, watchlist names, library names, profile names, schedule names, search strings, file paths, SourceType, and all aria-label/hx-confirm attributes that include user data are escaped.
 - **Not auto-escaped by default**: Pongo2 engine has no global autoescape — escaping is applied per-variable. Any new template variable rendering user data must use `| escape`.
+
+### Email Validation
+- Registration uses `net/mail.ParseAddress` for RFC 5322 validation.
+- Emails are canonicalized (lowercased, trimmed) before DB storage and lookup.
 
 ### SQL Injection Prevention
 - All database queries use **GORM parameterization** — no raw SQL string concatenation in production code paths.
@@ -120,7 +124,7 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 ### SSRF / Outbound HTTP
 - **Unified safe HTTP transport** (`safe_http.go`): All outbound HTTP clients (Spotify, MusicBrainz, Discogs, slskd, gonic, navidrome, cover art fetches) use a shared `http.Transport` with:
   - DNS rebinding protection (IP resolution before dial)
-  - Private IP range blocking (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1)
+  - Private IP range blocking (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `0.0.0.0/8`, `::1/128`, `fc00::/7`)
 - `docker-compose.yml` no longer has `extra_hosts: ["host.docker.internal:host-gateway"]` (removed in Cycle 5).
 
 ### OOM Prevention

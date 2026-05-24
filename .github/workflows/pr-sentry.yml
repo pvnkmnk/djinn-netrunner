@@ -15,16 +15,14 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false
 
       - name: PR-Sentry AI Review
-        if: env.DEEPSEEK_API_KEY != ''
+        if: env.DEEPSEEK_API_KEY != '' || env.ANTHROPIC_API_KEY != '' || env.OPENAI_API_KEY != ''
         uses: Ebuodinde/PR_SENTRY@35c89b2d5985060c1906fbf04ed4e9e450ca940e # v3.0.0
         continue-on-error: true
-        with:
-          provider: deepseek
-          deepseek_api_key: ${{ secrets.DEEPSEEK_API_KEY }}
-          locale: en
 
       - name: Skip notice
         if: env.DEEPSEEK_API_KEY == '' && env.ANTHROPIC_API_KEY == '' && env.OPENAI_API_KEY == ''
