@@ -20,13 +20,9 @@ jobs:
           persist-credentials: false
 
       - name: PR-Sentry AI Review
-        if: env.DEEPSEEK_API_KEY != ''
+        if: env.DEEPSEEK_API_KEY != '' || env.ANTHROPIC_API_KEY != '' || env.OPENAI_API_KEY != ''
         uses: Ebuodinde/PR_SENTRY@35c89b2d5985060c1906fbf04ed4e9e450ca940e # v3.0.0
         continue-on-error: true
-        with:
-          provider: deepseek
-          deepseek_api_key: ${{ env.DEEPSEEK_API_KEY }}
-          locale: en
 
       - name: Skip notice
         if: env.DEEPSEEK_API_KEY == '' && env.ANTHROPIC_API_KEY == '' && env.OPENAI_API_KEY == ''

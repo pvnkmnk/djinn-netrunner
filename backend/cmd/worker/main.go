@@ -605,7 +605,7 @@ func (w *WorkerOrchestrator) claimNextJobItem(jobID uint64) (uint64, error) {
 		// Mark as running — guard with status check to prevent two workers
 		// claiming the same item (TOCTOU race).
 		now := time.Now()
-		result := tx.Model(&item).Where("status = ? OR (status = 'failed' AND next_attempt_at <= ?)", "queued", time.Now()).Updates(map[string]interface{}{
+		result := tx.Model(&item).Where("status = 'queued' OR (status = 'failed' AND next_attempt_at <= ?)", now).Updates(map[string]interface{}{
 			"status":     "running",
 			"started_at": &now,
 		})

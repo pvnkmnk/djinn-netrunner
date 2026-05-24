@@ -70,7 +70,7 @@ func main() {
 		ProxyHeader:             fiber.HeaderXForwardedFor,
 		EnableTrustedProxyCheck: true,
 		TrustedProxies: []string{
-			"127.0.0.1/8",    // IPv4 loopback
+			"127.0.0.0/8",    // IPv4 loopback
 			"10.0.0.0/8",     // RFC1918 private
 			"172.16.0.0/12",  // RFC1918 private
 			"192.168.0.0/16", // RFC1918 private
@@ -188,10 +188,11 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return 1 * time.Minute // fallback
 		}(),
 		KeyGenerator: func(c *fiber.Ctx) string {
-			// Only trust X-Real-IP when it comes from a private/loopback source
-			// (i.e., a known reverse proxy). Otherwise fall back to c.IP().
-			remoteAddr := c.IP()
-			if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+			// Get raw TCP connection address — c.IP() may already apply
+			// trusted-proxy logic, making the X-Real-IP trust check circular.
+			rawAddr := c.Context().RemoteAddr().String()
+			remoteAddr := rawAddr
+			if host, _, err := net.SplitHostPort(rawAddr); err == nil {
 				remoteAddr = host
 			}
 			if ip := net.ParseIP(remoteAddr); ip != nil && (ip.IsPrivate() || ip.IsLoopback()) {

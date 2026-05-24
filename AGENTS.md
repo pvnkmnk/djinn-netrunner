@@ -1,6 +1,16 @@
 # Agents Guide - NetRunner
 
-> Last updated by Codex ingestion: 2026-05-07
+> Last updated by Codex ingestion: 2026-05-23
+
+## Codemap
+
+Before working on any task, read `codemap.md` in the project root to understand:
+- **Project architecture and entry points** — System entry points (`server`, `worker`, `agent`, `cli`)
+- **Directory responsibilities** — Detailed codemaps per directory for deep work
+- **Data flow and integration points** — How watchlists, acquisition, metadata, and library management connect
+- **Architecture constraints** — Technology choices, invariants, and design patterns
+
+For deep work on a specific folder, also read that folder's `codemap.md` (e.g., `backend/internal/services/codemap.md` for the service layer).
 
 ## Overview
 NetRunner is a Go-based music acquisition and library-operations platform. It ingests tracks from watchlist sources (Spotify, Last.fm, ListenBrainz, RSS, local files), orchestrates acquisition jobs through slskd (Soulseek daemon), enriches metadata, and maintains local music libraries with a Fiber + HTMX UI.
@@ -13,17 +23,24 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 
 | Directory | Type | Purpose | Agent-relevant? |
 |---|---|---|---|
-| `backend/cmd/` | Go executables | Entry points for `server`, `worker`, `cli`, `agent`, `test_sqlite` | Yes |
+| `backend/cmd/` | Go executables | Entry points for `server`, `worker`, `cli`, `agent`, `test_sqlite` — see [codemap](backend/cmd/codemap.md) for per-binary details | Yes |
 | `backend/internal/api/` | HTTP layer | Fiber handlers, route logic, auth/session middleware, HTMX/WebSocket endpoints | Yes |
+| `backend/internal/api/templates/` | View engine | Pongo2 Jinja2-compatible Fiber ViewEngine adapter | Yes |
 | `backend/internal/services/` | Service layer | Acquisition orchestration, providers, API clients, metadata/tagging, notifications | Yes |
 | `backend/internal/database/` | Data layer | GORM models, connection, migrations, lock managers, helpers | Yes |
 | `backend/internal/agent/` | Agent facade | Transport-agnostic functions used by MCP server + CLI | Yes |
 | `backend/internal/config/` | Config | Env loading and defaults, required/optional config validation | Yes |
 | `backend/internal/interfaces/` | Abstractions | `WatchlistProvider` and `SpotifyClientProvider` contracts | Yes |
 | `backend/internal/integration/` | Integration tests | Dockerized slskd/integration harness and test scenarios | Yes |
-| `ops/` | Infra config | Docker Compose, Caddy, DB init schema/functions/migrations, web assets | Yes |
-| `.github/workflows/` | CI/CD | Go CI (`go vet`, `go test`, coverage artifact) | Yes |
-| `scripts/` | Ops scripts | Integration test orchestration helper (`integration-tests.sh`) | Yes |
+| `backend/internal/testutil/` | Test utilities | Shared test doubles and mock providers for unit testing | Yes |
+| `ops/` | Infra config | Docker Compose, Caddy reverse proxy, DB init/migrations, web assets | Yes |
+| `ops/caddy/` | Reverse proxy | Caddy config for production HTTPS | Yes |
+| `ops/db/` | Database | PostgreSQL init scripts and SQL migrations | Yes |
+| `ops/web/` | Web assets | Static files (CSS, JS) + Pongo2 HTML templates | Yes |
+| `ops/web/static/js/` | Client JS | Minimal vanilla JS for modals, console, WebSocket | Yes |
+| `ops/web/templates/` | HTML templates | Layouts, pages, HTMX partials for server-side rendering | Yes |
+| `.github/workflows/` | CI/CD | Go CI (`go vet`, `go test`, coverage artifact), Docker build/push, PR reviews (PRGuard, PR-Sentry) | Yes |
+| `scripts/` | Ops scripts | Integration test (`integration-tests.sh`), smoke test (`smoke-test.sh`), validation (`validate.sh`, `validate.ps1`) | Yes |
 | `docs/` | Documentation | Architecture/plans/runbooks | Yes |
 | `conductor/` | (removed) | Legacy/archived docs area — content captured in Linear | No |
 | `examples/` | Examples | Sample content and helper artifacts | Sometimes |
@@ -111,18 +128,53 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `docker compose logs -f netrunner-slskd` | Follow slskd logs | Acquisition/connectivity debugging |
 | `./scripts/integration-tests.sh test` | Run integration-tagged tests with dockerized deps | Integration scenarios |
 | `go test ./backend/internal/integration/... -tags=integration -v` | Direct integration test invocation | CI/debug for integration package |
+| `./scripts/smoke-test.sh` | Deploy Docker stack + health/auth/CRUD checks | End-to-end smoke test |
+| `./scripts/validate.sh` or `validate.ps1` | Pre-commit validation checks | Before PR/merge |
 | `govulncheck ./...` | Vulnerability scan for reachable issues in code + deps | Security/dependency maintenance |
 
 ## API / Interface Reference
 
 ### HTTP API (Fiber)
 
+#### Public Endpoints
+
 | Route | Method | Auth required | Handler |
 |---|---|---|---|
-| `/api/health` | GET | No | inline health handler |
+| `/api/health` | GET | No | `HealthHandler.GetHealth` (probes DB + slskd + Gonic) |
 | `/api/auth/register` | POST | No + rate-limited | `AuthHandler.Register` |
 | `/api/auth/login` | POST | No + rate-limited | `AuthHandler.Login` |
 | `/api/auth/logout` | POST | Session recommended | `AuthHandler.Logout` |
+
+#### UI Pages (Fiber HTML — Pongo2 templates)
+
+| Route | Method | Auth required | Handler |
+|---|---|---|---|
+| `/` | GET | No | `DashboardHandler.RenderIndex` |
+| `/watchlists` | GET | Yes | `WatchlistHandler.WatchlistsPage` |
+| `/libraries` | GET | Yes | `LibraryHandler.LibrariesPage` |
+| `/profiles` | GET | Yes | `ProfileHandler.ProfilesPage` |
+| `/schedules` | GET | Yes | `SchedulesHandler.SchedulesPage` |
+| `/artists` | GET | Yes | `ArtistsHandler.ArtistsPage` |
+| `/jobs` | GET | Yes | `StatsHandler.JobsPage` |
+
+#### HTMX Partials (all protected)
+
+| Route | Method | Handler |
+|---|---|---|
+| `/partials/stats` | GET | `StatsHandler.RenderStatsPartial` |
+| `/partials/watchlists` | GET | `WatchlistHandler.RenderWatchlistsPartial` |
+| `/partials/libraries` | GET | `LibraryHandler.RenderLibrariesPartial` |
+| `/partials/schedules` | GET | `SchedulesHandler.RenderSchedulesPartial` |
+| `/partials/artists` | GET | `ArtistsHandler.RenderPartial` |
+| `/partials/artist-form` | GET | `ArtistsHandler.GetForm` |
+| `/partials/jobs` | GET | `StatsHandler.RenderJobsPartial` |
+| `/partials/libraries/:id/browse` | GET | `LibraryHandler.BrowseTracks` |
+| `/partials/tracks/:id` | GET | `LibraryHandler.TrackDetail` |
+
+#### Protected API (Fiber JSON)
+
+| Route | Method | Auth required | Handler |
+|---|---|---|---|
 | `/api/auth/spotify/login` | GET | Yes | `SpotifyAuthHandler.Login` |
 | `/api/auth/spotify/callback` | GET | Yes | `SpotifyAuthHandler.Callback` |
 | `/api/watchlists/*` | GET/POST/PATCH/DELETE | Yes | `WatchlistHandler` + preview handler |
@@ -130,10 +182,19 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `/api/artists/*` | GET/POST/PATCH/DELETE | Yes | `ArtistsHandler` |
 | `/api/schedules/*` | GET/POST/PATCH/DELETE | Yes | `SchedulesHandler` |
 | `/api/libraries/*` | GET/POST/PATCH/DELETE | Yes | `LibraryHandler` |
-| `/api/stats/*` | GET | Yes | `StatsHandler` |
+| `/api/libraries/:id/{scan,enrich,prune}` | POST | Yes | `LibraryHandler.Trigger{Scan,Enrich,Prune}` |
+| `/api/libraries/:id/tracks` | GET | Yes | `LibraryHandler.ListTracks` |
+| `/api/stats/*` | GET | Yes | `StatsHandler` (jobs, jobs/breakdown, jobs/trends, library, activity, summary) |
+| `/api/jobs` | GET | Yes | inline query |
 | `/api/jobs/sync` | POST | Yes | inline queue trigger |
+| `/api/jobs/:id/retry` | POST | Yes | `agent.RetryJob` |
+| `/api/jobs/:id/cancel` | POST | Yes | `agent.CancelJob` |
+| `/api/artists/track` | POST | Yes | inline handler |
+| `/api/library/scan` | POST | Yes | inline handler |
 | `/ws/events` | GET (WebSocket) | Yes | `WebSocketManager.HandleEvents` |
 | `/ws/jobs/:job_id` | GET (WebSocket) | Yes | `WebSocketManager.HandleConsole` |
+
+> Note: `*` wildcard routes cover CRUD operations plus sub-routes like `form`, `toggle`, `preview`, and `profiles` under the same group.
 
 ### CLI (`netrunner-cli`)
 
@@ -142,7 +203,7 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `status` | `netrunner-cli status` | System probe summary |
 | `config` | `netrunner-cli config list` | Current non-sensitive config |
 | `watchlist` | `list`, `add [name] [type] [uri]`, `sync [id]`, `import` | Watchlist management |
-| `library` | `list`, `add [name] [path]`, `scan [id]`, `rm [id]` | Library lifecycle |
+| `library` | `list`, `add [name] [path]`, `scan [id]`, `prune [id]`, `rm [id]` | Library lifecycle |
 | `profile` | `list`, `add [name]`, `rm [id]`, `set-default [id]` + flags | Quality profile lifecycle |
 | `stats` | `summary`, `jobs`, `library` | Stats reports |
 
@@ -170,6 +231,8 @@ Key entities (GORM, mostly in `backend/internal/database/models.go`):
 - `Library` (1:N `Track`): filesystem collection roots + quota fields
 - `MonitoredArtist` (1:N `TrackedRelease`): artist release tracking
 - `MetadataCache`: API response cache with expiry
+- `SpotifyToken`: per-user Spotify OAuth tokens (access + refresh)
+- `Lock`: distributed advisory lock for session-level exclusivity
 - `Setting`: dynamic key-value runtime config
 - `PeerReputation`: Soulseek peer quality tracking for scoring
 
@@ -264,3 +327,12 @@ Known caveat (2026-05-07, resolved 2026-05-19):
 - `skills/watchlist-operations.md` - Watchlist lifecycle and sync workflow.
 - `skills/artist-monitoring.md` - Monitored artist and release-tracking workflow.
 - `skills/acquisition-pipeline.md` - Queue-to-import acquisition pipeline operations and validation.
+
+## Cloned Dependency Source
+
+Read-only dependency source repositories are available under
+`.slim/clonedeps/repos/` for inspection. Do not edit these clones.
+
+- `.slim/clonedeps/repos/gofiber__fiber/` — **gofiber/fiber** at `v2.52.13`; HTTP framework source for debugging middleware chain, context methods, error handling, and route matching.
+- `.slim/clonedeps/repos/go-gorm__gorm/` — **go-gorm/gorm** at `v1.31.1`; ORM source for debugging query building, preloading, transaction behavior, and migration patterns.
+- `.slim/clonedeps/repos/mark3labs__mcp-go/` — **mark3labs/mcp-go** at `v0.45.0`; MCP protocol Go SDK for debugging tool definitions, protocol messages, and agent transport layer.

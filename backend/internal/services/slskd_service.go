@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
@@ -187,8 +188,9 @@ type SlskdService struct {
 
 // searchRateLimiter enforces slskd's search rate limit (34 searches per 220 seconds).
 type searchRateLimiter struct {
-	tokens chan struct{}
-	stop   chan struct{}
+	tokens    chan struct{}
+	stop      chan struct{}
+	closeOnce sync.Once
 }
 
 func newSearchRateLimiter() *searchRateLimiter {
@@ -222,7 +224,7 @@ func newSearchRateLimiter() *searchRateLimiter {
 }
 
 func (rl *searchRateLimiter) Stop() {
-	close(rl.stop)
+	rl.closeOnce.Do(func() { close(rl.stop) })
 }
 
 func (rl *searchRateLimiter) Wait() {

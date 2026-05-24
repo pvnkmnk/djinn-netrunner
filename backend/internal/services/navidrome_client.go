@@ -163,7 +163,10 @@ func (c *NavidromeClient) doRequest(endpoint string, params url.Values, target i
 	}
 
 	// Subsonic token-based auth (keeps password out of URL query params / server logs)
-	s := salt()
+	s, err := salt()
+	if err != nil {
+		return err
+	}
 	params.Add("u", c.username)
 	params.Add("t", tokenFromPassword(c.password, s))
 	params.Add("s", s)

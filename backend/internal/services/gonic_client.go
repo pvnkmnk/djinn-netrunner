@@ -166,7 +166,10 @@ func (c *GonicClient) doRequest(endpoint string, params url.Values, target inter
 	}
 
 	// Subsonic token-based auth (keeps password out of URL query params / server logs)
-	s := salt()
+	s, err := salt()
+	if err != nil {
+		return err
+	}
 	params.Add("u", c.username)
 	params.Add("t", tokenFromPassword(c.password, s))
 	params.Add("s", s)
@@ -216,10 +219,10 @@ func tokenFromPassword(password, s string) string {
 }
 
 // salt generates a random hex string for Subsonic token-based auth.
-func salt() string {
+func salt() (string, error) {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%x", time.Now().UnixNano())
+		return "", fmt.Errorf("salt generation failed: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }

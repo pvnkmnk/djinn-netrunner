@@ -94,13 +94,13 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 
 ### Session & Auth
 - **Session tokens**: 128-bit cryptographically random (crypto/rand), hex-encoded, stored in DB with 7-day TTL.
-- **Cookie security**: `HttpOnly` enabled, `SameSite=Lax`, `Secure` flag set dynamically based on protocol (HTTPS in prod, HTTP for local dev).
+- **Cookie security**: `HttpOnly` enabled, `SameSite=Strict`, `Secure` flag set dynamically based on protocol (HTTPS in prod, HTTP for local dev).
 - **Password storage**: bcrypt hashing (no plaintext).
 - **Auth rate limiting**: Fiber rate limiter on `/api/auth/login` and `/api/auth/register` (default: 10 req/min) with port-stripped IP keys; `X-Real-IP` only trusted from private/loopback sources.
 
 ### CSRF Protection
 - **Double-submit cookie pattern**: JS reads `csrf_` cookie and attaches it as `X-CSRF-Token` header on all HTMX and Fetch requests.
-- CSRF cookie uses SameSite=Lax; CookieSecure not explicitly set (follows cookie middleware defaults — prod deployments behind TLS should verify this is applied).
+- CSRF cookie uses SameSite=Strict; CookieSecure not explicitly set (follows cookie middleware defaults — prod deployments behind TLS should verify this is applied).
 - No server-rendered hidden CSRF input fields (forms rely entirely on JS header injection).
 
 ### XSS Prevention
