@@ -66,8 +66,17 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		Views:       engine,
-		ProxyHeader: fiber.HeaderXForwardedFor,
+		Views:                   engine,
+		ProxyHeader:             fiber.HeaderXForwardedFor,
+		EnableTrustedProxyCheck: true,
+		TrustedProxies: []string{
+			"127.0.0.1/8",    // IPv4 loopback
+			"10.0.0.0/8",     // RFC1918 private
+			"172.16.0.0/12",  // RFC1918 private
+			"192.168.0.0/16", // RFC1918 private
+			"::1/128",        // IPv6 loopback
+			"fc00::/7",       // IPv6 unique local
+		},
 	})
 
 	app.Use(recover.New())
@@ -185,7 +194,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
 				remoteAddr = host
 			}
-			if ip := net.ParseIP(remoteAddr); ip != nil && ip.IsPrivate() {
+			if ip := net.ParseIP(remoteAddr); ip != nil && (ip.IsPrivate() || ip.IsLoopback()) {
 				if forwarded := c.Get("X-Real-IP"); forwarded != "" {
 					// Strip port if present
 					if host, _, err := net.SplitHostPort(forwarded); err == nil {

@@ -63,6 +63,17 @@ function openModalFromHTMX(target) {
                 el.setAttribute('for', 'modal-' + targetId);
             }
         });
+        // Remap ARIA ID-reference attributes (aria-labelledby, aria-describedby, etc.)
+        // within the clone so they continue to reference the prefixed element IDs.
+        ['aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns', 'aria-activedescendant'].forEach(function(attr) {
+            clone.querySelectorAll('[' + attr + ']').forEach(function(el) {
+                var val = el.getAttribute(attr);
+                if (val) {
+                    var prefixed = val.split(/\s+/).map(function(id) { return 'modal-' + id; }).join(' ');
+                    el.setAttribute(attr, prefixed);
+                }
+            });
+        });
         container.replaceChildren(clone);
         container.offsetHeight;
         container.classList.add('active');
