@@ -34,7 +34,7 @@ func TestNavidromeClient_TriggerScan(t *testing.T) {
 	defer server.Close()
 
 	// Create client with mock server URL
-	client := NewNavidromeClient(server.URL, "testuser", "testpass")
+	client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
 
 	// Test TriggerScan
 	success, err := client.TriggerScan()
@@ -67,7 +67,7 @@ func TestNavidromeClient_HealthCheck(t *testing.T) {
 	defer server.Close()
 
 	// Create client with mock server URL
-	client := NewNavidromeClient(server.URL, "testuser", "testpass")
+	client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
 
 	// Test HealthCheck
 	if !client.HealthCheck() {
@@ -96,7 +96,7 @@ func TestPlexClient_TriggerLibraryRefresh(t *testing.T) {
 	defer server.Close()
 
 	// Create client with mock server URL
-	client := NewPlexClient(server.URL, "test-token")
+	client := NewPlexClient(server.URL, "test-token", nil)
 
 	// Test TriggerLibraryRefresh
 	err := client.TriggerLibraryRefresh(1)
@@ -126,7 +126,7 @@ func TestJellyfinClient_TriggerLibraryRefresh(t *testing.T) {
 	defer server.Close()
 
 	// Create client with mock server URL
-	client := NewJellyfinClient(server.URL, "test-api-key")
+	client := NewJellyfinClient(server.URL, "test-api-key", nil)
 
 	// Test TriggerLibraryRefresh
 	err := client.TriggerLibraryRefresh()

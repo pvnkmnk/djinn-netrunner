@@ -24,7 +24,7 @@ func TestWebhookEndToEnd(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := NewNotificationService(server.URL, true)
+	svc := NewNotificationService(server.URL, true, nil)
 
 	tests := []struct {
 		name     string

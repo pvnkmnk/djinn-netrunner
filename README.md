@@ -171,6 +171,28 @@ NetRunner 2.0 uses a unified Go 1.25 backend:
 
 ---
 
+## 🔒 Privacy & Proxy
+
+All outbound HTTP traffic from provider API clients is routed through a centralized proxy-aware client factory (`NewProxyAwareHTTPClient`). Set the `PROXY_URL` environment variable to route traffic through an HTTP or SOCKS5 proxy.
+
+**Proxied** (when `PROXY_URL` is set):
+- MusicBrainz, AcoustID, Spotify (OAuth transport), Discogs, Last.fm, ListenBrainz, Lidarr, LRCLIB lyrics
+- Gonic/Navidrome/Plex/Jellyfin library server API calls
+- slskd API calls and webhook notifications
+
+**Not proxied by NetRunner** (handle at the network/VPN layer):
+- slskd Soulseek P2P traffic (managed by slskd's own network config)
+
+```bash
+# Example: route all provider traffic through a SOCKS5 proxy
+PROXY_URL=socks5://127.0.0.1:1080
+
+# Example: HTTP proxy
+PROXY_URL=http://proxy.example.com:8080
+```
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions that align with our "Console-First" and "Standalone" design principles. 

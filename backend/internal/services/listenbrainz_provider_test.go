@@ -39,8 +39,9 @@ func TestListenBrainzProvider_FetchTracks(t *testing.T) {
 	defer server.Close()
 
 	provider := &ListenBrainzProvider{
-		Token:   "test-token",
-		BaseURL: server.URL,
+		Token:      "test-token",
+		BaseURL:    server.URL,
+		httpClient: server.Client(),
 	}
 
 	watchlist := &database.Watchlist{

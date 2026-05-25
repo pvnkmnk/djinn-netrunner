@@ -22,12 +22,9 @@ type MusicBrainzService struct {
 // NewMusicBrainzService creates a new MusicBrainz service
 func NewMusicBrainzService(cfg *config.Config) *MusicBrainzService {
 	return &MusicBrainzService{
-		cfg:     cfg,
-		baseURL: "https://musicbrainz.org",
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		// MusicBrainz allows 1 request per second
+		cfg:         cfg,
+		baseURL:     "https://musicbrainz.org",
+		httpClient:  NewProxyAwareHTTPClient(cfg, 30*time.Second),
 		rateLimiter: time.NewTicker(time.Second),
 	}
 }

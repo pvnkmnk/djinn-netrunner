@@ -41,8 +41,9 @@ func TestLastFMProvider_FetchTracks(t *testing.T) {
 	defer server.Close()
 
 	provider := &LastFMProvider{
-		APIKey:  "test-key",
-		BaseURL: server.URL,
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		httpClient: server.Client(),
 	}
 
 	watchlist := &database.Watchlist{

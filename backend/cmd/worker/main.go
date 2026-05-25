@@ -81,7 +81,8 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	metadata := services.NewMetadataExtractor()
 	aid := services.NewAcoustIDService(cfg)
 	aid.SetCache(cache)
-	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
+	proxyClient := services.NewProxyAwareHTTPClient(cfg, 30*time.Second)
+	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, proxyClient)
 	discogs := services.NewDiscogsService(cfg)
 
 	// DJI-357: Initialize ctx in constructor to prevent nil panic if methods
@@ -105,7 +106,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		litefs:              database.NewLiteFSGuard(cfg.DatabaseURL),
 		syncHandler:         services.NewSyncHandler(db, spotify, watchlist),
 		acqHandler:          services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic, discogs, cache),
-		notificationService: services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled),
+		notificationService: services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled, proxyClient),
 		diskQuotaService:    services.NewDiskQuotaService(sqlDB),
 		activeJobs:          make(map[uint64]*jobContext),
 		wakeupChan:          make(chan bool, 1),

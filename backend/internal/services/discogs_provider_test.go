@@ -39,8 +39,9 @@ func TestDiscogsProvider_FetchTracks(t *testing.T) {
 	defer server.Close()
 
 	provider := &DiscogsProvider{
-		Token:   "test-token",
-		BaseURL: server.URL,
+		Token:      "test-token",
+		BaseURL:    server.URL,
+		httpClient: server.Client(),
 	}
 
 	watchlist := &database.Watchlist{

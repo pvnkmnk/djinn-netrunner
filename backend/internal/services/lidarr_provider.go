@@ -6,21 +6,27 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 // LidarrProvider implements WatchlistProvider for Lidarr sources
 type LidarrProvider struct {
-	BaseURL string
-	APIKey  string
+	BaseURL    string
+	APIKey     string
+	httpClient *http.Client
 }
 
 // NewLidarrProvider creates a new Lidarr provider
-func NewLidarrProvider(baseURL, apiKey string) *LidarrProvider {
+func NewLidarrProvider(baseURL, apiKey string, httpClient *http.Client) *LidarrProvider {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &LidarrProvider{
-		BaseURL: baseURL,
-		APIKey:  apiKey,
+		BaseURL:    baseURL,
+		APIKey:     apiKey,
+		httpClient: httpClient,
 	}
 }
 
@@ -73,7 +79,7 @@ func (p *LidarrProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		req.Header.Set("X-Api-Key", p.APIKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -129,7 +135,7 @@ func (p *LidarrProvider) fetchArtistName(ctx context.Context, baseURL *url.URL, 
 		req.Header.Set("X-Api-Key", p.APIKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}

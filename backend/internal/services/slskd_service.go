@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -279,24 +278,9 @@ func (s *SlskdService) Stop() {
 }
 
 func NewSlskdService(cfg *config.Config, db *gorm.DB) *SlskdService {
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-	}
-
-	if cfg.ProxyURL != "" {
-		proxyURL, err := url.Parse(cfg.ProxyURL)
-		if err != nil {
-			slog.Warn("Invalid PROXY_URL, running without proxy", "error", err)
-		} else {
-			client.Transport = &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			}
-		}
-	}
-
 	return &SlskdService{
 		cfg:         cfg,
-		httpClient:  client,
+		httpClient:  NewProxyAwareHTTPClient(cfg, 60*time.Second),
 		rateLimiter: newSearchRateLimiter(),
 		db:          db,
 	}

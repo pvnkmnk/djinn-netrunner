@@ -6,21 +6,27 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 // LastFMProvider implements WatchlistProvider for Last.fm sources
 type LastFMProvider struct {
-	APIKey  string
-	BaseURL string // For testing
+	APIKey     string
+	BaseURL    string // For testing
+	httpClient *http.Client
 }
 
 // NewLastFMProvider creates a new Last.fm provider
-func NewLastFMProvider(apiKey string) *LastFMProvider {
+func NewLastFMProvider(apiKey string, httpClient *http.Client) *LastFMProvider {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &LastFMProvider{
-		APIKey:  apiKey,
-		BaseURL: "http://ws.audioscrobbler.com/2.0/",
+		APIKey:     apiKey,
+		BaseURL:    "http://ws.audioscrobbler.com/2.0/",
+		httpClient: httpClient,
 	}
 }
 
@@ -83,7 +89,7 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		return nil, "", err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
