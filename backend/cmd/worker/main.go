@@ -766,7 +766,9 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	// tracks appear in the streaming server without waiting for a manual
 	// or scheduled scan.
 	if finalState == "succeeded" && jc.job.Type == "acquisition" {
+		w.wg.Add(1)
 		go func() {
+			defer w.wg.Done()
 			if ok, err := w.gonic.TriggerScan(); err != nil {
 				slog.Warn("Post-acquisition Gonic refresh failed", "job_id", jobID, "error", err)
 			} else if !ok {
