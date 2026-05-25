@@ -113,9 +113,15 @@ func TestLidarrProvider_ValidateConfig(t *testing.T) {
 		t.Error("Expected error for empty base URL")
 	}
 
-	// Test with valid base URL
+	// Test with valid base URL but empty source URI
 	provider = NewLidarrProvider("http://localhost:8686", "test-key", nil)
 	err = provider.ValidateConfig("")
+	if err == nil {
+		t.Error("Expected error for empty source URI")
+	}
+
+	// Test with valid base URL and valid source URI
+	err = provider.ValidateConfig("lidarr://wanted")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}

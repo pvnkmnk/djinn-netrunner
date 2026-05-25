@@ -154,9 +154,18 @@ func (p *LidarrProvider) fetchArtistName(ctx context.Context, baseURL *url.URL, 
 }
 
 func (p *LidarrProvider) ValidateConfig(config string) error {
-	// Validate that base URL is provided
 	if p.BaseURL == "" {
 		return fmt.Errorf("lidarr base URL is required")
+	}
+	parsed, err := url.Parse(p.BaseURL)
+	if err != nil {
+		return fmt.Errorf("lidarr base URL is not valid: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("lidarr base URL must include scheme and host (e.g., http://localhost:8686)")
+	}
+	if config == "" {
+		return fmt.Errorf("lidarr source URI is required")
 	}
 	return nil
 }
