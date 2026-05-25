@@ -415,28 +415,28 @@ func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
 
 // stageDownloadFile queues the download and waits for completion.
 func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip bool, err error) {
-	h.db.Model(&p.item).Updates(map[string]interface{}{
-		"status":            "downloading",
-		"slskd_search_id":   "completed",
-		"slskd_download_id": fmt.Sprintf("%s:%s", p.best.Username, p.best.Filename),
-	})
-
-	_, err = h.slskd.EnqueueDownload(p.best.Username, p.best.Filename)
+	downloadID, err := h.slskd.EnqueueDownload(p.best.Username, p.best.Filename, p.best.Size)
 	if err != nil {
 		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download enqueue failed: %v", err))
 		return true, nil
 	}
 
-	h.Log(p.item.JobID, "INFO", "Download queued", &p.item.ID)
+	h.db.Model(&p.item).Updates(map[string]interface{}{
+		"status":            "downloading",
+		"slskd_search_id":   "completed",
+		"slskd_download_id": downloadID,
+	})
 
-	download, err := h.slskd.WaitForDownload(p.ctx, p.best.Username, p.best.Filename, 10*time.Minute)
+	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Download queued (id: %s)", downloadID), &p.item.ID)
+
+	download, err := h.slskd.WaitForDownload(p.ctx, p.best.Username, downloadID, 10*time.Minute)
 	if err != nil {
 		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed or timed out: %v", err))
 		return true, nil
 	}
 
 	h.Log(p.item.JobID, "OK", "Download completed", &p.item.ID)
-	p.download = download.Path
+	p.download = download.LocalPath
 	return false, nil
 }
 

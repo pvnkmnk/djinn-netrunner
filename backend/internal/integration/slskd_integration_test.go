@@ -283,8 +283,8 @@ func (h *IntegrationHarness) ValidateDownloadFlow(t *testing.T, username, filena
 	
 	t.Logf("Testing download flow for %s from %s", filename, username)
 	
-	// Enqueue download
-	downloadID, err := h.Slskd.EnqueueDownload(username, filename)
+	// Enqueue download (size 0 is acceptable for integration tests)
+	downloadID, err := h.Slskd.EnqueueDownload(username, filename, 0)
 	if err != nil {
 		t.Fatalf("Failed to enqueue download: %v", err)
 	}
@@ -300,7 +300,7 @@ func (h *IntegrationHarness) ValidateDownloadFlow(t *testing.T, username, filena
 	errChan := make(chan error, 1)
 	
 	go func() {
-		download, err := h.Slskd.WaitForDownload(ctx, username, filename, downloadWaitTimeout)
+		download, err := h.Slskd.WaitForDownload(ctx, username, downloadID, downloadWaitTimeout)
 		if err != nil {
 			errChan <- err
 			return
@@ -314,8 +314,8 @@ func (h *IntegrationHarness) ValidateDownloadFlow(t *testing.T, username, filena
 	case err := <-errChan:
 		t.Logf("Download failed: %v (expected if peer unavailable)", err)
 	case download := <-done:
-		if download.State == services.DownloadStateCompleted {
-			t.Logf("Download completed successfully: %s", download.Path)
+		if download.State.IsSucceeded() {
+			t.Logf("Download completed successfully: %s", download.LocalPath)
 		} else {
 			t.Errorf("Download ended with unexpected state: %s", download.State)
 		}

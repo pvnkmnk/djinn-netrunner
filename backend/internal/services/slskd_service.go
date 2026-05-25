@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -22,12 +23,39 @@ type DownloadState string
 
 const (
 	DownloadStateQueued       DownloadState = "Queued"
+	DownloadStateRequested    DownloadState = "Requested"
 	DownloadStateInitializing DownloadState = "Initializing"
 	DownloadStateInProgress   DownloadState = "InProgress"
 	DownloadStateCompleted    DownloadState = "Completed"
+	DownloadStateSucceeded    DownloadState = "Succeeded"
 	DownloadStateCancelled    DownloadState = "Cancelled"
+	DownloadStateTimedOut     DownloadState = "TimedOut"
 	DownloadStateErrored      DownloadState = "Errored"
+	DownloadStateRejected     DownloadState = "Rejected"
 )
+
+// IsTerminal returns true if the state indicates a completed transfer.
+func (s DownloadState) IsTerminal() bool {
+	return strings.Contains(string(s), string(DownloadStateCompleted))
+}
+
+// IsSucceeded returns true if the transfer completed successfully.
+func (s DownloadState) IsSucceeded() bool {
+	return strings.Contains(string(s), string(DownloadStateCompleted)) &&
+		strings.Contains(string(s), string(DownloadStateSucceeded))
+}
+
+// IsFailed returns true if the transfer completed with an error, cancellation, timeout, or rejection.
+func (s DownloadState) IsFailed() bool {
+	if !s.IsTerminal() {
+		return false
+	}
+	s2 := string(s)
+	return strings.Contains(s2, string(DownloadStateErrored)) ||
+		strings.Contains(s2, string(DownloadStateCancelled)) ||
+		strings.Contains(s2, string(DownloadStateTimedOut)) ||
+		strings.Contains(s2, string(DownloadStateRejected))
+}
 
 type SearchResult struct {
 	Username    string  `json:"username"`
@@ -169,14 +197,21 @@ func (r *SearchResult) ApplyPeerReputation(rep *database.PeerReputation) {
 }
 
 type Download struct {
-	ID              string        `json:"id"`
-	Username        string        `json:"username"`
-	Filename        string        `json:"filename"`
-	Size            int64         `json:"size"`
-	State           DownloadState `json:"state"`
-	BytesDownloaded int64         `json:"bytesDownloaded"`
-	AverageSpeed    float64       `json:"averageSpeed"`
-	Path            string        `json:"path"`
+	ID               string        `json:"id"`
+	Username         string        `json:"username"`
+	Filename         string        `json:"filename"`
+	Size             int64         `json:"size"`
+	State            DownloadState `json:"state"`
+	BytesTransferred int64         `json:"bytesTransferred"`
+	BytesRemaining   int64         `json:"bytesRemaining"`
+	PercentComplete  float64       `json:"percentComplete"`
+	AverageSpeed     float64       `json:"averageSpeed"`
+	StartedAt        *time.Time    `json:"startedAt"`
+	EndedAt          *time.Time    `json:"endedAt"`
+	Exception        string        `json:"exception"`
+
+	// LocalPath is computed by NetRunner from the download staging directory.
+	LocalPath string `json:"-"`
 }
 
 type SlskdService struct {
@@ -304,8 +339,8 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 	// Wait for search to gather results
 	time.Sleep(time.Duration(timeout) * time.Second)
 
-	// Fetch results
-	resultsURL := fmt.Sprintf("%s/api/v0/searches/%s", s.cfg.SlskdURL, startResult.ID)
+	// Fetch results (includeResponses=true is required to get file data)
+	resultsURL := fmt.Sprintf("%s/api/v0/searches/%s?includeResponses=true", s.cfg.SlskdURL, startResult.ID)
 	req, _ = http.NewRequest("GET", resultsURL, nil)
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 
@@ -403,15 +438,19 @@ func (s *SlskdService) deleteSearch(searchID string) {
 	}
 }
 
-func (s *SlskdService) EnqueueDownload(username, filename string) (string, error) {
-	url := fmt.Sprintf("%s/api/v0/downloads", s.cfg.SlskdURL)
-	payload := map[string]interface{}{
-		"username": username,
-		"files":    []string{filename},
+// EnqueueDownload queues a file download via slskd.
+// Returns the download ID (GUID) assigned by slskd.
+func (s *SlskdService) EnqueueDownload(username, filename string, size int64) (string, error) {
+	u := fmt.Sprintf("%s/api/v0/transfers/downloads/%s", s.cfg.SlskdURL, url.PathEscape(username))
+
+	type downloadRequest struct {
+		Filename string `json:"filename"`
+		Size     int64  `json:"size"`
 	}
+	payload := []downloadRequest{{Filename: filename, Size: size}}
 
 	jsonPayload, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	req, _ := http.NewRequest("POST", u, bytes.NewBuffer(jsonPayload))
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -421,15 +460,38 @@ func (s *SlskdService) EnqueueDownload(username, filename string) (string, error
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("slskd download enqueue failed: %s", resp.Status)
+	}
+
+	// Parse the response to extract the download ID from enqueued transfers.
+	var enqueueResp struct {
+		Enqueued []Download `json:"enqueued"`
+		Failed   []struct {
+			Filename string `json:"filename"`
+			Message  string `json:"message"`
+		} `json:"failed"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&enqueueResp); err != nil {
+		// If we can't parse the response, return a composite key as fallback.
+		return fmt.Sprintf("%s:%s", username, filename), nil
+	}
+
+	if len(enqueueResp.Failed) > 0 {
+		return "", fmt.Errorf("slskd rejected download: %s", enqueueResp.Failed[0].Message)
+	}
+
+	if len(enqueueResp.Enqueued) > 0 {
+		return enqueueResp.Enqueued[0].ID, nil
 	}
 
 	return fmt.Sprintf("%s:%s", username, filename), nil
 }
 
-func (s *SlskdService) GetDownload(username, filename string) (*Download, error) {
-	u := fmt.Sprintf("%s/api/v0/downloads/%s/%s", s.cfg.SlskdURL, username, url.PathEscape(filename))
+// GetDownload retrieves a specific download by its GUID.
+func (s *SlskdService) GetDownload(username, downloadID string) (*Download, error) {
+	u := fmt.Sprintf("%s/api/v0/transfers/downloads/%s/%s",
+		s.cfg.SlskdURL, url.PathEscape(username), downloadID)
 
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
@@ -443,23 +505,50 @@ func (s *SlskdService) GetDownload(username, filename string) (*Download, error)
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
 	}
+	if resp.StatusCode == http.StatusBadRequest {
+		return nil, fmt.Errorf("invalid download ID: %s", downloadID)
+	}
 
 	var d Download
 	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
 		return nil, err
 	}
 
+	// Compute local path from staging directory and remote filename.
+	d.LocalPath = s.resolveDownloadPath(username, d.Filename)
+
 	return &d, nil
 }
 
-func (s *SlskdService) WaitForDownload(ctx context.Context, username, filename string, timeout time.Duration) (*Download, error) {
+// resolveDownloadPath constructs the local filesystem path where slskd stores
+// a completed download. slskd saves files at:
+//   {downloads_dir}/{username}/{remote_path}
+// with backslash path separators converted to forward slashes.
+func (s *SlskdService) resolveDownloadPath(username, remoteFilename string) string {
+	staging := s.cfg.DownloadStagingPath
+	if staging == "" {
+		staging = "./downloads"
+	}
+	// Convert Windows-style backslash paths to local forward slashes.
+	localRelative := strings.ReplaceAll(remoteFilename, "\\", "/")
+	// Remove any leading slashes or @@-prefixed path components.
+	localRelative = strings.TrimLeft(localRelative, "/")
+	if idx := strings.Index(localRelative, "/"); idx >= 0 && strings.HasPrefix(localRelative, "@@") {
+		localRelative = localRelative[idx+1:]
+	}
+	return filepath.Join(staging, username, localRelative)
+}
+
+// WaitForDownload polls slskd until the download identified by downloadID
+// reaches a terminal state. It uses the GUID returned by EnqueueDownload.
+func (s *SlskdService) WaitForDownload(ctx context.Context, username, downloadID string, timeout time.Duration) (*Download, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	start := time.Now()
 	var lastBytes int64
-	lastProgress := time.Now() // Initialize to start time to avoid false stall detection
-	stallThreshold := 90 * time.Second // Consider stalled if no progress for 90s
+	lastProgress := time.Now()
+	stallThreshold := 90 * time.Second
 
 	for {
 		select {
@@ -470,25 +559,30 @@ func (s *SlskdService) WaitForDownload(ctx context.Context, username, filename s
 				return nil, fmt.Errorf("download timeout after %v", timeout)
 			}
 
-			d, err := s.GetDownload(username, filename)
+			d, err := s.GetDownload(username, downloadID)
 			if err != nil {
 				return nil, err
 			}
 			if d == nil {
-				return nil, fmt.Errorf("download not found")
+				return nil, fmt.Errorf("download not found (id: %s)", downloadID)
 			}
 
-			if d.State == DownloadStateCompleted {
+			// slskd uses compound states like "Completed, Succeeded"
+			if d.State.IsSucceeded() {
 				return d, nil
 			}
-			if d.State == DownloadStateCancelled || d.State == DownloadStateErrored {
-				return nil, fmt.Errorf("download failed: %s", d.State)
+			if d.State.IsFailed() {
+				msg := string(d.State)
+				if d.Exception != "" {
+					msg = fmt.Sprintf("%s: %s", d.State, d.Exception)
+				}
+				return nil, fmt.Errorf("download failed: %s", msg)
 			}
 
-			// Stalled download detection: track bytes downloaded over time
-			if d.State == DownloadStateInProgress {
-				if d.BytesDownloaded > lastBytes {
-					lastBytes = d.BytesDownloaded
+			// Stalled download detection
+			if strings.Contains(string(d.State), string(DownloadStateInProgress)) {
+				if d.BytesTransferred > lastBytes {
+					lastBytes = d.BytesTransferred
 					lastProgress = time.Now()
 				} else if time.Since(lastProgress) > stallThreshold {
 					return nil, fmt.Errorf("download stalled (no progress for %v)", stallThreshold)
@@ -499,8 +593,8 @@ func (s *SlskdService) WaitForDownload(ctx context.Context, username, filename s
 }
 
 func (s *SlskdService) HealthCheck() bool {
-	url := fmt.Sprintf("%s/api/v0/session", s.cfg.SlskdURL)
-	req, _ := http.NewRequest("GET", url, nil)
+	u := fmt.Sprintf("%s/api/v0/session", s.cfg.SlskdURL)
+	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 
 	resp, err := s.httpClient.Do(req)
@@ -522,8 +616,8 @@ type PeerFile struct {
 // Browse retrieves the shared files of a peer.
 // Calls GET /api/v0/users/{username}/browse on slskd.
 func (s *SlskdService) Browse(username string) ([]PeerFile, error) {
-	url := fmt.Sprintf("%s/api/v0/users/%s/browse", s.cfg.SlskdURL, url.PathEscape(username))
-	req, _ := http.NewRequest("GET", url, nil)
+	u := fmt.Sprintf("%s/api/v0/users/%s/browse", s.cfg.SlskdURL, url.PathEscape(username))
+	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 
 	resp, err := s.httpClient.Do(req)
