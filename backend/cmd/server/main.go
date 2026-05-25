@@ -118,6 +118,7 @@ func main() {
 	wsManager := api.NewWebSocketManager()
 	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
 	schedulesHandler := api.NewSchedulesHandler(db)
+	acquireHandler := api.NewAcquireHandler(db)
 
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
@@ -152,7 +153,7 @@ func main() {
 	}()
 
 	// Routes
-	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
+	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler)
 
 	// Start server
 	go func() {
@@ -171,7 +172,7 @@ func main() {
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -222,7 +223,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	authRoutes.Get("/spotify/callback", auth.AuthMiddleware, spotifyAuth.Callback)
 
 	// UI routes (public - handles both auth and unauth)
-	app.Get("/", dash.RenderIndex)
+	app.Get("/", auth.OptionalAuthMiddleware, dash.RenderIndex)
 
 	// Page routes
 	app.Get("/watchlists", auth.AuthMiddleware, watchlist.WatchlistsPage)
@@ -240,8 +241,10 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/partials/artists", auth.AuthMiddleware, artistsHandler.RenderPartial)
 	app.Get("/partials/artist-form", auth.AuthMiddleware, artistsHandler.GetForm)
 	app.Get("/partials/jobs", auth.AuthMiddleware, stats.RenderJobsPartial)
+	app.Get("/partials/job-logs", auth.AuthMiddleware, stats.RenderJobLogsPartial)
 	app.Get("/partials/libraries/:id/browse", auth.AuthMiddleware, library.BrowseTracks)
 	app.Get("/partials/tracks/:id", auth.AuthMiddleware, library.TrackDetail)
+	app.Get("/partials/acquire-form", auth.AuthMiddleware, acquireHandler.GetForm)
 
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
@@ -305,6 +308,9 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	statsRoutes.Get("/library", stats.GetLibraryStats)
 	statsRoutes.Get("/activity", stats.GetActivityStats)
 	statsRoutes.Get("/summary", stats.GetSummary)
+
+	// Acquisition
+	apiProtected.Post("/acquire", acquireHandler.Create)
 
 	// Jobs
 	jobRoutes := apiProtected.Group("/jobs")

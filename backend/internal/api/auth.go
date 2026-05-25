@@ -160,6 +160,25 @@ func (h *AuthHandler) GetDB() *gorm.DB {
 	return h.db
 }
 
+// OptionalAuthMiddleware loads user context when a valid session exists but
+// does not reject unauthenticated requests. Use on routes that serve both
+// authenticated and guest visitors (e.g. the dashboard landing page).
+func (h *AuthHandler) OptionalAuthMiddleware(c *fiber.Ctx) error {
+	sessionID := c.Cookies(SessionCookie)
+	if sessionID == "" {
+		return c.Next()
+	}
+
+	var user database.User
+	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+		First(&user).Error
+	if err == nil {
+		c.Locals("user", user)
+	}
+	return c.Next()
+}
+
 // AuthMiddleware protects routes
 func (h *AuthHandler) AuthMiddleware(c *fiber.Ctx) error {
 	sessionID := c.Cookies(SessionCookie)
