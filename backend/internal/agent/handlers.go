@@ -597,3 +597,40 @@ func SetDefaultProfile(db *gorm.DB, profileID uuid.UUID) error {
 		return tx.Model(&database.QualityProfile{}).Where("id = ?", profileID).Update("is_default", true).Error
 	})
 }
+
+// DuplicateGroup represents a set of acquisitions that share the same recording identity.
+type DuplicateGroup struct {
+	MBRecordingID string
+	Acquisitions  []database.Acquisition
+}
+
+// ListDuplicates finds acquisitions that share the same MusicBrainz recording ID,
+// indicating content-level duplicates (e.g. FLAC + MP3 of the same recording).
+func ListDuplicates(db *gorm.DB) ([]DuplicateGroup, error) {
+	// Find recording IDs that appear more than once
+	var dupIDs []string
+	err := db.Model(&database.Acquisition{}).
+		Select("mb_recording_id").
+		Where("mb_recording_id != '' AND mb_recording_id IS NOT NULL").
+		Group("mb_recording_id").
+		Having("COUNT(*) > 1").
+		Pluck("mb_recording_id", &dupIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query duplicate recording IDs: %w", err)
+	}
+
+	if len(dupIDs) == 0 {
+		return nil, nil
+	}
+
+	var groups []DuplicateGroup
+	for _, rid := range dupIDs {
+		var acqs []database.Acquisition
+		if err := db.Where("mb_recording_id = ?", rid).Order("id ASC").Find(&acqs).Error; err != nil {
+			continue
+		}
+		groups = append(groups, DuplicateGroup{MBRecordingID: rid, Acquisitions: acqs})
+	}
+
+	return groups, nil
+}

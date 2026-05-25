@@ -13,6 +13,23 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
+// Quality-Aware Replacement (DJI-366 — deferred to follow-up)
+//
+// When a content-level duplicate is detected (same MusicBrainz recording ID),
+// the current behavior is to skip the new file. A future enhancement will
+// compare quality before deciding:
+//
+//   1. Extract format/bitrate from both existing and new file metadata.
+//   2. Score each using QualityProfile.CalculateScore() if a profile is set.
+//   3. If the new file scores higher (e.g. FLAC vs MP3, or 320kbps vs 128kbps):
+//      a. Move the new file into the library at the same path (or new path).
+//      b. Update the Acquisition record with the new file details.
+//      c. Mark the old file for cleanup.
+//   4. If the new file scores equal or lower, skip as today.
+//
+// Until implemented, duplicates can be reviewed via `netrunner-cli library duplicates`
+// and manually resolved.
+
 func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemID uint64, downloadPath string, item database.JobItem, coverArtSources []string) error {
 	h.Log(jobID, "INFO", "Importing to library", &itemID)
 
@@ -95,6 +112,22 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 			} else if err != nil {
 				h.Log(jobID, "WARN", fmt.Sprintf("Recording search failed: %v", err), &itemID)
 			}
+		}
+	}
+
+	// 3.5 Content-level dedup: check for existing acquisitions with matching recording ID (DJI-366)
+	if mbIDs.RecordingID != "" {
+		var existing database.Acquisition
+		if err := h.db.Where("mb_recording_id = ?", mbIDs.RecordingID).First(&existing).Error; err == nil {
+			// Same recording already imported — check quality for potential replacement
+			h.Log(jobID, "OK", fmt.Sprintf("Duplicate recording detected (MB ID: %s, existing acquisition #%d at %s). "+
+				"Quality-aware replacement deferred — see DJI-366 docs.", mbIDs.RecordingID, existing.ID, existing.FinalPath), &itemID)
+			h.db.Model(&item).Updates(map[string]interface{}{
+				"status":      "completed (duplicate recording)",
+				"finished_at": time.Now(),
+				"final_path":  existing.FinalPath,
+			})
+			return nil
 		}
 	}
 
