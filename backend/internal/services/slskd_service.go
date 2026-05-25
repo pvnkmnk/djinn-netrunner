@@ -474,19 +474,17 @@ func (s *SlskdService) EnqueueDownload(username, filename string, size int64) (s
 	}
 
 	// Parse the response to extract the download ID from enqueued transfers.
+	// slskd returns { "enqueued": [...transfers], "failed": ["filename1", ...] }
 	var enqueueResp struct {
 		Enqueued []Download `json:"enqueued"`
-		Failed   []struct {
-			Filename string `json:"filename"`
-			Message  string `json:"message"`
-		} `json:"failed"`
+		Failed   []string   `json:"failed"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&enqueueResp); err != nil {
 		return "", fmt.Errorf("failed to decode slskd enqueue response: %w", err)
 	}
 
 	if len(enqueueResp.Failed) > 0 {
-		return "", fmt.Errorf("slskd rejected download: %s", enqueueResp.Failed[0].Message)
+		return "", fmt.Errorf("slskd rejected download: %s", enqueueResp.Failed[0])
 	}
 
 	if len(enqueueResp.Enqueued) == 0 {

@@ -282,11 +282,10 @@ func TestSlskdService_EnqueueDownload_FailedItems(t *testing.T) {
 	server := httptest.NewServer(withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
+		// slskd returns failed as a string array of filenames
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"enqueued": []interface{}{},
-			"failed": []map[string]interface{}{
-				{"filename": "test_song.mp3", "message": "user is offline"},
-			},
+			"failed":   []string{"test_song.mp3"},
 		})
 	})))
 	defer server.Close()
