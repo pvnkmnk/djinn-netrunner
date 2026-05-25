@@ -134,7 +134,57 @@ curl -X POST $NOTIFICATION_WEBHOOK_URL \
 ```
 
 ## Spotify access
-Spotify integration uses Client Credentials OAuth with a background token refresh mechanism.
-Tokens are cached in the database and refreshed automatically before expiry. No user
-interaction is required. The `SpotifyAuthHandler` manages token lifecycle — operators only
-need to ensure `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set in the environment.
+
+NetRunner uses a **two-pronged** Spotify strategy. No Spotify Developer App is required for the primary path.
+
+### Prong 1 — sp_dc cookie (recommended)
+The sp_dc cookie is a long-lived browser cookie from Spotify's web player. It enables access to:
+- Public/private playlists via the GraphQL Partner API
+- Liked Songs (`spotify_liked` source type)
+- Discover Weekly and Daily Mixes (`spotify_discover` source type)
+
+**Setup:**
+1. Log into [open.spotify.com](https://open.spotify.com) in a browser.
+2. Open DevTools → Application → Cookies → `https://open.spotify.com`.
+3. Copy the value of the `sp_dc` cookie.
+4. Submit it via the UI (Settings → Spotify Connection) or the API:
+   ```bash
+   curl -X POST http://localhost:8080/api/auth/spotify/spdc \
+     -H "Content-Type: application/json" \
+     -H "Cookie: session_id=<your_session>" \
+     -d '{"sp_dc": "<your_sp_dc_cookie>"}'
+   ```
+
+The sp_dc cookie typically lasts ~1 year. When it expires, repeat the steps above.
+
+### Prong 2 — OAuth Client Credentials (fallback)
+If `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set, OAuth is used as a fallback for public playlist data via the Spotify Web API. Tokens are cached in the database and refreshed automatically before expiry.
+
+### GraphQL hash management
+The sp_dc path uses SHA256 hashes of Spotify's web player GraphQL operations. These hashes can break when Spotify deploys new JS bundles. See `docs/watchlist-providers.md` for the hash extraction procedure.
+
+## Grafana dashboard
+
+A pre-built Grafana dashboard is available at `ops/grafana/netrunner-dashboard.json`.
+
+### Import
+1. Open Grafana → Dashboards → Import.
+2. Upload `ops/grafana/netrunner-dashboard.json` or paste its contents.
+3. Select the Prometheus data source that scrapes the NetRunner endpoints.
+
+### Prometheus scrape config
+The server exposes metrics on `:8080/metrics` and the worker on `:9090/metrics`. Add both targets to your Prometheus config:
+```yaml
+scrape_configs:
+  - job_name: netrunner-server
+    static_configs:
+      - targets: ['netrunner:8080']
+  - job_name: netrunner-worker
+    static_configs:
+      - targets: ['netrunner-worker:9090']
+```
+
+### Key panels
+- **Jobs**: queued/running/succeeded/failed gauges, duration histograms
+- **Acquisition**: dedup hits (hash vs recording ID), pipeline throughput
+- **Worker**: heartbeat freshness, zombie recovery events

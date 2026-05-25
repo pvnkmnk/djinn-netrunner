@@ -105,7 +105,7 @@ func newMockSlskdServer(cfg *mockSlskdConfig) *httptest.Server {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		if r.Method == "POST" && r.URL.Path == "/api/v0/downloads" {
+		if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/api/v0/transfers/downloads/") {
 			if cfg.downloadErr {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(w, `{"error":"mock download error"}`)
@@ -114,7 +114,7 @@ func newMockSlskdServer(cfg *mockSlskdConfig) *httptest.Server {
 			w.WriteHeader(http.StatusCreated)
 			return
 		}
-		if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v0/downloads/") {
+		if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v0/transfers/downloads/") {
 			if cfg.downloadTimeout > 0 && pollCount < cfg.downloadTimeout {
 				pollCount++
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -226,10 +226,6 @@ func TestPipelineSyncCreatesAcquisitionJob(t *testing.T) {
 // gathering, so this test takes ~35s. Expected for integration tests.
 //
 func TestPipelineFullPipelineWithMockSlskd(t *testing.T) {
-	// TODO(DJI-372): Mock uses /api/v0/downloads but slskd_service.go hits
-	// /api/v0/transfers/downloads/{username}. Skip until mock is updated.
-	t.Skip("Skipping: mock slskd download routes don't match actual API paths")
-
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 	defer cleanupPipelineData(t, harness.DB)
@@ -302,11 +298,6 @@ func TestPipelineFullPipelineWithMockSlskd(t *testing.T) {
 // with the appropriate error reason.
 //
 func TestPipelineDownloadFailure(t *testing.T) {
-	// TODO(DJI-372): Mock uses /api/v0/downloads but slskd_service.go hits
-	// /api/v0/transfers/downloads/{username}. Test passes by coincidence
-	// (404 fallback, not the intended mock 500). Skip until mock is updated.
-	t.Skip("Skipping: mock slskd download routes don't match actual API paths")
-
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 	defer cleanupPipelineData(t, harness.DB)
@@ -369,10 +360,6 @@ func TestPipelineDownloadFailure(t *testing.T) {
 // the pipeline should still complete import using basic tag extraction.
 //
 func TestPipelineMetadataFallback(t *testing.T) {
-	// TODO(DJI-372): Mock uses /api/v0/downloads but slskd_service.go hits
-	// /api/v0/transfers/downloads/{username}. Skip until mock is updated.
-	t.Skip("Skipping: mock slskd download routes don't match actual API paths")
-
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 	defer cleanupPipelineData(t, harness.DB)
