@@ -63,29 +63,34 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 		maxPages = 10
 	)
 
+	baseURL, err := url.Parse(p.BaseURL)
+	if err != nil {
+		return nil, "", err
+	}
+	if baseURL.Path != "" && baseURL.Path[len(baseURL.Path)-1] != '/' {
+		baseURL.Path += "/"
+	}
+	baseURL.Path += "user/" + watchlist.SourceURI + "/listens"
+	endpoint := baseURL.String()
+
 	var allTracks []map[string]string
 	var maxTimestamp int64
 	var maxTS int64
 
 	for page := 0; page < maxPages; page++ {
-		u, err := url.Parse(p.BaseURL)
+		reqURL, err := url.Parse(endpoint)
 		if err != nil {
 			return nil, "", err
 		}
 
-		if u.Path != "" && u.Path[len(u.Path)-1] != '/' {
-			u.Path += "/"
-		}
-		u.Path += "user/" + watchlist.SourceURI + "/listens"
-
-		q := u.Query()
+		q := reqURL.Query()
 		q.Set("count", strconv.Itoa(perPage))
 		if maxTS > 0 {
 			q.Set("max_ts", strconv.FormatInt(maxTS, 10))
 		}
-		u.RawQuery = q.Encode()
+		reqURL.RawQuery = q.Encode()
 
-		req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", reqURL.String(), nil)
 		if err != nil {
 			return nil, "", err
 		}
@@ -98,16 +103,18 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 		if err != nil {
 			return nil, "", err
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			return nil, "", fmt.Errorf("listenbrainz api returned status: %d", resp.StatusCode)
 		}
 
 		var data lbListensResponse
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			resp.Body.Close()
 			return nil, "", err
 		}
+		resp.Body.Close()
 
 		if len(data.Payload.Listens) == 0 {
 			break

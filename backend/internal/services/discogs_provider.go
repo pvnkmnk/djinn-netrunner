@@ -85,16 +85,18 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 		if err != nil {
 			return nil, "", err
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			return nil, "", fmt.Errorf("discogs api returned status: %d", resp.StatusCode)
 		}
 
 		var data discogsWantlistResponse
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			resp.Body.Close()
 			return nil, "", err
 		}
+		resp.Body.Close()
 
 		for _, w := range data.Wants {
 			artistName := ""

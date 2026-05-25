@@ -104,9 +104,9 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		if err != nil {
 			return nil, "", err
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			return nil, "", fmt.Errorf("last.fm api returned status: %d", resp.StatusCode)
 		}
 
@@ -116,20 +116,31 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		if watchlist.SourceType == "lastfm_loved" {
 			var data lastFMLovedResponse
 			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				resp.Body.Close()
 				return nil, "", err
 			}
 			pageTracks = data.LovedTracks.Track
 			totalStr = data.LovedTracks.Attr.Total
-			total, _ = strconv.Atoi(totalStr)
+			total, err = strconv.Atoi(totalStr)
+			if err != nil {
+				resp.Body.Close()
+				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", totalStr)
+			}
 		} else {
 			var data lastFMTopResponse
 			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				resp.Body.Close()
 				return nil, "", err
 			}
 			pageTracks = data.TopTracks.Track
 			totalStr = data.TopTracks.Attr.Total
-			total, _ = strconv.Atoi(totalStr)
+			total, err = strconv.Atoi(totalStr)
+			if err != nil {
+				resp.Body.Close()
+				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", totalStr)
+			}
 		}
+		resp.Body.Close()
 
 		for _, t := range pageTracks {
 			allTracks = append(allTracks, p.mapTrack(t))
