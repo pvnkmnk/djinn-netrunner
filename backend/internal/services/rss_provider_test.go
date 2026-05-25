@@ -64,3 +64,13 @@ func TestRSSProvider_NilClientStillWorks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, tracks, 2)
 }
+
+func TestRSSProvider_ValidateConfig(t *testing.T) {
+	provider := &RSSProvider{}
+
+	assert.NoError(t, provider.ValidateConfig("http://example.com/feed.xml"))
+	assert.NoError(t, provider.ValidateConfig("https://example.com/feed.xml"))
+	assert.Error(t, provider.ValidateConfig("ftp://example.com/feed.xml"))
+	assert.Error(t, provider.ValidateConfig("not-a-url"))
+	assert.Error(t, provider.ValidateConfig(""))
+}
