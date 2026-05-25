@@ -101,12 +101,12 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 
 		resp, err := p.httpClient.Do(req)
 		if err != nil {
-			return nil, "", err
+			return nil, "", classifyNetworkError(err, "listenbrainz")
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			return nil, "", fmt.Errorf("listenbrainz api returned status: %d", resp.StatusCode)
+			return nil, "", classifyHTTPStatus(resp.StatusCode, "listenbrainz")
 		}
 
 		var data lbListensResponse

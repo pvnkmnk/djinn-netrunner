@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -75,7 +77,7 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 
 	const perPage = 200
 	var allTracks []map[string]string
-	var totalStr string
+	var allRawTracks []lastFMTrack
 
 	for page := 1; ; page++ {
 		u, err := url.Parse(p.BaseURL)
@@ -102,12 +104,12 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 
 		resp, err := p.httpClient.Do(req)
 		if err != nil {
-			return nil, "", err
+			return nil, "", classifyNetworkError(err, "last.fm")
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			return nil, "", fmt.Errorf("last.fm api returned status: %d", resp.StatusCode)
+			return nil, "", classifyHTTPStatus(resp.StatusCode, "last.fm")
 		}
 
 		var pageTracks []lastFMTrack
@@ -120,11 +122,10 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 				return nil, "", err
 			}
 			pageTracks = data.LovedTracks.Track
-			totalStr = data.LovedTracks.Attr.Total
-			total, err = strconv.Atoi(totalStr)
+			total, err = strconv.Atoi(data.LovedTracks.Attr.Total)
 			if err != nil {
 				resp.Body.Close()
-				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", totalStr)
+				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", data.LovedTracks.Attr.Total)
 			}
 		} else {
 			var data lastFMTopResponse
@@ -133,11 +134,10 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 				return nil, "", err
 			}
 			pageTracks = data.TopTracks.Track
-			totalStr = data.TopTracks.Attr.Total
-			total, err = strconv.Atoi(totalStr)
+			total, err = strconv.Atoi(data.TopTracks.Attr.Total)
 			if err != nil {
 				resp.Body.Close()
-				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", totalStr)
+				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", data.TopTracks.Attr.Total)
 			}
 		}
 		resp.Body.Close()
@@ -145,6 +145,7 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		for _, t := range pageTracks {
 			allTracks = append(allTracks, p.mapTrack(t))
 		}
+		allRawTracks = append(allRawTracks, pageTracks...)
 
 		if len(allTracks) >= total || len(pageTracks) < perPage {
 			break
@@ -153,9 +154,9 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 
 	var snapshotID string
 	if watchlist.SourceType == "lastfm_loved" {
-		snapshotID = fmt.Sprintf("loved:%s", totalStr)
+		snapshotID = fmt.Sprintf("loved:%s", hashTrackList(allRawTracks))
 	} else {
-		snapshotID = fmt.Sprintf("top:%s", totalStr)
+		snapshotID = fmt.Sprintf("top:%s", hashTrackList(allRawTracks))
 	}
 
 	return allTracks, snapshotID, nil
@@ -174,6 +175,16 @@ func (p *LastFMProvider) mapTrack(t lastFMTrack) map[string]string {
 		"album":         t.Album.Name,
 		"cover_art_url": coverURL,
 	}
+}
+
+// hashTrackList computes a deterministic hash of a Last.fm track list.
+func hashTrackList(tracks []lastFMTrack) string {
+	h := sha256.New()
+	for _, t := range tracks {
+		h.Write([]byte(t.Artist.Name))
+		h.Write([]byte(t.Name))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 func (p *LastFMProvider) ValidateConfig(config string) error {

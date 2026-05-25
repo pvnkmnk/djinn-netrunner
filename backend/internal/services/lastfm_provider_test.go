@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -56,7 +57,8 @@ func TestLastFMProvider_FetchTracks(t *testing.T) {
 
 	tracks, snap, err := provider.FetchTracks(context.Background(), watchlist)
 	assert.NoError(t, err)
-	assert.Equal(t, "loved:1", snap)
+	assert.True(t, strings.HasPrefix(snap, "loved:"), "snapshot should start with loved:")
+	assert.Len(t, snap, len("loved:")+16, "snapshot hash should be 16 hex chars")
 	assert.Len(t, tracks, 1)
 	assert.Equal(t, "Test Artist", tracks[0]["artist"])
 	assert.Equal(t, "Test Track", tracks[0]["title"])
@@ -125,7 +127,8 @@ func TestLastFMProvider_FetchTracks_MultiPage(t *testing.T) {
 
 	tracks, snap, err := provider.FetchTracks(context.Background(), watchlist)
 	require.NoError(t, err)
-	assert.Equal(t, "loved:250", snap)
+	assert.True(t, strings.HasPrefix(snap, "loved:"), "snapshot should start with loved:")
+	assert.Len(t, snap, len("loved:")+16, "snapshot hash should be 16 hex chars")
 	assert.Len(t, tracks, 250)
 	assert.Equal(t, 2, requestCount)
 }
@@ -165,7 +168,8 @@ func TestLastFMProvider_FetchTracks_TopWithPeriod(t *testing.T) {
 
 	tracks, snap, err := provider.FetchTracks(context.Background(), watchlist)
 	require.NoError(t, err)
-	assert.Equal(t, "top:1", snap)
+	assert.True(t, strings.HasPrefix(snap, "top:"), "snapshot should start with top:")
+	assert.Len(t, snap, len("top:")+16, "snapshot hash should be 16 hex chars")
 	assert.Len(t, tracks, 1)
 	assert.Equal(t, "Top Artist", tracks[0]["artist"])
 }
