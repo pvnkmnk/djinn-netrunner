@@ -55,6 +55,20 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 	profileID = &watchlist.QualityProfileID
 
 	h.Log(jobID, "INFO", fmt.Sprintf("Syncing watchlist: %s", watchlist.Name), nil)
+
+	// Load sp_dc cookie from DB if the watchlist uses a Spotify source type.
+	// SetActiveUser scopes all subsequent sp_dc operations to this user,
+	// isolating per-user tokens from concurrent syncs.
+	if isSpotifySourceType(watchlist.SourceType) && watchlist.OwnerUserID != nil {
+		if spdc := h.watchlist.GetSpDcAuth(); spdc != nil {
+			spdc.SetActiveUser(*watchlist.OwnerUserID)
+			var spotifyToken database.SpotifyToken
+			if err := h.db.Where("user_id = ?", *watchlist.OwnerUserID).First(&spotifyToken).Error; err == nil && spotifyToken.SpDcCookie != "" {
+				spdc.SetSpDcCookie(spotifyToken.SpDcCookie)
+			}
+		}
+	}
+
 	currentTracks, snap, err := h.watchlist.FetchWatchlistTracks(ctx, watchlist)
 	if err != nil {
 		h.Log(jobID, "ERR", fmt.Sprintf("Watchlist fetch failed: %v", err), nil)
@@ -135,4 +149,10 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 	h.watchlist.UpdateLastSynced(id, snapshotID)
 
 	return nil
+}
+
+func isSpotifySourceType(sourceType string) bool {
+	return sourceType == "spotify_playlist" ||
+		sourceType == "spotify_liked" ||
+		sourceType == "spotify_discover"
 }

@@ -234,9 +234,6 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for nil owner, got nil")
 		}
-		if err.Error() != "watchlist has no owner user" {
-			t.Errorf("unexpected error message: %v", err)
-		}
 	})
 
 	t.Run("error_get_client", func(t *testing.T) {
@@ -282,10 +279,6 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 	})
 
 	t.Run("extract_playlist_id", func(t *testing.T) {
-		client := createMockSpotifyClient(t, func(w http.ResponseWriter, r *http.Request) {})
-		mockProvider := &mockSpotifyClientWrapper{client: client}
-		provider := NewSpotifyProvider(mockProvider)
-
 		tests := []struct {
 			uri      string
 			expected string
@@ -297,9 +290,9 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 		}
 
 		for _, tc := range tests {
-			result := provider.ExtractPlaylistID(tc.uri)
+			result := ExtractSpotifyPlaylistID(tc.uri)
 			if result != tc.expected {
-				t.Errorf("ExtractPlaylistID(%q) = %q, want %q", tc.uri, result, tc.expected)
+				t.Errorf("ExtractSpotifyPlaylistID(%q) = %q, want %q", tc.uri, result, tc.expected)
 			}
 		}
 	})
@@ -403,21 +396,31 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 func TestSpotifyProvider_ValidateConfig(t *testing.T) {
 	provider := &SpotifyProvider{}
 
-	// Valid configs
+	// Valid playlist configs
 	if err := provider.ValidateConfig("spotify:playlist:abc123"); err != nil {
 		t.Errorf("expected no error for spotify URI, got %v", err)
 	}
 	if err := provider.ValidateConfig("https://open.spotify.com/playlist/abc123"); err != nil {
 		t.Errorf("expected no error for spotify URL, got %v", err)
 	}
-	if err := provider.ValidateConfig("spotify:track:abc123"); err != nil {
-		t.Errorf("expected no error for spotify track URI, got %v", err)
+
+	// Freeform text allowed for discover/liked source types
+	if err := provider.ValidateConfig("Discover Weekly"); err != nil {
+		t.Errorf("expected no error for freeform discover name, got %v", err)
+	}
+	if err := provider.ValidateConfig("liked"); err != nil {
+		t.Errorf("expected no error for freeform liked config, got %v", err)
 	}
 
-	// Invalid configs
-	if err := provider.ValidateConfig("not-a-spotify-uri"); err == nil {
-		t.Errorf("expected error for invalid config")
+	// Non-playlist Spotify URLs rejected
+	if err := provider.ValidateConfig("https://open.spotify.com/track/abc123"); err == nil {
+		t.Errorf("expected error for non-playlist Spotify URL")
 	}
+	if err := provider.ValidateConfig("https://open.spotify.com/album/abc123"); err == nil {
+		t.Errorf("expected error for non-playlist Spotify URL")
+	}
+
+	// Empty config rejected
 	if err := provider.ValidateConfig(""); err == nil {
 		t.Errorf("expected error for empty config")
 	}

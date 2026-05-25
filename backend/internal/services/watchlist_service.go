@@ -32,9 +32,16 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 	// Shared proxy-aware client for all provider HTTP calls
 	proxyClient := NewProxyAwareHTTPClient(cfg, 30*time.Second)
 
-	// Register default providers
-	s.RegisterProvider("spotify_liked", NewSpotifyProvider(spotifyAuth))
-	s.RegisterProvider("spotify_playlist", NewSpotifyProvider(spotifyAuth))
+	// Initialize sp_dc auth for Spotify's two-pronged strategy
+	spdc := NewSpDcAuth(proxyClient)
+
+	// Register Spotify providers with two-pronged support:
+	// Prong 1 (client credentials) + Prong 2 (sp_dc GraphQL) + Legacy (OAuth)
+	spotifyProvider := NewSpotifyProviderWithSpDc(spotifyAuth, spdc)
+	s.RegisterProvider("spotify_liked", spotifyProvider)
+	s.RegisterProvider("spotify_playlist", spotifyProvider)
+	s.RegisterProvider("spotify_discover", spotifyProvider)
+
 	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
 	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
 	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken, proxyClient))
@@ -49,6 +56,20 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 	}
 
 	return s
+}
+
+// GetSpDcAuth returns the SpDcAuth instance used by Spotify providers.
+// Returns nil if no SpDcAuth was initialized.
+func (s *WatchlistService) GetSpDcAuth() *SpDcAuth {
+	p, ok := s.providers["spotify_liked"]
+	if !ok {
+		return nil
+	}
+	sp, ok := p.(*SpotifyProvider)
+	if !ok {
+		return nil
+	}
+	return sp.spdc
 }
 
 // RegisterProvider registers a new watchlist provider handler
