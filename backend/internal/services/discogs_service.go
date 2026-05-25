@@ -84,14 +84,18 @@ func NewDiscogsService(cfg *config.Config, baseURLs ...string) *DiscogsService {
 		baseURL = baseURLs[0]
 	}
 
+	var httpClient *http.Client
+	if cfg != nil {
+		httpClient = NewProxyAwareHTTPClient(cfg, 30*time.Second)
+	} else {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+
 	return &DiscogsService{
-		cfg:     cfg,
-		token:   token,
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		// Discogs allows 60 requests per minute for authenticated users
+		cfg:         cfg,
+		token:       token,
+		baseURL:     baseURL,
+		httpClient:  httpClient,
 		rateLimiter: time.NewTicker(time.Second),
 	}
 }

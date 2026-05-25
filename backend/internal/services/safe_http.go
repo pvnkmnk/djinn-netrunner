@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 )
 
 // privateCIDRs contains CIDR ranges that should never be reachable via outbound HTTP.
@@ -94,6 +96,22 @@ func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 		Timeout:    timeout,
 		Transport: safeTransport,
 	}
+}
+
+// NewProxyAwareHTTPClient creates an *http.Client that routes traffic through
+// the configured PROXY_URL when set. Use this for all outbound API clients so
+// that a single proxy configuration covers every provider.
+func NewProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg != nil && cfg.ProxyURL != "" {
+		proxyURL, err := url.Parse(cfg.ProxyURL)
+		if err != nil {
+			slog.Warn("Invalid PROXY_URL, running without proxy", "error", err)
+		} else {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+	return &http.Client{Transport: transport, Timeout: timeout}
 }
 
 func SafeGet(rawURL string) (*http.Response, error) {

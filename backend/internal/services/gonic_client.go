@@ -20,14 +20,15 @@ type GonicClient struct {
 }
 
 // NewGonicClient creates a new Gonic client
-func NewGonicClient(baseURL, username, password string) *GonicClient {
+func NewGonicClient(baseURL, username, password string, httpClient *http.Client) *GonicClient {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 60 * time.Second}
+	}
 	return &GonicClient{
 		baseURL:  fmt.Sprintf("%s/rest", baseURL),
 		username: username,
 		password: password,
-		client: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+		client:   httpClient,
 	}
 }
 

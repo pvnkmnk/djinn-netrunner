@@ -15,13 +15,14 @@ type NotificationService struct {
 	client     *http.Client
 }
 
-func NewNotificationService(webhookURL string, enabled bool) *NotificationService {
+func NewNotificationService(webhookURL string, enabled bool, httpClient *http.Client) *NotificationService {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
 	return &NotificationService{
 		webhookURL: webhookURL,
 		enabled:    enabled,
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		client:     httpClient,
 	}
 }
 

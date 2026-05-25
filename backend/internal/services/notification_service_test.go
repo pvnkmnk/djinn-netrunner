@@ -23,7 +23,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewNotificationService(server.URL, true)
+		svc := NewNotificationService(server.URL, true, nil)
 		svc.NotifyJobCompletion(42, "sync", "succeeded", "Completed", "worker-1")
 
 		if receivedPayload.JobID != 42 {
@@ -53,7 +53,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		defer server.Close()
 
 		// NotifyJobCompletion has no return value; verify it doesn't panic on server error
-		svc := NewNotificationService(server.URL, true)
+		svc := NewNotificationService(server.URL, true, nil)
 		svc.NotifyJobCompletion(1, "sync", "failed", "error", "worker-1")
 	})
 
@@ -63,12 +63,12 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewNotificationService(server.URL, false)
+		svc := NewNotificationService(server.URL, false, nil)
 		svc.NotifyJobCompletion(1, "sync", "succeeded", "", "worker-1")
 	})
 
 	t.Run("empty url", func(t *testing.T) {
-		svc := NewNotificationService("", true)
+		svc := NewNotificationService("", true, nil)
 		// Should not panic
 		svc.NotifyJobCompletion(1, "sync", "succeeded", "", "worker-1")
 	})
@@ -81,7 +81,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewNotificationService(server.URL, true)
+		svc := NewNotificationService(server.URL, true, nil)
 		for i := 0; i < 5; i++ {
 			svc.NotifyJobCompletion(uint64(i), "sync", "failed", "error", "worker-1")
 		}
@@ -98,7 +98,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewNotificationService(server.URL, true)
+		svc := NewNotificationService(server.URL, true, nil)
 		svc.NotifyJobCompletion(42, "enrich", "succeeded", "Enriched 10 tracks", "worker-2")
 
 		assertEqualField(t, payload, "job_id", float64(42))
@@ -120,7 +120,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		defer server.Close()
 
 		longSummary := strings.Repeat("x", 10000)
-		svc := NewNotificationService(server.URL, true)
+		svc := NewNotificationService(server.URL, true, nil)
 		svc.NotifyJobCompletion(1, "scan", "succeeded", longSummary, "worker-1")
 
 		summary, _ := payload["summary"].(string)
@@ -141,7 +141,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewNotificationService(server.URL, true)
+		svc := NewNotificationService(server.URL, true, nil)
 		svc.NotifyJobCompletion(99, "download", "completed", "Done", "test-worker")
 
 		// CompletedAt should be set and within a reasonable window

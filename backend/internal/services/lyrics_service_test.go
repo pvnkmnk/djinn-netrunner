@@ -40,7 +40,7 @@ func TestLyricsService_FetchLyrics(t *testing.T) {
 	defer server.Close()
 
 	// Create service with mock server URL
-	service := &LyricsService{BaseURL: server.URL + "/api"}
+	service := &LyricsService{BaseURL: server.URL + "/api", httpClient: server.Client()}
 
 	// Test FetchLyrics
 	lyrics, err := service.FetchLyrics(context.Background(), "Test Artist", "Test Song", "Test Album")
@@ -77,7 +77,7 @@ func TestLyricsService_FetchLyrics_NotFound(t *testing.T) {
 	defer server.Close()
 
 	// Create service with mock server URL
-	service := &LyricsService{BaseURL: server.URL + "/api"}
+	service := &LyricsService{BaseURL: server.URL + "/api", httpClient: server.Client()}
 
 	// Test FetchLyrics - should fail
 	_, err := service.FetchLyrics(context.Background(), "Unknown Artist", "Unknown Song", "")
@@ -88,7 +88,7 @@ func TestLyricsService_FetchLyrics_NotFound(t *testing.T) {
 
 // TestLyricsService_GetSyncedLyrics tests the GetSyncedLyrics method
 func TestLyricsService_GetSyncedLyrics(t *testing.T) {
-	service := NewLyricsService()
+	service := NewLyricsService(nil)
 
 	// Test with synced lyrics
 	lyrics := &Lyrics{
@@ -120,7 +120,7 @@ func TestLyricsService_GetSyncedLyrics(t *testing.T) {
 
 // TestLyricsService_IsInstrumental tests the IsInstrumental method
 func TestLyricsService_IsInstrumental(t *testing.T) {
-	service := NewLyricsService()
+	service := NewLyricsService(nil)
 
 	// Test instrumental track
 	lyrics := &Lyrics{Instrumental: true}
@@ -142,7 +142,7 @@ func TestLyricsService_IsInstrumental(t *testing.T) {
 
 // TestLyricsService_FormatAsLRC tests the FormatAsLRC method
 func TestLyricsService_FormatAsLRC(t *testing.T) {
-	service := NewLyricsService()
+	service := NewLyricsService(nil)
 
 	// Test with synced lyrics
 	lyrics := &Lyrics{
@@ -173,7 +173,7 @@ func TestLyricsService_FormatAsLRC(t *testing.T) {
 
 // TestLyricsService_FormatAsText tests the FormatAsText method
 func TestLyricsService_FormatAsText(t *testing.T) {
-	service := NewLyricsService()
+	service := NewLyricsService(nil)
 
 	// Test with plain lyrics
 	lyrics := &Lyrics{
@@ -194,7 +194,7 @@ func TestLyricsService_FormatAsText(t *testing.T) {
 
 // TestLyricsService_CleanLyrics tests the CleanLyrics method
 func TestLyricsService_CleanLyrics(t *testing.T) {
-	service := NewLyricsService()
+	service := NewLyricsService(nil)
 
 	// Test with messy lyrics
 	messy := "Line 1  \r\nLine 2\rLine 3\n"

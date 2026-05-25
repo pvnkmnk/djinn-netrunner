@@ -7,17 +7,23 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // LyricsService handles lyrics fetching from LRCLIB
 type LyricsService struct {
-	BaseURL string
+	BaseURL    string
+	httpClient *http.Client
 }
 
 // NewLyricsService creates a new lyrics service
-func NewLyricsService() *LyricsService {
+func NewLyricsService(httpClient *http.Client) *LyricsService {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &LyricsService{
-		BaseURL: "https://lrclib.net/api",
+		BaseURL:    "https://lrclib.net/api",
+		httpClient: httpClient,
 	}
 }
 
@@ -59,7 +65,7 @@ func (s *LyricsService) FetchLyrics(ctx context.Context, artist, title, album st
 
 	req.Header.Set("User-Agent", "NetRunner/1.0.0")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

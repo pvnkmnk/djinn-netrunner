@@ -6,21 +6,27 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 // DiscogsProvider implements WatchlistProvider for Discogs sources
 type DiscogsProvider struct {
-	Token   string
-	BaseURL string // For testing
+	Token      string
+	BaseURL    string // For testing
+	httpClient *http.Client
 }
 
 // NewDiscogsProvider creates a new Discogs provider
-func NewDiscogsProvider(token string) *DiscogsProvider {
+func NewDiscogsProvider(token string, httpClient *http.Client) *DiscogsProvider {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &DiscogsProvider{
-		Token:   token,
-		BaseURL: "https://api.discogs.com/",
+		Token:      token,
+		BaseURL:    "https://api.discogs.com/",
+		httpClient: httpClient,
 	}
 }
 
@@ -64,7 +70,7 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 	}
 	req.Header.Set("User-Agent", "NetRunner/1.0.0")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, "", err
 	}

@@ -29,14 +29,17 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 		providers:   make(map[string]interfaces.WatchlistProvider),
 	}
 
+	// Shared proxy-aware client for all provider HTTP calls
+	proxyClient := NewProxyAwareHTTPClient(cfg, 30*time.Second)
+
 	// Register default providers
 	s.RegisterProvider("spotify_liked", NewSpotifyProvider(spotifyAuth))
 	s.RegisterProvider("spotify_playlist", NewSpotifyProvider(spotifyAuth))
-	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey))
-	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey))
-	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken))
+	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
+	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
+	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken, proxyClient))
 	s.RegisterProvider("rss_feed", NewRSSProvider())
-	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken))
+	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken, proxyClient))
 	s.RegisterProvider("local_file", NewFileWatchlistProvider())
 	s.RegisterProvider("local_directory", NewDirectoryWatchlistProvider())
 

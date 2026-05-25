@@ -6,21 +6,27 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 // ListenBrainzProvider implements WatchlistProvider for ListenBrainz sources
 type ListenBrainzProvider struct {
-	Token   string
-	BaseURL string // For testing
+	Token      string
+	BaseURL    string // For testing
+	httpClient *http.Client
 }
 
 // NewListenBrainzProvider creates a new ListenBrainz provider
-func NewListenBrainzProvider(token string) *ListenBrainzProvider {
+func NewListenBrainzProvider(token string, httpClient *http.Client) *ListenBrainzProvider {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &ListenBrainzProvider{
-		Token:   token,
-		BaseURL: "https://api.listenbrainz.org/1/",
+		Token:      token,
+		BaseURL:    "https://api.listenbrainz.org/1/",
+		httpClient: httpClient,
 	}
 }
 
@@ -71,7 +77,7 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 		req.Header.Set("Authorization", "Token "+p.Token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
