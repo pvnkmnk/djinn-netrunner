@@ -451,23 +451,33 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	// GORM map-based Updates doesn't write back into the struct, so populate
 	// the fields we just set in the DB to keep the local copy consistent.
 	job.State = "running"
+	job.WorkerID = &w.workerID
 	job.StartedAt = &claimTime
+	job.HeartbeatAt = &claimTime
 
 	// Update queued gauge after claiming
 	var queuedCount int64
 	w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&queuedCount)
 	metrics.JobsQueued.Set(float64(queuedCount))
 
-	// Acquire advisory lock for scope (use worker context to allow cancellation)
+	// Acquire advisory lock for scope (use worker context to allow cancellation).
+	// If lock key computation or acquisition fails, requeue the job immediately
+	// rather than leaving it in 'running' state for ZombieRecovery to clean up.
 	lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
 	if err != nil {
-		slog.Error("Error computing lock key", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+		slog.Error("Error computing lock key, requeueing", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+		w.db.Model(&job).Updates(map[string]interface{}{
+			"state": "queued", "worker_id": nil, "started_at": nil,
+		})
 		return
 	}
 
 	acquired, err := w.lockManager.AcquireTryLock(w.ctx, lockKey)
 	if err != nil {
-		slog.Error("Error acquiring advisory lock", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+		slog.Error("Error acquiring advisory lock, requeueing", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+		w.db.Model(&job).Updates(map[string]interface{}{
+			"state": "queued", "worker_id": nil, "started_at": nil,
+		})
 		return
 	}
 
