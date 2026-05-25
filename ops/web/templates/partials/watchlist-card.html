@@ -10,7 +10,7 @@
         <button class="btn btn-sm" hx-get="/api/watchlists/{{ watchlist.ID }}/preview" hx-target="#watchlist-preview-{{ watchlist.ID }}" hx-swap="innerHTML" type="button" aria-label="Preview tracks for {{ watchlist.Name | escape }}">
             Preview
         </button>
-        <button class="btn btn-sm" hx-get="/partials/watchlist-form?id={{ watchlist.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit watchlist {{ watchlist.Name | escape }}">
+        <button class="btn btn-sm" hx-get="/api/watchlists/form?id={{ watchlist.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit watchlist {{ watchlist.Name | escape }}">
             Edit
         </button>
         <button class="btn btn-sm btn-danger" hx-delete="/api/watchlists/{{ watchlist.ID }}" hx-target="#watchlist-{{ watchlist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete watchlist {{ watchlist.Name | escape }}?" aria-label="Delete watchlist {{ watchlist.Name | escape }}">

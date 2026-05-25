@@ -12,7 +12,7 @@
             </div>
             <div class="form-group">
                 <label for="source_type">Source Type</label>
-                <select id="source_type" name="source_type" required onchange="updateSourceHint()">
+                <select id="source_type" name="source_type" required>
                     <optgroup label="Spotify">
                         <option value="spotify_playlist" {% if SourceType == "spotify_playlist" %}selected{% endif %}>Spotify Playlist</option>
                         <option value="spotify_liked" {% if SourceType == "spotify_liked" %}selected{% endif %}>Spotify Liked Songs</option>
@@ -61,33 +61,3 @@
         </form>
     </div>
 </div>
-<script>
-function updateSourceHint() {
-    var sel = document.getElementById('source_type');
-    var uri = document.getElementById('source_uri');
-    var hint = document.getElementById('source_hint');
-    if (!sel || !uri || !hint) return;
-    var hints = {
-        'spotify_playlist': ['https://open.spotify.com/playlist/... or spotify:playlist:...', 'Spotify playlist URL or URI'],
-        'spotify_liked': ['liked', 'Enter "liked" — requires sp_dc cookie'],
-        'spotify_discover': ['Discover Weekly', 'Playlist name, e.g. "Discover Weekly", "Daily Mix 1"'],
-        'lastfm_loved': ['your-username', 'Last.fm username'],
-        'lastfm_top': ['your-username', 'Last.fm username'],
-        'listenbrainz_listens': ['your-username', 'ListenBrainz username'],
-        'discogs_wantlist': ['your-username', 'Discogs username'],
-        'lidarr_wanted': ['wanted', 'Enter "wanted" — pulls missing albums from Lidarr'],
-        'rss_feed': ['https://example.com/feed.xml', 'RSS/Atom feed URL'],
-        'local_file': ['/path/to/tracks.txt', 'Path to a text file (one "Artist - Title" per line)'],
-        'local_directory': ['/path/to/music/', 'Path to a directory of audio files']
-    };
-    var h = hints[sel.value];
-    if (h) {
-        uri.placeholder = h[0];
-        hint.textContent = h[1];
-    } else {
-        uri.placeholder = '';
-        hint.textContent = '';
-    }
-}
-updateSourceHint();
-</script>

@@ -219,6 +219,83 @@ document.addEventListener('DOMContentLoaded', function() {
     // Re-apply after HTMX swaps in new content
     document.body.addEventListener('htmx:afterSettle', applyCoverArt);
 
+    // Watchlist: sp_dc cookie form handler
+    function initSpdcForm() {
+        var form = document.getElementById('spdc-form');
+        if (!form || form.dataset.bound) return;
+        form.dataset.bound = 'true';
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var input = document.getElementById('spdc_cookie');
+            var status = document.getElementById('spdc-status');
+            if (!input.value.trim()) { status.textContent = 'Cookie value is required'; return; }
+            try {
+                var resp = await fetch('/api/auth/spotify/spdc', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_')},
+                    body: JSON.stringify({sp_dc: input.value.trim()})
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    status.textContent = 'Linked successfully';
+                    status.className = 'form-status status-ok';
+                    input.value = '';
+                } else {
+                    status.textContent = data.error || 'Failed to save';
+                    status.className = 'form-status status-err';
+                }
+            } catch(err) {
+                status.textContent = 'Connection error';
+                status.className = 'form-status status-err';
+            }
+        });
+    }
+    initSpdcForm();
+
+    // Watchlist: dynamic source-type hints
+    function updateSourceHint() {
+        var sel = document.getElementById('source_type');
+        var uri = document.getElementById('source_uri');
+        var hint = document.getElementById('source_hint');
+        if (!sel || !uri || !hint) return;
+        var hints = {
+            'spotify_playlist': ['https://open.spotify.com/playlist/... or spotify:playlist:...', 'Spotify playlist URL or URI'],
+            'spotify_liked': ['liked', 'Enter "liked" \u2014 requires sp_dc cookie'],
+            'spotify_discover': ['Discover Weekly', 'Playlist name, e.g. "Discover Weekly", "Daily Mix 1"'],
+            'lastfm_loved': ['your-username', 'Last.fm username'],
+            'lastfm_top': ['your-username', 'Last.fm username'],
+            'listenbrainz_listens': ['your-username', 'ListenBrainz username'],
+            'discogs_wantlist': ['your-username', 'Discogs username'],
+            'lidarr_wanted': ['wanted', 'Enter "wanted" \u2014 pulls missing albums from Lidarr'],
+            'rss_feed': ['https://example.com/feed.xml', 'RSS/Atom feed URL'],
+            'local_file': ['/path/to/tracks.txt', 'Path to a text file (one "Artist - Title" per line)'],
+            'local_directory': ['/path/to/music/', 'Path to a directory of audio files']
+        };
+        var h = hints[sel.value];
+        if (h) {
+            uri.placeholder = h[0];
+            hint.textContent = h[1];
+        } else {
+            uri.placeholder = '';
+            hint.textContent = '';
+        }
+    }
+
+    function initWatchlistForm() {
+        var sel = document.getElementById('source_type');
+        if (!sel || sel.dataset.bound) return;
+        sel.dataset.bound = 'true';
+        sel.addEventListener('change', updateSourceHint);
+        updateSourceHint();
+    }
+    initWatchlistForm();
+
+    // Re-init watchlist widgets after HTMX swaps in new content
+    document.body.addEventListener('htmx:afterSettle', function() {
+        initSpdcForm();
+        initWatchlistForm();
+    });
+
     // Login/Register form handlers (only on login page)
     var showRegister = document.getElementById('show-register');
     if (showRegister) {
