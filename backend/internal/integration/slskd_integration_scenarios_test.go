@@ -19,7 +19,13 @@ import (
 func TestSlskdEndToEndSearch(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
-	
+
+	// Skip if slskd is not connected to Soulseek (CI has no real peer)
+	_, probeErr := harness.Slskd.Search("connectivity-probe", 1, nil)
+	if probeErr != nil && strings.Contains(probeErr.Error(), "409") {
+		t.Skip("Skipping: slskd not connected to Soulseek network")
+	}
+
 	tests := []struct {
 		name       string
 		query      string
@@ -79,7 +85,13 @@ func TestSlskdHealthCheck(t *testing.T) {
 func TestSlskdSearchWithQualityProfile(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
-	
+
+	// Skip if slskd is not connected to Soulseek (CI has no real peer)
+	_, probeErr := harness.Slskd.Search("connectivity-probe", 1, nil)
+	if probeErr != nil && strings.Contains(probeErr.Error(), "409") {
+		t.Skip("Skipping: slskd not connected to Soulseek network")
+	}
+
 	// Create quality profile with specific constraints
 	highQualityProfile := &database.QualityProfile{
 		Name:           "High Quality Test Profile",
@@ -216,6 +228,12 @@ func TestSlskdErrorHandling(t *testing.T) {
 func TestSlskdConcurrentOperations(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
+
+	// Skip if slskd is not connected to Soulseek (CI has no real peer)
+	_, err := harness.Slskd.Search("connectivity-probe", 1, nil)
+	if err != nil && strings.Contains(err.Error(), "409") {
+		t.Skip("Skipping: slskd not connected to Soulseek network")
+	}
 	
 	queries := []string{
 		"Artist One Song",
@@ -263,6 +281,12 @@ func TestSlskdConcurrentOperations(t *testing.T) {
 func TestSlskdScoreCalculation(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
+
+	// Skip if slskd is not connected to Soulseek (CI has no real peer)
+	_, probeErr := harness.Slskd.Search("connectivity-probe", 1, nil)
+	if probeErr != nil && strings.Contains(probeErr.Error(), "409") {
+		t.Skip("Skipping: slskd not connected to Soulseek network")
+	}
 	
 	profile := harness.TestQualityProfile
 	

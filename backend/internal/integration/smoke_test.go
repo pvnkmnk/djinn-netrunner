@@ -61,7 +61,7 @@ func TestSmoke_DatabaseMigration(t *testing.T) {
 		t.Fatalf("Config loading failed: %v", err)
 	}
 
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.Connect(cfg)
 	if err != nil {
 		t.Fatalf("Database connection failed: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestSmoke_CRUD(t *testing.T) {
 		t.Fatalf("Config loading failed: %v", err)
 	}
 
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.Connect(cfg)
 	if err != nil {
 		t.Fatalf("Database connection failed: %v", err)
 	}
@@ -114,9 +114,9 @@ func TestSmoke_CRUD(t *testing.T) {
 
 	// Create a user
 	user := database.User{
-		Email:    "smoke-" + time.Now().Format("150405") + "@test.local",
-		Password: "$2a$10$hashedpassword",
-		Role:     "user",
+		Email:        "smoke-" + time.Now().Format("150405") + "@test.local",
+		PasswordHash: "$2a$10$hashedpassword",
+		Role:         "user",
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("Create user failed: %v", err)
@@ -128,7 +128,7 @@ func TestSmoke_CRUD(t *testing.T) {
 		Name:           "smoke-test-profile",
 		PreferLossless: true,
 		MinBitrate:     320,
-		OwnerUserID:    user.ID,
+		OwnerUserID:    &user.ID,
 	}
 	if err := db.Create(&profile).Error; err != nil {
 		t.Fatalf("Create profile failed: %v", err)
@@ -139,7 +139,7 @@ func TestSmoke_CRUD(t *testing.T) {
 	lib := database.Library{
 		Name:        "smoke-test-library",
 		Path:        "/tmp/smoke-music",
-		OwnerUserID: user.ID,
+		OwnerUserID: &user.ID,
 	}
 	if err := db.Create(&lib).Error; err != nil {
 		t.Fatalf("Create library failed: %v", err)
