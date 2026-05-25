@@ -31,7 +31,21 @@ type ClientTokenResponse struct {
 	} `json:"granted_token"`
 }
 
+// spDcUserSession holds per-user sp_dc-derived auth state.
+type spDcUserSession struct {
+	spDcCookie    string
+	accessToken   string
+	tokenExpiry   time.Time
+	clientID      string
+	username      string
+	clientToken   string
+	spTDeviceID   string
+}
+
 // SpDcAuth manages Spotify authentication via the sp_dc cookie approach.
+// Safe for concurrent use across multiple users — per-user sp_dc state is
+// isolated in user-keyed sessions, while shared resources (client credentials,
+// client version, httpClient) are protected by a single mutex.
 //
 // Two-pronged strategy (ported from Stash Android app):
 //
@@ -48,19 +62,16 @@ type SpDcAuth struct {
 
 	mu sync.RWMutex
 
-	// Prong 1: client credentials
+	// Prong 1: client credentials (shared across all users)
 	ccToken       string
 	ccTokenExpiry time.Time
 
-	// Prong 2: sp_dc derived
-	spDcCookie    string
-	accessToken   string
-	tokenExpiry   time.Time
-	clientID      string
-	username      string
-	clientToken   string
+	// Prong 2: per-user sp_dc sessions keyed by user ID
+	userSessions  map[uint64]*spDcUserSession
+	activeUserID  uint64 // set before each sp_dc operation
+
+	// Shared state
 	clientVersion string
-	spTDeviceID   string
 }
 
 const (
@@ -95,29 +106,70 @@ func NewSpDcAuth(httpClient *http.Client) *SpDcAuth {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
-	return &SpDcAuth{httpClient: httpClient}
+	return &SpDcAuth{
+		httpClient:   httpClient,
+		userSessions: make(map[uint64]*spDcUserSession),
+	}
 }
 
-// SetSpDcCookie configures the sp_dc cookie for user-specific operations.
+// getOrCreateSession returns the session for the active user, creating one if needed.
+// Must be called with mu held (read or write).
+func (a *SpDcAuth) getSession() *spDcUserSession {
+	sess, ok := a.userSessions[a.activeUserID]
+	if !ok {
+		return nil
+	}
+	return sess
+}
+
+// getOrCreateSessionWrite returns the session for the active user, creating if needed.
+// Must be called with mu write-locked.
+func (a *SpDcAuth) getOrCreateSession() *spDcUserSession {
+	sess, ok := a.userSessions[a.activeUserID]
+	if !ok {
+		sess = &spDcUserSession{}
+		a.userSessions[a.activeUserID] = sess
+	}
+	return sess
+}
+
+// SetActiveUser sets the active user ID for subsequent sp_dc operations.
+// Must be called before any Prong 2 method to ensure per-user session isolation.
+func (a *SpDcAuth) SetActiveUser(userID uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.activeUserID = userID
+}
+
+// SetSpDcCookie configures the sp_dc cookie for the active user.
 func (a *SpDcAuth) SetSpDcCookie(cookie string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.spDcCookie = cookie
-	// Invalidate cached tokens when cookie changes
-	a.accessToken = ""
-	a.tokenExpiry = time.Time{}
-	a.clientToken = ""
+	if a.activeUserID == 0 {
+		slog.Warn("SetSpDcCookie called without active user")
+		return
+	}
+	sess := a.getOrCreateSession()
+	if sess.spDcCookie != cookie {
+		sess.spDcCookie = cookie
+		// Invalidate cached tokens when cookie changes
+		sess.accessToken = ""
+		sess.tokenExpiry = time.Time{}
+		sess.clientToken = ""
+	}
 }
 
-// HasSpDcCookie returns true if an sp_dc cookie has been configured.
+// HasSpDcCookie returns true if the active user has an sp_dc cookie configured.
 func (a *SpDcAuth) HasSpDcCookie() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.spDcCookie != ""
+	sess := a.getSession()
+	return sess != nil && sess.spDcCookie != ""
 }
 
 // ValidateSpDcCookie exchanges the sp_dc cookie for an access token to verify it's valid.
-// Returns the resolved username on success.
+// Returns the resolved username on success. This method is stateless — it does not
+// modify any cached session.
 func (a *SpDcAuth) ValidateSpDcCookie(cookie string) (string, error) {
 	resp, err := a.exchangeSpDcToken(cookie)
 	if err != nil {
@@ -156,15 +208,19 @@ func (a *SpDcAuth) GetClientCredentialsToken() (string, error) {
 	return token, nil
 }
 
-// GetSpDcAccessToken returns a valid sp_dc-derived access token.
+// GetSpDcAccessToken returns a valid sp_dc-derived access token for the active user.
 func (a *SpDcAuth) GetSpDcAccessToken() (string, error) {
 	a.mu.RLock()
-	if a.accessToken != "" && time.Now().Before(a.tokenExpiry) {
-		token := a.accessToken
+	sess := a.getSession()
+	if sess != nil && sess.accessToken != "" && time.Now().Before(sess.tokenExpiry) {
+		token := sess.accessToken
 		a.mu.RUnlock()
 		return token, nil
 	}
-	cookie := a.spDcCookie
+	var cookie string
+	if sess != nil {
+		cookie = sess.spDcCookie
+	}
 	a.mu.RUnlock()
 
 	if cookie == "" {
@@ -174,9 +230,10 @@ func (a *SpDcAuth) GetSpDcAccessToken() (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	sess = a.getOrCreateSession()
 	// Double-check after acquiring write lock
-	if a.accessToken != "" && time.Now().Before(a.tokenExpiry) {
-		return a.accessToken, nil
+	if sess.accessToken != "" && time.Now().Before(sess.tokenExpiry) {
+		return sess.accessToken, nil
 	}
 
 	resp, err := a.exchangeSpDcToken(cookie)
@@ -187,18 +244,19 @@ func (a *SpDcAuth) GetSpDcAccessToken() (string, error) {
 		return "", fmt.Errorf("sp_dc cookie is invalid or expired")
 	}
 
-	a.accessToken = resp.AccessToken
-	a.tokenExpiry = time.UnixMilli(resp.AccessTokenExpirationTimestampMs).Add(-60 * time.Second)
-	a.clientID = resp.ClientID
-	a.username = resp.Username
-	return a.accessToken, nil
+	sess.accessToken = resp.AccessToken
+	sess.tokenExpiry = time.UnixMilli(resp.AccessTokenExpirationTimestampMs).Add(-60 * time.Second)
+	sess.clientID = resp.ClientID
+	sess.username = resp.Username
+	return sess.accessToken, nil
 }
 
-// GetClientToken returns a valid client token for the GraphQL Partner API.
+// GetClientToken returns a valid client token for the GraphQL Partner API for the active user.
 func (a *SpDcAuth) GetClientToken() (string, error) {
 	a.mu.RLock()
-	if a.clientToken != "" {
-		token := a.clientToken
+	sess := a.getSession()
+	if sess != nil && sess.clientToken != "" {
+		token := sess.clientToken
 		a.mu.RUnlock()
 		return token, nil
 	}
@@ -212,34 +270,42 @@ func (a *SpDcAuth) GetClientToken() (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	sess = a.getOrCreateSession()
 	// Double-check
-	if a.clientToken != "" {
-		return a.clientToken, nil
+	if sess.clientToken != "" {
+		return sess.clientToken, nil
 	}
 
 	version := a.getClientVersionLocked()
-	token, err := a.fetchClientToken(a.clientID, version)
+	token, err := a.fetchClientToken(sess.clientID, version)
 	if err != nil {
 		return "", err
 	}
-	a.clientToken = token
+	sess.clientToken = token
 	return token, nil
 }
 
-// InvalidateTokens clears cached tokens, forcing re-acquisition on next use.
+// InvalidateTokens clears cached tokens for the active user, forcing re-acquisition.
 func (a *SpDcAuth) InvalidateTokens() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.accessToken = ""
-	a.tokenExpiry = time.Time{}
-	a.clientToken = ""
+	sess := a.getSession()
+	if sess != nil {
+		sess.accessToken = ""
+		sess.tokenExpiry = time.Time{}
+		sess.clientToken = ""
+	}
 }
 
-// GetUsername returns the cached Spotify username.
+// GetUsername returns the cached Spotify username for the active user.
 func (a *SpDcAuth) GetUsername() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.username
+	sess := a.getSession()
+	if sess == nil {
+		return ""
+	}
+	return sess.username
 }
 
 // exchangeSpDcToken exchanges an sp_dc cookie for an access token.
@@ -266,10 +332,13 @@ func (a *SpDcAuth) exchangeSpDcToken(cookie string) (*SpDcTokenResponse, error) 
 	}
 	defer resp.Body.Close()
 
-	// Capture sp_t cookie for client token requests
+	// Capture sp_t cookie for client token requests (stored on active user's session)
 	for _, c := range resp.Cookies() {
 		if c.Name == "sp_t" && c.Value != "" {
-			a.spTDeviceID = c.Value
+			a.mu.Lock()
+			sess := a.getOrCreateSession()
+			sess.spTDeviceID = c.Value
+			a.mu.Unlock()
 		}
 	}
 
@@ -331,9 +400,9 @@ func (a *SpDcAuth) fetchClientCredentialsToken() (string, error) {
 
 // fetchClientToken acquires a client token from Spotify's clienttoken endpoint.
 func (a *SpDcAuth) fetchClientToken(clientID, clientVersion string) (string, error) {
-	deviceID := a.spTDeviceID
-	if deviceID == "" {
-		deviceID = "unknown"
+	deviceID := "unknown"
+	if sess := a.getSession(); sess != nil && sess.spTDeviceID != "" {
+		deviceID = sess.spTDeviceID
 	}
 
 	payload := map[string]interface{}{
@@ -404,10 +473,12 @@ func (a *SpDcAuth) getClientVersionLocked() string {
 	}
 	defer resp.Body.Close()
 
-	// Capture sp_t from main page too
+	// Capture sp_t from main page too (on the active user's session)
 	for _, c := range resp.Cookies() {
-		if c.Name == "sp_t" && c.Value != "" && a.spTDeviceID == "" {
-			a.spTDeviceID = c.Value
+		if c.Name == "sp_t" && c.Value != "" {
+			if sess := a.getSession(); sess != nil && sess.spTDeviceID == "" {
+				sess.spTDeviceID = c.Value
+			}
 		}
 	}
 

@@ -94,7 +94,12 @@ func (a *SpDcAuth) FetchLikedSongs(limit, offset int) ([]SpotifyGraphQLTrack, er
 
 // FetchDailyMixes retrieves Spotify-generated playlists from the home feed.
 func (a *SpDcAuth) FetchDailyMixes() ([]SpotifyGraphQLPlaylist, error) {
-	spT := a.spTDeviceID
+	a.mu.RLock()
+	var spT string
+	if sess := a.getSession(); sess != nil {
+		spT = sess.spTDeviceID
+	}
+	a.mu.RUnlock()
 	variables := fmt.Sprintf(
 		`{"homeEndUserIntegration":"INTEGRATION_WEB_PLAYER","timeZone":"UTC","sp_t":"%s","facet":null,"sectionItemsLimit":20}`,
 		spT)

@@ -1,15 +1,13 @@
 package services
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 )
 
 func TestSpDcAuth_SetAndHasSpDcCookie(t *testing.T) {
 	auth := NewSpDcAuth(nil)
+	auth.SetActiveUser(1)
 
 	if auth.HasSpDcCookie() {
 		t.Error("expected HasSpDcCookie=false before setting")
@@ -27,23 +25,63 @@ func TestSpDcAuth_SetAndHasSpDcCookie(t *testing.T) {
 	}
 }
 
+func TestSpDcAuth_PerUserSessionIsolation(t *testing.T) {
+	auth := NewSpDcAuth(nil)
+
+	// Set up user 1
+	auth.SetActiveUser(1)
+	auth.SetSpDcCookie("user1-cookie")
+	if !auth.HasSpDcCookie() {
+		t.Fatal("expected user 1 to have cookie")
+	}
+
+	// Set up user 2
+	auth.SetActiveUser(2)
+	auth.SetSpDcCookie("user2-cookie")
+	if !auth.HasSpDcCookie() {
+		t.Fatal("expected user 2 to have cookie")
+	}
+
+	// Switch back to user 1 — their cookie should still be set
+	auth.SetActiveUser(1)
+	if !auth.HasSpDcCookie() {
+		t.Fatal("expected user 1 cookie to persist after switching users")
+	}
+
+	// User 3 has no cookie
+	auth.SetActiveUser(3)
+	if auth.HasSpDcCookie() {
+		t.Error("expected user 3 to have no cookie")
+	}
+}
+
 func TestSpDcAuth_InvalidateTokens(t *testing.T) {
 	auth := NewSpDcAuth(nil)
-	auth.accessToken = "test-token"
-	auth.clientToken = "test-client"
+	auth.SetActiveUser(1)
+
+	auth.mu.Lock()
+	sess := auth.getOrCreateSession()
+	sess.accessToken = "test-token"
+	sess.clientToken = "test-client"
+	auth.mu.Unlock()
 
 	auth.InvalidateTokens()
 
-	if auth.accessToken != "" {
+	auth.mu.RLock()
+	s := auth.getSession()
+	auth.mu.RUnlock()
+
+	if s.accessToken != "" {
 		t.Error("expected accessToken cleared after invalidation")
 	}
-	if auth.clientToken != "" {
+	if s.clientToken != "" {
 		t.Error("expected clientToken cleared after invalidation")
 	}
 }
 
 func TestSpDcAuth_GetSpDcAccessToken_NoCookie(t *testing.T) {
 	auth := NewSpDcAuth(nil)
+	auth.SetActiveUser(1)
 
 	_, err := auth.GetSpDcAccessToken()
 	if err == nil {
@@ -51,70 +89,16 @@ func TestSpDcAuth_GetSpDcAccessToken_NoCookie(t *testing.T) {
 	}
 }
 
-func TestSpDcAuth_ClientCredentialsToken(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/token" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"access_token": "test-cc-token",
-				"token_type":   "bearer",
-				"expires_in":   3600,
-			})
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer server.Close()
+func TestSpDcAuth_CachedAccessToken(t *testing.T) {
+	auth := NewSpDcAuth(nil)
+	auth.SetActiveUser(1)
 
-	// We can't easily test the real endpoints, but we can test the caching logic
-	auth := NewSpDcAuth(server.Client())
-
-	// Set a pre-cached token
+	// Pre-set a cached token
 	auth.mu.Lock()
-	auth.ccToken = "cached-token"
-	auth.ccTokenExpiry = time.Now().Add(1 * time.Hour)
-	auth.mu.Unlock()
-
-	token, err := auth.GetClientCredentialsToken()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if token != "cached-token" {
-		t.Errorf("expected cached token, got %q", token)
-	}
-}
-
-func TestSpDcAuth_ExchangeSpDcToken(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify sp_dc cookie is sent
-		cookie := r.Header.Get("Cookie")
-		if cookie == "" {
-			t.Error("expected Cookie header to be set")
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Add("Set-Cookie", "sp_t=test-device-id; Path=/")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"accessToken":                      "test-access-token",
-			"accessTokenExpirationTimestampMs": 1700000000000,
-			"isAnonymous":                      false,
-			"clientId":                         "test-client-id",
-			"username":                         "testuser",
-		})
-	}))
-	defer server.Close()
-
-	auth := NewSpDcAuth(server.Client())
-
-	// Override the endpoint for testing (not possible with const, so test the internal method)
-	// Instead, test with a mock that uses the test server
-	// The exchangeSpDcToken method uses the global const, so we test ValidateSpDcCookie behavior indirectly
-	// This test verifies the struct methods work correctly
-
-	auth.mu.Lock()
-	auth.accessToken = "pre-set-token"
-	auth.tokenExpiry = time.Now().Add(1 * time.Hour)
-	auth.spDcCookie = "test-cookie"
+	sess := auth.getOrCreateSession()
+	sess.spDcCookie = "test-cookie"
+	sess.accessToken = "pre-set-token"
+	sess.tokenExpiry = time.Now().Add(1 * time.Hour)
 	auth.mu.Unlock()
 
 	token, err := auth.GetSpDcAccessToken()
@@ -126,12 +110,41 @@ func TestSpDcAuth_ExchangeSpDcToken(t *testing.T) {
 	}
 }
 
+func TestSpDcAuth_CachedClientCredentials(t *testing.T) {
+	auth := NewSpDcAuth(nil)
+
+	// Pre-set a cached client credentials token (shared, not per-user)
+	auth.mu.Lock()
+	auth.ccToken = "cached-cc-token"
+	auth.ccTokenExpiry = time.Now().Add(1 * time.Hour)
+	auth.mu.Unlock()
+
+	token, err := auth.GetClientCredentialsToken()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "cached-cc-token" {
+		t.Errorf("expected cached cc token, got %q", token)
+	}
+}
+
 func TestSpDcAuth_GetUsername(t *testing.T) {
 	auth := NewSpDcAuth(nil)
-	auth.username = "testuser"
+	auth.SetActiveUser(1)
+
+	auth.mu.Lock()
+	sess := auth.getOrCreateSession()
+	sess.username = "testuser"
+	auth.mu.Unlock()
 
 	if auth.GetUsername() != "testuser" {
 		t.Errorf("expected 'testuser', got %q", auth.GetUsername())
+	}
+
+	// Different user should have no username
+	auth.SetActiveUser(2)
+	if auth.GetUsername() != "" {
+		t.Errorf("expected empty username for user 2, got %q", auth.GetUsername())
 	}
 }
 
@@ -139,5 +152,19 @@ func TestNewSpDcAuth_NilClient(t *testing.T) {
 	auth := NewSpDcAuth(nil)
 	if auth.httpClient == nil {
 		t.Error("expected default http client when nil passed")
+	}
+	if auth.userSessions == nil {
+		t.Error("expected initialized userSessions map")
+	}
+}
+
+func TestSpDcAuth_SetSpDcCookie_WithoutActiveUser(t *testing.T) {
+	auth := NewSpDcAuth(nil)
+	// No SetActiveUser called — activeUserID is 0
+	auth.SetSpDcCookie("some-cookie")
+
+	// Should be a no-op (warning logged)
+	if auth.HasSpDcCookie() {
+		t.Error("expected no cookie when no active user set")
 	}
 }

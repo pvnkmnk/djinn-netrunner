@@ -301,17 +301,14 @@ func (p *SpotifyProvider) fetchLikedSongsOAuth(ctx context.Context, watchlist *d
 	return allTracks, snapshotID, nil
 }
 
-// ValidateConfig checks if the Spotify URI/URL is valid.
+// ValidateConfig checks if the Spotify source URI is valid for a given source type.
+// The sourceType is inferred from the config content when not provided separately.
 func (p *SpotifyProvider) ValidateConfig(config string) error {
 	if config == "" {
 		return errors.New("spotify source URI is required")
 	}
-	// For spotify_discover, config is a playlist name like "discover weekly"
-	// For spotify_liked, config is typically "liked" or similar
-	// For spotify_playlist, config should be a valid Spotify URI or URL
-	if strings.Contains(config, "spotify") && !strings.Contains(config, "playlist") {
-		return nil // Acceptable non-playlist URI
-	}
+
+	// Playlist URIs must contain an extractable ID
 	if strings.HasPrefix(config, "spotify:playlist:") || strings.Contains(config, "open.spotify.com/playlist/") {
 		id := ExtractSpotifyPlaylistID(config)
 		if id == "" {
@@ -319,7 +316,14 @@ func (p *SpotifyProvider) ValidateConfig(config string) error {
 		}
 		return nil
 	}
-	return nil // Allow freeform for discover/liked types
+
+	// Reject URLs that look like Spotify but aren't playlist links
+	if strings.Contains(config, "open.spotify.com/") {
+		return fmt.Errorf("unsupported Spotify URL format; expected a playlist URL (open.spotify.com/playlist/...)")
+	}
+
+	// Allow freeform text for discover/liked types (e.g. "Discover Weekly", "liked")
+	return nil
 }
 
 // ExtractSpotifyPlaylistID extracts the ID from a Spotify URI or URL.
