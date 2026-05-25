@@ -102,8 +102,8 @@ func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 // the configured PROXY_URL when set. Use this for all outbound API clients so
 // that a single proxy configuration covers every provider.
 func NewProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Client {
-	transport := &http.Transport{}
-	if cfg.ProxyURL != "" {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg != nil && cfg.ProxyURL != "" {
 		proxyURL, err := url.Parse(cfg.ProxyURL)
 		if err != nil {
 			slog.Warn("Invalid PROXY_URL, running without proxy", "error", err)
