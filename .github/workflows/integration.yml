@@ -45,7 +45,7 @@ jobs:
       - name: Wait for slskd
         run: |
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:15030/api/v0/session > /dev/null 2>&1; then
+            if curl -sf http://localhost:15030/health > /dev/null 2>&1; then
               echo "slskd is ready"
               exit 0
             fi
