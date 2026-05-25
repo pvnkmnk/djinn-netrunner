@@ -43,6 +43,11 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 	s.RegisterProvider("local_file", NewFileWatchlistProvider())
 	s.RegisterProvider("local_directory", NewDirectoryWatchlistProvider())
 
+	// Lidarr — only register when a running instance is configured
+	if cfg.LidarrURL != "" {
+		s.RegisterProvider("lidarr_wanted", NewLidarrProvider(cfg.LidarrURL, cfg.LidarrAPIKey, proxyClient))
+	}
+
 	return s
 }
 

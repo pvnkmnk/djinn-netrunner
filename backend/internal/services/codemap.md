@@ -35,6 +35,7 @@ services/
 ├── spotify_provider.go           # Spotify watchlist provider (liked songs, playlists)
 ├── discogs_service.go            # Discogs API (metadata enrichment)
 ├── discogs_provider.go           # Discogs wantlist provider
+├── lidarr_provider.go             # Lidarr wanted albums provider (lidarr_wanted)
 ├── lastfm_provider.go            # Last.fm loved tracks / top tracks provider
 ├── listenbrainz_provider.go      # ListenBrainz recent listens provider
 ├── rss_provider.go               # RSS/Atom feed provider
@@ -61,6 +62,7 @@ Providers are registered at service initialization:
 s.RegisterProvider("spotify_liked", NewSpotifyProvider(spotifyAuth))
 s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey))
 s.RegisterProvider("rss_feed", NewRSSProvider())
+s.RegisterProvider("lidarr_wanted", NewLidarrProvider(...))  // conditional on cfg.LidarrURL
 // ... etc
 ```
 
@@ -190,6 +192,7 @@ The `QualityProfile.IsMatch()` method scores search results in `SlskdService`.
 | SpotifyProvider | Spotify Web API - OAuth |
 | LastFMProvider | ws.audioscrobbler.com - Last.fm API |
 | ListenBrainzProvider | api.listenbrainz.org - ListenBrainz API |
+| LidarrProvider | Lidarr — REST API (wanted/missing albums) |
 | RSSProvider | Any RSS/Atom feed |
 | AcoustIDService | api.acoustid.org - AcoustID API |
 | MetadataExtractor | fpcalc (Chromaprint CLI), tag libraries |
