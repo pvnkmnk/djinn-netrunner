@@ -12,17 +12,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/csrf"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/pvnkmnk/netrunner/backend/internal/agent"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	_ "github.com/pvnkmnk/netrunner/backend/internal/metrics" // register metrics
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"gorm.io/gorm"
 )
@@ -82,6 +85,9 @@ func main() {
 	app.Use(recover.New())
 	app.Use(logger.New())
 	app.Static("/static", cfg.StaticFilesPath)
+
+	// Prometheus metrics endpoint (no auth, no CSRF — scraped by monitoring)
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	// SECURITY: CSRF protection for state-changing operations
 	// Uses cookie-based storage with HTMX-compatible header matching

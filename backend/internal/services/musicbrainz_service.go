@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 )
 
 // MusicBrainzService handles interaction with the MusicBrainz API
@@ -227,11 +228,14 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 	// Wait for rate limiter
 	<-s.rateLimiter.C
 
+	start := time.Now()
+
 	baseURL := "https://musicbrainz.org/ws/2/"
 	fullURL := fmt.Sprintf("%s%s?%s", baseURL, endpoint, params.Encode())
 
 	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {
+		metrics.TrackExternalCall("musicbrainz", start, err)
 		return nil, err
 	}
 
@@ -240,6 +244,7 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		metrics.TrackExternalCall("musicbrainz", start, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -250,9 +255,11 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		metrics.TrackExternalCall("musicbrainz", start, err)
 		return nil, err
 	}
 
+	metrics.TrackExternalCall("musicbrainz", start, nil)
 	return result, nil
 }
 

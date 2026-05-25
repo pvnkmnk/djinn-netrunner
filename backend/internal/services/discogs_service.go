@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 )
 
 // DiscogsService handles interaction with the Discogs API for metadata enrichment
@@ -105,6 +106,7 @@ func (s *DiscogsService) SearchRelease(artist, title string) (*DiscogsSearchResu
 	// Wait for rate limiter
 	<-s.rateLimiter.C
 
+	start := time.Now()
 	query := fmt.Sprintf("artist:%s release:%s", artist, title)
 	params := url.Values{}
 	params.Set("q", query)
@@ -123,19 +125,24 @@ func (s *DiscogsService) SearchRelease(artist, title string) (*DiscogsSearchResu
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		metrics.TrackExternalCall("discogs", start, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("discogs API error: %d", resp.StatusCode)
+		apiErr := fmt.Errorf("discogs API error: %d", resp.StatusCode)
+		metrics.TrackExternalCall("discogs", start, apiErr)
+		return nil, apiErr
 	}
 
 	var result DiscogsSearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		metrics.TrackExternalCall("discogs", start, err)
 		return nil, err
 	}
 
+	metrics.TrackExternalCall("discogs", start, nil)
 	return &result, nil
 }
 

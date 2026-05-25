@@ -354,7 +354,50 @@ func libraryCmd() *cobra.Command {
 		},
 	})
 
+	cmd.AddCommand(&cobra.Command{
+		Use:   "duplicates",
+		Short: "List suspected duplicate recordings by MusicBrainz recording ID",
+		Run: func(cmd *cobra.Command, args []string) {
+			groups, err := agent.ListDuplicates(db)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(groups)
+			} else {
+				if len(groups) == 0 {
+					fmt.Println("No duplicate recordings found.")
+					return
+				}
+				fmt.Printf("Found %d duplicate recording groups:\n\n", len(groups))
+				for _, g := range groups {
+					fmt.Printf("Recording ID: %s (%d copies)\n", g.MBRecordingID, len(g.Acquisitions))
+					for _, a := range g.Acquisitions {
+						fmt.Printf("  #%d  %s - %s  |  %s  |  %s  (score: %d%%)\n",
+							a.ID, a.Artist, a.TrackTitle, a.FinalPath, formatFileSize(a.FileSize), a.AcoustIDScore)
+					}
+					fmt.Println()
+				}
+			}
+		},
+	})
+
 	return cmd
+}
+
+func formatFileSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 func statsCmd() *cobra.Command {

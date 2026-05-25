@@ -6,6 +6,7 @@ import (
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 )
 
 func TestClaimNextJobItem_WithBackoff(t *testing.T) {
@@ -16,7 +17,7 @@ func TestClaimNextJobItem_WithBackoff(t *testing.T) {
 	}
 	database.Migrate(db)
 
-	w := &WorkerOrchestrator{db: db}
+	processor := services.NewJobItemProcessor(db, nil)
 
 	// 2. Create a job and items
 	job := database.Job{Type: "acquisition", State: "running"}
@@ -34,7 +35,7 @@ func TestClaimNextJobItem_WithBackoff(t *testing.T) {
 	db.Create(&item3)
 
 	// 3. Claim item - should skip item1 (future) and pick item2 (past)
-	id, err := w.claimNextJobItem(job.ID)
+	id, err := processor.ClaimNextItem(job.ID)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -43,7 +44,7 @@ func TestClaimNextJobItem_WithBackoff(t *testing.T) {
 	}
 
 	// 4. Claim next - should pick item3 (queued)
-	id, err = w.claimNextJobItem(job.ID)
+	id, err = processor.ClaimNextItem(job.ID)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -52,7 +53,7 @@ func TestClaimNextJobItem_WithBackoff(t *testing.T) {
 	}
 
 	// 5. Claim next - should return 0
-	id, err = w.claimNextJobItem(job.ID)
+	id, err = processor.ClaimNextItem(job.ID)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
