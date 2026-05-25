@@ -1,7 +1,7 @@
 <div class="watchlists-region">
     <div class="section-header">
         <h2>Watchlists</h2>
-        <button class="btn btn-primary" hx-get="/partials/watchlist-form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Add new watchlist">
+        <button class="btn btn-primary" hx-get="/api/watchlists/form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Add new watchlist">
             Add Watchlist
         </button>
     </div>
@@ -36,36 +36,4 @@
     {% endfor %}
     </div>
 </div>
-<script>
-(function() {
-    var form = document.getElementById('spdc-form');
-    if (!form) return;
-    form.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        var input = document.getElementById('spdc_cookie');
-        var status = document.getElementById('spdc-status');
-        if (!input.value.trim()) { status.textContent = 'Cookie value is required'; return; }
-        try {
-            var csrfToken = ('; ' + document.cookie).split('; csrf_=').pop().split(';').shift();
-            var resp = await fetch('/api/auth/spotify/spdc', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
-                body: JSON.stringify({sp_dc: input.value.trim()})
-            });
-            var data = await resp.json();
-            if (resp.ok) {
-                status.textContent = 'Linked successfully';
-                status.className = 'form-status status-ok';
-                input.value = '';
-            } else {
-                status.textContent = data.error || 'Failed to save';
-                status.className = 'form-status status-err';
-            }
-        } catch(err) {
-            status.textContent = 'Connection error';
-            status.className = 'form-status status-err';
-        }
-    });
-})();
-</script>
 
