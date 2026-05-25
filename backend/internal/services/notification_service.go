@@ -3,9 +3,11 @@ package services
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/smtp"
 	"time"
 )
 
@@ -13,6 +15,14 @@ type NotificationService struct {
 	webhookURL string
 	enabled    bool
 	client     *http.Client
+
+	// SMTP transport
+	smtpHost    string
+	smtpPort    string
+	smtpUser    string
+	smtpPass    string
+	smtpFrom    string
+	smtpEnabled bool
 }
 
 func NewNotificationService(webhookURL string, enabled bool, httpClient *http.Client) *NotificationService {
@@ -24,6 +34,16 @@ func NewNotificationService(webhookURL string, enabled bool, httpClient *http.Cl
 		enabled:    enabled,
 		client:     httpClient,
 	}
+}
+
+// ConfigureSMTP sets up SMTP email transport for notifications.
+func (s *NotificationService) ConfigureSMTP(host, port, user, pass, from string, enabled bool) {
+	s.smtpHost = host
+	s.smtpPort = port
+	s.smtpUser = user
+	s.smtpPass = pass
+	s.smtpFrom = from
+	s.smtpEnabled = enabled
 }
 
 type JobCompletionPayload struct {
@@ -87,6 +107,9 @@ func (s *NotificationService) NotifyJobCompletion(jobID uint64, jobType, state, 
 	}
 
 	slog.Info("Job notification sent", "job_id", jobID)
+
+	// Also send via SMTP if configured
+	s.sendJobCompletionEmail(jobID, jobType, state, summary)
 }
 
 // NotifyQuotaWarning sends a webhook alert when a library exceeds its quota threshold.
@@ -133,4 +156,35 @@ func (s *NotificationService) NotifyQuotaWarning(usage *LibraryUsage, thresholdP
 	}
 
 	slog.Warn("Quota warning sent", "library", usage.LibraryName, "used_pct", usage.UsedPct)
+}
+
+func (s *NotificationService) sendJobCompletionEmail(jobID uint64, jobType, state, summary string) {
+	if !s.smtpEnabled || s.smtpHost == "" || s.smtpFrom == "" {
+		return
+	}
+
+	subject := fmt.Sprintf("[NetRunner] Job #%d %s: %s", jobID, state, jobType)
+	body := fmt.Sprintf("Job #%d (%s) completed with state: %s\n\nSummary: %s\n\nTime: %s",
+		jobID, jobType, state, summary, time.Now().Format(time.RFC1123))
+
+	s.sendEmail(s.smtpFrom, subject, body)
+}
+
+func (s *NotificationService) sendEmail(to, subject, body string) {
+	addr := fmt.Sprintf("%s:%s", s.smtpHost, s.smtpPort)
+
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
+		s.smtpFrom, to, subject, body)
+
+	var auth smtp.Auth
+	if s.smtpUser != "" {
+		auth = smtp.PlainAuth("", s.smtpUser, s.smtpPass, s.smtpHost)
+	}
+
+	err := smtp.SendMail(addr, auth, s.smtpFrom, []string{to}, []byte(msg))
+	if err != nil {
+		slog.Error("SMTP email send failed", "to", to, "error", err)
+		return
+	}
+	slog.Info("Email notification sent", "to", to, "subject", subject)
 }

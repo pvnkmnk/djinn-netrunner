@@ -45,6 +45,7 @@ type WorkerOrchestrator struct {
 	notificationService *services.NotificationService
 	diskQuotaService    *services.DiskQuotaService
 	gonic               *services.GonicClient
+	navidrome           *services.NavidromeClient
 
 	// Handlers
 	syncHandler *services.SyncHandler
@@ -97,7 +98,17 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	lm := database.NewLockManager(db)
-	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonicClient, discogs, cache)
+	lyrics := services.NewLyricsService(proxyClient)
+	transcoder := services.NewTranscoderService()
+	ytdlp := services.NewYtdlpService()
+
+	var navidromeClient *services.NavidromeClient
+	if cfg.NavidromeURL != "" {
+		navidromeClient = services.NewNavidromeClient(cfg.NavidromeURL, cfg.NavidromeUser, cfg.NavidromePass, proxyClient)
+		slog.Info("Navidrome client configured", "url", cfg.NavidromeURL)
+	}
+
+	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonicClient, navidromeClient, discogs, cache, lyrics, transcoder, ytdlp)
 
 	return &WorkerOrchestrator{
 		workerID:            fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
@@ -118,8 +129,13 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		acqHandler:          acqHandler,
 		itemProcessor:       services.NewJobItemProcessor(db, acqHandler),
 		zombieRecovery:      services.NewZombieRecovery(db, lm, services.DefaultZombieRecoveryConfig()),
-		notificationService: services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled, proxyClient),
+		notificationService: func() *services.NotificationService {
+			ns := services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled, proxyClient)
+			ns.ConfigureSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom, cfg.SMTPEnabled)
+			return ns
+		}(),
 		gonic:               gonicClient,
+		navidrome:           navidromeClient,
 		diskQuotaService:    services.NewDiskQuotaService(sqlDB),
 		activeJobs:          make(map[uint64]*jobContext),
 		wakeupChan:          make(chan bool, 1),
@@ -625,12 +641,12 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 	case "release_monitor":
 		err = w.rmService.CheckAllArtists()
 	case "index_refresh":
-		slog.Info("Triggering Gonic index refresh", "worker_id", w.workerID, "job_id", jc.job.ID)
-		ok, scanErr := w.gonic.TriggerScan()
+		slog.Info("Triggering library index refresh", "worker_id", w.workerID, "job_id", jc.job.ID)
+		ok, scanErr := w.triggerLibraryScan()
 		if scanErr != nil {
-			err = fmt.Errorf("gonic scan trigger failed: %w", scanErr)
+			err = fmt.Errorf("library scan trigger failed: %w", scanErr)
 		} else if !ok {
-			err = fmt.Errorf("gonic scan trigger returned non-ok status")
+			err = fmt.Errorf("library scan trigger returned non-ok status")
 		} else {
 			slog.Info("Gonic index refresh triggered", "worker_id", w.workerID, "job_id", jc.job.ID)
 		}
@@ -762,17 +778,17 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 
 	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
 
-	// Trigger Gonic index refresh after successful acquisition so new
+	// Trigger library index refresh after successful acquisition so new
 	// tracks appear in the streaming server without waiting for a manual
 	// or scheduled scan.
 	if finalState == "succeeded" && jc.job.Type == "acquisition" {
 		w.wg.Add(1)
 		go func() {
 			defer w.wg.Done()
-			if ok, err := w.gonic.TriggerScan(); err != nil {
-				slog.Warn("Post-acquisition Gonic refresh failed", "job_id", jobID, "error", err)
+			if ok, err := w.triggerLibraryScan(); err != nil {
+				slog.Warn("Post-acquisition library refresh failed", "job_id", jobID, "error", err)
 			} else if !ok {
-				slog.Warn("Post-acquisition Gonic refresh returned non-ok", "job_id", jobID)
+				slog.Warn("Post-acquisition library refresh returned non-ok", "job_id", jobID)
 			}
 		}()
 	}
@@ -822,4 +838,16 @@ func main() {
 	<-stop
 	metricsServer.Close()
 	worker.Stop()
+}
+
+// triggerLibraryScan triggers a scan on the configured library server
+// (Gonic or Navidrome). Tries Gonic first, falls back to Navidrome.
+func (w *WorkerOrchestrator) triggerLibraryScan() (bool, error) {
+	if w.gonic != nil {
+		return w.gonic.TriggerScan()
+	}
+	if w.navidrome != nil {
+		return w.navidrome.TriggerScan()
+	}
+	return false, fmt.Errorf("no library server configured (set GONIC_URL or NAVIDROME_URL)")
 }

@@ -16,18 +16,22 @@ import (
 
 type AcquisitionHandler struct {
 	BaseHandler
-	cfg     *config.Config
-	slskd   *SlskdService
-	mb      *MusicBrainzService
-	aid     *AcoustIDService
-	ext     *MetadataExtractor
-	gonic   *GonicClient
-	discogs *DiscogsService
-	cache   *CacheService
+	cfg        *config.Config
+	slskd      *SlskdService
+	mb         *MusicBrainzService
+	aid        *AcoustIDService
+	ext        *MetadataExtractor
+	gonic      *GonicClient
+	navidrome  *NavidromeClient
+	discogs    *DiscogsService
+	cache      *CacheService
+	lyrics     *LyricsService
+	transcoder *TranscoderService
+	ytdlp      *YtdlpService
 }
 
-func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient, discogs *DiscogsService, cache *CacheService) *AcquisitionHandler {
-	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, discogs: discogs, cache: cache}
+func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient, navidrome *NavidromeClient, discogs *DiscogsService, cache *CacheService, lyrics *LyricsService, transcoder *TranscoderService, ytdlp *YtdlpService) *AcquisitionHandler {
+	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, navidrome: navidrome, discogs: discogs, cache: cache, lyrics: lyrics, transcoder: transcoder, ytdlp: ytdlp}
 }
 
 func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
@@ -66,13 +70,20 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 				}
 				h.db.Model(&database.Job{}).Where("id = ?", jobID).Update("state", finalState)
 
-				// 2.3 Gonic Sync Hook
+				// 2.3 Library Sync Hook (Gonic or Navidrome)
 				if h.gonic != nil {
 					h.Log(jobID, "INFO", "Triggering Gonic scan...", nil)
 					if ok, err := h.gonic.TriggerScan(); err != nil || !ok {
 						h.Log(jobID, "WARN", fmt.Sprintf("Gonic scan trigger failed: %v", err), nil)
 					} else {
 						h.Log(jobID, "OK", "Gonic scan triggered", nil)
+					}
+				} else if h.navidrome != nil {
+					h.Log(jobID, "INFO", "Triggering Navidrome scan...", nil)
+					if ok, err := h.navidrome.TriggerScan(); err != nil || !ok {
+						h.Log(jobID, "WARN", fmt.Sprintf("Navidrome scan trigger failed: %v", err), nil)
+					} else {
+						h.Log(jobID, "OK", "Navidrome scan triggered", nil)
 					}
 				}
 				return nil
@@ -121,6 +132,11 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 	if skip, err := h.stageSearchSoulseek(p); err != nil {
 		return err
 	} else if skip {
+		// Soulseek found nothing — try yt-dlp fallback if source URL exists
+		if downloaded, ok := h.stageYtdlpFallback(ctx, p); ok {
+			p.download = downloaded
+			return h.stageImportAndEnrich(ctx, p)
+		}
 		return nil
 	}
 
@@ -167,30 +183,51 @@ func (h *AcquisitionHandler) stageLoadItemContext(p *acquisitionPipeline, itemID
 	return false, nil
 }
 
-// stageCheckGonicIndex checks if the track is already in the Gonic library.
-// Returns skip=true if found (item already indexed).
+// stageCheckGonicIndex checks if the track is already in the library server
+// (Gonic or Navidrome). Returns skip=true if found (item already indexed).
 func (h *AcquisitionHandler) stageCheckGonicIndex(p *acquisitionPipeline) (skip bool, err error) {
-	if h.gonic == nil {
+	if h.gonic == nil && h.navidrome == nil {
 		return false, nil
 	}
 
-	h.Log(p.item.JobID, "INFO", "Checking Gonic index...", &p.item.ID)
-	songs, err := h.gonic.Search3(p.item.NormalizedQuery)
-	if err != nil || len(songs) == 0 {
-		return false, nil // not found, continue pipeline
-	}
+	h.Log(p.item.JobID, "INFO", "Checking library index...", &p.item.ID)
 
-	for _, s := range songs {
-		if (strings.EqualFold(s.Artist, p.item.Artist) || p.item.Artist == "") &&
-			strings.EqualFold(s.Title, p.item.TrackTitle) {
-			h.Log(p.item.JobID, "OK", fmt.Sprintf("Found in Gonic (ID: %s). Skipping.", s.ID), &p.item.ID)
-			h.db.Model(&p.item).Updates(map[string]interface{}{
-				"status":      "completed (already indexed)",
-				"finished_at": time.Now(),
-			})
-			return true, nil // skip remaining stages
+	// Try Gonic first
+	if h.gonic != nil {
+		songs, err := h.gonic.Search3(p.item.NormalizedQuery)
+		if err == nil {
+			for _, s := range songs {
+				if (strings.EqualFold(s.Artist, p.item.Artist) || p.item.Artist == "") &&
+					strings.EqualFold(s.Title, p.item.TrackTitle) {
+					h.Log(p.item.JobID, "OK", fmt.Sprintf("Found in Gonic (ID: %s). Skipping.", s.ID), &p.item.ID)
+					h.db.Model(&p.item).Updates(map[string]interface{}{
+						"status":      "completed (already indexed)",
+						"finished_at": time.Now(),
+					})
+					return true, nil
+				}
+			}
 		}
 	}
+
+	// Fallback to Navidrome
+	if h.navidrome != nil {
+		songs, err := h.navidrome.Search3(p.item.NormalizedQuery)
+		if err == nil {
+			for _, s := range songs {
+				if (strings.EqualFold(s.Artist, p.item.Artist) || p.item.Artist == "") &&
+					strings.EqualFold(s.Title, p.item.TrackTitle) {
+					h.Log(p.item.JobID, "OK", fmt.Sprintf("Found in Navidrome (ID: %s). Skipping.", s.ID), &p.item.ID)
+					h.db.Model(&p.item).Updates(map[string]interface{}{
+						"status":      "completed (already indexed)",
+						"finished_at": time.Now(),
+					})
+					return true, nil
+				}
+			}
+		}
+	}
+
 	return false, nil
 }
 
@@ -207,6 +244,50 @@ func (h *AcquisitionHandler) stageSearchSoulseek(p *acquisitionPipeline) (skip b
 	h.Log(p.item.JobID, "OK", fmt.Sprintf("Found %d results", len(results)), &p.item.ID)
 	p.results = results
 	return false, nil
+}
+
+// stageYtdlpFallback attempts to download via yt-dlp when Soulseek finds nothing.
+// Returns (downloadPath, true) on success or ("", false) if not applicable/failed.
+func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisitionPipeline) (string, bool) {
+	if h.ytdlp == nil || p.item.SourceURL == "" {
+		return "", false
+	}
+
+	if !h.ytdlp.IsYtdlpAvailable() {
+		h.Log(p.item.JobID, "DEBUG", "yt-dlp not installed, skipping fallback", &p.item.ID)
+		return "", false
+	}
+
+	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Trying yt-dlp fallback: %s", p.item.SourceURL), &p.item.ID)
+
+	outputDir := h.cfg.DownloadStagingPath
+	if outputDir == "" {
+		outputDir = "./downloads"
+	}
+
+	audioFormat := "flac"
+	if p.profile != nil && p.profile.AllowedFormats != "" {
+		first := strings.Split(p.profile.AllowedFormats, ",")[0]
+		if f := strings.TrimSpace(first); f != "" {
+			audioFormat = strings.ToLower(f)
+		}
+	}
+
+	downloaded, err := h.ytdlp.DownloadAudio(p.item.SourceURL, outputDir, audioFormat)
+	if err != nil {
+		h.Log(p.item.JobID, "WARN", fmt.Sprintf("yt-dlp fallback failed: %v", err), &p.item.ID)
+		return "", false
+	}
+
+	h.Log(p.item.JobID, "OK", fmt.Sprintf("yt-dlp downloaded: %s", filepath.Base(downloaded)), &p.item.ID)
+
+	// Reset the item from failed state since yt-dlp succeeded
+	h.db.Model(&p.item).Updates(map[string]interface{}{
+		"status":         "downloading",
+		"failure_reason": "",
+	})
+
+	return downloaded, true
 }
 
 // stageSelectBestResult picks the top-scored result and validates it against the profile.
@@ -234,9 +315,9 @@ func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip
 }
 
 // stageAlbumBrowse attempts to discover the full album from the best result's peer.
-// This is a best-effort enhancement — failures are logged but don't fail the pipeline.
+// When album tracks are found, it creates additional job items for tracks not already
+// queued in this job — enabling "search then browse" album-mode acquisition.
 func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
-	// Extract directory from the best result's filename
 	dir := filepath.Dir(p.best.Filename)
 	if dir == "." || dir == "" {
 		return
@@ -250,17 +331,65 @@ func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
 		return
 	}
 
-	// Find files in the same directory
+	// Find audio files in the same directory
+	audioExts := map[string]bool{".mp3": true, ".flac": true, ".ogg": true, ".m4a": true, ".opus": true, ".wav": true, ".aac": true, ".wma": true}
 	var albumTracks []PeerFile
 	for _, f := range files {
 		if filepath.Dir(f.Filename) == dir {
-			albumTracks = append(albumTracks, f)
+			ext := strings.ToLower(filepath.Ext(f.Filename))
+			if audioExts[ext] {
+				albumTracks = append(albumTracks, f)
+			}
 		}
 	}
 
-	if len(albumTracks) > 1 {
-		h.Log(p.item.JobID, "OK", fmt.Sprintf("Album mode: found %d tracks in %s", len(albumTracks), dir), &p.item.ID)
-		p.albumFiles = albumTracks
+	if len(albumTracks) <= 1 {
+		return
+	}
+
+	h.Log(p.item.JobID, "OK", fmt.Sprintf("Album mode: found %d tracks in %s", len(albumTracks), dir), &p.item.ID)
+	p.albumFiles = albumTracks
+
+	// Check which album tracks are already queued as job items
+	var existingQueries []string
+	h.db.Model(&database.JobItem{}).Where("job_id = ?", p.item.JobID).Pluck("normalized_query", &existingQueries)
+	existing := make(map[string]bool)
+	for _, q := range existingQueries {
+		existing[strings.ToLower(q)] = true
+	}
+
+	// Get max sequence for new items
+	var maxSeq int
+	h.db.Model(&database.JobItem{}).Where("job_id = ?", p.item.JobID).Select("COALESCE(MAX(sequence), 0)").Scan(&maxSeq)
+
+	created := 0
+	for _, track := range albumTracks {
+		base := filepath.Base(track.Filename)
+		name := strings.TrimSuffix(base, filepath.Ext(base))
+		query := strings.ToLower(name)
+		if existing[query] {
+			continue
+		}
+
+		maxSeq++
+		newItem := database.JobItem{
+			JobID:           p.item.JobID,
+			Status:          "queued",
+			NormalizedQuery: name,
+			Artist:          p.item.Artist,
+			Album:           p.item.Album,
+			Sequence:        maxSeq,
+			OwnerUserID:     p.item.OwnerUserID,
+		}
+		if err := h.db.Create(&newItem).Error; err != nil {
+			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Failed to create album item: %v", err), &p.item.ID)
+			continue
+		}
+		created++
+	}
+
+	if created > 0 {
+		h.Log(p.item.JobID, "OK", fmt.Sprintf("Album mode: queued %d additional tracks", created), &p.item.ID)
 	}
 }
 
@@ -297,5 +426,5 @@ func (h *AcquisitionHandler) stageImportAndEnrich(ctx context.Context, p *acquis
 	if p.profile != nil {
 		coverArtSources = parseCoverArtSources(p.profile.CoverArtSources)
 	}
-	return h.importFile(ctx, p.item.JobID, p.item.ID, p.download, p.item, coverArtSources)
+	return h.importFile(ctx, p.item.JobID, p.item.ID, p.download, p.item, coverArtSources, p.profile)
 }
