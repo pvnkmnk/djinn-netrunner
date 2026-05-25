@@ -162,6 +162,28 @@ NetRunner 2.0 uses a unified Go 1.25 backend:
 
 ---
 
+## 💾 Database Support
+
+NetRunner supports both SQLite and PostgreSQL. Choose based on your deployment:
+
+| Use Case | Recommended DB | Notes |
+|---|---|---|
+| Local / single-user dev | SQLite WAL | Zero config, no external deps |
+| Multi-user / homelab production | Postgres 16 | Required for advisory locks, NOTIFY wakeup, concurrent workers |
+| Multi-node / LiteFS cluster | LiteFS + SQLite | Advanced; single primary only for scheduler/poller |
+
+**Key differences:**
+- **Advisory locks**: Postgres uses `pg_try_advisory_lock` for job exclusivity; SQLite uses file-level locking
+- **Job wakeup**: Postgres supports `LISTEN/NOTIFY` for instant worker notification; SQLite workers poll on interval
+- **Concurrent workers**: Multiple worker instances require Postgres for safe concurrent job claims
+- **`LiteFSGuard`**: Automatically detects LiteFS primary node and adjusts worker behavior
+
+> A startup warning is emitted when SQLite is used with `MaxConcurrentJobs > 1` — switch to Postgres for concurrent workloads.
+
+For operational runbooks (backup, upgrade, migration), see [`ops/docs/`](ops/docs/).
+
+---
+
 ## 🔧 Core Design Decisions
 
 1. **Native Concurrency**: Leverages Go's scheduler for fair, round-robin job processing across multiple sources.

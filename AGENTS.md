@@ -209,7 +209,32 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 
 ### MCP Tools (`backend/cmd/agent`)
 
-`probe_system`, `read_config`, `update_config`, `list_watchlists`, `add_watchlist`, `sync_watchlist`, `list_jobs`, `get_job_logs`, `enqueue_acquisition`, `bootstrap`, `search_library`, `register_webhook`, `get_stats`, `list_quality_profiles`, `list_libraries`, `scan_library`, `add_library`, `list_monitored_artists`, `cancel_job`, `retry_job`.
+> MCP surface is stable as of v0.0.1. Tool names and schemas below are the source of truth.
+
+| Tool | Input | Output | Side Effects | Idempotent |
+|---|---|---|---|---|
+| `probe_system` | _(none)_ | `{database_connected, gonic_connected, slskd_connected, message}` | None (read-only) | Yes |
+| `read_config` | _(none)_ | `map[string]string` of non-sensitive settings | None (read-only) | Yes |
+| `update_config` | `key: string` (required), `value: string` (required) | Success message | Upserts `Setting` row | No |
+| `list_watchlists` | _(none)_ | `[]Watchlist` with name, source_type, source_uri, enabled | None (read-only) | Yes |
+| `add_watchlist` | `name: string` (required), `source_type: string` (required), `source_uri: string` (required), `quality_profile_id: UUID` (required) | Created watchlist with ID | Creates `Watchlist` row | No |
+| `sync_watchlist` | `watchlist_id: UUID` (required) | Queued job ID | Creates `Job` row (type=sync) | No |
+| `list_jobs` | `limit: number` (optional, default 10) | `[]Job` with state, type, requested_at | None (read-only) | Yes |
+| `get_job_logs` | `job_id: number` (required) | `[]JobLog` with timestamp, level, message | None (read-only) | Yes |
+| `enqueue_acquisition` | `artist: string` (required), `title: string` (required), `album: string` (optional) | Queued job ID | Creates `Job` + `JobItem` rows | No |
+| `bootstrap` | _(none)_ | `map[string]string` of check results | Runs `AutoMigrate` | Yes (safe to retry) |
+| `search_library` | `query: string` (required) | `[]match` with artist, title, album, source | None (read-only) | Yes |
+| `register_webhook` | `url: string` (required) | Success message | Upserts webhook setting | No |
+| `get_stats` | _(none)_ | Jobs (24h), library, activity summary | None (read-only) | Yes |
+| `list_quality_profiles` | _(none)_ | `[]QualityProfile` with settings | None (read-only) | Yes |
+| `list_libraries` | _(none)_ | `[]Library` with name, path, ID | None (read-only) | Yes |
+| `scan_library` | `library_id: UUID` (required) | Queued job ID | Creates `Job` row (type=scan) | No |
+| `add_library` | `name: string` (required), `path: string` (required) | Created library with ID | Creates `Library` row | No |
+| `list_monitored_artists` | _(none)_ | `[]MonitoredArtist` with MBID, release counts | None (read-only) | Yes |
+| `cancel_job` | `job_id: string` (required, numeric) | Success message | Updates job + items to cancelled | No |
+| `retry_job` | `job_id: string` (required, numeric) | Success message | Resets failed items to queued | No |
+
+**Error behavior**: All tools return `mcp.CallToolResultError` with a descriptive message on failure. No partial state is left on error for read-only tools. Write tools may leave a partially created row if the DB operation succeeds but a follow-up fails.
 
 ### Internal Abstractions
 
@@ -257,6 +282,23 @@ Schema/migration sources:
 Known caveat (2026-05-07, resolved 2026-05-19):
 - ~~`go test ./...` currently fails in `internal/api` on path-validation expectation mismatches in `libraries_test.go` on this Windows workspace.~~
 - **RESOLVED**: Commit `1250fe4` fixed cross-platform path handling in `libraries_test.go`. All tests pass on both Windows and Linux.
+
+## Database Driver Behavior
+
+NetRunner supports SQLite WAL and PostgreSQL. The database driver is auto-detected from `DATABASE_URL`:
+
+| Behavior | SQLite WAL | PostgreSQL |
+|---|---|---|
+| Connection string prefix | No prefix / ends in `.db` | `postgres://` or `postgresql://` |
+| Journal mode | WAL (set via PRAGMA) | WAL by default |
+| Advisory locks (`pg_try_advisory_lock`) | Not available — file locking only | Full support via `PostgresLockManager` |
+| Job wakeup | Polling interval | `LISTEN/NOTIFY` support |
+| Concurrent workers | Unsafe — single writer only | Safe — connection pooling + advisory locks |
+| `LiteFSGuard` primary detection | Checks `/litefs/.primary` file | Always primary (guard is no-op) |
+| `FILTER (WHERE ...)` SQL syntax | Not supported — agent stats queries will fail | Full support |
+| Schema migrations | GORM `AutoMigrate` only | SQL bootstrap (`ops/db/init/`) + `AutoMigrate` |
+
+**Important**: If `MaxConcurrentJobs > 1` and SQLite is detected, the worker emits a startup warning. Use Postgres for production concurrent workloads.
 
 ## Common Agent Tasks
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -119,6 +120,11 @@ func (w *WorkerOrchestrator) Start() {
 	// Call w.cancel() (via Stop()) to signal graceful shutdown.
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	slog.Info("Starting worker", "worker_id", w.workerID)
+
+	if !strings.HasPrefix(w.cfg.DatabaseURL, "postgres") && MaxConcurrentJobs > 1 {
+		slog.Warn("SQLite detected with MaxConcurrentJobs > 1 — concurrent workers are unsafe without Postgres advisory locks. Consider switching to PostgreSQL for production workloads.",
+			"max_concurrent_jobs", MaxConcurrentJobs)
+	}
 
 	// Start background tasks — all tracked in WaitGroup for graceful shutdown
 	w.wg.Add(1)
