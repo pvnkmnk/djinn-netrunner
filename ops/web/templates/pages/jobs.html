@@ -5,8 +5,12 @@
 {% block content %}
 <div class="page-header">
     <h2>Jobs</h2>
+    <button class="btn btn-primary" hx-get="/partials/acquire-form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Start new acquisition">
+        New Acquisition
+    </button>
 </div>
 <section id="jobs-region" hx-get="/partials/jobs" hx-trigger="load, every 30s">
     <div class="loading">Loading...</div>
 </section>
+<div id="modal-container"></div>
 {% endblock %}

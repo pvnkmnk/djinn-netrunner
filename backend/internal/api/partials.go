@@ -61,6 +61,39 @@ type StatsData struct {
 // 	})
 // }
 
+// RenderJobLogsPartial returns job log entries for a given job.
+func (h *StatsHandler) RenderJobLogsPartial(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	jobID := c.QueryInt("job_id", 0)
+	if jobID == 0 {
+		return c.SendString("<p class=\"text-secondary\">Select a job to view its logs.</p>")
+	}
+
+	// Verify job ownership
+	var job database.Job
+	if err := h.db.Select("id, owner_user_id").First(&job, jobID).Error; err != nil {
+		return c.SendString("<p class=\"text-secondary\">Job not found.</p>")
+	}
+	if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
+		return c.Status(403).SendString("<p class=\"text-secondary\">Access denied.</p>")
+	}
+
+	var logs []database.JobLog
+	if err := h.db.Where("job_id = ?", jobID).Order("created_at ASC").Find(&logs).Error; err != nil {
+		slog.Error("Error fetching job logs", "error", err)
+		return c.SendString("<div class=\"error\">Error loading logs.</div>")
+	}
+
+	return c.Render("partials/job-logs", fiber.Map{
+		"logs":   logs,
+		"job_id": jobID,
+	})
+}
+
 // RenderJobsPartial returns jobs HTML for HTMX
 func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)

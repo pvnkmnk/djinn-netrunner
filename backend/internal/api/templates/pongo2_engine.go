@@ -6,11 +6,27 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
 	"github.com/flosch/pongo2/v6"
 )
+
+// tryConvertToMap converts named map types (e.g. fiber.Map) to
+// map[string]interface{} using reflection. Returns false if bind is not
+// a map with string keys.
+func tryConvertToMap(bind interface{}) (map[string]interface{}, bool) {
+	v := reflect.ValueOf(bind)
+	if v.Kind() != reflect.Map || v.Type().Key().Kind() != reflect.String {
+		return nil, false
+	}
+	m := make(map[string]interface{}, v.Len())
+	for _, key := range v.MapKeys() {
+		m[key.String()] = v.MapIndex(key).Interface()
+	}
+	return m, true
+}
 
 // init registers Jinja2-compatible filters with pongo2.
 func init() {
@@ -66,12 +82,25 @@ func (e *Pongo2Engine) Render(w io.Writer, name string, bind interface{}, layout
 
 	var buf bytes.Buffer
 	var ctx pongo2.Context
-	if bind == nil {
+	switch m := bind.(type) {
+	case nil:
 		ctx = pongo2.Context{}
-	} else if m, ok := bind.(map[string]interface{}); ok {
+	case map[string]interface{}:
 		ctx = pongo2.Context(m)
-	} else {
-		ctx = pongo2.Context{}
+	case pongo2.Context:
+		ctx = m
+	default:
+		// Handle named map types (e.g. fiber.Map) via reflect-free conversion.
+		// fiber.Map is defined as `type Map map[string]interface{}` — the interface
+		// value holds a fiber.Map, not a plain map, so a direct type assertion
+		// against map[string]interface{} fails.  We can work around this with a
+		// two-step trick: assign to an intermediate `any`, then use the comma-ok
+		// form against the underlying kind through an explicit conversion attempt.
+		if asMap, ok := tryConvertToMap(bind); ok {
+			ctx = pongo2.Context(asMap)
+		} else {
+			ctx = pongo2.Context{}
+		}
 	}
 	if err := tpl.ExecuteWriter(ctx, &buf); err != nil {
 		return fmt.Errorf("pongo2: render error for %s: %w", name, err)

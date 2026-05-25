@@ -482,7 +482,8 @@ textarea:focus-visible,
     color: var(--accent-primary, #58a6ff);
     cursor: pointer;
 }
-.error-message {
+.error-message,
+.form-error {
     color: #f85149;
     text-align: center;
     margin-top: 0.5rem;
@@ -490,6 +491,7 @@ textarea:focus-visible,
     background: rgba(248,81,73,0.1);
     border-radius: 4px;
 }
+.form-error { margin-bottom: 0.75rem; }
 
 /* Profiles partial (profiles.html) */
 .profile-card {
@@ -815,4 +817,34 @@ textarea:focus-visible,
         flex-direction: column;
     }
 }
+
+/* Job logs panel */
+.job-logs {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+.job-logs h4 { margin: 0 0 0.75rem; font-size: 0.95rem; }
+.log-entries {
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.log-entry {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+}
+.log-entry:hover { background: rgba(255,255,255,0.03); }
+.log-time { color: var(--text-secondary); white-space: nowrap; }
+.log-level { font-weight: 600; min-width: 3.5rem; }
+.log-info .log-level { color: var(--accent-primary); }
+.log-err .log-level, .log-error .log-level { color: var(--accent-danger, #f85149); }
+.log-warn .log-level { color: var(--accent-warning, #d29922); }
+.log-message { color: var(--text-primary); }
 

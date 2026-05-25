@@ -1,0 +1,16 @@
+<div class="job-logs" id="job-logs-panel">
+    <h4>Logs for Job #{{ job_id }}</h4>
+    {% if logs %}
+    <div class="log-entries">
+        {% for log in logs %}
+        <div class="log-entry log-{{ log.Level|lower }}">
+            <span class="log-time">{{ log.CreatedAt | date:"15:04:05" }}</span>
+            <span class="log-level">{{ log.Level }}</span>
+            <span class="log-message">{{ log.Message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-secondary">No log entries for this job.</p>
+    {% endif %}
+</div>
