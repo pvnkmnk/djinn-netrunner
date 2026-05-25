@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -597,7 +598,14 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 func (w *WorkerOrchestrator) runJobSafely(jc *jobContext, fn func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("job goroutine panicked", "worker_id", w.workerID, "job_id", jc.job.ID, "panic", r)
+			stack := debug.Stack()
+			slog.Error("job goroutine panicked",
+				"worker_id", w.workerID,
+				"job_id", jc.job.ID,
+				"job_type", jc.job.Type,
+				"panic", r,
+				"stack", string(stack),
+			)
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
