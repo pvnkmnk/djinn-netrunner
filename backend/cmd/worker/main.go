@@ -412,6 +412,10 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 
 	var job database.Job
 
+	// Capture claim timestamp before the transaction so the same value is
+	// persisted in the DB and kept on the local struct (see post-tx block).
+	claimTime := time.Now()
+
 	// Start an immediate transaction to "lock" the row for SQLite
 	err := w.db.Transaction(func(tx *gorm.DB) error {
 		// 1. Find next queued job
@@ -422,12 +426,11 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 
 		// 2. Mark as running — guard with state='queued' to prevent two workers
 		//    claiming the same job (see also DJI-331 for item-level fix).
-		now := time.Now()
 		result := tx.Model(&job).Where("state = ?", "queued").Updates(map[string]interface{}{
 			"state":        "running",
 			"worker_id":    w.workerID,
-			"started_at":   &now,
-			"heartbeat_at": &now,
+			"started_at":   &claimTime,
+			"heartbeat_at": &claimTime,
 		})
 		if result.Error != nil {
 			return result.Error
@@ -444,6 +447,11 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		}
 		return
 	}
+
+	// GORM map-based Updates doesn't write back into the struct, so populate
+	// the fields we just set in the DB to keep the local copy consistent.
+	job.State = "running"
+	job.StartedAt = &claimTime
 
 	// Update queued gauge after claiming
 	var queuedCount int64
