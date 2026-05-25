@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -72,54 +73,78 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		return nil, "", fmt.Errorf("unsupported lastfm source type: %s", watchlist.SourceType)
 	}
 
-	u, err := url.Parse(p.BaseURL)
-	if err != nil {
-		return nil, "", err
-	}
-
-	q := u.Query()
-	q.Set("method", method)
-	q.Set("user", watchlist.SourceURI)
-	q.Set("api_key", p.APIKey)
-	q.Set("format", "json")
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("last.fm api returned status: %d", resp.StatusCode)
-	}
-
+	const perPage = 200
 	var allTracks []map[string]string
-	var snapshotID string
+	var totalStr string
 
+	for page := 1; ; page++ {
+		u, err := url.Parse(p.BaseURL)
+		if err != nil {
+			return nil, "", err
+		}
+
+		q := u.Query()
+		q.Set("method", method)
+		q.Set("user", watchlist.SourceURI)
+		q.Set("api_key", p.APIKey)
+		q.Set("format", "json")
+		q.Set("page", strconv.Itoa(page))
+		q.Set("limit", strconv.Itoa(perPage))
+		if watchlist.SourceType == "lastfm_top" {
+			q.Set("period", "overall")
+		}
+		u.RawQuery = q.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+		if err != nil {
+			return nil, "", err
+		}
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, "", err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, "", fmt.Errorf("last.fm api returned status: %d", resp.StatusCode)
+		}
+
+		var pageTracks []lastFMTrack
+		var total int
+
+		if watchlist.SourceType == "lastfm_loved" {
+			var data lastFMLovedResponse
+			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				return nil, "", err
+			}
+			pageTracks = data.LovedTracks.Track
+			totalStr = data.LovedTracks.Attr.Total
+			total, _ = strconv.Atoi(totalStr)
+		} else {
+			var data lastFMTopResponse
+			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				return nil, "", err
+			}
+			pageTracks = data.TopTracks.Track
+			totalStr = data.TopTracks.Attr.Total
+			total, _ = strconv.Atoi(totalStr)
+		}
+
+		for _, t := range pageTracks {
+			allTracks = append(allTracks, p.mapTrack(t))
+		}
+
+		if len(allTracks) >= total || len(pageTracks) < perPage {
+			break
+		}
+	}
+
+	var snapshotID string
 	if watchlist.SourceType == "lastfm_loved" {
-		var data lastFMLovedResponse
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			return nil, "", err
-		}
-		for _, t := range data.LovedTracks.Track {
-			allTracks = append(allTracks, p.mapTrack(t))
-		}
-		snapshotID = fmt.Sprintf("loved:%s", data.LovedTracks.Attr.Total)
+		snapshotID = fmt.Sprintf("loved:%s", totalStr)
 	} else {
-		var data lastFMTopResponse
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			return nil, "", err
-		}
-		for _, t := range data.TopTracks.Track {
-			allTracks = append(allTracks, p.mapTrack(t))
-		}
-		snapshotID = fmt.Sprintf("top:%s", data.TopTracks.Attr.Total)
+		snapshotID = fmt.Sprintf("top:%s", totalStr)
 	}
 
 	return allTracks, snapshotID, nil
@@ -141,6 +166,8 @@ func (p *LastFMProvider) mapTrack(t lastFMTrack) map[string]string {
 }
 
 func (p *LastFMProvider) ValidateConfig(config string) error {
-	// API key is required globally, but we might want per-watchlist config too
+	if config == "" {
+		return fmt.Errorf("lastfm username must not be empty")
+	}
 	return nil
 }

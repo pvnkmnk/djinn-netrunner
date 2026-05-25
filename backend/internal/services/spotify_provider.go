@@ -126,9 +126,14 @@ func (p *SpotifyProvider) FetchTracks(ctx context.Context, watchlist *database.W
 	return allTracks, snapshotID, nil
 }
 
-// ValidateConfig checks if the config is valid (not much to check for Spotify yet)
 func (p *SpotifyProvider) ValidateConfig(config string) error {
-	return nil
+	if strings.HasPrefix(config, "spotify:") {
+		return nil
+	}
+	if strings.Contains(config, "open.spotify.com/") {
+		return nil
+	}
+	return fmt.Errorf("config must be a Spotify URI (spotify:...) or URL (open.spotify.com/...)")
 }
 
 // ExtractPlaylistID extracts the ID from a Spotify URI or URL

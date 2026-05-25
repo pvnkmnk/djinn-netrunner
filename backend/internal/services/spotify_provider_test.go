@@ -399,3 +399,26 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 		}
 	})
 }
+
+func TestSpotifyProvider_ValidateConfig(t *testing.T) {
+	provider := &SpotifyProvider{}
+
+	// Valid configs
+	if err := provider.ValidateConfig("spotify:playlist:abc123"); err != nil {
+		t.Errorf("expected no error for spotify URI, got %v", err)
+	}
+	if err := provider.ValidateConfig("https://open.spotify.com/playlist/abc123"); err != nil {
+		t.Errorf("expected no error for spotify URL, got %v", err)
+	}
+	if err := provider.ValidateConfig("spotify:track:abc123"); err != nil {
+		t.Errorf("expected no error for spotify track URI, got %v", err)
+	}
+
+	// Invalid configs
+	if err := provider.ValidateConfig("not-a-spotify-uri"); err == nil {
+		t.Errorf("expected error for invalid config")
+	}
+	if err := provider.ValidateConfig(""); err == nil {
+		t.Errorf("expected error for empty config")
+	}
+}

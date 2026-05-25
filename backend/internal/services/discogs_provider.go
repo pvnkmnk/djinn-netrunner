@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -53,55 +54,67 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 		return nil, "", fmt.Errorf("unsupported discogs source type: %s", watchlist.SourceType)
 	}
 
-	u, err := url.Parse(p.BaseURL)
-	if err != nil {
-		return nil, "", err
-	}
-	
-	u.Path = fmt.Sprintf("/users/%s/wants", watchlist.SourceURI)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if p.Token != "" {
-		req.Header.Set("Authorization", "Discogs token="+p.Token)
-	}
-	req.Header.Set("User-Agent", "NetRunner/1.0.0")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("discogs api returned status: %d", resp.StatusCode)
-	}
-
-	var data discogsWantlistResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, "", err
-	}
-
+	const perPage = 100
 	var allTracks []map[string]string
 	var lastAdded string
 
-	for _, w := range data.Wants {
-		artistName := ""
-		if len(w.BasicInformation.Artists) > 0 {
-			artistName = w.BasicInformation.Artists[0].Name
+	for page := 1; ; page++ {
+		u, err := url.Parse(p.BaseURL)
+		if err != nil {
+			return nil, "", err
 		}
 
-		allTracks = append(allTracks, map[string]string{
-			"artist":        artistName,
-			"title":         w.BasicInformation.Title,
-			"cover_art_url": w.BasicInformation.CoverImage,
-		})
+		u.Path = fmt.Sprintf("/users/%s/wants", watchlist.SourceURI)
 
-		if w.DateAdded > lastAdded {
-			lastAdded = w.DateAdded
+		q := u.Query()
+		q.Set("page", strconv.Itoa(page))
+		q.Set("per_page", strconv.Itoa(perPage))
+		u.RawQuery = q.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+		if err != nil {
+			return nil, "", err
+		}
+
+		if p.Token != "" {
+			req.Header.Set("Authorization", "Discogs token="+p.Token)
+		}
+		req.Header.Set("User-Agent", "NetRunner/1.0.0")
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, "", err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, "", fmt.Errorf("discogs api returned status: %d", resp.StatusCode)
+		}
+
+		var data discogsWantlistResponse
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			return nil, "", err
+		}
+
+		for _, w := range data.Wants {
+			artistName := ""
+			if len(w.BasicInformation.Artists) > 0 {
+				artistName = w.BasicInformation.Artists[0].Name
+			}
+
+			allTracks = append(allTracks, map[string]string{
+				"artist":        artistName,
+				"title":         w.BasicInformation.Title,
+				"cover_art_url": w.BasicInformation.CoverImage,
+			})
+
+			if w.DateAdded > lastAdded {
+				lastAdded = w.DateAdded
+			}
+		}
+
+		if len(data.Wants) < perPage || len(allTracks) >= data.Pagination.Items {
+			break
 		}
 	}
 
@@ -110,5 +123,8 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 }
 
 func (p *DiscogsProvider) ValidateConfig(config string) error {
+	if config == "" {
+		return fmt.Errorf("discogs username must not be empty")
+	}
 	return nil
 }

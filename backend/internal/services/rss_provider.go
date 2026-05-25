@@ -78,5 +78,8 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 }
 
 func (p *RSSProvider) ValidateConfig(config string) error {
+	if !strings.HasPrefix(config, "http://") && !strings.HasPrefix(config, "https://") {
+		return fmt.Errorf("rss feed URL must start with http:// or https://")
+	}
 	return nil
 }
