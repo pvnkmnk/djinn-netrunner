@@ -84,6 +84,8 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `GONIC_URL` | No | `http://localhost:4747` | Gonic/Subsonic API URL |
 | `GONIC_USER` | Conditional | empty | Gonic auth user |
 | `GONIC_PASS` | Conditional | empty | Gonic auth password |
+| `LIDARR_URL` | No | empty | Lidarr API base URL for wanted album import |
+| `LIDARR_API_KEY` | No | empty | Lidarr API authentication key |
 | `MUSIC_LIBRARY` | No | `./music_library` | Library root path |
 | `TEMPLATES_PATH` | No | `./ops/web/templates` | Pongo2 template directory |
 | `STATIC_FILES_PATH` | No | `./ops/web/static` | Static files directory |

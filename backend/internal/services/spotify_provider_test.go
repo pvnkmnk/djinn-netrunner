@@ -392,3 +392,36 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 		}
 	})
 }
+
+func TestSpotifyProvider_ValidateConfig(t *testing.T) {
+	provider := &SpotifyProvider{}
+
+	// Valid playlist configs
+	if err := provider.ValidateConfig("spotify:playlist:abc123"); err != nil {
+		t.Errorf("expected no error for spotify URI, got %v", err)
+	}
+	if err := provider.ValidateConfig("https://open.spotify.com/playlist/abc123"); err != nil {
+		t.Errorf("expected no error for spotify URL, got %v", err)
+	}
+
+	// Freeform text allowed for discover/liked source types
+	if err := provider.ValidateConfig("Discover Weekly"); err != nil {
+		t.Errorf("expected no error for freeform discover name, got %v", err)
+	}
+	if err := provider.ValidateConfig("liked"); err != nil {
+		t.Errorf("expected no error for freeform liked config, got %v", err)
+	}
+
+	// Non-playlist Spotify URLs rejected
+	if err := provider.ValidateConfig("https://open.spotify.com/track/abc123"); err == nil {
+		t.Errorf("expected error for non-playlist Spotify URL")
+	}
+	if err := provider.ValidateConfig("https://open.spotify.com/album/abc123"); err == nil {
+		t.Errorf("expected error for non-playlist Spotify URL")
+	}
+
+	// Empty config rejected
+	if err := provider.ValidateConfig(""); err == nil {
+		t.Errorf("expected error for empty config")
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -57,53 +58,88 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 		return nil, "", fmt.Errorf("unsupported listenbrainz source type: %s", watchlist.SourceType)
 	}
 
-	u, err := url.Parse(p.BaseURL)
+	const (
+		perPage  = 100
+		maxPages = 10
+	)
+
+	baseURL, err := url.Parse(p.BaseURL)
 	if err != nil {
 		return nil, "", err
 	}
-	
-	// Ensure trailing slash for joining
-	if u.Path != "" && u.Path[len(u.Path)-1] != '/' {
-		u.Path += "/"
+	if baseURL.Path != "" && baseURL.Path[len(baseURL.Path)-1] != '/' {
+		baseURL.Path += "/"
 	}
-	u.Path += "user/" + watchlist.SourceURI + "/listens"
-
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if p.Token != "" {
-		req.Header.Set("Authorization", "Token "+p.Token)
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("listenbrainz api returned status: %d", resp.StatusCode)
-	}
-
-	var data lbListensResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, "", err
-	}
+	baseURL.Path += "user/" + watchlist.SourceURI + "/listens"
+	endpoint := baseURL.String()
 
 	var allTracks []map[string]string
 	var maxTimestamp int64
+	var maxTS int64
 
-	for _, l := range data.Payload.Listens {
-		allTracks = append(allTracks, map[string]string{
-			"artist": l.TrackMetadata.ArtistName,
-			"title":  l.TrackMetadata.TrackName,
-			"album":  l.TrackMetadata.ReleaseName,
-		})
-		if l.ListenedAt > maxTimestamp {
-			maxTimestamp = l.ListenedAt
+	for page := 0; page < maxPages; page++ {
+		reqURL, err := url.Parse(endpoint)
+		if err != nil {
+			return nil, "", err
 		}
+
+		q := reqURL.Query()
+		q.Set("count", strconv.Itoa(perPage))
+		if maxTS > 0 {
+			q.Set("max_ts", strconv.FormatInt(maxTS, 10))
+		}
+		reqURL.RawQuery = q.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, "GET", reqURL.String(), nil)
+		if err != nil {
+			return nil, "", err
+		}
+
+		if p.Token != "" {
+			req.Header.Set("Authorization", "Token "+p.Token)
+		}
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, "", classifyNetworkError(err, "listenbrainz")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, "", classifyHTTPStatus(resp.StatusCode, "listenbrainz")
+		}
+
+		var data lbListensResponse
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			resp.Body.Close()
+			return nil, "", err
+		}
+		resp.Body.Close()
+
+		if len(data.Payload.Listens) == 0 {
+			break
+		}
+
+		var minTS int64
+		for _, l := range data.Payload.Listens {
+			allTracks = append(allTracks, map[string]string{
+				"artist": l.TrackMetadata.ArtistName,
+				"title":  l.TrackMetadata.TrackName,
+				"album":  l.TrackMetadata.ReleaseName,
+			})
+			if l.ListenedAt > maxTimestamp {
+				maxTimestamp = l.ListenedAt
+			}
+			if minTS == 0 || l.ListenedAt < minTS {
+				minTS = l.ListenedAt
+			}
+		}
+
+		if len(data.Payload.Listens) < perPage {
+			break
+		}
+
+		maxTS = minTS
 	}
 
 	snapshotID := fmt.Sprintf("listens:%d", maxTimestamp)
@@ -111,5 +147,8 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 }
 
 func (p *ListenBrainzProvider) ValidateConfig(config string) error {
+	if config == "" {
+		return fmt.Errorf("listenbrainz username must not be empty")
+	}
 	return nil
 }

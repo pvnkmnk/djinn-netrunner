@@ -2,10 +2,13 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -72,54 +75,88 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		return nil, "", fmt.Errorf("unsupported lastfm source type: %s", watchlist.SourceType)
 	}
 
-	u, err := url.Parse(p.BaseURL)
-	if err != nil {
-		return nil, "", err
-	}
-
-	q := u.Query()
-	q.Set("method", method)
-	q.Set("user", watchlist.SourceURI)
-	q.Set("api_key", p.APIKey)
-	q.Set("format", "json")
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("last.fm api returned status: %d", resp.StatusCode)
-	}
-
+	const perPage = 200
 	var allTracks []map[string]string
-	var snapshotID string
+	var allRawTracks []lastFMTrack
 
+	for page := 1; ; page++ {
+		u, err := url.Parse(p.BaseURL)
+		if err != nil {
+			return nil, "", err
+		}
+
+		q := u.Query()
+		q.Set("method", method)
+		q.Set("user", watchlist.SourceURI)
+		q.Set("api_key", p.APIKey)
+		q.Set("format", "json")
+		q.Set("page", strconv.Itoa(page))
+		q.Set("limit", strconv.Itoa(perPage))
+		if watchlist.SourceType == "lastfm_top" {
+			q.Set("period", "overall")
+		}
+		u.RawQuery = q.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+		if err != nil {
+			return nil, "", err
+		}
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, "", classifyNetworkError(err, "last.fm")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, "", classifyHTTPStatus(resp.StatusCode, "last.fm")
+		}
+
+		var pageTracks []lastFMTrack
+		var total int
+
+		if watchlist.SourceType == "lastfm_loved" {
+			var data lastFMLovedResponse
+			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				resp.Body.Close()
+				return nil, "", err
+			}
+			pageTracks = data.LovedTracks.Track
+			total, err = strconv.Atoi(data.LovedTracks.Attr.Total)
+			if err != nil {
+				resp.Body.Close()
+				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", data.LovedTracks.Attr.Total)
+			}
+		} else {
+			var data lastFMTopResponse
+			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				resp.Body.Close()
+				return nil, "", err
+			}
+			pageTracks = data.TopTracks.Track
+			total, err = strconv.Atoi(data.TopTracks.Attr.Total)
+			if err != nil {
+				resp.Body.Close()
+				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", data.TopTracks.Attr.Total)
+			}
+		}
+		resp.Body.Close()
+
+		for _, t := range pageTracks {
+			allTracks = append(allTracks, p.mapTrack(t))
+		}
+		allRawTracks = append(allRawTracks, pageTracks...)
+
+		if len(allTracks) >= total || len(pageTracks) < perPage {
+			break
+		}
+	}
+
+	var snapshotID string
 	if watchlist.SourceType == "lastfm_loved" {
-		var data lastFMLovedResponse
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			return nil, "", err
-		}
-		for _, t := range data.LovedTracks.Track {
-			allTracks = append(allTracks, p.mapTrack(t))
-		}
-		snapshotID = fmt.Sprintf("loved:%s", data.LovedTracks.Attr.Total)
+		snapshotID = fmt.Sprintf("loved:%s", hashTrackList(allRawTracks))
 	} else {
-		var data lastFMTopResponse
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			return nil, "", err
-		}
-		for _, t := range data.TopTracks.Track {
-			allTracks = append(allTracks, p.mapTrack(t))
-		}
-		snapshotID = fmt.Sprintf("top:%s", data.TopTracks.Attr.Total)
+		snapshotID = fmt.Sprintf("top:%s", hashTrackList(allRawTracks))
 	}
 
 	return allTracks, snapshotID, nil
@@ -140,7 +177,19 @@ func (p *LastFMProvider) mapTrack(t lastFMTrack) map[string]string {
 	}
 }
 
+// hashTrackList computes a deterministic hash of a Last.fm track list.
+func hashTrackList(tracks []lastFMTrack) string {
+	h := sha256.New()
+	for _, t := range tracks {
+		h.Write([]byte(t.Artist.Name))
+		h.Write([]byte(t.Name))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
 func (p *LastFMProvider) ValidateConfig(config string) error {
-	// API key is required globally, but we might want per-watchlist config too
+	if config == "" {
+		return fmt.Errorf("lastfm username must not be empty")
+	}
 	return nil
 }

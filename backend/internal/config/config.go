@@ -48,6 +48,10 @@ type Config struct {
 	GonicUser string
 	GonicPass string
 
+	// Lidarr
+	LidarrURL    string
+	LidarrAPIKey string
+
 	// Library
 	MusicLibraryPath     string
 	DownloadStagingPath  string
@@ -137,6 +141,9 @@ func Load(filenames ...string) (*Config, error) {
 		GonicURL:  getEnv("GONIC_URL", "http://localhost:4747"),
 		GonicUser: gonicUser,
 		GonicPass: gonicPass,
+
+		LidarrURL:    getEnv("LIDARR_URL", ""),
+		LidarrAPIKey: getEnv("LIDARR_API_KEY", ""),
 
 		MusicLibraryPath:    getEnv("MUSIC_LIBRARY", "./music_library"),
 		DownloadStagingPath: getEnv("DOWNLOAD_STAGING", "./downloads"),

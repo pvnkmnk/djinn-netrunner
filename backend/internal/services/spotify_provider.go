@@ -302,7 +302,6 @@ func (p *SpotifyProvider) fetchLikedSongsOAuth(ctx context.Context, watchlist *d
 }
 
 // ValidateConfig checks if the Spotify source URI is valid for a given source type.
-// The sourceType is inferred from the config content when not provided separately.
 func (p *SpotifyProvider) ValidateConfig(config string) error {
 	if config == "" {
 		return errors.New("spotify source URI is required")

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/mmcdole/gofeed"
@@ -10,18 +11,23 @@ import (
 )
 
 // RSSProvider implements WatchlistProvider for RSS/Atom feeds
-type RSSProvider struct{}
+type RSSProvider struct {
+	httpClient *http.Client
+}
 
-// NewRSSProvider creates a new RSS provider
-func NewRSSProvider() *RSSProvider {
-	return &RSSProvider{}
+// NewRSSProvider creates a new RSS provider with the given HTTP client.
+func NewRSSProvider(httpClient *http.Client) *RSSProvider {
+	return &RSSProvider{httpClient: httpClient}
 }
 
 func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
 	fp := gofeed.NewParser()
+	if p.httpClient != nil {
+		fp.Client = p.httpClient
+	}
 	feed, err := fp.ParseURLWithContext(watchlist.SourceURI, ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to parse RSS feed: %w", err)
+		return nil, "", classifyNetworkError(err, "rss")
 	}
 
 	var allTracks []map[string]string
@@ -78,5 +84,8 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 }
 
 func (p *RSSProvider) ValidateConfig(config string) error {
+	if !strings.HasPrefix(config, "http://") && !strings.HasPrefix(config, "https://") {
+		return fmt.Errorf("rss feed URL must start with http:// or https://")
+	}
 	return nil
 }
