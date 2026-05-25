@@ -204,24 +204,24 @@ func TestSmoke_PostgresConcurrentLocks(t *testing.T) {
 	}
 
 	var (
-		wg      sync.WaitGroup
 		mu      sync.Mutex
 		results []connResult
 	)
 
 	// All goroutines must attempt before any connection is closed, so
 	// advisory locks remain held during the race.
-	wg.Add(workers)
+	attempted := make(chan struct{}, workers)
 	gate := make(chan struct{})
 
 	for i := 0; i < workers; i++ {
 		go func() {
-			defer wg.Done()
 			db, err := database.Connect(cfg)
 			if err != nil {
 				mu.Lock()
 				results = append(results, connResult{})
 				mu.Unlock()
+				attempted <- struct{}{}
+				<-gate
 				return
 			}
 			lm := database.NewLockManager(db)
@@ -232,14 +232,17 @@ func TestSmoke_PostgresConcurrentLocks(t *testing.T) {
 			results = append(results, connResult{db: db, lm: lm, acquired: acquired})
 			mu.Unlock()
 
-			// Wait until all goroutines have attempted before returning
+			// Signal attempt complete, then hold connection open
+			attempted <- struct{}{}
 			<-gate
 		}()
 	}
 
 	// Wait for all goroutines to finish acquiring
-	wg.Wait()
-	// Release the gate so goroutines can exit
+	for i := 0; i < workers; i++ {
+		<-attempted
+	}
+	// Release the gate so goroutines can exit and connections close
 	close(gate)
 
 	wins := 0
