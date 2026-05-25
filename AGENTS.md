@@ -73,8 +73,8 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `JWT_SECRET` | Recommended | auto-generated random secret if unset | Session/auth crypto secret; set explicitly for stable restarts |
 | `DATABASE_URL` | Yes | none | Primary DB connection string (`postgres://...` or SQLite path) |
 | `REDIS_URL` | No | `redis://localhost:6379` | Reserved for redis-backed features/future middleware |
-| `SPOTIFY_CLIENT_ID` | Conditional | empty | Spotify OAuth/API integration |
-| `SPOTIFY_CLIENT_SECRET` | Conditional | empty | Spotify OAuth/API integration |
+| `SPOTIFY_CLIENT_ID` | No | empty | Spotify OAuth (optional; sp_dc cookie auth is preferred for user-specific data) |
+| `SPOTIFY_CLIENT_SECRET` | No | empty | Spotify OAuth (optional; sp_dc cookie auth is preferred for user-specific data) |
 | `SPOTIFY_REDIRECT_URI` | No | `http://localhost:8080/api/auth/spotify/callback` | OAuth callback URL override |
 | `MUSICBRAINZ_USER_AGENT` | No | `NetRunner/1.0.0 (contact@example.com)` | MusicBrainz request identity |
 | `MUSICBRAINZ_API_KEY` | No | empty | Optional MusicBrainz key |
@@ -179,6 +179,7 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 |---|---|---|---|
 | `/api/auth/spotify/login` | GET | Yes | `SpotifyAuthHandler.Login` |
 | `/api/auth/spotify/callback` | GET | Yes | `SpotifyAuthHandler.Callback` |
+| `/api/auth/spotify/spdc` | POST | Yes | `SpotifyAuthHandler.LinkSpDc` — stores sp_dc browser cookie for GraphQL Partner API access |
 | `/api/watchlists/*` | GET/POST/PATCH/DELETE | Yes | `WatchlistHandler` + preview handler |
 | `/api/profiles/*` | GET/POST/PATCH/DELETE | Yes (admin for writes/default) | `ProfileHandler` |
 | `/api/artists/*` | GET/POST/PATCH/DELETE | Yes | `ArtistsHandler` |

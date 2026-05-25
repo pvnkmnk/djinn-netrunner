@@ -37,7 +37,7 @@ NetRunner is a security-hardened, performance-optimized music acquisition pipeli
 - **Glassmorphic Aesthetic**: Deep cyberpunk theme with high-quality typography (Orbitron/Inter).
 
 ### Core Pipeline
-- **Unified Watchlists**: Single paradigm for all monitoring sources (Spotify, RSS, Last.fm, Discogs, local files).
+- **Unified Watchlists**: Single paradigm for all monitoring sources (Spotify playlists/liked/discover, Last.fm loved/top, ListenBrainz, Discogs, Lidarr, RSS, local files).
 - **Artist Tracking**: Monitor specific artists for new releases via MusicBrainz integration.
 - **Scheduled Syncing**: Cron-based scheduling for automated watchlist and artist monitoring.
 - **Intelligent Search**: Multi-variable quality ranking (bitrate, speed, queue depth).

@@ -176,7 +176,7 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 		return c.Status(500).SendString("<div class=\"error\">Failed to update watchlist.</div>")
 	}
 
-	return c.Render("partials/watchlists", fiber.Map{"watchlists": []database.Watchlist{wl}})
+	return c.Render("partials/watchlist-card", fiber.Map{"watchlist": wl})
 }
 
 // GetForm returns the watchlist form for add/edit
@@ -257,7 +257,15 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
 	}
 
+	// Check if user has linked Spotify sp_dc cookie
+	var spDcLinked bool
+	var spotifyToken database.SpotifyToken
+	if err := h.db.Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
+		spDcLinked = spotifyToken.SpDcCookie != ""
+	}
+
 	return c.Render("partials/watchlists", fiber.Map{
-		"watchlists": watchlists,
+		"watchlists":  watchlists,
+		"spDcLinked":  spDcLinked,
 	})
 }
