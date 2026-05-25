@@ -8,6 +8,8 @@ NetRunner is a modern, Go-native system for automated music discovery, download,
 ![Architecture](https://img.shields.io/badge/architecture-standalone--sqlite-blue)
 ![UI](https://img.shields.io/badge/ui-htmx--cyberpunk-magenta)
 ![Security](https://img.shields.io/badge/security-session--auth-brightgreen)
+[![CI](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/ci.yml/badge.svg)](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/ci.yml)
+[![Integration Tests](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/integration.yml/badge.svg)](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/integration.yml)
 
 ---
 
