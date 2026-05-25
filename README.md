@@ -237,11 +237,18 @@ NetRunner exposes a `/metrics` endpoint in Prometheus exposition format. Scraped
 
 ### Prometheus Scrape Config
 
+The server exposes `/metrics` on `:8080` and the worker on `:9090`:
+
 ```yaml
 scrape_configs:
-  - job_name: "netrunner"
+  - job_name: "netrunner-server"
     static_configs:
       - targets: ["localhost:8080"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+  - job_name: "netrunner-worker"
+    static_configs:
+      - targets: ["localhost:9090"]
     metrics_path: /metrics
     scrape_interval: 15s
 ```

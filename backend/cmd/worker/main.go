@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -704,6 +706,7 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 		return
 	}
 	delete(w.activeJobs, jobID)
+	runningCount := len(w.activeJobs)
 	w.jobMutex.Unlock()
 
 	// Release lock (use background context since worker may be shutting down)
@@ -735,7 +738,7 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	if jc.job.StartedAt != nil {
 		metrics.JobDurationSeconds.WithLabelValues(jc.job.Type).Observe(time.Since(*jc.job.StartedAt).Seconds())
 	}
-	metrics.JobsRunning.Set(float64(len(w.activeJobs)))
+	metrics.JobsRunning.Set(float64(runningCount))
 
 	slog.Info("Finished job", "worker_id", w.workerID, "job_id", jobID, "state", finalState)
 }
@@ -755,6 +758,17 @@ func main() {
 
 	worker := NewWorkerOrchestrator(cfg, db)
 
+	// Expose /metrics for Prometheus scraping on :9090
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{Addr: ":9090", Handler: metricsMux}
+	go func() {
+		slog.Info("Worker metrics server listening on :9090")
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("Metrics server error", "error", err)
+		}
+	}()
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
@@ -762,5 +776,6 @@ func main() {
 
 	slog.Info("Worker process running. Press Ctrl+C to stop.")
 	<-stop
+	metricsServer.Close()
 	worker.Stop()
 }
