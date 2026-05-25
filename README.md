@@ -218,6 +218,38 @@ PROXY_URL=http://proxy.example.com:8080
 
 ---
 
+## 📊 Observability
+
+NetRunner exposes a `/metrics` endpoint in Prometheus exposition format. Scraped metrics include:
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `netrunner_worker_jobs_running` | gauge | — | Active jobs in the worker |
+| `netrunner_worker_jobs_queued` | gauge | — | Jobs waiting to be claimed |
+| `netrunner_worker_jobs_processed_total` | counter | `type`, `outcome` | Jobs completed (succeeded/failed) |
+| `netrunner_worker_job_duration_seconds` | histogram | `type` | Processing time per job |
+| `netrunner_worker_items_processed_total` | counter | `outcome` | Job items processed |
+| `netrunner_worker_zombie_jobs_recovered_total` | counter | — | Stale jobs reset by zombie recovery |
+| `netrunner_external_api_calls_total` | counter | `service`, `status` | External API call counts |
+| `netrunner_external_api_duration_seconds` | histogram | `service` | External API latency |
+| `netrunner_acquisition_dedup_total` | counter | `method` | Deduplication events |
+| `netrunner_acquisition_cover_art_fetch_total` | counter | `source`, `outcome` | Cover art fetch attempts |
+
+### Prometheus Scrape Config
+
+```yaml
+scrape_configs:
+  - job_name: "netrunner"
+    static_configs:
+      - targets: ["localhost:8080"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+```
+
+### Grafana Dashboard
+
+Import `ops/grafana/netrunner-dashboard.json` into Grafana for a pre-built dashboard covering worker throughput, job latency percentiles, external API health, and acquisition pipeline metrics.
+
 ## 🤝 Contributing
 
 We welcome contributions that align with our "Console-First" and "Standalone" design principles. 

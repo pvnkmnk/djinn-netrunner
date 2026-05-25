@@ -15,6 +15,7 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
@@ -487,6 +488,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		return
 	}
 	w.activeJobs[job.ID] = jc
+	metrics.JobsRunning.Set(float64(len(w.activeJobs)))
 	w.jobMutex.Unlock()
 
 	slog.Info("Claimed job", "worker_id", w.workerID, "job_id", job.ID, "job_type", job.Type)
@@ -722,6 +724,13 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	w.db.Model(&database.Job{}).Where("id = ?", jobID).Updates(updates)
 
 	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
+
+	// Record metrics
+	metrics.JobsProcessedTotal.WithLabelValues(jc.job.Type, finalState).Inc()
+	if jc.job.StartedAt != nil {
+		metrics.JobDurationSeconds.WithLabelValues(jc.job.Type).Observe(time.Since(*jc.job.StartedAt).Seconds())
+	}
+	metrics.JobsRunning.Set(float64(len(w.activeJobs)))
 
 	slog.Info("Finished job", "worker_id", w.workerID, "job_id", jobID, "state", finalState)
 }

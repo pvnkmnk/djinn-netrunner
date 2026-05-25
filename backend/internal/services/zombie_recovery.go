@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 	"gorm.io/gorm"
 )
 
@@ -75,6 +76,7 @@ func (z *ZombieRecovery) cleanup(ctx context.Context, workerID string) {
 			"started_at":   nil,
 			"heartbeat_at": nil,
 		})
+		metrics.ZombieJobsRecovered.Inc()
 
 		lockKey, err := z.lockManager.GetScopeLockKey(ctx, job.ScopeType, job.ScopeID)
 		if err == nil {

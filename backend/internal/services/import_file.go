@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 )
 
 // Quality-Aware Replacement (DJI-366 — deferred to follow-up)
@@ -47,6 +48,7 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	if hash != "" {
 		var existing database.Acquisition
 		if err := h.db.Where("file_hash = ?", hash).First(&existing).Error; err == nil {
+			metrics.AcquisitionDedupTotal.WithLabelValues("hash").Inc()
 			h.Log(jobID, "OK", fmt.Sprintf("File already acquired (ID: %d). Skipping.", existing.ID), &itemID)
 			h.db.Model(&item).Updates(map[string]interface{}{
 				"status":      "completed (duplicate hash)",
@@ -119,7 +121,7 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	if mbIDs.RecordingID != "" {
 		var existing database.Acquisition
 		if err := h.db.Where("mb_recording_id = ?", mbIDs.RecordingID).First(&existing).Error; err == nil {
-			// Same recording already imported — check quality for potential replacement
+			metrics.AcquisitionDedupTotal.WithLabelValues("recording_id").Inc()
 			h.Log(jobID, "OK", fmt.Sprintf("Duplicate recording detected (MB ID: %s, existing acquisition #%d at %s). "+
 				"Quality-aware replacement deferred — see DJI-366 docs.", mbIDs.RecordingID, existing.ID, existing.FinalPath), &itemID)
 			h.db.Model(&item).Updates(map[string]interface{}{

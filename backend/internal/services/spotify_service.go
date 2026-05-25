@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2/clientcredentials"
@@ -68,7 +69,9 @@ func (s *SpotifyService) GetPlaylistTracks(ctx context.Context, playlistID strin
 			spotify.Offset(offset),
 		}
 		
+		start := time.Now()
 		items, err := s.client.GetPlaylistItems(ctx, id, options...)
+		metrics.TrackExternalCall("spotify", start, err)
 		if err != nil {
 			return nil, err
 		}
