@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 )
 
 // Default cover art source priority order
@@ -55,6 +56,7 @@ func (h *AcquisitionHandler) getCoverArtWithFallback(ctx context.Context, item *
 		if h.cache != nil {
 			key := coverArtCacheKey(artist, album, source)
 			if data, found, err := h.cache.GetBytes("coverart", key); err == nil && found {
+				metrics.CoverArtFetchTotal.WithLabelValues(source, "hit_cache").Inc()
 				h.Log(item.JobID, "DEBUG", fmt.Sprintf("Cover art cache hit for %s", key), &item.ID)
 				return data, nil
 			}
@@ -72,17 +74,21 @@ func (h *AcquisitionHandler) getCoverArtWithFallback(ctx context.Context, item *
 			artData, err = h.fetchCoverFromDiscogs(ctx, item, artist, title)
 		}
 
-		if err == nil && len(artData) > 0 {
-			// Cache the successful result
+		if err != nil {
+			metrics.CoverArtFetchTotal.WithLabelValues(source, "error").Inc()
+		} else if len(artData) == 0 {
+			metrics.CoverArtFetchTotal.WithLabelValues(source, "empty").Inc()
+		} else {
+			metrics.CoverArtFetchTotal.WithLabelValues(source, "ok").Inc()
 			if h.cache != nil {
 				key := coverArtCacheKey(artist, album, source)
 				_ = h.cache.SetBytes("coverart", key, artData, coverArtCacheTTL)
 			}
 			return artData, nil
 		}
-		// Try next source
 	}
 
+	metrics.CoverArtFetchTotal.WithLabelValues("none", "exhausted").Inc()
 	return nil, fmt.Errorf("no cover art found from any source")
 }
 

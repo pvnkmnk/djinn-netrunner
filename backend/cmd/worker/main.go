@@ -443,6 +443,11 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		return
 	}
 
+	// Update queued gauge after claiming
+	var queuedCount int64
+	w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&queuedCount)
+	metrics.JobsQueued.Set(float64(queuedCount))
+
 	// Acquire advisory lock for scope (use worker context to allow cancellation)
 	lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
 	if err != nil {

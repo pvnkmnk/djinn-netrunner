@@ -623,13 +623,22 @@ func ListDuplicates(db *gorm.DB) ([]DuplicateGroup, error) {
 		return nil, nil
 	}
 
-	var groups []DuplicateGroup
+	var allAcqs []database.Acquisition
+	if err := db.Where("mb_recording_id IN ?", dupIDs).Order("mb_recording_id, id ASC").Find(&allAcqs).Error; err != nil {
+		return nil, fmt.Errorf("failed to query acquisitions for duplicate recordings: %w", err)
+	}
+
+	grouped := make(map[string][]database.Acquisition, len(dupIDs))
+	for i := range allAcqs {
+		rid := allAcqs[i].MBRecordingID
+		grouped[rid] = append(grouped[rid], allAcqs[i])
+	}
+
+	groups := make([]DuplicateGroup, 0, len(grouped))
 	for _, rid := range dupIDs {
-		var acqs []database.Acquisition
-		if err := db.Where("mb_recording_id = ?", rid).Order("id ASC").Find(&acqs).Error; err != nil {
-			continue
+		if acqs, ok := grouped[rid]; ok {
+			groups = append(groups, DuplicateGroup{MBRecordingID: rid, Acquisitions: acqs})
 		}
-		groups = append(groups, DuplicateGroup{MBRecordingID: rid, Acquisitions: acqs})
 	}
 
 	return groups, nil

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 	"gorm.io/gorm"
 )
 
@@ -76,6 +77,7 @@ func (p *JobItemProcessor) ProcessItem(ctx context.Context, workerID string, job
 	itemID, err := p.ClaimNextItem(jobID)
 	if err != nil {
 		slog.Error("Error claiming item", "worker_id", workerID, "job_id", jobID, "error", err)
+		metrics.ItemsProcessedTotal.WithLabelValues("claim_error").Inc()
 		return ItemResult{ClaimErr: err}
 	}
 
@@ -86,6 +88,9 @@ func (p *JobItemProcessor) ProcessItem(ctx context.Context, workerID string, job
 	execErr := p.acqHandler.ExecuteItem(ctx, jobID, itemID)
 	if execErr != nil {
 		slog.Error("Error processing item", "worker_id", workerID, "job_id", jobID, "item_id", itemID, "error", execErr)
+		metrics.ItemsProcessedTotal.WithLabelValues("error").Inc()
+	} else {
+		metrics.ItemsProcessedTotal.WithLabelValues("success").Inc()
 	}
 	return ItemResult{ItemID: itemID, ExecErr: execErr}
 }
