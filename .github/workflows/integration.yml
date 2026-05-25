@@ -34,22 +34,26 @@ jobs:
           for i in $(seq 1 30); do
             if docker compose -f docker-compose.integration.yml -p netrunner-integration exec -T integration-db pg_isready -U testuser > /dev/null 2>&1; then
               echo "Postgres is ready"
-              break
+              exit 0
             fi
             echo "Waiting for Postgres... ($i/30)"
             sleep 2
           done
+          echo "Timed out waiting for Postgres"
+          exit 1
 
       - name: Wait for slskd
         run: |
           for i in $(seq 1 60); do
             if curl -sf http://localhost:15030/api/v0/session > /dev/null 2>&1; then
               echo "slskd is ready"
-              break
+              exit 0
             fi
             echo "Waiting for slskd... ($i/60)"
             sleep 2
           done
+          echo "Timed out waiting for slskd"
+          exit 1
 
       - name: Download dependencies
         working-directory: backend
@@ -58,10 +62,6 @@ jobs:
       - name: Run integration tests
         working-directory: backend
         run: go test ./internal/integration/... -tags=integration -v -timeout=5m
-        env:
-          INTEGRATION_SLSKD_URL: http://localhost:15030
-          INTEGRATION_SLSKD_API_KEY: test-api-key-for-integration
-          INTEGRATION_DATABASE_URL: postgresql://testuser:testpass@localhost:15432/netrunner_integration?sslmode=disable
 
       - name: Show service logs on failure
         if: failure()
