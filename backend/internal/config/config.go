@@ -49,7 +49,8 @@ type Config struct {
 	GonicPass string
 
 	// Library
-	MusicLibraryPath string
+	MusicLibraryPath     string
+	DownloadStagingPath  string
 
 	// Templates
 	TemplatesPath   string
@@ -137,7 +138,8 @@ func Load(filenames ...string) (*Config, error) {
 		GonicUser: gonicUser,
 		GonicPass: gonicPass,
 
-		MusicLibraryPath: getEnv("MUSIC_LIBRARY", "./music_library"),
+		MusicLibraryPath:    getEnv("MUSIC_LIBRARY", "./music_library"),
+		DownloadStagingPath: getEnv("DOWNLOAD_STAGING", "./downloads"),
 
 		TemplatesPath:   getEnv("TEMPLATES_PATH", "./ops/web/templates"),
 		StaticFilesPath: getEnv("STATIC_FILES_PATH", "./ops/web/static"),

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -109,6 +110,10 @@ func TestSlskdServiceSearch(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("GET /api/v0/searches/"+searchID, func(w http.ResponseWriter, r *http.Request) {
+		// Verify includeResponses=true is passed
+		if r.URL.Query().Get("includeResponses") != "true" {
+			t.Error("Expected includeResponses=true query parameter")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(mockSearchResponse{
 			Responses: []mockSearchResult{
@@ -167,6 +172,8 @@ func TestSlskdServiceSearch(t *testing.T) {
 }
 
 func TestSlskdServiceEnqueueDownload(t *testing.T) {
+	testDownloadID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
 	tests := []struct {
 		name    string
 		apiKey  string
@@ -178,14 +185,37 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 			name:   "success",
 			apiKey: testAPIKey,
 			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/api/v0/downloads" {
-					t.Errorf("Expected path /api/v0/downloads, got %s", r.URL.Path)
+				if r.URL.Path != "/api/v0/transfers/downloads/testuser" {
+					t.Errorf("Expected path /api/v0/transfers/downloads/testuser, got %s", r.URL.Path)
 					http.Error(w, "bad path", http.StatusBadRequest)
 					return
 				}
-				w.WriteHeader(http.StatusOK)
+				// Verify the payload is an array of download requests
+				var payload []struct {
+					Filename string `json:"filename"`
+					Size     int64  `json:"size"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Errorf("Failed to decode request body: %v", err)
+					http.Error(w, "bad body", http.StatusBadRequest)
+					return
+				}
+				if len(payload) != 1 || payload[0].Filename != "test_song.mp3" {
+					t.Errorf("Unexpected payload: %+v", payload)
+				}
+				if payload[0].Size != 5242880 {
+					t.Errorf("Expected size 5242880, got %d", payload[0].Size)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"enqueued": []map[string]interface{}{
+						{"id": testDownloadID, "filename": "test_song.mp3", "state": "Requested"},
+					},
+					"failed": []interface{}{},
+				})
 			})),
-			wantID:  "testuser:test_song.mp3",
+			wantID:  testDownloadID,
 			wantErr: false,
 		},
 		{
@@ -220,7 +250,7 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 			}
 			svc := NewSlskdService(cfg, nil)
 
-			gotID, err := svc.EnqueueDownload("testuser", "test_song.mp3")
+			gotID, err := svc.EnqueueDownload("testuser", "test_song.mp3", 5242880)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("EnqueueDownload() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -228,6 +258,64 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 				t.Errorf("EnqueueDownload() = %v, want %v", gotID, tt.wantID)
 			}
 		})
+	}
+}
+
+func TestSlskdService_EnqueueDownload_MalformedJSON(t *testing.T) {
+	server := httptest.NewServer(withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{ invalid json`))
+	})))
+	defer server.Close()
+
+	cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
+	svc := NewSlskdService(cfg, nil)
+
+	_, err := svc.EnqueueDownload("testuser", "test_song.mp3", 5242880)
+	if err == nil {
+		t.Error("Expected error for malformed JSON response, got nil")
+	}
+}
+
+func TestSlskdService_EnqueueDownload_FailedItems(t *testing.T) {
+	server := httptest.NewServer(withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		// slskd returns failed as a string array of filenames
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"enqueued": []interface{}{},
+			"failed":   []string{"test_song.mp3"},
+		})
+	})))
+	defer server.Close()
+
+	cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
+	svc := NewSlskdService(cfg, nil)
+
+	_, err := svc.EnqueueDownload("testuser", "test_song.mp3", 5242880)
+	if err == nil {
+		t.Error("Expected error for failed download, got nil")
+	}
+}
+
+func TestSlskdService_EnqueueDownload_EmptyResponse(t *testing.T) {
+	server := httptest.NewServer(withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"enqueued": []interface{}{},
+			"failed":   []interface{}{},
+		})
+	})))
+	defer server.Close()
+
+	cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
+	svc := NewSlskdService(cfg, nil)
+
+	_, err := svc.EnqueueDownload("testuser", "test_song.mp3", 5242880)
+	if err == nil {
+		t.Error("Expected error for empty enqueue response, got nil")
 	}
 }
 
@@ -254,7 +342,7 @@ func TestSlskdService_EnqueueDownload_ErrorStatusCodes(t *testing.T) {
 			cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
 			svc := NewSlskdService(cfg, nil)
 
-			_, err := svc.EnqueueDownload("username", "filename.mp3")
+			_, err := svc.EnqueueDownload("username", "filename.mp3", 1024)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("EnqueueDownload() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -263,6 +351,8 @@ func TestSlskdService_EnqueueDownload_ErrorStatusCodes(t *testing.T) {
 }
 
 func TestSlskdServiceGetDownload(t *testing.T) {
+	testID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
 	tests := []struct {
 		name            string
 		apiKey          string
@@ -275,7 +365,7 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 			name:   "success",
 			apiKey: testAPIKey,
 			handler: withAPIKeyCheck(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := "/api/v0/downloads/testuser/test song.mp3"
+				expectedPath := "/api/v0/transfers/downloads/testuser/" + testID
 				if r.URL.Path != expectedPath {
 					t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
 					http.Error(w, "bad path", http.StatusBadRequest)
@@ -283,11 +373,13 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(map[string]interface{}{
-					"state": "COMPLETED",
-					"path":  "/downloads/test song.mp3",
+					"id":               testID,
+					"state":            "Completed, Succeeded",
+					"filename":         "Music/test song.mp3",
+					"bytesTransferred": 5242880,
 				})
 			})),
-			wantState: "COMPLETED",
+			wantState: "Completed, Succeeded",
 		},
 		{
 			name:   "not found",
@@ -314,12 +406,13 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 			defer server.Close()
 
 			cfg := &config.Config{
-				SlskdURL:    server.URL,
-				SlskdAPIKey: tt.apiKey,
+				SlskdURL:            server.URL,
+				SlskdAPIKey:         tt.apiKey,
+				DownloadStagingPath: "/downloads",
 			}
 			svc := NewSlskdService(cfg, nil)
 
-			dl, err := svc.GetDownload("testuser", "test song.mp3")
+			dl, err := svc.GetDownload("testuser", testID)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetDownload() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -342,11 +435,95 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 			if string(dl.State) != tt.wantState {
 				t.Errorf("Expected state '%s', got '%s'", tt.wantState, dl.State)
 			}
+			if dl.LocalPath == "" {
+				t.Error("Expected LocalPath to be computed")
+			}
 		})
 	}
 }
 
-// TestSlskdServiceWaitForDownload is omitted.
-// WaitForDownload uses a 5-second polling ticker with a timeout check inside the tick,
-// meaning a 2s timeout won't fire until the next 5s tick fires. Integration tests
-// would better cover the polling/wait path.
+func TestDownloadState_IsSucceeded(t *testing.T) {
+	tests := []struct {
+		state DownloadState
+		want  bool
+	}{
+		{"Completed, Succeeded", true},
+		{"Completed, Errored", false},
+		{"Completed, Cancelled", false},
+		{"InProgress", false},
+		{"Queued", false},
+	}
+	for _, tt := range tests {
+		if got := tt.state.IsSucceeded(); got != tt.want {
+			t.Errorf("DownloadState(%q).IsSucceeded() = %v, want %v", tt.state, got, tt.want)
+		}
+	}
+}
+
+func TestDownloadState_IsFailed(t *testing.T) {
+	tests := []struct {
+		state DownloadState
+		want  bool
+	}{
+		{"Completed, Errored", true},
+		{"Completed, Cancelled", true},
+		{"Completed, TimedOut", true},
+		{"Completed, Rejected", true},
+		{"Completed, Succeeded", false},
+		{"InProgress", false},
+	}
+	for _, tt := range tests {
+		if got := tt.state.IsFailed(); got != tt.want {
+			t.Errorf("DownloadState(%q).IsFailed() = %v, want %v", tt.state, got, tt.want)
+		}
+	}
+}
+
+func TestResolveDownloadPath(t *testing.T) {
+	staging := filepath.Join("/app", "downloads")
+	cfg := &config.Config{
+		SlskdURL:            "http://localhost:5030",
+		SlskdAPIKey:         "key",
+		DownloadStagingPath: staging,
+	}
+	svc := NewSlskdService(cfg, nil)
+
+	tests := []struct {
+		username string
+		filename string
+		want     string
+	}{
+		// slskd keeps only the last directory segment + filename
+		{"john", "Music/Artist/Song.mp3", filepath.Join(staging, "Artist", "Song.mp3")},
+		{"john", "Music\\Artist\\Song.mp3", filepath.Join(staging, "Artist", "Song.mp3")},
+		{"john", "@@john\\Music\\Song.mp3", filepath.Join(staging, "Music", "Song.mp3")},
+		// single segment (no parent dir) keeps just the filename
+		{"john", "Song.mp3", filepath.Join(staging, "Song.mp3")},
+	}
+	for _, tt := range tests {
+		got := svc.resolveDownloadPath(tt.username, tt.filename)
+		if got != tt.want {
+			t.Errorf("resolveDownloadPath(%q, %q) = %q, want %q", tt.username, tt.filename, got, tt.want)
+		}
+	}
+}
+
+func TestResolveDownloadPath_Traversal(t *testing.T) {
+	staging := filepath.Join("/app", "downloads")
+	cfg := &config.Config{
+		SlskdURL:            "http://localhost:5030",
+		SlskdAPIKey:         "key",
+		DownloadStagingPath: staging,
+	}
+	svc := NewSlskdService(cfg, nil)
+
+	result := svc.resolveDownloadPath("john", "../../etc/passwd")
+	parent := filepath.Clean(staging) + string(filepath.Separator)
+	if !hasPrefix(result, parent) {
+		t.Errorf("Path traversal not blocked: resolveDownloadPath returned %q, expected prefix %q", result, parent)
+	}
+}
+
+func hasPrefix(path, prefix string) bool {
+	return len(path) >= len(prefix) && path[:len(prefix)] == prefix
+}

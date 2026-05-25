@@ -415,28 +415,28 @@ func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
 
 // stageDownloadFile queues the download and waits for completion.
 func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip bool, err error) {
-	h.db.Model(&p.item).Updates(map[string]interface{}{
-		"status":            "downloading",
-		"slskd_search_id":   "completed",
-		"slskd_download_id": fmt.Sprintf("%s:%s", p.best.Username, p.best.Filename),
-	})
-
-	_, err = h.slskd.EnqueueDownload(p.best.Username, p.best.Filename)
+	downloadID, err := h.slskd.EnqueueDownload(p.best.Username, p.best.Filename, p.best.Size)
 	if err != nil {
 		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download enqueue failed: %v", err))
 		return true, nil
 	}
 
-	h.Log(p.item.JobID, "INFO", "Download queued", &p.item.ID)
+	h.db.Model(&p.item).Updates(map[string]interface{}{
+		"status":            "downloading",
+		"slskd_search_id":   "completed",
+		"slskd_download_id": downloadID,
+	})
 
-	download, err := h.slskd.WaitForDownload(p.ctx, p.best.Username, p.best.Filename, 10*time.Minute)
+	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Download queued (id: %s)", downloadID), &p.item.ID)
+
+	download, err := h.slskd.WaitForDownload(p.ctx, p.best.Username, downloadID, 10*time.Minute)
 	if err != nil {
 		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed or timed out: %v", err))
 		return true, nil
 	}
 
 	h.Log(p.item.JobID, "OK", "Download completed", &p.item.ID)
-	p.download = download.Path
+	p.download = download.LocalPath
 	return false, nil
 }
 
@@ -737,9 +737,13 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	os.MkdirAll(filepath.Dir(finalPath), 0755)
 
 	// Move file
-	if err := h.moveFile(downloadPath, finalPath); err != nil {
-		h.failItem(jobID, itemID, fmt.Sprintf("Failed to move file: %v", err))
+	cleanupErr, copyErr := h.moveFile(downloadPath, finalPath)
+	if copyErr != nil {
+		h.failItem(jobID, itemID, fmt.Sprintf("Failed to move file: %v", copyErr))
 		return nil
+	}
+	if cleanupErr != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Staging cleanup failed (file imported OK): %v", cleanupErr), &itemID)
 	}
 
 	// Attempt to fetch and embed cover art with fallback chain
@@ -786,25 +790,29 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	return nil
 }
 
-func (h *AcquisitionHandler) moveFile(src, dst string) error {
+// moveFile copies src to dst and removes src on a best-effort basis.
+// Returns (cleanupErr, copyErr) so the caller can warn on cleanup
+// failures without aborting the import.
+func (h *AcquisitionHandler) moveFile(src, dst string) (cleanupErr error, copyErr error) {
 	in, err := os.Open(src)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer in.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return err
+	if _, err = io.Copy(out, in); err != nil {
+		return nil, err
 	}
 
-	return os.Remove(src)
+	// Best-effort staging cleanup; may fail when slskd writes as a
+	// different UID than the worker.
+	return os.Remove(src), nil
 }
 
 func (h *AcquisitionHandler) failItem(jobID uint64, itemID uint64, reason string) {
