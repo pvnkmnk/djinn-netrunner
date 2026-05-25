@@ -88,22 +88,24 @@ func (h *AcquireHandler) Create(c *fiber.Ctx) error {
 		CreatedBy:   "web_ui",
 		Params:      params,
 	}
-	if err := h.db.Create(&job).Error; err != nil {
-		slog.Error("Failed to create acquisition job", "error", err)
-		return internalServerError(c, err)
-	}
 
-	item := database.JobItem{
-		JobID:           job.ID,
-		Artist:          payload.Artist,
-		Album:           payload.Album,
-		TrackTitle:      payload.Title,
-		NormalizedQuery: query,
-		Status:          "queued",
-		OwnerUserID:     &user.ID,
-	}
-	if err := h.db.Create(&item).Error; err != nil {
-		slog.Error("Failed to create acquisition job item", "error", err)
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&job).Error; err != nil {
+			return err
+		}
+		item := database.JobItem{
+			JobID:           job.ID,
+			Artist:          payload.Artist,
+			Album:           payload.Album,
+			TrackTitle:      payload.Title,
+			NormalizedQuery: query,
+			Status:          "queued",
+			OwnerUserID:     &user.ID,
+		}
+		return tx.Create(&item).Error
+	})
+	if err != nil {
+		slog.Error("Failed to create acquisition job", "error", err)
 		return internalServerError(c, err)
 	}
 
