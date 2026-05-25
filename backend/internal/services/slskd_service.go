@@ -473,19 +473,18 @@ func (s *SlskdService) EnqueueDownload(username, filename string, size int64) (s
 		} `json:"failed"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&enqueueResp); err != nil {
-		// If we can't parse the response, return a composite key as fallback.
-		return fmt.Sprintf("%s:%s", username, filename), nil
+		return "", fmt.Errorf("failed to decode slskd enqueue response: %w", err)
 	}
 
 	if len(enqueueResp.Failed) > 0 {
 		return "", fmt.Errorf("slskd rejected download: %s", enqueueResp.Failed[0].Message)
 	}
 
-	if len(enqueueResp.Enqueued) > 0 {
-		return enqueueResp.Enqueued[0].ID, nil
+	if len(enqueueResp.Enqueued) == 0 {
+		return "", fmt.Errorf("slskd enqueue returned empty response for %s/%s", username, filename)
 	}
 
-	return fmt.Sprintf("%s:%s", username, filename), nil
+	return enqueueResp.Enqueued[0].ID, nil
 }
 
 // GetDownload retrieves a specific download by its GUID.
@@ -508,6 +507,9 @@ func (s *SlskdService) GetDownload(username, downloadID string) (*Download, erro
 	if resp.StatusCode == http.StatusBadRequest {
 		return nil, fmt.Errorf("invalid download ID: %s", downloadID)
 	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("slskd get download failed: %s", resp.Status)
+	}
 
 	var d Download
 	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
@@ -526,9 +528,6 @@ func (s *SlskdService) GetDownload(username, downloadID string) (*Download, erro
 // with backslash path separators converted to forward slashes.
 func (s *SlskdService) resolveDownloadPath(username, remoteFilename string) string {
 	staging := s.cfg.DownloadStagingPath
-	if staging == "" {
-		staging = "./downloads"
-	}
 	// Convert Windows-style backslash paths to local forward slashes.
 	localRelative := strings.ReplaceAll(remoteFilename, "\\", "/")
 	// Remove any leading slashes or @@-prefixed path components.
@@ -536,7 +535,19 @@ func (s *SlskdService) resolveDownloadPath(username, remoteFilename string) stri
 	if idx := strings.Index(localRelative, "/"); idx >= 0 && strings.HasPrefix(localRelative, "@@") {
 		localRelative = localRelative[idx+1:]
 	}
-	return filepath.Join(staging, username, localRelative)
+	// Sanitize path traversal: clean the relative path and reject escapes.
+	localRelative = filepath.Clean(localRelative)
+	if localRelative == ".." || strings.HasPrefix(localRelative, ".."+string(filepath.Separator)) || strings.Contains(localRelative, string(filepath.Separator)+".."+string(filepath.Separator)) {
+		// Malicious filename attempting directory traversal; use only the base name.
+		localRelative = filepath.Base(remoteFilename)
+	}
+	result := filepath.Join(staging, username, localRelative)
+	// Final containment check: resolved path must be under staging/username.
+	parent := filepath.Join(staging, username) + string(filepath.Separator)
+	if !strings.HasPrefix(filepath.Clean(result)+string(filepath.Separator), parent) && filepath.Clean(result) != filepath.Clean(filepath.Join(staging, username)) {
+		result = filepath.Join(staging, username, filepath.Base(remoteFilename))
+	}
+	return result
 }
 
 // WaitForDownload polls slskd until the download identified by downloadID
