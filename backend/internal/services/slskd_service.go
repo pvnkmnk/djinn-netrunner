@@ -533,8 +533,12 @@ func (s *SlskdService) GetDownload(username, downloadID string) (*Download, erro
 
 // resolveDownloadPath constructs the local filesystem path where slskd stores
 // a completed download. slskd saves files at:
-//   {downloads_dir}/{username}/{remote_path}
-// with backslash path separators converted to forward slashes.
+//
+//	{downloads_dir}/{last_directory_segment}/{filename}
+//
+// where last_directory_segment is the final folder in the remote path.
+// slskd strips the peer's share root and intermediate directories, keeping
+// only the immediate parent directory and the file.
 func (s *SlskdService) resolveDownloadPath(username, remoteFilename string) string {
 	staging := s.cfg.DownloadStagingPath
 	// Convert Windows-style backslash paths to local forward slashes.
@@ -544,17 +548,23 @@ func (s *SlskdService) resolveDownloadPath(username, remoteFilename string) stri
 	if idx := strings.Index(localRelative, "/"); idx >= 0 && strings.HasPrefix(localRelative, "@@") {
 		localRelative = localRelative[idx+1:]
 	}
+
+	// slskd keeps only the last directory segment + filename.
+	parts := strings.Split(localRelative, "/")
+	if len(parts) >= 2 {
+		localRelative = strings.Join(parts[len(parts)-2:], "/")
+	}
+
 	// Sanitize path traversal: clean the relative path and reject escapes.
 	localRelative = filepath.Clean(localRelative)
 	if localRelative == ".." || strings.HasPrefix(localRelative, ".."+string(filepath.Separator)) || strings.Contains(localRelative, string(filepath.Separator)+".."+string(filepath.Separator)) {
-		// Malicious filename attempting directory traversal; use only the base name.
 		localRelative = filepath.Base(remoteFilename)
 	}
-	result := filepath.Join(staging, username, localRelative)
-	// Final containment check: resolved path must be under staging/username.
-	parent := filepath.Join(staging, username) + string(filepath.Separator)
-	if !strings.HasPrefix(filepath.Clean(result)+string(filepath.Separator), parent) && filepath.Clean(result) != filepath.Clean(filepath.Join(staging, username)) {
-		result = filepath.Join(staging, username, filepath.Base(remoteFilename))
+	result := filepath.Join(staging, localRelative)
+	// Final containment check: resolved path must stay under staging dir.
+	parent := filepath.Clean(staging) + string(filepath.Separator)
+	if !strings.HasPrefix(filepath.Clean(result)+string(filepath.Separator), parent) && filepath.Clean(result) != filepath.Clean(staging) {
+		result = filepath.Join(staging, filepath.Base(remoteFilename))
 	}
 	return result
 }

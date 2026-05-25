@@ -494,9 +494,12 @@ func TestResolveDownloadPath(t *testing.T) {
 		filename string
 		want     string
 	}{
-		{"john", "Music/Artist/Song.mp3", filepath.Join(staging, "john", "Music", "Artist", "Song.mp3")},
-		{"john", "Music\\Artist\\Song.mp3", filepath.Join(staging, "john", "Music", "Artist", "Song.mp3")},
-		{"john", "@@john\\Music\\Song.mp3", filepath.Join(staging, "john", "Music", "Song.mp3")},
+		// slskd keeps only the last directory segment + filename
+		{"john", "Music/Artist/Song.mp3", filepath.Join(staging, "Artist", "Song.mp3")},
+		{"john", "Music\\Artist\\Song.mp3", filepath.Join(staging, "Artist", "Song.mp3")},
+		{"john", "@@john\\Music\\Song.mp3", filepath.Join(staging, "Music", "Song.mp3")},
+		// single segment (no parent dir) keeps just the filename
+		{"john", "Song.mp3", filepath.Join(staging, "Song.mp3")},
 	}
 	for _, tt := range tests {
 		got := svc.resolveDownloadPath(tt.username, tt.filename)
@@ -516,7 +519,7 @@ func TestResolveDownloadPath_Traversal(t *testing.T) {
 	svc := NewSlskdService(cfg, nil)
 
 	result := svc.resolveDownloadPath("john", "../../etc/passwd")
-	parent := filepath.Join(staging, "john") + string(filepath.Separator)
+	parent := filepath.Clean(staging) + string(filepath.Separator)
 	if !hasPrefix(result, parent) {
 		t.Errorf("Path traversal not blocked: resolveDownloadPath returned %q, expected prefix %q", result, parent)
 	}
