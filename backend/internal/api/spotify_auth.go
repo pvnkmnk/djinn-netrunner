@@ -172,9 +172,78 @@ func (h *SpotifyAuthHandler) GetClient(ctx context.Context, userID uint64) (*spo
 	return spotify.New(httpClient), nil
 }
 
-// IsLinked checks if a user has linked their Spotify account
+// IsLinked checks if a user has linked their Spotify account (OAuth or sp_dc).
 func (h *SpotifyAuthHandler) IsLinked(userID uint64) bool {
 	var token database.SpotifyToken
 	err := h.db.Where("user_id = ?", userID).First(&token).Error
 	return err == nil
+}
+
+// IsSpDcLinked checks if a user has configured sp_dc cookie auth.
+func (h *SpotifyAuthHandler) IsSpDcLinked(userID uint64) bool {
+	var token database.SpotifyToken
+	err := h.db.Where("user_id = ?", userID).First(&token).Error
+	if err != nil {
+		return false
+	}
+	return token.SpDcCookie != ""
+}
+
+// LinkSpDc handles submission of an sp_dc cookie for a user.
+// POST /api/auth/spotify/spdc with JSON body {"sp_dc": "..."}
+func (h *SpotifyAuthHandler) LinkSpDc(c *fiber.Ctx) error {
+	u := c.Locals("user")
+	if u == nil {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+	user := u.(database.User)
+
+	var body struct {
+		SpDc string `json:"sp_dc"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if body.SpDc == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "sp_dc cookie is required"})
+	}
+
+	// Store the sp_dc cookie in the user's SpotifyToken record
+	var spotifyToken database.SpotifyToken
+	err := h.db.Where("user_id = ?", user.ID).First(&spotifyToken).Error
+
+	if err != nil {
+		// No existing token record — create one with sp_dc only
+		spotifyToken = database.SpotifyToken{
+			UserID:       user.ID,
+			AccessToken:  "spdc-only", // placeholder, not used for sp_dc auth
+			RefreshToken: "spdc-only",
+			SpDcCookie:   body.SpDc,
+		}
+		if err := h.db.Create(&spotifyToken).Error; err != nil {
+			slog.Error("Failed to save sp_dc cookie", "error", err, "userID", user.ID)
+			return c.Status(500).JSON(fiber.Map{"error": "failed to save sp_dc cookie"})
+		}
+	} else {
+		spotifyToken.SpDcCookie = body.SpDc
+		if err := h.db.Save(&spotifyToken).Error; err != nil {
+			slog.Error("Failed to update sp_dc cookie", "error", err, "userID", user.ID)
+			return c.Status(500).JSON(fiber.Map{"error": "failed to update sp_dc cookie"})
+		}
+	}
+
+	slog.Info("sp_dc cookie saved", "userID", user.ID)
+	return c.JSON(fiber.Map{
+		"message": "sp_dc cookie saved successfully",
+		"linked":  true,
+	})
+}
+
+// GetSpDcCookie retrieves the stored sp_dc cookie for a user.
+func (h *SpotifyAuthHandler) GetSpDcCookie(userID uint64) (string, error) {
+	var token database.SpotifyToken
+	if err := h.db.Where("user_id = ?", userID).First(&token).Error; err != nil {
+		return "", fmt.Errorf("no spotify token for user %d: %w", userID, err)
+	}
+	return token.SpDcCookie, nil
 }

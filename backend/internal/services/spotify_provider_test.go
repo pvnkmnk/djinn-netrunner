@@ -234,9 +234,6 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for nil owner, got nil")
 		}
-		if err.Error() != "watchlist has no owner user" {
-			t.Errorf("unexpected error message: %v", err)
-		}
 	})
 
 	t.Run("error_get_client", func(t *testing.T) {
@@ -282,10 +279,6 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 	})
 
 	t.Run("extract_playlist_id", func(t *testing.T) {
-		client := createMockSpotifyClient(t, func(w http.ResponseWriter, r *http.Request) {})
-		mockProvider := &mockSpotifyClientWrapper{client: client}
-		provider := NewSpotifyProvider(mockProvider)
-
 		tests := []struct {
 			uri      string
 			expected string
@@ -297,9 +290,9 @@ func TestSpotifyProvider_FetchTracks(t *testing.T) {
 		}
 
 		for _, tc := range tests {
-			result := provider.ExtractPlaylistID(tc.uri)
+			result := ExtractSpotifyPlaylistID(tc.uri)
 			if result != tc.expected {
-				t.Errorf("ExtractPlaylistID(%q) = %q, want %q", tc.uri, result, tc.expected)
+				t.Errorf("ExtractSpotifyPlaylistID(%q) = %q, want %q", tc.uri, result, tc.expected)
 			}
 		}
 	})

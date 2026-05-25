@@ -253,7 +253,9 @@ func (m *Watchlist) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// SpotifyToken stores User OAuth tokens
+// SpotifyToken stores User OAuth tokens and/or sp_dc cookie credentials.
+// Users may authenticate via OAuth (AccessToken/RefreshToken) or via sp_dc
+// cookie (SpDcCookie). Both can coexist for the same user.
 type SpotifyToken struct {
 	ID           uint64 `gorm:"primaryKey;autoIncrement"`
 	UserID       uint64 `gorm:"uniqueIndex;not null"`
@@ -261,6 +263,7 @@ type SpotifyToken struct {
 	RefreshToken string `gorm:"not null"`
 	TokenType    string
 	Expiry       time.Time
+	SpDcCookie   string // sp_dc browser cookie for GraphQL Partner API access
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 
