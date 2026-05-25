@@ -169,7 +169,7 @@ NetRunner supports both SQLite and PostgreSQL. Choose based on your deployment:
 | Use Case | Recommended DB | Notes |
 |---|---|---|
 | Local / single-user dev | SQLite WAL | Zero config, no external deps |
-| Multi-user / homelab production | Postgres 16 | Required for advisory locks, NOTIFY wakeup, concurrent workers |
+| Multi-user / homelab production | PostgreSQL 16 | Required for advisory locks, NOTIFY wakeup, concurrent workers |
 | Multi-node / LiteFS cluster | LiteFS + SQLite | Advanced; single primary only for scheduler/poller |
 
 **Key differences:**

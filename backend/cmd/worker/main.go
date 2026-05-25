@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -121,8 +120,8 @@ func (w *WorkerOrchestrator) Start() {
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	slog.Info("Starting worker", "worker_id", w.workerID)
 
-	if !strings.HasPrefix(w.cfg.DatabaseURL, "postgres") && MaxConcurrentJobs > 1 {
-		slog.Warn("SQLite detected with MaxConcurrentJobs > 1 — concurrent workers are unsafe without Postgres advisory locks. Consider switching to PostgreSQL for production workloads.",
+	if !database.IsPostgres(w.cfg.DatabaseURL) && MaxConcurrentJobs > 1 {
+		slog.Warn("SQLite detected with MaxConcurrentJobs > 1 — concurrent workers are unsafe without PostgreSQL advisory locks. Consider switching to PostgreSQL for production workloads.",
 			"max_concurrent_jobs", MaxConcurrentJobs)
 	}
 

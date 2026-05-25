@@ -17,7 +17,7 @@ import (
 func Connect(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 
-	if strings.HasPrefix(cfg.DatabaseURL, "postgres://") || strings.HasPrefix(cfg.DatabaseURL, "postgresql://") {
+	if IsPostgres(cfg.DatabaseURL) {
 		slog.Info("Connecting to PostgreSQL...")
 		dialector = postgres.Open(cfg.DatabaseURL)
 	} else {
@@ -48,7 +48,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	// SQLite-specific optimizations
-	if !strings.HasPrefix(cfg.DatabaseURL, "postgres") {
+	if !IsPostgres(cfg.DatabaseURL) {
 		db.Exec("PRAGMA journal_mode=WAL;")
 		db.Exec("PRAGMA synchronous=NORMAL;")
 		db.Exec("PRAGMA foreign_keys=ON;")
@@ -61,4 +61,9 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	return db, nil
+}
+
+// IsPostgres returns true if the given DATABASE_URL targets PostgreSQL.
+func IsPostgres(databaseURL string) bool {
+	return strings.HasPrefix(databaseURL, "postgres://") || strings.HasPrefix(databaseURL, "postgresql://")
 }
