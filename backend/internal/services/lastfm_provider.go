@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -91,12 +93,12 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, "", classifyNetworkError(err, "last.fm")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("last.fm api returned status: %d", resp.StatusCode)
+		return nil, "", classifyHTTPStatus(resp.StatusCode, "last.fm")
 	}
 
 	var allTracks []map[string]string
@@ -110,7 +112,7 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		for _, t := range data.LovedTracks.Track {
 			allTracks = append(allTracks, p.mapTrack(t))
 		}
-		snapshotID = fmt.Sprintf("loved:%s", data.LovedTracks.Attr.Total)
+		snapshotID = fmt.Sprintf("loved:%s", hashTrackList(data.LovedTracks.Track))
 	} else {
 		var data lastFMTopResponse
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
@@ -119,7 +121,7 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		for _, t := range data.TopTracks.Track {
 			allTracks = append(allTracks, p.mapTrack(t))
 		}
-		snapshotID = fmt.Sprintf("top:%s", data.TopTracks.Attr.Total)
+		snapshotID = fmt.Sprintf("top:%s", hashTrackList(data.TopTracks.Track))
 	}
 
 	return allTracks, snapshotID, nil
@@ -138,6 +140,16 @@ func (p *LastFMProvider) mapTrack(t lastFMTrack) map[string]string {
 		"album":         t.Album.Name,
 		"cover_art_url": coverURL,
 	}
+}
+
+// hashTrackList computes a deterministic hash of a Last.fm track list.
+func hashTrackList(tracks []lastFMTrack) string {
+	h := sha256.New()
+	for _, t := range tracks {
+		h.Write([]byte(t.Artist.Name))
+		h.Write([]byte(t.Name))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 func (p *LastFMProvider) ValidateConfig(config string) error {

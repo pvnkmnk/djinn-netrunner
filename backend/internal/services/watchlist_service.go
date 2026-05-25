@@ -38,7 +38,7 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
 	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
 	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken, proxyClient))
-	s.RegisterProvider("rss_feed", NewRSSProvider())
+	s.RegisterProvider("rss_feed", NewRSSProvider(proxyClient))
 	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken, proxyClient))
 	s.RegisterProvider("local_file", NewFileWatchlistProvider())
 	s.RegisterProvider("local_directory", NewDirectoryWatchlistProvider())

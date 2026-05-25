@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -72,12 +74,12 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, "", classifyNetworkError(err, "discogs")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("discogs api returned status: %d", resp.StatusCode)
+		return nil, "", classifyHTTPStatus(resp.StatusCode, "discogs")
 	}
 
 	var data discogsWantlistResponse
@@ -105,8 +107,22 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 		}
 	}
 
-	snapshotID := fmt.Sprintf("wantlist:%s", lastAdded)
+	snapshotID := fmt.Sprintf("wantlist:%d:%s", len(data.Wants), hashWantlist(data.Wants))
 	return allTracks, snapshotID, nil
+}
+
+// hashWantlist computes a deterministic hash of a Discogs wantlist.
+func hashWantlist(wants []discogsWant) string {
+	h := sha256.New()
+	for _, w := range wants {
+		artist := ""
+		if len(w.BasicInformation.Artists) > 0 {
+			artist = w.BasicInformation.Artists[0].Name
+		}
+		h.Write([]byte(artist))
+		h.Write([]byte(w.BasicInformation.Title))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 func (p *DiscogsProvider) ValidateConfig(config string) error {
