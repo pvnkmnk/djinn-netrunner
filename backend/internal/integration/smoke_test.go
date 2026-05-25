@@ -13,11 +13,13 @@ package integration
 
 import (
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"gorm.io/gorm"
 )
 
 func skipIfShort(t *testing.T) {
@@ -182,43 +184,78 @@ func TestSmoke_CRUD(t *testing.T) {
 // TestSmoke_PostgresConcurrentLocks validates that Postgres advisory locks
 // provide real mutual exclusion across concurrent goroutines.
 func TestSmoke_PostgresConcurrentLocks(t *testing.T) {
-	os.Setenv("DATABASE_URL", GetEnvOrDefault("INTEGRATION_DATABASE_URL", defaultDBURL))
-	os.Setenv("JWT_SECRET", "smoke-test-secret")
+	skipIfShort(t)
+	SkipIfNoDocker(t)
+
+	t.Setenv("DATABASE_URL", GetEnvOrDefault("INTEGRATION_DATABASE_URL", defaultDBURL))
+	t.Setenv("JWT_SECRET", "smoke-test-secret")
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Config loading failed: %v", err)
 	}
 
-	// Open multiple separate connections to simulate independent workers
 	const workers = 10
-	results := make(chan bool, workers)
+
+	type connResult struct {
+		db       *gorm.DB
+		lm       database.LockManager
+		acquired bool
+	}
+
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		results []connResult
+	)
+
+	// All goroutines must attempt before any connection is closed, so
+	// advisory locks remain held during the race.
+	wg.Add(workers)
+	gate := make(chan struct{})
 
 	for i := 0; i < workers; i++ {
 		go func() {
+			defer wg.Done()
 			db, err := database.Connect(cfg)
 			if err != nil {
-				results <- false
+				mu.Lock()
+				results = append(results, connResult{})
+				mu.Unlock()
 				return
 			}
-			sqlDB, _ := db.DB()
-			defer sqlDB.Close()
-
 			lm := database.NewLockManager(db)
 			key, _ := lm.GetScopeLockKey(nil, "watchlist", "concurrent-pg-test")
-			acquired, err := lm.AcquireTryLock(nil, key)
-			if err != nil {
-				results <- false
-				return
-			}
-			results <- acquired
+			acquired, _ := lm.AcquireTryLock(nil, key)
+
+			mu.Lock()
+			results = append(results, connResult{db: db, lm: lm, acquired: acquired})
+			mu.Unlock()
+
+			// Wait until all goroutines have attempted before returning
+			<-gate
 		}()
 	}
 
+	// Wait for all goroutines to finish acquiring
+	wg.Wait()
+	// Release the gate so goroutines can exit
+	close(gate)
+
 	wins := 0
-	for i := 0; i < workers; i++ {
-		if <-results {
+	for _, r := range results {
+		if r.acquired {
 			wins++
+		}
+	}
+
+	// Cleanup: close all connections
+	for _, r := range results {
+		if r.db != nil {
+			sqlDB, _ := r.db.DB()
+			if sqlDB != nil {
+				sqlDB.Close()
+			}
 		}
 	}
 

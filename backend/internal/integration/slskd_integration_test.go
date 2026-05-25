@@ -11,6 +11,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -193,12 +194,18 @@ func cleanupTestData(t *testing.T, db *gorm.DB) {
 }
 
 // SkipIfSlskdDisconnected skips the test if slskd is not connected to the
-// Soulseek network. Uses a lightweight GET /api/v0/session probe instead of
-// Search() which incurs a 15-second sleep.
+// Soulseek network. Sends a lightweight POST to /api/v0/searches (the same
+// endpoint the tests hit) and checks for 409 Conflict without waiting for
+// results — avoids the 15-second sleep that Search() incurs.
 func (h *IntegrationHarness) SkipIfSlskdDisconnected(t *testing.T) {
 	t.Helper()
-	req, _ := http.NewRequest("GET", h.Config.SlskdURL+"/api/v0/session", nil)
+	payload := []byte(`{"searchText":"connectivity-probe","searchTimeout":1000}`)
+	req, err := http.NewRequest("POST", h.Config.SlskdURL+"/api/v0/searches", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("SkipIfSlskdDisconnected: bad request: %v", err)
+	}
 	req.Header.Set("X-API-Key", h.Config.SlskdAPIKey)
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Skipf("Skipping: slskd unreachable: %v", err)
