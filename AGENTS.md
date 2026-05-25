@@ -300,6 +300,17 @@ NetRunner supports SQLite WAL and PostgreSQL. The database driver is auto-detect
 
 **Important**: If `MaxConcurrentJobs > 1` and SQLite is detected, the worker emits a startup warning. Use Postgres for production concurrent workloads.
 
+### Advisory Lock Implementation
+
+The `WorkerOrchestrator` acquires advisory locks per scope ID before processing jobs to prevent concurrent operations on the same watchlist or library.
+
+| Driver | Lock Manager | Mechanism | Concurrent Safety |
+|---|---|---|---|
+| PostgreSQL | `PostgresLockManager` | `pg_try_advisory_lock` / `pg_advisory_unlock` — true session-level mutual exclusion | Safe — different connections get real mutual exclusion |
+| SQLite | `TableLockManager` | `locks` table with `key` + `expires_at` — check-then-insert inside a GORM transaction | **Single-worker only** — SQLite's transaction serialization provides basic protection, but is not equivalent to Postgres advisory locks under high concurrency. Locks expire after 15 minutes as a safety net. |
+
+**SQLite is single-worker only.** The `TableLockManager` uses row-level locking emulated via a table, which provides basic mutual exclusion within a single process due to SQLite's serialized writes. However, it does not provide cross-process locking and is not safe for multi-worker deployments. Always use PostgreSQL when running multiple workers.
+
 ## Common Agent Tasks
 
 ### 1) Add a new feature

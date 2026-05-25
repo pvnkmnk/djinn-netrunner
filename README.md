@@ -175,7 +175,7 @@ NetRunner supports both SQLite and PostgreSQL. Choose based on your deployment:
 | Multi-node / LiteFS cluster | LiteFS + SQLite | Advanced; single primary only for scheduler/poller |
 
 **Key differences:**
-- **Advisory locks**: Postgres uses `pg_try_advisory_lock` for job exclusivity; SQLite uses file-level locking
+- **Advisory locks**: Postgres uses `pg_try_advisory_lock` for real session-level mutual exclusion; SQLite uses a `TableLockManager` (row-based emulation — **single-worker only**)
 - **Job wakeup**: Postgres supports `LISTEN/NOTIFY` for instant worker notification; SQLite workers poll on interval
 - **Concurrent workers**: Multiple worker instances require Postgres for safe concurrent job claims
 - **`LiteFSGuard`**: Automatically detects LiteFS primary node and adjusts worker behavior

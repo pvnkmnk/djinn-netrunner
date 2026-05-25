@@ -178,3 +178,52 @@ func TestSmoke_CRUD(t *testing.T) {
 
 	t.Log("CRUD smoke test completed successfully")
 }
+
+// TestSmoke_PostgresConcurrentLocks validates that Postgres advisory locks
+// provide real mutual exclusion across concurrent goroutines.
+func TestSmoke_PostgresConcurrentLocks(t *testing.T) {
+	os.Setenv("DATABASE_URL", GetEnvOrDefault("INTEGRATION_DATABASE_URL", defaultDBURL))
+	os.Setenv("JWT_SECRET", "smoke-test-secret")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Config loading failed: %v", err)
+	}
+
+	// Open multiple separate connections to simulate independent workers
+	const workers = 10
+	results := make(chan bool, workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			db, err := database.Connect(cfg)
+			if err != nil {
+				results <- false
+				return
+			}
+			sqlDB, _ := db.DB()
+			defer sqlDB.Close()
+
+			lm := database.NewLockManager(db)
+			key, _ := lm.GetScopeLockKey(nil, "watchlist", "concurrent-pg-test")
+			acquired, err := lm.AcquireTryLock(nil, key)
+			if err != nil {
+				results <- false
+				return
+			}
+			results <- acquired
+		}()
+	}
+
+	wins := 0
+	for i := 0; i < workers; i++ {
+		if <-results {
+			wins++
+		}
+	}
+
+	t.Logf("Postgres concurrent lock: %d/%d goroutines acquired", wins, workers)
+	if wins != 1 {
+		t.Errorf("expected exactly 1 lock winner, got %d", wins)
+	}
+}
