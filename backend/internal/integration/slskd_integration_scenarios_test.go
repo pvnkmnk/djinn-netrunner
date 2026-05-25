@@ -20,11 +20,7 @@ func TestSlskdEndToEndSearch(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 
-	// Skip if slskd is not connected to Soulseek (CI has no real peer)
-	_, probeErr := harness.Slskd.Search("connectivity-probe", 1, nil)
-	if probeErr != nil && strings.Contains(probeErr.Error(), "409") {
-		t.Skip("Skipping: slskd not connected to Soulseek network")
-	}
+	harness.SkipIfSlskdDisconnected(t)
 
 	tests := []struct {
 		name       string
@@ -86,11 +82,7 @@ func TestSlskdSearchWithQualityProfile(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 
-	// Skip if slskd is not connected to Soulseek (CI has no real peer)
-	_, probeErr := harness.Slskd.Search("connectivity-probe", 1, nil)
-	if probeErr != nil && strings.Contains(probeErr.Error(), "409") {
-		t.Skip("Skipping: slskd not connected to Soulseek network")
-	}
+	harness.SkipIfSlskdDisconnected(t)
 
 	// Create quality profile with specific constraints
 	highQualityProfile := &database.QualityProfile{
@@ -229,11 +221,7 @@ func TestSlskdConcurrentOperations(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 
-	// Skip if slskd is not connected to Soulseek (CI has no real peer)
-	_, err := harness.Slskd.Search("connectivity-probe", 1, nil)
-	if err != nil && strings.Contains(err.Error(), "409") {
-		t.Skip("Skipping: slskd not connected to Soulseek network")
-	}
+	harness.SkipIfSlskdDisconnected(t)
 	
 	queries := []string{
 		"Artist One Song",
@@ -282,11 +270,7 @@ func TestSlskdScoreCalculation(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 
-	// Skip if slskd is not connected to Soulseek (CI has no real peer)
-	_, probeErr := harness.Slskd.Search("connectivity-probe", 1, nil)
-	if probeErr != nil && strings.Contains(probeErr.Error(), "409") {
-		t.Skip("Skipping: slskd not connected to Soulseek network")
-	}
+	harness.SkipIfSlskdDisconnected(t)
 	
 	profile := harness.TestQualityProfile
 	
