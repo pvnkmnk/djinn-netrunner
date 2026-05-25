@@ -257,7 +257,15 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
 	}
 
+	// Check if user has linked Spotify sp_dc cookie
+	var spDcLinked bool
+	var spotifyToken database.SpotifyToken
+	if err := h.db.Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
+		spDcLinked = spotifyToken.SpDcCookie != ""
+	}
+
 	return c.Render("partials/watchlists", fiber.Map{
-		"watchlists": watchlists,
+		"watchlists":  watchlists,
+		"spDcLinked":  spDcLinked,
 	})
 }

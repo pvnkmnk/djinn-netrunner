@@ -5,7 +5,28 @@
             Add Watchlist
         </button>
     </div>
-    
+
+    <div class="provider-config" id="spotify-spdc-config">
+        <details>
+            <summary>
+                Spotify Connection
+                {% if spDcLinked %}<span class="badge badge-ok">Connected</span>{% else %}<span class="badge badge-warn">Not linked</span>{% endif %}
+            </summary>
+            <div class="config-body">
+                <p class="text-secondary">
+                    Spotify Liked Songs, private playlists, and Discover require an <code>sp_dc</code> cookie from your browser.
+                    Open <a href="https://open.spotify.com" target="_blank" rel="noopener">open.spotify.com</a>, sign in,
+                    then copy the <code>sp_dc</code> cookie from DevTools (Application &rarr; Cookies).
+                </p>
+                <form id="spdc-form" class="inline-form">
+                    <input type="text" id="spdc_cookie" name="sp_dc" placeholder="sp_dc cookie value" autocomplete="off">
+                    <button type="submit" class="btn btn-sm btn-primary">{% if spDcLinked %}Update{% else %}Link{% endif %}</button>
+                </form>
+                <div id="spdc-status" class="form-status"></div>
+            </div>
+        </details>
+    </div>
+
     <div id="watchlists-list">
     {% for watchlist in watchlists %}
     <div class="watchlist-card" id="watchlist-{{ watchlist.ID }}">
@@ -43,4 +64,36 @@
     {% endfor %}
     </div>
 </div>
+<script>
+(function() {
+    var form = document.getElementById('spdc-form');
+    if (!form) return;
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var input = document.getElementById('spdc_cookie');
+        var status = document.getElementById('spdc-status');
+        if (!input.value.trim()) { status.textContent = 'Cookie value is required'; return; }
+        try {
+            var csrfToken = ('; ' + document.cookie).split('; csrf_=').pop().split(';').shift();
+            var resp = await fetch('/api/auth/spotify/spdc', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                body: JSON.stringify({sp_dc: input.value.trim()})
+            });
+            var data = await resp.json();
+            if (resp.ok) {
+                status.textContent = 'Linked successfully';
+                status.className = 'form-status status-ok';
+                input.value = '';
+            } else {
+                status.textContent = data.error || 'Failed to save';
+                status.className = 'form-status status-err';
+            }
+        } catch(err) {
+            status.textContent = 'Connection error';
+            status.className = 'form-status status-err';
+        }
+    });
+})();
+</script>
 

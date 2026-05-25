@@ -12,18 +12,32 @@
             </div>
             <div class="form-group">
                 <label for="source_type">Source Type</label>
-                <select id="source_type" name="source_type" required>
-                    <option value="spotify_playlist" {% if SourceType == "spotify_playlist" %}selected{% endif %}>Spotify Playlist</option>
-                    <option value="lastfm_chart" {% if SourceType == "lastfm_chart" %}selected{% endif %}>Last.fm Chart</option>
-                    <option value="lastfm_loved" {% if SourceType == "lastfm_loved" %}selected{% endif %}>Last.fm Loved Tracks</option>
-                    <option value="discogs_collection" {% if SourceType == "discogs_collection" %}selected{% endif %}>Discogs Collection</option>
-                    <option value="discogs_wantlist" {% if SourceType == "discogs_wantlist" %}selected{% endif %}>Discogs Wantlist</option>
-                    <option value="rss_feed" {% if SourceType == "rss_feed" %}selected{% endif %}>RSS Feed</option>
+                <select id="source_type" name="source_type" required onchange="updateSourceHint()">
+                    <optgroup label="Spotify">
+                        <option value="spotify_playlist" {% if SourceType == "spotify_playlist" %}selected{% endif %}>Spotify Playlist</option>
+                        <option value="spotify_liked" {% if SourceType == "spotify_liked" %}selected{% endif %}>Spotify Liked Songs</option>
+                        <option value="spotify_discover" {% if SourceType == "spotify_discover" %}selected{% endif %}>Spotify Discover / Mixes</option>
+                    </optgroup>
+                    <optgroup label="Last.fm">
+                        <option value="lastfm_loved" {% if SourceType == "lastfm_loved" %}selected{% endif %}>Last.fm Loved Tracks</option>
+                        <option value="lastfm_top" {% if SourceType == "lastfm_top" %}selected{% endif %}>Last.fm Top Tracks</option>
+                    </optgroup>
+                    <optgroup label="Other Services">
+                        <option value="listenbrainz_listens" {% if SourceType == "listenbrainz_listens" %}selected{% endif %}>ListenBrainz Listens</option>
+                        <option value="discogs_wantlist" {% if SourceType == "discogs_wantlist" %}selected{% endif %}>Discogs Wantlist</option>
+                        <option value="lidarr_wanted" {% if SourceType == "lidarr_wanted" %}selected{% endif %}>Lidarr Wanted</option>
+                        <option value="rss_feed" {% if SourceType == "rss_feed" %}selected{% endif %}>RSS Feed</option>
+                    </optgroup>
+                    <optgroup label="Local">
+                        <option value="local_file" {% if SourceType == "local_file" %}selected{% endif %}>Local File</option>
+                        <option value="local_directory" {% if SourceType == "local_directory" %}selected{% endif %}>Local Directory</option>
+                    </optgroup>
                 </select>
             </div>
             <div class="form-group">
                 <label for="source_uri">Source URI</label>
-                <input type="text" id="source_uri" name="source_uri" value="{{ SourceURI | escape }}" required placeholder="https://...">
+                <input type="text" id="source_uri" name="source_uri" value="{{ SourceURI | escape }}" required>
+                <small id="source_hint" class="form-hint"></small>
             </div>
             <div class="form-group">
                 <label for="quality_profile_id">Quality Profile</label>
@@ -47,3 +61,33 @@
         </form>
     </div>
 </div>
+<script>
+function updateSourceHint() {
+    var sel = document.getElementById('source_type');
+    var uri = document.getElementById('source_uri');
+    var hint = document.getElementById('source_hint');
+    if (!sel || !uri || !hint) return;
+    var hints = {
+        'spotify_playlist': ['https://open.spotify.com/playlist/... or spotify:playlist:...', 'Spotify playlist URL or URI'],
+        'spotify_liked': ['liked', 'Enter "liked" — requires sp_dc cookie'],
+        'spotify_discover': ['Discover Weekly', 'Playlist name, e.g. "Discover Weekly", "Daily Mix 1"'],
+        'lastfm_loved': ['your-username', 'Last.fm username'],
+        'lastfm_top': ['your-username', 'Last.fm username'],
+        'listenbrainz_listens': ['your-username', 'ListenBrainz username'],
+        'discogs_wantlist': ['your-username', 'Discogs username'],
+        'lidarr_wanted': ['wanted', 'Enter "wanted" — pulls missing albums from Lidarr'],
+        'rss_feed': ['https://example.com/feed.xml', 'RSS/Atom feed URL'],
+        'local_file': ['/path/to/tracks.txt', 'Path to a text file (one "Artist - Title" per line)'],
+        'local_directory': ['/path/to/music/', 'Path to a directory of audio files']
+    };
+    var h = hints[sel.value];
+    if (h) {
+        uri.placeholder = h[0];
+        hint.textContent = h[1];
+    } else {
+        uri.placeholder = '';
+        hint.textContent = '';
+    }
+}
+updateSourceHint();
+</script>
