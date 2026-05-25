@@ -44,6 +44,7 @@ type WorkerOrchestrator struct {
 	litefs              *database.LiteFSGuard
 	notificationService *services.NotificationService
 	diskQuotaService    *services.DiskQuotaService
+	gonic               *services.GonicClient
 
 	// Handlers
 	syncHandler *services.SyncHandler
@@ -88,7 +89,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	aid := services.NewAcoustIDService(cfg)
 	aid.SetCache(cache)
 	proxyClient := services.NewProxyAwareHTTPClient(cfg, 30*time.Second)
-	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, proxyClient)
+	gonicClient := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, proxyClient)
 	discogs := services.NewDiscogsService(cfg)
 
 	// DJI-357: Initialize ctx in constructor to prevent nil panic if methods
@@ -96,7 +97,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	lm := database.NewLockManager(db)
-	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic, discogs, cache)
+	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonicClient, discogs, cache)
 
 	return &WorkerOrchestrator{
 		workerID:            fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
@@ -118,6 +119,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		itemProcessor:       services.NewJobItemProcessor(db, acqHandler),
 		zombieRecovery:      services.NewZombieRecovery(db, lm, services.DefaultZombieRecoveryConfig()),
 		notificationService: services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled, proxyClient),
+		gonic:               gonicClient,
 		diskQuotaService:    services.NewDiskQuotaService(sqlDB),
 		activeJobs:          make(map[uint64]*jobContext),
 		wakeupChan:          make(chan bool, 1),
@@ -358,7 +360,7 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 			w.db.Model(&database.Schedule{}).Where("enabled = ? AND next_run_at IS NULL", true).Update("next_run_at", time.Now())
 
 			// Find due schedules
-			err := w.db.Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
+			err := w.db.Preload("Watchlist").Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
 			if err != nil {
 				slog.Error("Error fetching schedules", "worker_id", w.workerID, "error", err)
 				continue
@@ -624,8 +626,14 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		err = w.rmService.CheckAllArtists()
 	case "index_refresh":
 		slog.Info("Triggering Gonic index refresh", "worker_id", w.workerID, "job_id", jc.job.ID)
-		// Placeholder for actual refresh call via GonicClient
-		w.mbService.HealthCheck() // Just a dummy call to use a service
+		ok, scanErr := w.gonic.TriggerScan()
+		if scanErr != nil {
+			err = fmt.Errorf("gonic scan trigger failed: %w", scanErr)
+		} else if !ok {
+			err = fmt.Errorf("gonic scan trigger returned non-ok status")
+		} else {
+			slog.Info("Gonic index refresh triggered", "worker_id", w.workerID, "job_id", jc.job.ID)
+		}
 	case "scan":
 		libraryID, err := uuid.Parse(jc.job.ScopeID)
 		if err != nil {
@@ -753,6 +761,21 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	w.db.Model(&database.Job{}).Where("id = ?", jobID).Updates(updates)
 
 	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
+
+	// Trigger Gonic index refresh after successful acquisition so new
+	// tracks appear in the streaming server without waiting for a manual
+	// or scheduled scan.
+	if finalState == "succeeded" && jc.job.Type == "acquisition" {
+		w.wg.Add(1)
+		go func() {
+			defer w.wg.Done()
+			if ok, err := w.gonic.TriggerScan(); err != nil {
+				slog.Warn("Post-acquisition Gonic refresh failed", "job_id", jobID, "error", err)
+			} else if !ok {
+				slog.Warn("Post-acquisition Gonic refresh returned non-ok", "job_id", jobID)
+			}
+		}()
+	}
 
 	// Record metrics
 	metrics.JobsProcessedTotal.WithLabelValues(jc.job.Type, finalState).Inc()
