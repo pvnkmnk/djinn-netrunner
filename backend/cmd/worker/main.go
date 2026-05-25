@@ -445,6 +445,12 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		return
 	}
 
+	// GORM map-based Updates doesn't write back into the struct, so populate
+	// the fields we just set in the DB to keep the local copy consistent.
+	now := time.Now()
+	job.State = "running"
+	job.StartedAt = &now
+
 	// Update queued gauge after claiming
 	var queuedCount int64
 	w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&queuedCount)
