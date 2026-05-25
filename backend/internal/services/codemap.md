@@ -19,9 +19,15 @@ The services are organized into distinct functional domains, each with a dedicat
 
 ```
 services/
+├── job_handlers.go               # JobHandler interface + BaseHandler (shared logging)
+├── sync_handler.go               # SyncHandler — watchlist sync + job item creation
+├── acquisition_pipeline.go       # AcquisitionHandler — multi-stage item pipeline
+├── cover_art.go                  # Cover art fetching with fallback chain
+├── import_file.go                # File import, dedup, metadata enrichment, move
+├── job_item_processor.go         # ClaimNextItem, ProcessItem, RunSafely (DJI-364)
+├── zombie_recovery.go            # ZombieRecovery — stale heartbeat detection (DJI-364)
 ├── artist_tracking_service.go    # Artist monitoring + MusicBrainz discography sync
 ├── watchlist_service.go          # Watchlist CRUD + provider orchestration
-├── job_handlers.go               # SyncHandler + AcquisitionHandler (job execution)
 ├── slskd_service.go              # Soulseek P2P search & download
 ├── gonic_client.go               # Subsonic API client (library indexing)
 ├── musicbrainz_service.go        # MusicBrainz API (artist/recording lookups)
