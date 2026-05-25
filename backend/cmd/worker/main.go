@@ -82,6 +82,11 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	aid.SetCache(cache)
 	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
 	discogs := services.NewDiscogsService(cfg)
+
+	// DJI-357: Initialize ctx in constructor to prevent nil panic if methods
+	// are called before Start(). Start() replaces this with a fresh context.
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &WorkerOrchestrator{
 		workerID:            fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:                  db,
@@ -103,6 +108,8 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		diskQuotaService:    services.NewDiskQuotaService(sqlDB),
 		activeJobs:          make(map[uint64]*jobContext),
 		wakeupChan:          make(chan bool, 1),
+		ctx:                 ctx,
+		cancel:              cancel,
 	}
 }
 
@@ -253,6 +260,11 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 
 func (w *WorkerOrchestrator) Stop() {
 	slog.Info("Shutting down worker", "worker_id", w.workerID)
+
+	// DJI-356: Stop rate limiter BEFORE cancel+wg.Wait to unblock any
+	// goroutine waiting on a search token.
+	w.slskd.Stop()
+
 	w.cancel()
 
 	w.jobMutex.Lock()
@@ -263,7 +275,6 @@ func (w *WorkerOrchestrator) Stop() {
 	w.jobMutex.Unlock()
 
 	w.wg.Wait()
-	w.slskd.Stop()
 	w.lockManager.Close()
 	slog.Info("Shutdown complete", "worker_id", w.workerID)
 }
@@ -537,7 +548,13 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 					w.jobMutex.Unlock()
 				}()
 				defer w.wg.Done()
-				w.processAcquisitionItem(jc)
+				err := w.runJobSafely(jc, func() error {
+					w.processAcquisitionItem(jc)
+					return nil
+				})
+				if err != nil {
+					w.finishJob(jc.job.ID, err)
+				}
 			}(jc)
 		case "sync":
 			w.wg.Add(1)
@@ -548,7 +565,9 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 					w.jobMutex.Unlock()
 				}()
 				defer w.wg.Done()
-				err := w.syncHandler.Execute(jc.ctx, jc.job.ID, jc.job)
+				err := w.runJobSafely(jc, func() error {
+					return w.syncHandler.Execute(jc.ctx, jc.job.ID, jc.job)
+				})
 				w.finishJob(jc.job.ID, err)
 			}(jc)
 		default:
@@ -560,10 +579,29 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 					w.jobMutex.Unlock()
 				}()
 				defer w.wg.Done()
-				w.runMonolithicJob(jc)
+				err := w.runJobSafely(jc, func() error {
+					w.runMonolithicJob(jc)
+					return nil
+				})
+				if err != nil {
+					w.finishJob(jc.job.ID, err)
+				}
 			}(jc)
 		}
 	}
+}
+
+// runJobSafely wraps a job function with panic recovery. If the function panics,
+// the panic is caught, logged, and returned as an error so finishJob can mark
+// the job as failed and release its advisory lock.
+func (w *WorkerOrchestrator) runJobSafely(jc *jobContext, fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("job goroutine panicked", "worker_id", w.workerID, "job_id", jc.job.ID, "panic", r)
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return fn()
 }
 
 func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {

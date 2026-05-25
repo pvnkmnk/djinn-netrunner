@@ -262,8 +262,15 @@ func (rl *searchRateLimiter) Stop() {
 	rl.closeOnce.Do(func() { close(rl.stop) })
 }
 
-func (rl *searchRateLimiter) Wait() {
-	<-rl.tokens
+// Wait blocks until a search token is available or the limiter is stopped.
+// Returns true if a token was acquired, false if the limiter was stopped.
+func (rl *searchRateLimiter) Wait() bool {
+	select {
+	case <-rl.tokens:
+		return true
+	case <-rl.stop:
+		return false
+	}
 }
 
 // Stop shuts down the background rate limiter goroutine.
@@ -297,7 +304,9 @@ func NewSlskdService(cfg *config.Config, db *gorm.DB) *SlskdService {
 
 func (s *SlskdService) Search(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
 	// Rate limit: wait for an available search token (34 per 220 seconds)
-	s.rateLimiter.Wait()
+	if !s.rateLimiter.Wait() {
+		return nil, fmt.Errorf("search rate limiter stopped (shutting down)")
+	}
 
 	// If profile has a search suffix (e.g., "flac"), append it to query
 	if profile != nil {
