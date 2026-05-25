@@ -302,6 +302,11 @@ func TestPipelineFullPipelineWithMockSlskd(t *testing.T) {
 // with the appropriate error reason.
 //
 func TestPipelineDownloadFailure(t *testing.T) {
+	// TODO(DJI-372): Mock uses /api/v0/downloads but slskd_service.go hits
+	// /api/v0/transfers/downloads/{username}. Test passes by coincidence
+	// (404 fallback, not the intended mock 500). Skip until mock is updated.
+	t.Skip("Skipping: mock slskd download routes don't match actual API paths")
+
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 	defer cleanupPipelineData(t, harness.DB)

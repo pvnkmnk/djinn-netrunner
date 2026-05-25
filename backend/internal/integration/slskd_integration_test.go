@@ -13,6 +13,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
@@ -189,6 +190,23 @@ func cleanupTestData(t *testing.T, db *gorm.DB) {
 	db.Exec("DELETE FROM jobitems WHERE job_id IN (SELECT id FROM jobs WHERE created_by = 'integration_test')")
 	db.Exec("DELETE FROM jobs WHERE created_by = 'integration_test'")
 	db.Exec("DELETE FROM quality_profiles WHERE name = 'Integration Test Profile'")
+}
+
+// SkipIfSlskdDisconnected skips the test if slskd is not connected to the
+// Soulseek network. Uses a lightweight GET /api/v0/session probe instead of
+// Search() which incurs a 15-second sleep.
+func (h *IntegrationHarness) SkipIfSlskdDisconnected(t *testing.T) {
+	t.Helper()
+	req, _ := http.NewRequest("GET", h.Config.SlskdURL+"/api/v0/session", nil)
+	req.Header.Set("X-API-Key", h.Config.SlskdAPIKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Skipf("Skipping: slskd unreachable: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		t.Skip("Skipping: slskd not connected to Soulseek network (409)")
+	}
 }
 
 // CreateTestJob creates a test acquisition job with items
