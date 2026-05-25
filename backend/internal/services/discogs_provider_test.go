@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -51,7 +52,8 @@ func TestDiscogsProvider_FetchTracks(t *testing.T) {
 
 	tracks, snap, err := provider.FetchTracks(context.Background(), watchlist)
 	assert.NoError(t, err)
-	assert.Equal(t, "wantlist:2026-03-11T10:00:00-07:00", snap)
+	assert.True(t, strings.HasPrefix(snap, "wantlist:1:"), "snapshot should start with wantlist:<count>:")
+	assert.Len(t, snap, len("wantlist:1:")+16, "snapshot hash should be 16 hex chars")
 	assert.Len(t, tracks, 1)
 	assert.Equal(t, "Test Artist", tracks[0]["artist"])
 	assert.Equal(t, "Test Album", tracks[0]["title"])

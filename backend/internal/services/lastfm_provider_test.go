@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -53,7 +54,8 @@ func TestLastFMProvider_FetchTracks(t *testing.T) {
 
 	tracks, snap, err := provider.FetchTracks(context.Background(), watchlist)
 	assert.NoError(t, err)
-	assert.Equal(t, "loved:1", snap)
+	assert.True(t, strings.HasPrefix(snap, "loved:"), "snapshot should start with loved:")
+	assert.Len(t, snap, len("loved:")+16, "snapshot hash should be 16 hex chars")
 	assert.Len(t, tracks, 1)
 	assert.Equal(t, "Test Artist", tracks[0]["artist"])
 	assert.Equal(t, "Test Track", tracks[0]["title"])
