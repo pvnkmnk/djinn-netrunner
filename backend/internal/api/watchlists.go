@@ -176,7 +176,7 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 		return c.Status(500).SendString("<div class=\"error\">Failed to update watchlist.</div>")
 	}
 
-	return c.Render("partials/watchlists", fiber.Map{"watchlists": []database.Watchlist{wl}})
+	return c.Render("partials/watchlist-card", fiber.Map{"watchlist": wl})
 }
 
 // GetForm returns the watchlist form for add/edit

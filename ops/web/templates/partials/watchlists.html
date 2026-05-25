@@ -29,35 +29,7 @@
 
     <div id="watchlists-list">
     {% for watchlist in watchlists %}
-    <div class="watchlist-card" id="watchlist-{{ watchlist.ID }}">
-        <div class="watchlist-info">
-            <div class="name">{{ watchlist.Name | escape }}</div>
-            <div class="source">{{ watchlist.SourceType | escape }}: {{ watchlist.SourceURI | escape }}</div>
-        </div>
-        <div class="actions">
-            <button class="btn btn-sm" hx-post="/api/watchlists/{{ watchlist.ID }}/sync" hx-target="#console-logs" aria-label="Sync watchlist {{ watchlist.Name | escape }}">
-                Sync
-            </button>
-            <button class="btn btn-sm" hx-get="/api/watchlists/{{ watchlist.ID }}/preview" hx-target="#watchlist-preview-{{ watchlist.ID }}" hx-swap="innerHTML" type="button" aria-label="Preview tracks for {{ watchlist.Name | escape }}">
-                Preview
-            </button>
-            <button class="btn btn-sm" hx-get="/partials/watchlist-form?id={{ watchlist.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit watchlist {{ watchlist.Name | escape }}">
-                Edit
-            </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/watchlists/{{ watchlist.ID }}" hx-target="#watchlist-{{ watchlist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete watchlist {{ watchlist.Name | escape }}?" aria-label="Delete watchlist {{ watchlist.Name | escape }}">
-                Delete
-            </button>
-            <label class="toggle">
-                <input type="checkbox" {% if watchlist.Enabled %}checked{% endif %} 
-                    hx-patch="/api/watchlists/{{ watchlist.ID }}/toggle"
-                    hx-target="#watchlist-{{ watchlist.ID }}"
-                    hx-swap="outerHTML"
-                    aria-label="{% if watchlist.Enabled %}Disable{% else %}Enable{% endif %} monitoring for {{ watchlist.Name | escape }}">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <div id="watchlist-preview-{{ watchlist.ID }}" class="watchlist-preview"></div>
-    </div>
+    {% include "partials/watchlist-card.html" %}
     {% empty %}
     <p class="empty-state">No watchlists configured</p>
     <p class="text-secondary">Add a watchlist using the button above to start monitoring music sources.</p>
