@@ -307,15 +307,20 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		}
 	}
 
-	url := fmt.Sprintf("%s/api/v0/searches", s.cfg.SlskdURL)
+	searchTimeout := timeout * 1000
+	if searchTimeout < 5000 {
+		searchTimeout = 15000
+	}
+
+	u := fmt.Sprintf("%s/api/v0/searches", s.cfg.SlskdURL)
 	payload := map[string]interface{}{
 		"searchText":      query,
-		"searchTimeout":   timeout * 1000,
+		"searchTimeout":   searchTimeout,
 		"filterResponses": true,
 	}
 
 	jsonPayload, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	req, _ := http.NewRequest("POST", u, bytes.NewBuffer(jsonPayload))
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -337,7 +342,11 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 	}
 
 	// Wait for search to gather results
-	time.Sleep(time.Duration(timeout) * time.Second)
+	waitSeconds := timeout
+	if waitSeconds < 5 {
+		waitSeconds = 15
+	}
+	time.Sleep(time.Duration(waitSeconds) * time.Second)
 
 	// Fetch results (includeResponses=true is required to get file data)
 	resultsURL := fmt.Sprintf("%s/api/v0/searches/%s?includeResponses=true", s.cfg.SlskdURL, startResult.ID)
