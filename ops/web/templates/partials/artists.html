@@ -21,7 +21,7 @@
             </div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm btn-secondary" hx-post="/api/artists/{{ artist.ID }}/sync" hx-target="#artist-{{ artist.ID }}" hx-swap="none" aria-label="Sync discography for {{ artist.Name | escape }}">
+            <button class="btn btn-sm btn-secondary" hx-post="/api/artists/{{ artist.ID }}/sync" hx-target="#artist-{{ artist.ID }}" hx-swap="none" hx-disabled-elt="this" aria-label="Sync discography for {{ artist.Name | escape }}">
                 Sync
             </button>
             <button class="btn btn-sm" hx-patch="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" aria-label="{% if artist.Monitored %}Pause monitoring for {{ artist.Name | escape }}{% else %}Resume monitoring for {{ artist.Name | escape }}{% endif %}">

@@ -188,6 +188,25 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "artist not found"})
 	}
 
+	var existingJob database.Job
+	if err := h.db.Where(
+		"job_type = ? AND scope_type = ? AND scope_id = ? AND state IN ?",
+		"artist_scan",
+		"artist",
+		artist.ID.String(),
+		[]string{"queued", "running"},
+	).First(&existingJob).Error; err == nil {
+		c.Set("HX-Trigger", "sync-already-active")
+		return c.JSON(fiber.Map{
+			"status": "sync_already_active",
+			"job_id": existingJob.ID,
+			"artist": artist.Name,
+		})
+	} else if err != gorm.ErrRecordNotFound {
+		slog.Error("Failed to check existing artist sync job", "artist_id", artist.ID, "error", err)
+		return internalServerError(c, err)
+	}
+
 	job := database.Job{
 		Type:        "artist_scan",
 		State:       "queued",
@@ -202,6 +221,7 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	c.Set("HX-Trigger", "sync-queued")
 	return c.JSON(fiber.Map{
 		"status": "sync_queued",
 		"job_id": job.ID,

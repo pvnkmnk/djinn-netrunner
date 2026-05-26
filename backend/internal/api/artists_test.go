@@ -57,6 +57,7 @@ func TestArtistsHandler_SyncQueuesArtistScanJob(t *testing.T) {
 	var body map[string]interface{}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.Equal(t, "sync_queued", body["status"])
+	assert.Equal(t, "sync-queued", resp.Header.Get("HX-Trigger"))
 
 	var job database.Job
 	require.NoError(t, db.First(&job, "job_type = ? AND scope_id = ?", "artist_scan", artist.ID.String()).Error)
@@ -64,6 +65,19 @@ func TestArtistsHandler_SyncQueuesArtistScanJob(t *testing.T) {
 	assert.Equal(t, "artist", job.ScopeType)
 	assert.Equal(t, &user.ID, job.OwnerUserID)
 	assert.Equal(t, "user_api", job.CreatedBy)
+
+	req = httptest.NewRequest("POST", "/api/artists/"+artist.ID.String()+"/sync", nil)
+	resp, err = app.Test(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "sync_already_active", body["status"])
+	assert.Equal(t, "sync-already-active", resp.Header.Get("HX-Trigger"))
+
+	var jobCount int64
+	require.NoError(t, db.Model(&database.Job{}).Where("job_type = ? AND scope_id = ?", "artist_scan", artist.ID.String()).Count(&jobCount).Error)
+	assert.Equal(t, int64(1), jobCount)
 }
 
 func TestArtistsHandler_RenderPartialHandlesNeverScannedArtist(t *testing.T) {
