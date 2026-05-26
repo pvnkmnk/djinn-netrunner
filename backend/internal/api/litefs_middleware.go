@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -54,7 +55,10 @@ func LiteFSWriteForward(guard LiteFSNodeDetector, scheme string, port string) fi
 		}
 		slog.Info("LiteFS forwarding write to primary", "method", method, "target", target)
 
-		req, err := http.NewRequestWithContext(context.Background(), method, target, bytes.NewReader(c.Body()))
+		ctx, cancel := context.WithTimeout(c.UserContext(), 10*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(c.Body()))
 		if err != nil {
 			slog.Error("LiteFS forward: failed to create request", "error", err)
 			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
@@ -68,7 +72,8 @@ func LiteFSWriteForward(guard LiteFSNodeDetector, scheme string, port string) fi
 		req.Header.Set("X-Forwarded-For", c.IP())
 		req.Header.Set("X-LiteFS-Forward", "true")
 
-		resp, err := http.DefaultClient.Do(req)
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Do(req)
 		if err != nil {
 			slog.Error("LiteFS forward: primary unreachable", "primary", primary, "error", err)
 			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{

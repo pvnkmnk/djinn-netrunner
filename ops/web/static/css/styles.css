@@ -167,6 +167,12 @@ textarea:focus-visible,
     padding-bottom: 0.25rem;
     border-bottom: 1px solid var(--border-color);
 }
+.jobs-scope-label {
+    display: inline;
+    font-size: 0.6rem;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
 
 .stat-card, .watchlist-card, .library-card, .profile-card, 
 .schedule-card, .artist-card, .job-card {

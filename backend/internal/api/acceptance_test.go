@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package api
 
 import (
@@ -54,7 +57,7 @@ func TestAcceptance_LibraryAddScan(t *testing.T) {
 	assert.Equal(t, 201, resp.StatusCode)
 
 	var created map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&created)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	libID, ok := created["id"].(string)
 	require.True(t, ok, "library ID should be a string UUID")
 
@@ -65,7 +68,7 @@ func TestAcceptance_LibraryAddScan(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var libs []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&libs)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&libs))
 	assert.Len(t, libs, 1)
 	assert.Equal(t, "Test Library", libs[0]["name"])
 
@@ -79,7 +82,7 @@ func TestAcceptance_LibraryAddScan(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/libraries", nil)
 	resp, err = app.Test(req)
 	require.NoError(t, err)
-	json.NewDecoder(resp.Body).Decode(&libs)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&libs))
 	assert.Len(t, libs, 0)
 }
 
@@ -109,20 +112,20 @@ func TestAcceptance_ArtistCRUD(t *testing.T) {
 	// Update
 	require.NoError(t, db.Model(&fetched).Update("name", "Updated Artist").Error)
 	var updated database.MonitoredArtist
-	db.First(&updated, "id = ?", artist.ID)
+	require.NoError(t, db.First(&updated, "id = ?", artist.ID).Error)
 	assert.Equal(t, "Updated Artist", updated.Name)
 
 	// Delete
 	require.NoError(t, db.Delete(&database.MonitoredArtist{}, "id = ?", artist.ID).Error)
 	var count int64
-	db.Model(&database.MonitoredArtist{}).Where("id = ?", artist.ID).Count(&count)
+	require.NoError(t, db.Model(&database.MonitoredArtist{}).Where("id = ?", artist.ID).Count(&count).Error)
 	assert.Equal(t, int64(0), count)
 
 	// Ownership: user2 should not see user1's artists
 	user2 := database.User{Email: "user2-artist@test.com", PasswordHash: "xxx", Role: "user"}
 	require.NoError(t, db.Create(&user2).Error)
 	var user2Artists []database.MonitoredArtist
-	db.Where("owner_user_id = ?", user2.ID).Find(&user2Artists)
+	require.NoError(t, db.Where("owner_user_id = ?", user2.ID).Find(&user2Artists).Error)
 	assert.Len(t, user2Artists, 0)
 }
 
@@ -132,7 +135,7 @@ func TestAcceptance_ScheduleCRUD(t *testing.T) {
 
 	// Create a watchlist for the schedule to reference
 	profile := database.QualityProfile{Name: "accept-profile", OwnerUserID: &user.ID}
-	db.Create(&profile)
+	require.NoError(t, db.Create(&profile).Error)
 	wl := database.Watchlist{
 		Name:             "accept-wl",
 		SourceType:       "rss",
@@ -141,7 +144,7 @@ func TestAcceptance_ScheduleCRUD(t *testing.T) {
 		OwnerUserID:      &user.ID,
 		QualityProfileID: profile.ID,
 	}
-	db.Create(&wl)
+	require.NoError(t, db.Create(&wl).Error)
 
 	handler := NewSchedulesHandler(db)
 
@@ -168,7 +171,7 @@ func TestAcceptance_ScheduleCRUD(t *testing.T) {
 
 	// Get schedule ID from DB
 	var schedule database.Schedule
-	db.Where("watchlist_id = ?", wl.ID).First(&schedule)
+	require.NoError(t, db.Where("watchlist_id = ?", wl.ID).First(&schedule).Error)
 	scheduleID := fmt.Sprintf("%d", schedule.ID)
 
 	// Note: Toggle is omitted from this test because the handler uses
@@ -206,7 +209,7 @@ func TestAcceptance_RoleIsolation(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var libs []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&libs)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&libs))
 	assert.Len(t, libs, 0, "user2 should not see user1's libraries")
 
 	// admin should see user1's library
@@ -215,31 +218,45 @@ func TestAcceptance_RoleIsolation(t *testing.T) {
 	req = httptest.NewRequest("GET", "/api/libraries", nil)
 	resp, err = appAdmin.Test(req)
 	require.NoError(t, err)
-	json.NewDecoder(resp.Body).Decode(&libs)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&libs))
 	assert.GreaterOrEqual(t, len(libs), 1, "admin should see all libraries")
 }
 
-// TestAcceptance_DashboardRoleLabel verifies role-aware "IsAdmin" flag reaches the template.
+// TestAcceptance_DashboardRoleLabel verifies role-aware scoping in activity stats.
 func TestAcceptance_DashboardRoleLabel(t *testing.T) {
 	db, user := setupAcceptanceDB(t)
+	otherUser := database.User{Email: "other@test.com", PasswordHash: "xxx", Role: "user"}
+	require.NoError(t, db.Create(&otherUser).Error)
 	admin := database.User{Email: "admin@test.com", PasswordHash: "xxx", Role: "admin"}
 	require.NoError(t, db.Create(&admin).Error)
 
+	// Seed scoped data: one library for user, one for otherUser
+	lib1 := database.Library{Name: "u1-lib", Path: t.TempDir(), OwnerUserID: &user.ID}
+	lib2 := database.Library{Name: "u2-lib", Path: t.TempDir(), OwnerUserID: &otherUser.ID}
+	require.NoError(t, db.Create(&lib1).Error)
+	require.NoError(t, db.Create(&lib2).Error)
+
 	handler := NewStatsHandler(db)
 
-	// Non-admin stats partial should not include IsAdmin=true
+	// Non-admin should see only their own library (count=1)
 	appUser := acceptanceApp(user)
 	appUser.Get("/api/stats/activity", handler.GetActivityStats)
 	req := httptest.NewRequest("GET", "/api/stats/activity", nil)
 	resp, err := appUser.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
+	var userStats map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&userStats))
+	assert.Equal(t, float64(1), userStats["libraries"])
 
-	// Admin stats should return 200 with global scope
+	// Admin should see all libraries (count=2)
 	appAdmin := acceptanceApp(admin)
 	appAdmin.Get("/api/stats/activity", handler.GetActivityStats)
 	req = httptest.NewRequest("GET", "/api/stats/activity", nil)
 	resp, err = appAdmin.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
+	var adminStats map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&adminStats))
+	assert.Equal(t, float64(2), adminStats["libraries"])
 }

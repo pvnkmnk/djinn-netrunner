@@ -2,7 +2,7 @@
 
 ## Current Status: v0.0.1 — All Cycles Complete
 
-Twelve cycles of development have shipped (Cycle A through Cycle 9), covering foundation, security, stability, capability, and polish.
+Ten cycles of development have shipped (Cycle A through Cycle 9), covering foundation, security, stability, capability, and polish.
 
 ### Completed (Cycles A–9)
 
@@ -94,7 +94,8 @@ Twelve cycles of development have shipped (Cycle A through Cycle 9), covering fo
 
 ### Post-v0.0.1
 
-- [ ] E2E automated acceptance tests (library scan, artist CRUD, schedule CRUD, webhook smoke, quota warning)
+- [x] E2E acceptance tests (library scan, artist CRUD, schedule CRUD, role isolation, dashboard labels) — see `backend/internal/api/acceptance_test.go`
+- [ ] E2E acceptance tests remaining: webhook smoke, quota warning
 - [ ] Full browser-verified mobile nav and keyboard accessibility
 - [ ] Multi-environment config file support (if deployment complexity warrants)
 - [ ] Horizontal worker scaling via LiteFS write forwarding
