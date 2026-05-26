@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -95,7 +97,7 @@ func TestArtistsHandler_RenderPartialHandlesNeverScannedArtist(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&artist).Error)
 
-	engine := templates.NewPongo2("../../../ops/web/templates", ".html")
+	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
 	require.NoError(t, engine.LoadFromDir())
 	app := fiber.New(fiber.Config{Views: engine})
 	app.Use(func(c *fiber.Ctx) error {
@@ -109,4 +111,7 @@ func TestArtistsHandler_RenderPartialHandlesNeverScannedArtist(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "Never")
 }

@@ -184,8 +184,11 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
-	if err := query.First(&artist).Error; err != nil {
+	if err := query.First(&artist).Error; err == gorm.ErrRecordNotFound {
 		return c.Status(404).JSON(fiber.Map{"error": "artist not found"})
+	} else if err != nil {
+		slog.Error("Failed to load artist for sync", "artist_id", id, "error", err)
+		return internalServerError(c, err)
 	}
 
 	var existingJob database.Job

@@ -44,8 +44,11 @@ func TestArtistTrackingService(t *testing.T) {
 }
 
 func TestSyncDiscographyCreatesAcquisitionJob(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, database.Migrate(db))
 
 	user := database.User{Email: "artist-sync@test.local", PasswordHash: "hash", Role: "user"}
@@ -90,6 +93,7 @@ func TestSyncDiscographyCreatesAcquisitionJob(t *testing.T) {
 
 	var item database.JobItem
 	require.NoError(t, db.First(&item, "job_id = ?", job.ID).Error)
+	assert.Equal(t, job.OwnerUserID, item.OwnerUserID)
 	assert.Equal(t, "Test Artist", item.Artist)
 	assert.Equal(t, "Test Album", item.Album)
 	assert.Equal(t, "Test Album", item.TrackTitle)

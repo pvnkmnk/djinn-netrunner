@@ -111,7 +111,7 @@ func TestWatchlistService(t *testing.T) {
 	})
 }
 
-func TestWatchlistServiceRegistersAtLeastSixProviderSources(t *testing.T) {
+func TestWatchlistServiceRegistersTenProviderSources(t *testing.T) {
 	db := setupTestDB(t)
 	service := NewWatchlistService(db, nil, &config.Config{})
 
@@ -133,7 +133,7 @@ func TestWatchlistServiceRegistersAtLeastSixProviderSources(t *testing.T) {
 			t.Fatalf("expected provider source %q to be registered", source)
 		}
 	}
-	if len(service.providers) < 6 {
-		t.Fatalf("expected at least 6 provider sources, got %d", len(service.providers))
+	if len(service.providers) != len(expectedSources) {
+		t.Fatalf("expected %d provider sources, got %d", len(expectedSources), len(service.providers))
 	}
 }
