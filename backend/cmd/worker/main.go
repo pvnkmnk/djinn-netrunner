@@ -840,11 +840,19 @@ func main() {
 	worker.Stop()
 }
 
-// triggerLibraryScan triggers a scan on the configured library server
-// (Gonic or Navidrome). Tries Gonic first, falls back to Navidrome.
+// triggerLibraryScan triggers a scan on the configured library server.
+// Tries Gonic first; on failure falls back to Navidrome if configured.
 func (w *WorkerOrchestrator) triggerLibraryScan() (bool, error) {
 	if w.gonic != nil {
-		return w.gonic.TriggerScan()
+		ok, err := w.gonic.TriggerScan()
+		if err == nil {
+			return ok, nil
+		}
+		if w.navidrome != nil {
+			slog.Warn("Gonic scan failed, falling back to Navidrome", "error", err)
+			return w.navidrome.TriggerScan()
+		}
+		return ok, err
 	}
 	if w.navidrome != nil {
 		return w.navidrome.TriggerScan()

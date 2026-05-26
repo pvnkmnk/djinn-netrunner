@@ -206,6 +206,12 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 			} else {
 				os.Remove(finalPath)
 				finalPath = transcodedPath
+				if md, mdErr := h.ext.Extract(finalPath); mdErr == nil && md != nil {
+					metadata = md
+				}
+				if newHash, hashErr := h.ext.HashFile(finalPath); hashErr == nil {
+					hash = newHash
+				}
 				h.Log(jobID, "OK", fmt.Sprintf("Transcoded to %s", targetFormat), &itemID)
 			}
 		}

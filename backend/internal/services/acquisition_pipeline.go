@@ -70,16 +70,23 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 				}
 				h.db.Model(&database.Job{}).Where("id = ?", jobID).Update("state", finalState)
 
-				// 2.3 Library Sync Hook (Gonic or Navidrome)
+				// 2.3 Library Sync Hook (Gonic with Navidrome fallback)
+				scanDone := false
 				if h.gonic != nil {
 					h.Log(jobID, "INFO", "Triggering Gonic scan...", nil)
 					if ok, err := h.gonic.TriggerScan(); err != nil || !ok {
 						h.Log(jobID, "WARN", fmt.Sprintf("Gonic scan trigger failed: %v", err), nil)
 					} else {
 						h.Log(jobID, "OK", "Gonic scan triggered", nil)
+						scanDone = true
 					}
-				} else if h.navidrome != nil {
-					h.Log(jobID, "INFO", "Triggering Navidrome scan...", nil)
+				}
+				if !scanDone && h.navidrome != nil {
+					if h.gonic != nil {
+						h.Log(jobID, "INFO", "Falling back to Navidrome scan...", nil)
+					} else {
+						h.Log(jobID, "INFO", "Triggering Navidrome scan...", nil)
+					}
 					if ok, err := h.navidrome.TriggerScan(); err != nil || !ok {
 						h.Log(jobID, "WARN", fmt.Sprintf("Navidrome scan trigger failed: %v", err), nil)
 					} else {

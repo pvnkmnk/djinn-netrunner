@@ -66,49 +66,41 @@ type QuotaAlertPayload struct {
 }
 
 func (s *NotificationService) NotifyJobCompletion(jobID uint64, jobType, state, summary, workerID string) {
-	if !s.enabled || s.webhookURL == "" {
-		return
+	// Webhook delivery (independent of SMTP)
+	if s.enabled && s.webhookURL != "" {
+		payload := JobCompletionPayload{
+			JobID:       jobID,
+			Type:        jobType,
+			State:       state,
+			Summary:     summary,
+			CompletedAt: time.Now(),
+			WorkerID:    workerID,
+		}
+
+		body, err := json.Marshal(payload)
+		if err != nil {
+			slog.Error("Failed to marshal webhook payload", "error", err)
+		} else if req, err := http.NewRequest(http.MethodPost, s.webhookURL, bytes.NewReader(body)); err != nil {
+			slog.Error("Failed to create webhook request", "error", err)
+		} else {
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("User-Agent", "NetRunner/1.0")
+			resp, err := s.client.Do(req)
+			if err != nil {
+				slog.Error("Webhook POST failed", "error", err)
+			} else {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode >= 300 {
+					slog.Warn("Webhook returned non-success status", "status", resp.StatusCode)
+				} else {
+					slog.Info("Job webhook notification sent", "job_id", jobID)
+				}
+			}
+		}
 	}
 
-	payload := JobCompletionPayload{
-		JobID:       jobID,
-		Type:        jobType,
-		State:       state,
-		Summary:     summary,
-		CompletedAt: time.Now(),
-		WorkerID:    workerID,
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		slog.Error("Failed to marshal webhook payload", "error", err)
-		return
-	}
-
-	req, err := http.NewRequest(http.MethodPost, s.webhookURL, bytes.NewReader(body))
-	if err != nil {
-		slog.Error("Failed to create webhook request", "error", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "NetRunner/1.0")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		slog.Error("Webhook POST failed", "error", err)
-		return
-	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body) // drain body
-
-	if resp.StatusCode >= 300 {
-		slog.Warn("Webhook returned non-success status", "status", resp.StatusCode)
-		return
-	}
-
-	slog.Info("Job notification sent", "job_id", jobID)
-
-	// Also send via SMTP if configured
+	// SMTP delivery (independent of webhook)
 	s.sendJobCompletionEmail(jobID, jobType, state, summary)
 }
 
