@@ -28,5 +28,7 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	return c.Render("index", fiber.Map{
 		"User":       user,
 		"authUserID": authUserID,
+		"IsAdmin":    user.Role == "admin",
+		"Page":       "dashboard",
 	})
 }

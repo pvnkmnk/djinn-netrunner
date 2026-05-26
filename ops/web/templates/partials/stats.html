@@ -1,4 +1,5 @@
 <div class="stats-region">
+    {% if IsAdmin %}<div class="stats-scope-label">All Users</div>{% endif %}
     <div class="stat-card">
         <div class="stat-value">{{ stats.QueuedCount }}</div>
         <div class="stat-label">Queued</div>

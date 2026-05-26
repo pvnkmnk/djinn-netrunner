@@ -391,6 +391,7 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 	}
 
 	return c.Render("partials/stats", fiber.Map{
-		"stats": stats,
+		"stats":   stats,
+		"IsAdmin": user.Role == "admin",
 	})
 }

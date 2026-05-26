@@ -84,6 +84,11 @@ func main() {
 
 	app.Use(recover.New())
 	app.Use(logger.New())
+
+	// LiteFS write forwarding: replica nodes forward mutating requests to the primary.
+	litefs := database.NewLiteFSGuard(cfg.DatabaseURL)
+	app.Use(api.LiteFSWriteForward(litefs, "http", cfg.Port))
+
 	app.Static("/static", cfg.StaticFilesPath)
 
 	// Prometheus metrics endpoint (no auth, no CSRF — scraped by monitoring)

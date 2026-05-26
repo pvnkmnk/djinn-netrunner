@@ -122,6 +122,16 @@ textarea:focus-visible,
     text-transform: uppercase;
     letter-spacing: 1px;
     font-size: 0.72rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+.nav-toggle:hover {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+}
+.nav-toggle[aria-expanded="true"] {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
 }
 .primary-nav {
     display: flex;
@@ -147,6 +157,21 @@ textarea:focus-visible,
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
     margin-bottom: 2rem;
+}
+.stats-scope-label {
+    grid-column: 1 / -1;
+    color: var(--accent-cyan);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border-color);
+}
+.jobs-scope-label {
+    display: inline;
+    font-size: 0.6rem;
+    margin-left: 0.5rem;
+    vertical-align: middle;
 }
 
 .stat-card, .watchlist-card, .library-card, .profile-card, 
@@ -796,7 +821,9 @@ textarea:focus-visible,
         padding: 1rem;
     }
     .nav-toggle {
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
     }
     .primary-nav {
         width: 100%;

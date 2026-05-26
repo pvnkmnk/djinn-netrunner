@@ -84,10 +84,42 @@ document.addEventListener('DOMContentLoaded', function() {
         closeModal();
     });
 
-    // Close modal on escape key
+    // Global keyboard handler: Escape closes modal or mobile nav
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            closeModal();
+            const container = document.getElementById('modal-container');
+            if (container && container.classList.contains('active')) {
+                closeModal();
+                return;
+            }
+            if (primaryNav && primaryNav.classList.contains('nav-open')) {
+                primaryNav.classList.remove('nav-open');
+                if (navToggle) {
+                    navToggle.setAttribute('aria-expanded', 'false');
+                    navToggle.focus();
+                }
+            }
+        }
+        // Trap focus inside modal when open
+        if (e.key === 'Tab') {
+            const container = document.getElementById('modal-container');
+            if (!container || !container.classList.contains('active')) return;
+            const focusable = container.querySelectorAll(
+                'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            );
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (!container.contains(document.activeElement)) {
+                e.preventDefault();
+                if (e.shiftKey) { last.focus(); } else { first.focus(); }
+            } else if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
         }
     });
     
