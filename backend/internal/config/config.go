@@ -52,6 +52,19 @@ type Config struct {
 	LidarrURL    string
 	LidarrAPIKey string
 
+	// Navidrome
+	NavidromeURL  string
+	NavidromeUser string
+	NavidromePass string
+
+	// SMTP
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUser     string
+	SMTPPass     string
+	SMTPFrom     string
+	SMTPEnabled  bool
+
 	// Library
 	MusicLibraryPath     string
 	DownloadStagingPath  string
@@ -144,6 +157,17 @@ func Load(filenames ...string) (*Config, error) {
 
 		LidarrURL:    getEnv("LIDARR_URL", ""),
 		LidarrAPIKey: getEnv("LIDARR_API_KEY", ""),
+
+		NavidromeURL:  getEnv("NAVIDROME_URL", ""),
+		NavidromeUser: getEnv("NAVIDROME_USER", ""),
+		NavidromePass: getEnv("NAVIDROME_PASS", ""),
+
+		SMTPHost:    getEnv("SMTP_HOST", ""),
+		SMTPPort:    getEnv("SMTP_PORT", "587"),
+		SMTPUser:    getEnv("SMTP_USER", ""),
+		SMTPPass:    getEnv("SMTP_PASS", ""),
+		SMTPFrom:    getEnv("SMTP_FROM", ""),
+		SMTPEnabled: getEnvBool("SMTP_ENABLED", false),
 
 		MusicLibraryPath:    getEnv("MUSIC_LIBRARY", "./music_library"),
 		DownloadStagingPath: getEnv("DOWNLOAD_STAGING", "./downloads"),

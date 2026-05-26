@@ -286,7 +286,7 @@ func TestPipelineFullPipelineWithMockSlskd(t *testing.T) {
 	ah := services.NewAcquisitionHandler(
 		harness.DB, pipelineCfg, mockSlskd,
 		nil, nil, services.NewMetadataExtractor(),
-		nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil,
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -334,7 +334,7 @@ func TestPipelineDownloadFailure(t *testing.T) {
 	ah := services.NewAcquisitionHandler(
 		harness.DB, pipelineCfg, mockSlskd,
 		nil, nil, services.NewMetadataExtractor(),
-		nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil,
 	)
 
 	// Create a job and item directly (bypass sync)
@@ -406,8 +406,12 @@ func TestPipelineMetadataFallback(t *testing.T) {
 		nil, // AcoustIDService = nil
 		services.NewMetadataExtractor(),
 		nil, // GonicClient = nil
+		nil, // NavidromeClient = nil
 		nil, // DiscogsService = nil
 		nil, // CacheService = nil
+		nil, // LyricsService = nil
+		nil, // TranscoderService = nil
+		nil, // YtdlpService = nil
 	)
 
 	job := &database.Job{

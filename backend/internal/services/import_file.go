@@ -31,7 +31,7 @@ import (
 // Until implemented, duplicates can be reviewed via `netrunner-cli library duplicates`
 // and manually resolved.
 
-func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemID uint64, downloadPath string, item database.JobItem, coverArtSources []string) error {
+func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemID uint64, downloadPath string, item database.JobItem, coverArtSources []string, profile *database.QualityProfile) error {
 	h.Log(jobID, "INFO", "Importing to library", &itemID)
 
 	if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
@@ -172,6 +172,49 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		}
 	} else {
 		h.Log(jobID, "INFO", "No cover art available", &itemID)
+	}
+
+	// Fetch and embed lyrics (best-effort enrichment)
+	if h.lyrics != nil && metadata.Artist != "" && metadata.Title != "" {
+		h.Log(jobID, "INFO", "Fetching lyrics...", &itemID)
+		lyricsResult, lyricsErr := h.lyrics.FetchLyrics(ctx, metadata.Artist, metadata.Title, metadata.Album)
+		if lyricsErr == nil && lyricsResult != nil {
+			lrcContent := h.lyrics.GetSyncedLyrics(lyricsResult)
+			if lrcContent != "" {
+				lrcPath := strings.TrimSuffix(finalPath, filepath.Ext(finalPath)) + ".lrc"
+				if writeErr := os.WriteFile(lrcPath, []byte(lrcContent), 0644); writeErr != nil {
+					h.Log(jobID, "WARN", fmt.Sprintf("Failed to write lyrics file: %v", writeErr), &itemID)
+				} else {
+					h.Log(jobID, "OK", "Lyrics saved", &itemID)
+				}
+			}
+		} else if lyricsErr != nil {
+			h.Log(jobID, "DEBUG", fmt.Sprintf("No lyrics found: %v", lyricsErr), &itemID)
+		}
+	}
+
+	// Transcode if quality profile specifies a preferred format different from current
+	if h.transcoder != nil && profile != nil && profile.AllowedFormats != "" {
+		currentExt := strings.TrimPrefix(filepath.Ext(finalPath), ".")
+		targetFormat := strings.Split(profile.AllowedFormats, ",")[0]
+		targetFormat = strings.TrimSpace(strings.ToLower(targetFormat))
+		if targetFormat != "" && !strings.EqualFold(currentExt, targetFormat) {
+			h.Log(jobID, "INFO", fmt.Sprintf("Transcoding %s → %s", currentExt, targetFormat), &itemID)
+			transcodedPath, transcodeErr := h.transcoder.Transcode(finalPath, targetFormat)
+			if transcodeErr != nil {
+				h.Log(jobID, "WARN", fmt.Sprintf("Transcoding failed: %v", transcodeErr), &itemID)
+			} else {
+				os.Remove(finalPath)
+				finalPath = transcodedPath
+				if md, mdErr := h.ext.Extract(finalPath); mdErr == nil && md != nil {
+					metadata = md
+				}
+				if newHash, hashErr := h.ext.HashFile(finalPath); hashErr == nil {
+					hash = newHash
+				}
+				h.Log(jobID, "OK", fmt.Sprintf("Transcoded to %s", targetFormat), &itemID)
+			}
+		}
 	}
 
 	// Update DB
