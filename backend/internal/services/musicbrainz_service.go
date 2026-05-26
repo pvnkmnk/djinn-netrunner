@@ -208,11 +208,10 @@ func (s *MusicBrainzService) GetArtistDiscography(artistID string) (map[string]i
 	}
 
 	params := url.Values{}
-	params.Add("artist", artistID)
 	params.Add("inc", "release-groups")
 	params.Add("fmt", "json")
 
-	result, err := s.doRequest("release-group", params)
+	result, err := s.doRequest(fmt.Sprintf("artist/%s", artistID), params)
 	if err != nil {
 		return nil, err
 	}
@@ -342,8 +341,11 @@ type mbArtistRef struct {
 
 // GetRelease fetches detailed release information
 func (s *MusicBrainzService) GetRelease(releaseMBID string) (*MusicBrainzRelease, error) {
-	endpoint := fmt.Sprintf("/ws/2/release/%s?fmt=json&inc=artist-credit+genres+tracks+images", releaseMBID)
-	data, err := s.doRequest(endpoint, nil)
+	params := url.Values{}
+	params.Set("fmt", "json")
+	params.Set("inc", "artist-credit+genres+tracks+images")
+
+	data, err := s.doRequest(fmt.Sprintf("release/%s", releaseMBID), params)
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +372,7 @@ func (s *MusicBrainzService) GetReleaseByArtistTitle(artist, title string) (*Mus
 	params.Set("query", query)
 	params.Set("limit", "1")
 
-	data, err := s.doRequest("/ws/2/release", params)
+	data, err := s.doRequest("release", params)
 	if err != nil {
 		return nil, err
 	}

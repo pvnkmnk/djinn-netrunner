@@ -110,3 +110,30 @@ func TestWatchlistService(t *testing.T) {
 		assert.Equal(t, "Mock Artist", tracks[0]["artist"])
 	})
 }
+
+func TestWatchlistServiceRegistersAtLeastSixProviderSources(t *testing.T) {
+	db := setupTestDB(t)
+	service := NewWatchlistService(db, nil, &config.Config{})
+
+	expectedSources := []string{
+		"spotify_playlist",
+		"spotify_liked",
+		"spotify_discover",
+		"lastfm_loved",
+		"lastfm_top",
+		"listenbrainz_listens",
+		"discogs_wantlist",
+		"rss_feed",
+		"local_file",
+		"local_directory",
+	}
+
+	for _, source := range expectedSources {
+		if _, ok := service.providers[source]; !ok {
+			t.Fatalf("expected provider source %q to be registered", source)
+		}
+	}
+	if len(service.providers) < 6 {
+		t.Fatalf("expected at least 6 provider sources, got %d", len(service.providers))
+	}
+}

@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"html"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestWebSocketManager_Subscribe tests the subscription of WebSocket connections
@@ -85,6 +88,25 @@ func TestStringsToLower(t *testing.T) {
 	for _, tt := range tests {
 		result := stringsToLower(tt.input)
 		assert.Equal(t, tt.expected, result, "stringsToLower should convert to lowercase")
+	}
+}
+
+func TestListenForJobLogsSkipsNonPostgresDatabase(t *testing.T) {
+	manager := NewWebSocketManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		manager.ListenForJobLogs(ctx, "/tmp/netrunner-test.db", nil)
+		close(done)
+	}()
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		require.Fail(t, "SQLite log listener did not stop after context cancellation")
 	}
 }
 

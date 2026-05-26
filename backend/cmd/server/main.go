@@ -168,7 +168,7 @@ func main() {
 
 	// Start server
 	go func() {
-		if err := app.Listen(":8080"); err != nil {
+		if err := app.Listen(listenAddress(cfg)); err != nil {
 			slog.Error("Server failed", "error", err)
 		}
 	}()
@@ -181,6 +181,14 @@ func main() {
 	slog.Info("Shutting down server...")
 	listenerCancel()
 	app.Shutdown()
+}
+
+func listenAddress(cfg *config.Config) string {
+	port := "8080"
+	if cfg != nil && cfg.Port != "" {
+		port = cfg.Port
+	}
+	return ":" + port
 }
 
 func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler) {
@@ -289,6 +297,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	artistsRoutes.Post("/", artistsHandler.Add)
 	artistsRoutes.Delete("/:id", artistsHandler.Delete)
 	artistsRoutes.Patch("/:id", artistsHandler.Update)
+	artistsRoutes.Post("/:id/sync", artistsHandler.Sync)
 
 	// Schedules
 	schedulesRoutes := apiProtected.Group("/schedules")
@@ -401,17 +410,6 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/ws/jobs/:job_id", auth.AuthMiddleware, websocket.New(func(c *websocket.Conn) {
 		ws.HandleConsole(c, db)
 	}))
-
-	// Artist Tracking
-	apiProtected.Post("/artists/track", func(c *fiber.Ctx) error {
-		var payload struct {
-			MBID string `json:"mbid"`
-		}
-		if err := c.BodyParser(&payload); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
-		}
-		return c.JSON(fiber.Map{"status": "tracking_started"})
-	})
 
 	apiProtected.Post("/library/scan", func(c *fiber.Ctx) error {
 		var payload struct {
