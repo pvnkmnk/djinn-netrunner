@@ -154,5 +154,5 @@ func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
 	if err := query.Find(&jobs).Error; err != nil {
 		slog.Error("Error getting jobs", "error", err)
 	}
-	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs})
+	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs, "IsAdmin": user.Role == "admin"})
 }
