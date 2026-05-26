@@ -67,12 +67,29 @@ func LiteFSWriteForward(guard LiteFSNodeDetector, scheme string, port string) fi
 		}
 
 		c.Request().Header.VisitAll(func(key, val []byte) {
-			req.Header.Set(string(key), string(val))
+			k := string(key)
+			if strings.EqualFold(k, "Connection") ||
+				strings.EqualFold(k, "Keep-Alive") ||
+				strings.EqualFold(k, "Proxy-Authenticate") ||
+				strings.EqualFold(k, "Proxy-Authorization") ||
+				strings.EqualFold(k, "TE") ||
+				strings.EqualFold(k, "Trailers") ||
+				strings.EqualFold(k, "Transfer-Encoding") ||
+				strings.EqualFold(k, "Upgrade") ||
+				strings.EqualFold(k, "Content-Length") {
+				return
+			}
+			req.Header.Add(k, string(val))
 		})
 		req.Header.Set("X-Forwarded-For", c.IP())
 		req.Header.Set("X-LiteFS-Forward", "true")
 
-		client := &http.Client{Timeout: 15 * time.Second}
+		client := &http.Client{
+			Timeout: 15 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			slog.Error("LiteFS forward: primary unreachable", "primary", primary, "error", err)
@@ -83,8 +100,11 @@ func LiteFSWriteForward(guard LiteFSNodeDetector, scheme string, port string) fi
 		defer resp.Body.Close()
 
 		for k, vals := range resp.Header {
-			for _, v := range vals {
-				c.Set(k, v)
+			if len(vals) > 0 {
+				c.Set(k, vals[0])
+				for _, v := range vals[1:] {
+					c.Append(k, v)
+				}
 			}
 		}
 		c.Status(resp.StatusCode)

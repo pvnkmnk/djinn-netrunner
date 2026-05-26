@@ -47,10 +47,11 @@ func TestAcceptance_LibraryAddScan(t *testing.T) {
 	app.Get("/api/libraries", handler.ListLibraries)
 	app.Delete("/api/libraries/:id", handler.DeleteLibrary)
 
-	// Create library — path must exist
+	// Create library — path must exist; use json.Marshal to handle Windows backslashes
 	libPath := t.TempDir()
-	body := `{"name":"Test Library","path":"` + libPath + `"}`
-	req := httptest.NewRequest("POST", "/api/libraries", strings.NewReader(body))
+	reqBytes, err := json.Marshal(map[string]string{"name": "Test Library", "path": libPath})
+	require.NoError(t, err)
+	req := httptest.NewRequest("POST", "/api/libraries", strings.NewReader(string(reqBytes)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
 	require.NoError(t, err)
