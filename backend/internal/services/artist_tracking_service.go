@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -219,7 +220,7 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 				item := database.JobItem{
 					JobID:           job.ID,
 					Sequence:        i,
-					NormalizedQuery: rel.Title,
+					NormalizedQuery: fmt.Sprintf("%s %s", artist.Name, rel.Title),
 					Artist:          artist.Name,
 					Album:           rel.Title,
 					TrackTitle:      rel.Title,

@@ -72,6 +72,12 @@ type JobLogEvent struct {
 }
 
 func (m *WebSocketManager) ListenForJobLogs(ctx context.Context, dbURL string, db *gorm.DB) {
+	if !database.IsPostgres(dbURL) {
+		slog.Info("Skipping Postgres log listener for non-Postgres database")
+		<-ctx.Done()
+		return
+	}
+
 	reportProblem := func(ev pq.ListenerEventType, err error) {
 		if err != nil {
 			slog.Error("Log listener error", "error", err)

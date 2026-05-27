@@ -29,3 +29,8 @@ func TestHealthCheck(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 503, resp.StatusCode)
 }
+
+func TestListenAddressUsesConfiguredPort(t *testing.T) {
+	assert.Equal(t, ":18080", listenAddress(&config.Config{Port: "18080"}))
+	assert.Equal(t, ":8080", listenAddress(&config.Config{}))
+}

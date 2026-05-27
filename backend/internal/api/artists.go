@@ -2,6 +2,7 @@ package api
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -164,6 +165,71 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 	}
 
 	return c.Render("partials/artist-card", fiber.Map{"Artist": artist})
+}
+
+// Sync queues a background discography sync for a monitored artist.
+func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
+	user, hasAuth := h.resolveAuthenticatedUser(c)
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+
+	var artist database.MonitoredArtist
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&artist).Error; err == gorm.ErrRecordNotFound {
+		return c.Status(404).JSON(fiber.Map{"error": "artist not found"})
+	} else if err != nil {
+		slog.Error("Failed to load artist for sync", "artist_id", id, "error", err)
+		return internalServerError(c, err)
+	}
+
+	var existingJob database.Job
+	if err := h.db.Where(
+		"job_type = ? AND scope_type = ? AND scope_id = ? AND state IN ?",
+		"artist_scan",
+		"artist",
+		artist.ID.String(),
+		[]string{"queued", "running"},
+	).First(&existingJob).Error; err == nil {
+		c.Set("HX-Trigger", "sync-already-active")
+		return c.JSON(fiber.Map{
+			"status": "sync_already_active",
+			"job_id": existingJob.ID,
+			"artist": artist.Name,
+		})
+	} else if err != gorm.ErrRecordNotFound {
+		slog.Error("Failed to check existing artist sync job", "artist_id", artist.ID, "error", err)
+		return internalServerError(c, err)
+	}
+
+	job := database.Job{
+		Type:        "artist_scan",
+		State:       "queued",
+		ScopeType:   "artist",
+		ScopeID:     artist.ID.String(),
+		RequestedAt: time.Now(),
+		OwnerUserID: artist.OwnerUserID,
+		CreatedBy:   "user_api",
+	}
+	if err := h.db.Create(&job).Error; err != nil {
+		slog.Error("Failed to queue artist sync", "artist_id", artist.ID, "error", err)
+		return internalServerError(c, err)
+	}
+
+	c.Set("HX-Trigger", "sync-queued")
+	return c.JSON(fiber.Map{
+		"status": "sync_queued",
+		"job_id": job.ID,
+		"artist": artist.Name,
+	})
 }
 
 // GetForm returns the artist form
