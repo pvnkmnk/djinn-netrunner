@@ -165,15 +165,15 @@ run_tests() {
     echo -e "${YELLOW}Running integration tests...${NC}"
     echo ""
     
-    test_args="-v -tags=integration -timeout $TIMEOUT"
+    test_args=(-v -tags=integration -timeout "$TIMEOUT")
     if [ -n "$VERBOSE" ]; then
-        test_args="$test_args -v"
+        test_args+=(-v)
     fi
     if [ -n "$specific_test" ]; then
-        test_args="$test_args -run $specific_test"
+        test_args+=(-run "$specific_test")
     fi
     
-    if (cd "$backend_dir" && go test ./internal/integration/... $test_args); then
+    if (cd "$backend_dir" && go test ./internal/integration/... "${test_args[@]}"); then
         echo ""
         echo -e "${GREEN}All integration tests passed!${NC}"
     else

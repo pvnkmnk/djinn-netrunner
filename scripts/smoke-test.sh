@@ -8,8 +8,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
 PROJECT_NAME="${SMOKE_PROJECT_NAME:-netrunner-smoke}"
 SMOKE_HTTP_PORT="${SMOKE_HTTP_PORT:-18081}"
-SMOKE_HTTPS_PORT="${SMOKE_HTTPS_PORT:-18443}"
-SMOKE_HTTPS_UDP_PORT="${SMOKE_HTTPS_UDP_PORT:-18443}"
 BASE_URL="http://localhost:${SMOKE_HTTP_PORT}"
 COOKIE_FILE="$(mktemp)"
 OVERRIDE_FILE="$(mktemp)"
@@ -43,10 +41,6 @@ csrf_header() {
     printf '%s' "$token"
 }
 
-# --- Dependencies ---
-command -v docker &>/dev/null || fail "Docker not installed"
-command -v curl &>/dev/null || fail "curl not installed"
-
 # --- Cleanup handler ---
 cleanup() {
     info "Tearing down stack..."
@@ -54,6 +48,10 @@ cleanup() {
     rm -f "$COOKIE_FILE" "$OVERRIDE_FILE"
 }
 trap cleanup EXIT
+
+# --- Dependencies ---
+command -v docker &>/dev/null || fail "Docker not installed"
+command -v curl &>/dev/null || fail "curl not installed"
 
 cat > "$OVERRIDE_FILE" <<YAML
 services:
@@ -104,6 +102,7 @@ fi
 info "Registering admin user..."
 curl -sf -c "$COOKIE_FILE" "$BASE_URL/" > /dev/null 2>&1 || fail "Unable to fetch initial CSRF token"
 SMOKE_EMAIL="admin+$(date +%s)@smoke.test"
+LIBRARY_NAME="smoke-test-lib"
 CSRF_TOKEN="$(csrf_header)"
 REGISTER_RESP=$(curl -sf -X POST "$BASE_URL/api/auth/register" \
     -H "Content-Type: application/json" \
@@ -132,18 +131,18 @@ LIBRARY_RESP=$(curl -sf -X POST "$BASE_URL/api/libraries" \
     -H "X-CSRF-Token: $CSRF_TOKEN" \
     -b "$COOKIE_FILE" \
     -c "$COOKIE_FILE" \
-    -d '{"name":"smoke-test-lib","path":"/app/music"}' 2>&1) || fail "Create library failed: $LIBRARY_RESP"
+    -d "{\"name\":\"$LIBRARY_NAME\",\"path\":\"/app/music\"}" 2>&1) || fail "Create library failed: $LIBRARY_RESP"
+LIB_ID=$(printf '%s' "$LIBRARY_RESP" | sed -n 's/.*"ID":"\([^"]*\)".*/\1/p' | head -1)
 pass "Library created"
 
 # --- 6. List libraries ---
 info "Listing libraries..."
 LIBS=$(curl -sf "$BASE_URL/api/libraries" -b "$COOKIE_FILE" 2>&1) || fail "List libraries failed: $LIBS"
-echo "$LIBS" | grep -q "smoke-test-lib" || fail "Library not found in list"
+echo "$LIBS" | grep -q "$LIBRARY_NAME" || fail "Library not found in list"
 pass "Library listed"
 
 # --- 7. Delete library ---
 info "Cleaning up test library..."
-LIB_ID=$(printf '%s' "$LIBS" | sed -n 's/.*"ID":"\([^"]*\)".*/\1/p' | head -1)
 if [ -n "$LIB_ID" ]; then
     CSRF_TOKEN="$(csrf_header)"
     curl -sf -X DELETE "$BASE_URL/api/libraries/$LIB_ID" \
