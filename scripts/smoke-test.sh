@@ -8,7 +8,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
 PROJECT_NAME="${SMOKE_PROJECT_NAME:-netrunner-smoke}"
 SMOKE_HTTP_PORT="${SMOKE_HTTP_PORT:-18081}"
+SMOKE_HTTPS_PORT="${SMOKE_HTTPS_PORT:-18443}"
+SMOKE_HTTPS_UDP_PORT="${SMOKE_HTTPS_UDP_PORT:-18444}"
 BASE_URL="http://localhost:${SMOKE_HTTP_PORT}"
+HTTPS_BASE_URL="https://localhost:${SMOKE_HTTPS_PORT}"
 COOKIE_FILE="$(mktemp)"
 OVERRIDE_FILE="$(mktemp)"
 
@@ -65,6 +68,8 @@ services:
     container_name: ${PROJECT_NAME}-ops-web
     ports:
       - "${SMOKE_HTTP_PORT}:8080"
+      - "${SMOKE_HTTPS_PORT}:8443/tcp"
+      - "${SMOKE_HTTPS_UDP_PORT}:8443/udp"
     environment:
       SLSKD_URL: http://slskd:5030
       GONIC_URL: http://gonic:4747
