@@ -4,7 +4,7 @@
         <div class="source">{{ watchlist.SourceType | escape }}: {{ watchlist.SourceURI | escape }}</div>
     </div>
     <div class="actions">
-        <button class="btn btn-sm" hx-post="/api/watchlists/{{ watchlist.ID }}/sync" hx-target="#console-logs" aria-label="Sync watchlist {{ watchlist.Name | escape }}">
+        <button class="btn btn-sm" hx-post="/api/watchlists/{{ watchlist.ID }}/sync" hx-target="#console-logs" hx-disabled-elt="this" aria-label="Sync watchlist {{ watchlist.Name | escape }}">
             Sync
         </button>
         <button class="btn btn-sm" hx-get="/api/watchlists/{{ watchlist.ID }}/preview" hx-target="#watchlist-preview-{{ watchlist.ID }}" hx-swap="innerHTML" type="button" aria-label="Preview tracks for {{ watchlist.Name | escape }}">
@@ -25,5 +25,5 @@
             <span class="toggle-slider"></span>
         </label>
     </div>
-    <div id="watchlist-preview-{{ watchlist.ID }}" class="watchlist-preview"></div>
+    <div id="watchlist-preview-{{ watchlist.ID }}" class="watchlist-preview" aria-live="polite"></div>
 </div>
