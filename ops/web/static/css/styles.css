@@ -184,7 +184,7 @@ textarea:focus-visible,
     display: flex;
     justify-content: space-between;
     align-items: center;
-    transition: all 0.2s;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
     position: relative;
 }
 
@@ -363,7 +363,8 @@ textarea:focus-visible,
     .btn,
     .btn::before,
     .modal-overlay,
-    .modal {
+    .modal,
+    .watchlist-preview {
         animation: none;
         transition: none;
     }
@@ -617,12 +618,20 @@ textarea:focus-visible,
 }
 .watchlist-preview {
     margin-top: 0.5rem;
-    padding: 0.5rem;
+    padding: 0;
     background: var(--bg-secondary);
     border-radius: 4px;
     font-size: 0.8rem;
-    max-height: 200px;
+    max-height: 0;
     overflow-y: auto;
+    flex-wrap: wrap;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0;
+}
+.watchlist-preview:not(:empty) {
+    padding: 0.5rem;
+    max-height: 300px;
+    opacity: 1;
 }
 .watchlist-preview .track {
     display: flex;
