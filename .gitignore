@@ -21,6 +21,8 @@ music-library/
 
 # Local tool artifacts
 .gitnexus/
+.beads/
+.slim/clonedeps/
 
 # IDE
 .vscode/
@@ -28,6 +30,18 @@ music-library/
 *.swp
 *.swo
 *~
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+dist/
+build/
+.next/
+target/
 
 # Logs
 *.log
