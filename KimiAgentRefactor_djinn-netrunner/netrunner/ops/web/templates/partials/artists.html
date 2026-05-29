@@ -1,0 +1,42 @@
+<div class="artists-region">
+    <div class="section-header">
+        <h2>Monitored Artists</h2>
+        <button class="btn btn-primary" hx-get="/partials/artist-form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Add new artist to monitor">
+            Add Artist
+        </button>
+    </div>
+    
+    <div id="artists-list">
+    {% for artist in artists %}
+    <div class="artist-card" id="artist-{{ artist.ID }}">
+        <div class="artist-info">
+            <div class="name">
+                {{ artist.Name | escape }}
+                {% if not artist.Monitored %}<span class="badge badge-disabled">Paused</span>{% endif %}
+            </div>
+            <div class="details">
+                <span>MBID: {{ artist.MusicBrainzID | escape }}</span>
+                <span>Releases: {{ artist.AcquiredReleases }}/{{ artist.TotalReleases }}</span>
+                 <span>Last Scan: {{ artist.LastScanDate | date:"Jan 02 15:04" }}</span>
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn btn-sm btn-secondary" hx-post="/api/artists/{{ artist.ID }}/sync" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" aria-label="Sync discography for {{ artist.Name | escape }}">
+                Sync
+            </button>
+            <button class="btn btn-sm" hx-patch="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" aria-label="{% if artist.Monitored %}Pause monitoring for {{ artist.Name | escape }}{% else %}Resume monitoring for {{ artist.Name | escape }}{% endif %}">
+                {% if artist.Monitored %}Pause{% else %}Resume{% endif %}
+            </button>
+            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to remove {{ artist.Name | escape }}?" aria-label="Remove {{ artist.Name | escape }} from monitoring">
+                Remove
+            </button>
+        </div>
+    </div>
+    {% empty %}
+    <p class="empty-state">No artists being monitored</p>
+    <p class="text-secondary">Add an artist using the button above to track new releases.</p>
+    {% endfor %}
+    </div>
+</div>
+
+<div id="modal-container"></div>

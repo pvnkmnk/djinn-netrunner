@@ -1,0 +1,12 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Profiles - NETRUNNER{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Quality Profiles</h2>
+</div>
+<section id="profiles-region" hx-get="/partials/profiles" hx-trigger="load">
+    <div class="loading">Loading...</div>
+</section>
+{% endblock %}

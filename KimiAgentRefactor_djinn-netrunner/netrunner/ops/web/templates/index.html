@@ -1,0 +1,88 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Dashboard - NETRUNNER{% endblock %}
+
+{% block content %}
+{% if authUserID == "" %}
+<div class="login-overlay">
+    <div class="login-card" id="login-card">
+        <h2>Welcome to NetRunner</h2>
+        <p class="login-subtitle">Music Acquisition Pipeline</p>
+        
+        <form id="login-form" class="login-form">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required placeholder="admin@example.com">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+            <div id="login-error" class="error-message hidden"></div>
+        </form>
+        
+        <div class="login-actions">
+            <button class="btn btn-link" id="show-register">Create Account</button>
+        </div>
+    </div>
+    
+    <div class="register-card hidden" id="register-card">
+        <h2>Create Account</h2>
+        <form id="register-form" class="login-form">
+            <div class="form-group">
+                <label for="reg-email">Email</label>
+                <input type="email" id="reg-email" name="email" required placeholder="admin@example.com">
+            </div>
+            <div class="form-group">
+                <label for="reg-password">Password</label>
+                <input type="password" id="reg-password" name="password" required placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+            <div id="register-error" class="error-message hidden"></div>
+        </form>
+        <div class="login-actions">
+            <button class="btn btn-link" id="show-login">Back to Login</button>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="dashboard" data-page="dashboard">
+    <section class="stats-region" hx-get="/partials/stats" hx-trigger="every 30s" aria-live="polite" aria-atomic="true">
+        <div class="stats-loading">Loading stats...</div>
+    </section>
+    
+    <section class="watchlists-region" hx-get="/partials/watchlists" hx-trigger="every 60s" aria-live="polite" aria-atomic="true">
+        <div class="watchlists-loading">Loading watchlists...</div>
+    </section>
+    
+    <div id="status-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+    <section class="console-region" aria-labelledby="console-heading">
+        <h2 id="console-heading" class="sr-only">Live Console</h2>
+        <div class="console-controls">
+            <button class="btn" id="btn-attach" hx-post="/console/attach" aria-label="Attach to job console">Attach</button>
+            <button class="btn" id="btn-detach" aria-label="Detach from job console">Detach</button>
+            <span class="filter-group" role="group" aria-label="Filter logs by level">
+                <button class="filter-btn active" data-filter="all" aria-label="Show all logs">ALL</button>
+                <button class="filter-btn" data-filter="OK" aria-label="Show OK logs">OK</button>
+                <button class="filter-btn" data-filter="INFO" aria-label="Show INFO logs">INFO</button>
+                <button class="filter-btn" data-filter="WARN" aria-label="Show WARN logs">WARN</button>
+                <button class="filter-btn" data-filter="ERR" aria-label="Show ERR logs">ERR</button>
+            </span>
+            <button class="btn" id="btn-copy" aria-label="Copy last 200 log lines to clipboard">Copy Last 200</button>
+            <button class="btn" id="btn-clear" aria-label="Clear console logs">Clear</button>
+            <button class="btn" id="btn-resume" aria-label="Resume live log scrolling">Resume Live</button>
+        </div>
+        
+        <div id="console-socket" class="console-socket">
+            <div class="console-placeholder">Select a job to attach</div>
+        </div>
+        
+        <div id="console-logs" class="console-logs" hx-ext="ws" ws-connect="/ws/jobs" aria-live="polite">
+        </div>
+    </section>
+</div>
+{% endif %}
+{% endblock %}

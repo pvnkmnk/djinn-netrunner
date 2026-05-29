@@ -1,0 +1,17 @@
+<div class="preview-header">
+    <span class="preview-count">{{ Tracks|length }} of {{ TotalCount }} tracks</span>
+    <span class="badge badge-source badge-{{ SourceType | escape }}">{{ SourceType | escape }}</span>
+</div>
+{% for track in Tracks %}
+<div class="track">
+    {% if track.CoverURL %}<span class="track-cover" data-cover="{{ track.CoverURL | escape }}"></span>{% endif %}
+    <span class="track-info">
+        <span class="track-title">{{ track.Title | escape }}</span>
+        <span class="track-artist">{{ track.Artist | escape }}</span>
+        {% if track.Album %}<span class="track-album">{{ track.Album | escape }}</span>{% endif %}
+    </span>
+</div>
+{% endfor %}
+{% if HasMore %}
+<div class="more-indicator">+ {{ Remaining }} more tracks — sync to see full list</div>
+{% endif %}

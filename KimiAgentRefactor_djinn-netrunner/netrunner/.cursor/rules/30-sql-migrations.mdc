@@ -1,0 +1,16 @@
+---
+description: SQL migrations conventions and safety constraints.
+globs: ""ops/migrations/**/*.sql""
+alwaysApply: false
+---
+
+# SQL / Migration Rules
+
+Safety:
+- Migrations should be safe/idempotent where feasible.
+
+Contracts:
+- Changing jobtypes/states requires worker updates + docs updates.
+
+Reaper functions:
+- Keep SQL reaper functions simple; correctness relies on running them from a short-lived maintenance connection so locks drop on session end.

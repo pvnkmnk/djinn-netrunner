@@ -1,0 +1,190 @@
+package api
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"log/slog"
+	"net/mail"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+)
+
+const (
+	SessionCookie = "session_id"
+	SessionTTL    = 7 * 24 * time.Hour
+	BcryptCost    = 12
+)
+
+type AuthHandler struct {
+	db *gorm.DB
+}
+
+func NewAuthHandler(db *gorm.DB) *AuthHandler {
+	return &AuthHandler{db: db}
+}
+
+// Register handles user registration
+func (h *AuthHandler) Register(c *fiber.Ctx) error {
+	var payload struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if payload.Email == "" || payload.Password == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
+	}
+
+	// Validate and normalize email format using net/mail.ParseAddress (RFC 5322)
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid email format"})
+	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
+
+	// Check if user exists — return identical response to prevent user enumeration
+	// Use case/whitespace-insensitive match for transitional safety with legacy non-normalized data.
+	var existing database.User
+	if err := h.db.Where("LOWER(TRIM(email)) = ?", payload.Email).First(&existing).Error; err == nil {
+		slog.Info("Duplicate registration attempt", "email", payload.Email, "ip", c.IP())
+		return c.Status(201).JSON(fiber.Map{"status": "ok"})
+	}
+
+	// Hash password with secure cost factor (OWASP recommended: 12+)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(payload.Password), BcryptCost)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to hash password"})
+	}
+
+	user := database.User{
+		Email:        payload.Email,
+		PasswordHash: string(hashedPassword),
+		Role:         "user", // Hardcoded to prevent privilege escalation during registration
+	}
+
+	if err := h.db.Create(&user).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to create user"})
+	}
+
+	return c.Status(201).JSON(fiber.Map{"status": "ok"})
+}
+
+// Login handles user login
+func (h *AuthHandler) Login(c *fiber.Ctx) error {
+	var payload struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	// Normalize email before DB lookup
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
+	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
+
+	var user database.User
+	// Use case/whitespace-insensitive match for transitional safety with legacy non-normalized data.
+	if err := h.db.Where("LOWER(TRIM(email)) = ?", payload.Email).First(&user).Error; err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(payload.Password)); err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
+	}
+
+	// Create session
+	sessionID, err := generateSessionID()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to generate session id"})
+	}
+
+	expiresAt := time.Now().Add(SessionTTL)
+	session := database.Session{
+		SessionID: sessionID,
+		UserID:    user.ID,
+		ExpiresAt: expiresAt,
+		IP:        c.IP(),
+		UserAgent: c.Get("User-Agent"),
+	}
+
+	if err := h.db.Create(&session).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to create session"})
+	}
+
+	// Update last login
+	now := time.Now()
+	h.db.Model(&user).Update("last_login_at", &now)
+
+	// Set cookie with security best practices
+	// SECURITY: SameSite=Strict prevents CSRF (no cross-site top-level GET navigations)
+	// Secure flag set dynamically: false for local HTTP dev, true for HTTPS behind Caddy
+	secure := c.Protocol() == "https"
+	c.Cookie(&fiber.Cookie{
+		Name:     SessionCookie,
+		Value:    sessionID,
+		Expires:  expiresAt,
+		HTTPOnly: true,
+		Secure:   secure,
+		SameSite: "Strict",
+		Path:     "/",
+	})
+
+	return c.Redirect("/", 302)
+}
+
+// Logout handles user logout
+func (h *AuthHandler) Logout(c *fiber.Ctx) error {
+	sessionID := c.Cookies(SessionCookie)
+	if sessionID != "" {
+		h.db.Where("session_id = ?", sessionID).Delete(&database.Session{})
+	}
+
+	c.ClearCookie(SessionCookie)
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+func (h *AuthHandler) GetDB() *gorm.DB {
+	return h.db
+}
+
+// AuthMiddleware protects routes
+func (h *AuthHandler) AuthMiddleware(c *fiber.Ctx) error {
+	sessionID := c.Cookies(SessionCookie)
+	if sessionID == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	var user database.User
+	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+		First(&user).Error
+
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	// Store user in context
+	c.Locals("user", user)
+	return c.Next()
+}
+
+func generateSessionID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}

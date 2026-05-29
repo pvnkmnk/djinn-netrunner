@@ -33,13 +33,20 @@ services/
 ├── listenbrainz_provider.go      # ListenBrainz recent listens provider
 ├── rss_provider.go               # RSS/Atom feed provider
 ├── file_watchlist_provider.go   # Local CSV/M3U/TXT file provider
+├── lidarr_provider.go            # Lidarr wanted/missing albums provider
 ├── acoustid_service.go           # AcoustID fingerprint lookup
+├── lyrics_service.go             # Lyrics fetching from LRCLIB
 ├── scanner_service.go             # Library file scanning + indexing
 ├── cache_service.go               # Database-backed metadata cache
+├── safe_http.go                  # SSRF-safe HTTP client wrapper
 ├── notification_service.go       # Webhook notifications (job completion, quota alerts)
 ├── disk_quota_service.go         # Disk usage calculation + quota enforcement
 ├── metadata_extractor.go         # Audio tag reading + cover art embedding
+├── tagging_service.go            # Audio file tagging and enrichment provenance
+├── transcoder_service.go         # FFmpeg-based audio transcoding
+├── ytdlp_service.go              # yt-dlp based audio extraction
 ├── profile_service.go            # Quality profile management
+├── navidrome_client.go           # Navidrome Subsonic-compatible server client
 └── release_monitor_service.go    # Background release checking
 ```
 
@@ -172,6 +179,12 @@ The `QualityProfile.IsMatch()` method scores search results in `SlskdService`.
 | ScannerService | API handlers (manual scan) |
 | DiskQuotaService | Background workers, API handlers |
 | NotificationService | JobHandlers, DiskQuotaService |
+| LidarrProvider | WatchlistService (as registered provider) |
+| LyricsService | AcquisitionHandler, MetadataExtractor |
+| NavidromeClient | AcquisitionHandler (library scan trigger) |
+| TaggingService | AcquisitionHandler, MetadataExtractor |
+| TranscoderService | AcquisitionHandler |
+| YtdlpService | AcquisitionHandler |
 
 ### External Dependencies
 
@@ -179,14 +192,19 @@ The `QualityProfile.IsMatch()` method scores search results in `SlskdService`.
 |---------|-------------------------|
 | SlskdService | slskd (Soulseek daemon) - REST API |
 | GonicClient | Gonic music server - Subsonic REST API |
+| NavidromeClient | Navidrome/Jellyfin server - Subsonic REST API |
 | MusicBrainzService | musicbrainz.org - REST API |
 | DiscogsService | api.discogs.com - REST API |
 | SpotifyProvider | Spotify Web API - OAuth |
 | LastFMProvider | ws.audioscrobbler.com - Last.fm API |
 | ListenBrainzProvider | api.listenbrainz.org - ListenBrainz API |
+| LidarrProvider | Lidarr API - REST |
 | RSSProvider | Any RSS/Atom feed |
 | AcoustIDService | api.acoustid.org - AcoustID API |
 | MetadataExtractor | fpcalc (Chromaprint CLI), tag libraries |
+| LyricsService | lrclib.net - lyrics API |
+| YtdlpService | yt-dlp (external CLI) for audio extraction |
+| TranscoderService | FFmpeg (external CLI) for audio transcoding |
 
 ### Database Models Used
 - `database.Job` / `database.JobItem` - job queue

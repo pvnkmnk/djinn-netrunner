@@ -1,0 +1,17 @@
+# NETRUNNER Playlist Format
+# Format: Artist - Title
+# or: Artist - Album - Title
+#
+# Lines starting with # are comments
+
+# Example tracks
+Daft Punk - Random Access Memories - Get Lucky
+Pink Floyd - The Dark Side of the Moon - Time
+Radiohead - OK Computer - Paranoid Android
+Miles Davis - Kind of Blue - So What
+The Beatles - Abbey Road - Come Together
+Led Zeppelin - IV - Stairway to Heaven
+Nirvana - Nevermind - Smells Like Teen Spirit
+Kendrick Lamar - good kid, m.A.A.d city - Swimming Pools
+Billie Eilish - When We All Fall Asleep, Where Do We Go? - bad guy
+Arctic Monkeys - AM - Do I Wanna Know?

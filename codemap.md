@@ -30,8 +30,10 @@ Console-first operations UI for a music acquisition pipeline. Monitors watchlist
 | `backend/internal/api/templates/` | Pongo2 engine — Jinja2-compatible Fiber ViewEngine adapter | [View Map](backend/internal/api/templates/codemap.md) |
 | `backend/internal/config/` | Configuration — env-based loader for all service connections | [View Map](backend/internal/config/codemap.md) |
 | `backend/internal/database/` | Data layer — GORM models, migrations, advisory locks, LiteFS | [View Map](backend/internal/database/codemap.md) |
+| `backend/internal/integration/` | Integration test harness — Dockerized slskd + Postgres for end-to-end pipeline tests | [View Map](backend/internal/integration/codemap.md) |
 | `backend/internal/interfaces/` | Abstractions — SpotifyClientProvider, WatchlistProvider contracts | [View Map](backend/internal/interfaces/codemap.md) |
 | `backend/internal/services/` | Core logic — watchlists, jobs, P2P, metadata, artist tracking | [View Map](backend/internal/services/codemap.md) |
+| `backend/internal/testutil/` | Test helpers & mocks — shared test doubles for watchlist providers | [View Map](backend/internal/testutil/codemap.md) |
 | `ops/caddy/` | Reverse proxy — Caddy config for production HTTPS | [View Map](ops/caddy/codemap.md) |
 | `ops/db/` | Database ops — PostgreSQL init scripts and SQL migrations | [View Map](ops/db/codemap.md) |
 | `ops/web/` | Web assets root — static files + Pongo2 templates | [View Map](ops/web/codemap.md) |

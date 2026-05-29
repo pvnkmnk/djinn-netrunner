@@ -48,3 +48,16 @@ Thumbs.db
 *.db-shm
 *.db-wal
 
+# Build output
+dist/
+
+# Local mise overrides
+mise.local.toml
+
+# Mise-managed Postgres data directory
+.postgres-data/
+
+# BEGIN netrunner clonedeps
+.slim/clonedeps/repos/
+# END netrunner clonedeps
+

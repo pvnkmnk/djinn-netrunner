@@ -17,8 +17,10 @@ Each domain feature has its own handler file with dedicated structs:
 - **StatsHandler** - Aggregate statistics endpoints
 - **WebSocketManager** - Real-time log streaming via PostgreSQL LISTEN/NOTIFY
 - **SpotifyAuthHandler** - OAuth2 Spotify integration
+- **HealthHandler** - Dependency-checked health responses
 
 ### Key Patterns
+- **AuthContext helpers**: `currentUserFromLocals()` extracts authenticated user from Fiber locals (set by middleware); `internalServerError()` logs and returns generic 500 without leaking details
 - **Session validation**: Every handler performs auth check via cookie lookup against sessions table with expiration validation
 - **HTMX detection**: Check `Htmx-Request` header to return HTML partials vs JSON vs redirect
 - **GORM preloading**: Use `.Preload()` for related entities (Watchlist.QualityProfile, Schedule.Watchlist)
@@ -30,6 +32,7 @@ Each domain feature has its own handler file with dedicated structs:
 type AuthHandler struct { db *gorm.DB }
 type WatchlistHandler struct { db *gorm.DB; service *services.WatchlistService }
 type WebSocketManager struct { clients map[string]map[*websocket.Conn]struct{}; mu sync.RWMutex }
+type HealthHandler struct { db *gorm.DB; cfg *config.Config }
 ```
 
 ## Flow
@@ -69,6 +72,7 @@ type WebSocketManager struct { clients map[string]map[*websocket.Conn]struct{}; 
 - **services.MusicBrainzService** - Artist lookup
 - **github.com/gofiber/contrib/websocket** - WebSocket upgrade
 - **github.com/lib/pq** - PostgreSQL LISTEN/NOTIFY for real-time
+- **github.com/pvnkmnk/netrunner/backend/internal/config** - Configuration management
 
 ### Consumers
 - **Browser** - HTMX client making requests to all endpoints

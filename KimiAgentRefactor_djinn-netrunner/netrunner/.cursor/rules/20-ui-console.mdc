@@ -1,0 +1,20 @@
+---
+description: UI rules for HTMX console-first behavior.
+globs: ""ops/templates/**/*.html""
+alwaysApply: false
+---
+
+# UI / Console Rules
+
+Framework constraints:
+- Keep HTMX + server-rendered partials; no SPA frameworks.
+- No progress bars by default; logs are the progress surface.
+
+Console behavior:
+- Preserve attach modes (STARTED vs ATTACHED / quiet attach).
+- Preserve WebSocket + NOTIFY-based streaming.
+
+Styling:
+- Single CSS file.
+- Terminal palette, sharp edges.
+- Minimal animation.

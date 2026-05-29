@@ -1,0 +1,97 @@
+<div class="modal-detail">
+    <div class="modal-detail-header">
+        <h3>{{ track.Title | escape }}</h3>
+        <button class="btn btn-sm" data-close-modal aria-label="Close details">&times;</button>
+    </div>
+    <div class="modal-detail-body">
+        <div class="detail-grid">
+            {% if track.Artist %}
+            <div class="detail-field">
+                <span class="detail-label">Artist</span>
+                <span class="detail-value">{{ track.Artist | escape }}</span>
+            </div>
+            {% endif %}
+            {% if track.Album %}
+            <div class="detail-field">
+                <span class="detail-label">Album</span>
+                <span class="detail-value">{{ track.Album | escape }}</span>
+            </div>
+            {% endif %}
+            <div class="detail-field">
+                <span class="detail-label">Track #</span>
+                <span class="detail-value">{% if track.TrackNum %}{{ track.TrackNum }}{% if track.DiscNum %} (Disc {{ track.DiscNum }}){% endif %}{% else %}&mdash;{% endif %}</span>
+            </div>
+            <div class="detail-field">
+                <span class="detail-label">Format</span>
+                <span class="detail-value">{{ track.Format | escape }}</span>
+            </div>
+            <div class="detail-field">
+                <span class="detail-label">File Size</span>
+                <span class="detail-value">{{ track.FileSize / 1048576 }} MB</span>
+            </div>
+            <div class="detail-field">
+                <span class="detail-label">Year</span>
+                <span class="detail-value">{% if track.Year %}{{ track.Year }}{% else %}&mdash;{% endif %}</span>
+            </div>
+        </div>
+
+        {% if track.Genre or track.Composer %}
+        <div class="detail-section">
+            <h4>Additional Metadata</h4>
+            <div class="detail-grid">
+                {% if track.Genre %}
+                <div class="detail-field">
+                    <span class="detail-label">Genre</span>
+                    <span class="detail-value">{{ track.Genre | escape }}</span>
+                </div>
+                {% endif %}
+                {% if track.Composer %}
+                <div class="detail-field">
+                    <span class="detail-label">Composer</span>
+                    <span class="detail-value">{{ track.Composer | escape }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if track.Fingerprint or track.FileHash %}
+        <div class="detail-section">
+            <h4>Technical Details</h4>
+            <div class="detail-grid">
+                {% if track.FileHash %}
+                <div class="detail-field full-width">
+                    <span class="detail-label">File Hash</span>
+                    <span class="detail-value mono small">{{ track.FileHash | escape }}</span>
+                </div>
+                {% endif %}
+                {% if track.Fingerprint %}
+                <div class="detail-field full-width">
+                    <span class="detail-label">AcoustID Fingerprint</span>
+                    <span class="detail-value mono small">{{ track.Fingerprint | escape }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if track.EnrichmentProvenance %}
+        <div class="detail-section">
+            <h4>Enrichment Provenance</h4>
+            <div class="detail-value mono small">{{ track.EnrichmentProvenance | escape }}</div>
+        </div>
+        {% endif %}
+
+        {% if track.CoverURL %}
+        <div class="detail-section">
+            <h4>Cover Art</h4>
+            <img src="{{ track.CoverURL | escape }}" alt="Cover art for {{ track.Album | escape }}" class="detail-cover" loading="lazy">
+        </div>
+        {% endif %}
+
+        <div class="detail-section">
+            <h4>File Location</h4>
+            <div class="detail-value mono small">{{ track.Path | escape }}</div>
+        </div>
+    </div>
+</div>

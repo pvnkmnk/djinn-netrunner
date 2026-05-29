@@ -1,0 +1,50 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Docker volumes
+postgres-data/
+slskd-data/
+gonic-data/
+download-staging/
+music-library/
+
+# Local tool artifacts
+.gitnexus/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Binaries
+*.exe
+*.bin
+
+# Worktrees
+.worktrees/
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+

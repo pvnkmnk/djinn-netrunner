@@ -11,6 +11,7 @@ HTMX-swappable fragments for dynamic content updates.
 | `watchlist-preview.html` | Single watchlist summary |
 | `watchlist-form.html` | Add/edit watchlist modal |
 | `libraries.html` | Library list |
+| `library-browse.html` | Library browsing interface with search, sorting, and pagination |
 | `library-form.html` | Add/edit library modal |
 | `profiles.html` | Source profiles list |
 | `profile-form.html` | Add/edit profile modal |
@@ -20,8 +21,8 @@ HTMX-swappable fragments for dynamic content updates.
 | `artists.html` | Tracked artists |
 | `artist-card.html` | Single artist card |
 | `artist-form.html` | Add/edit artist modal |
+| `track-detail.html` | Track details modal showing metadata, technical info, and file location |
 | `jobs.html` | Job list with filters |
-| `jobs.html` | Job list |
 
 ## Flow
 - Loaded via HTMX `hx-get="/partials/name"` on page load/trigger

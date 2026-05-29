@@ -1,0 +1,25 @@
+---
+description: Worker orchestration rules, locks, reaper, and invariants.
+globs: ""ops/**/*.py""
+alwaysApply: false
+---
+
+# Backend / Worker Rules
+
+Concurrency:
+- Claims must use FOR UPDATE SKIP LOCKED.
+- Job scopes must be protected by advisory locks (session-level).
+
+Connection discipline:
+- notifyconn: autocommit LISTEN wakeups.
+- lockconn: long-lived advisory locks for running jobs.
+- maintenance: short-lived connection for reapers (connect -> reap -> close).
+
+Determinism:
+- Never regenerate jobitems plans on retry.
+
+Fairness:
+- Keep round-robin dispatch.
+
+Logging:
+- Logs are the UI; keep lines meaningful and operator-usable.

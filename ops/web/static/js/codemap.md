@@ -7,6 +7,7 @@ Minimal client-side JavaScript for modal management and console controls.
 | File | Purpose |
 |------|---------|
 | `app.js` | Modal handling, log filtering, copy to clipboard, auto-scroll, WebSocket message handling |
+| `htmx.min.js` | HTMX library (v1.9.10) loaded locally for offline/self-contained deployments |
 
 ## Flow
 - Deferred script load in base.html

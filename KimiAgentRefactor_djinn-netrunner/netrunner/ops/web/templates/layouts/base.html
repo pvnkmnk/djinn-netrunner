@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}NETRUNNER{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="/static/js/htmx.min.js"></script>
+    <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+    <a class="sr-only sr-only-focusable skip-link" href="#main-content">Skip to main content</a>
+    <header class="app-header" role="banner">
+        <h1>NETRUNNER</h1>
+        <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav" aria-label="Toggle navigation">
+            Menu
+        </button>
+        <nav id="primary-nav" class="primary-nav" aria-label="Primary">
+            <a href="/" {% if Page == "dashboard" %}class="active" aria-current="page"{% endif %}>Dashboard</a>
+            <a href="/watchlists" {% if Page == "watchlists" %}class="active" aria-current="page"{% endif %}>Watchlists</a>
+            <a href="/libraries" {% if Page == "libraries" %}class="active" aria-current="page"{% endif %}>Libraries</a>
+            <a href="/profiles" {% if Page == "profiles" %}class="active" aria-current="page"{% endif %}>Profiles</a>
+            <a href="/schedules" {% if Page == "schedules" %}class="active" aria-current="page"{% endif %}>Schedules</a>
+            <a href="/artists" {% if Page == "artists" %}class="active" aria-current="page"{% endif %}>Artists</a>
+            <a href="/jobs" {% if Page == "jobs" %}class="active" aria-current="page"{% endif %}>Jobs</a>
+        </nav>
+    </header>
+    <main id="main-content" class="app-main" role="main" tabindex="-1">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="app-footer">
+        NetRunner v1.0.0 | Music Acquisition Pipeline
+    </footer>
+</body>
+</html>

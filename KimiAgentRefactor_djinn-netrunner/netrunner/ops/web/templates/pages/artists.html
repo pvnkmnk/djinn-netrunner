@@ -1,0 +1,12 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Artists - NETRUNNER{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Monitored Artists</h2>
+</div>
+<section id="artists-region" hx-get="/partials/artists" hx-trigger="load">
+    <div class="loading">Loading...</div>
+</section>
+{% endblock %}

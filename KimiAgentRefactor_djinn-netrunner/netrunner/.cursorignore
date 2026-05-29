@@ -1,0 +1,37 @@
+# Dependencies / build artifacts
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/dist/
+**/build/
+
+# Runtime volumes / data
+pgdata/
+gonicdata/
+caddydata/
+caddyconfig/
+
+# Media + downloads (avoid stuffing AI context)
+downloads/
+music/
+incomplete/
+**/*.flac
+**/*.mp3
+**/*.m4a
+**/*.wav
+**/*.zip
+**/*.7z
+
+# Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+id_rsa
+*.p12
+
+# Logs
+**/*.log

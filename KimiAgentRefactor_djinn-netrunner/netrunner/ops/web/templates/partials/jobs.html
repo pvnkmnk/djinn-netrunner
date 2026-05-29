@@ -1,0 +1,62 @@
+<div class="jobs-region">
+    <div class="filters" hx-get="/partials/jobs" hx-target="#jobs-list" hx-trigger="change">
+        <select name="job_type">
+            <option value="">All Types</option>
+            <option value="sync">Sync</option>
+            <option value="scan">Scan</option>
+            <option value="acquisition">Acquisition</option>
+            <option value="enrich">Enrich</option>
+        </select>
+        <select name="state">
+            <option value="">All States</option>
+            <option value="queued">Queued</option>
+            <option value="running">Running</option>
+            <option value="succeeded">Succeeded</option>
+            <option value="failed">Failed</option>
+        </select>
+    </div>
+    
+    <div id="jobs-list">
+    {% for job in jobs %}
+    <div class="job-card {% if job.State == "failed" %}job-card-failed{% endif %}{% if job.State == "running" %} job-card-running{% endif %}" id="job-{{ job.ID }}">
+        <div class="job-info">
+            <div class="job-id">#{{ job.ID }}</div>
+            <div class="job-type">{{ job.Type }}</div>
+            <div class="job-state state-{{ job.State }}">{{ job.State }}</div>
+        </div>
+        <div class="job-meta">
+            <span>{{ job.RequestedAt | date:"Jan 02 15:04" }}</span>
+            <span>By: {{ job.CreatedBy | escape }}</span>
+            {% if job.Attempt > 0 and job.MaxAttempts > 0 %}
+            <span class="job-attempt">Attempt: {{ job.Attempt }}/{{ job.MaxAttempts }}</span>
+            {% endif %}
+        </div>
+        {% if job.State == "failed" and job.ErrorDetail %}
+        <div class="job-error-detail" title="{{ job.ErrorDetail | escape }}">
+            {{ job.ErrorDetail | escape }}
+        </div>
+        {% endif %}
+        <div class="actions">
+            <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ job.ID }}" hx-target="#job-logs-container" hx-swap="innerHTML" aria-label="View logs for job #{{ job.ID }}">
+                View Logs
+            </button>
+            {% if job.State == "queued" %}
+            <button class="btn btn-sm btn-danger" hx-post="/api/jobs/{{ job.ID }}/cancel" hx-target="#job-{{ job.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to cancel job #{{ job.ID }}?" aria-label="Cancel job #{{ job.ID }}">
+                Cancel
+            </button>
+            {% endif %}
+            {% if job.State == "failed" %}
+            <button class="btn btn-sm btn-warning" hx-post="/api/jobs/{{ job.ID }}/retry" hx-target="#job-{{ job.ID }}" hx-swap="outerHTML" hx-confirm="Retry job #{{ job.ID }}?" aria-label="Retry job #{{ job.ID }}">
+                Retry
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    {% empty %}
+    <p class="empty-state">No jobs found</p>
+    <p class="text-secondary">Jobs appear when watchlists are synced or libraries are scanned.</p>
+    {% endfor %}
+    </div>
+    
+    <div id="job-logs-container"></div>
+</div>

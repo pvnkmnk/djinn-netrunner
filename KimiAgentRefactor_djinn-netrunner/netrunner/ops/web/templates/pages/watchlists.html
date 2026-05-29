@@ -1,0 +1,12 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Watchlists - NETRUNNER{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Watchlists</h2>
+</div>
+<section id="watchlists-region" hx-get="/partials/watchlists" hx-trigger="load">
+    <div class="loading">Loading...</div>
+</section>
+{% endblock %}

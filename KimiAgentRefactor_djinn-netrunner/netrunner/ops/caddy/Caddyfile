@@ -1,0 +1,42 @@
+# Djinn NETRUNNER Caddy Configuration
+# Edge proxy with TLS termination and WebSocket support
+
+{$DOMAIN:localhost} {
+# Gonic streaming server (Subsonic API)
+handle /music/* {
+    reverse_proxy gonic:4747
+}
+handle /rest/* {
+    reverse_proxy gonic:4747
+}
+
+# All requests to netrunner (including WebSocket)
+handle {
+    reverse_proxy netrunner:8080 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+    # TLS auto (Let's Encrypt for production domains)
+    # For localhost, Caddy uses internal CA
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: https:; font-src 'self' data:;"
+    }
+
+    # Logging
+    log {
+        output stdout
+        format json
+    }
+}
