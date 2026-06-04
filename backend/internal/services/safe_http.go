@@ -27,6 +27,10 @@ var privateCIDRs = []string{
 // parsedCIDRs is populated at init time.
 var parsedCIDRs []*net.IPNet
 
+// allowLoopback permits connections to loopback addresses (127.0.0.1, ::1).
+// This is disabled by default for security but can be enabled in tests.
+var allowLoopback = false
+
 func init() {
 	for _, cidr := range privateCIDRs {
 		_, network, err := net.ParseCIDR(cidr)
@@ -39,6 +43,9 @@ func init() {
 
 // isPrivateIP returns true if ip is in a private/loopback/link-local range.
 func isPrivateIP(ip net.IP) bool {
+	if allowLoopback && ip.IsLoopback() {
+		return false
+	}
 	for _, network := range parsedCIDRs {
 		if network.Contains(ip) {
 			return true
@@ -112,6 +119,34 @@ func NewProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Cl
 		}
 	}
 	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
+// NewSafeProxyAwareHTTPClient creates an *http.Client that routes traffic through
+// the configured PROXY_URL when set AND prevents connections to private/internal
+// IP addresses. This provides both proxying and SSRF protection.
+func NewSafeProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Client {
+	transport := safeTransport.Clone()
+	if cfg != nil && cfg.ProxyURL != "" {
+		proxyURL, err := url.Parse(cfg.ProxyURL)
+		if err != nil {
+			slog.Warn("Invalid PROXY_URL, running without proxy", "error", err)
+		} else {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Defense in depth: limit redirect count. SSRF protection for the
+			// redirect target is enforced at the Transport level (safeDialContext).
+			if len(via) >= 10 {
+				return fmt.Errorf("ssrf: too many redirects")
+			}
+			return nil
+		},
+	}
 }
 
 func SafeGet(rawURL string) (*http.Response, error) {

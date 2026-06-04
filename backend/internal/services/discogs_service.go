@@ -87,7 +87,7 @@ func NewDiscogsService(cfg *config.Config, baseURLs ...string) *DiscogsService {
 
 	var httpClient *http.Client
 	if cfg != nil {
-		httpClient = NewProxyAwareHTTPClient(cfg, 30*time.Second)
+		httpClient = NewSafeProxyAwareHTTPClient(cfg, 30*time.Second)
 	} else {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}

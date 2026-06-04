@@ -29,11 +29,11 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 		providers:   make(map[string]interfaces.WatchlistProvider),
 	}
 
-	// Shared proxy-aware client for all provider HTTP calls
-	proxyClient := NewProxyAwareHTTPClient(cfg, 30*time.Second)
+	// Shared safe proxy-aware client for external provider HTTP calls (SSRF protected)
+	safeClient := NewSafeProxyAwareHTTPClient(cfg, 30*time.Second)
 
 	// Initialize sp_dc auth for Spotify's two-pronged strategy
-	spdc := NewSpDcAuth(proxyClient)
+	spdc := NewSpDcAuth(safeClient)
 
 	// Register Spotify providers with two-pronged support:
 	// Prong 1 (client credentials) + Prong 2 (sp_dc GraphQL) + Legacy (OAuth)
@@ -42,16 +42,19 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 	s.RegisterProvider("spotify_playlist", spotifyProvider)
 	s.RegisterProvider("spotify_discover", spotifyProvider)
 
-	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
-	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
-	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken, proxyClient))
-	s.RegisterProvider("rss_feed", NewRSSProvider(proxyClient))
-	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken, proxyClient))
+	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey, safeClient))
+	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey, safeClient))
+	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken, safeClient))
+	s.RegisterProvider("rss_feed", NewRSSProvider(safeClient))
+	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken, safeClient))
 	s.RegisterProvider("local_file", NewFileWatchlistProvider())
 	s.RegisterProvider("local_directory", NewDirectoryWatchlistProvider())
 
 	// Lidarr — only register when a running instance is configured
+	// Lidarr is often an internal service, so we use the standard (unsafe) proxy client
+	// to allow connections to local/private network addresses if configured.
 	if cfg.LidarrURL != "" {
+		proxyClient := NewProxyAwareHTTPClient(cfg, 30*time.Second)
 		s.RegisterProvider("lidarr_wanted", NewLidarrProvider(cfg.LidarrURL, cfg.LidarrAPIKey, proxyClient))
 	}
 

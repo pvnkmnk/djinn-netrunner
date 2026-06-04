@@ -38,6 +38,9 @@ type discogsMockItem struct {
 }
 
 func TestDiscogsService_GetCoverArt(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	t.Run("success with cover image", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !strings.Contains(r.Header.Get("Authorization"), "Discogs") {
@@ -153,6 +156,9 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 }
 
 func TestDiscogsService_SearchRelease(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	t.Run("success", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !strings.Contains(r.Header.Get("Authorization"), "Discogs") {
@@ -243,6 +249,9 @@ func TestDiscogsService_SearchRelease(t *testing.T) {
 
 // TestDiscogsService_GetGenre tests the GetGenre helper.
 func TestDiscogsService_GetGenre(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	t.Run("success with genre", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := discogsMockSearchResponse{
@@ -287,6 +296,9 @@ func TestDiscogsService_GetGenre(t *testing.T) {
 
 // TestDiscogsService_GetYear tests the GetYear helper.
 func TestDiscogsService_GetYear(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	t.Run("success with year", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := discogsMockSearchResponse{
@@ -359,6 +371,9 @@ func TestDiscogsService_GetYear(t *testing.T) {
 
 // TestDiscogsService_EnrichTrack tests the EnrichTrack helper.
 func TestDiscogsService_EnrichTrack(t *testing.T) {
+	allowLoopback = true
+	defer func() { allowLoopback = false }()
+
 	t.Run("success", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := discogsMockSearchResponse{
