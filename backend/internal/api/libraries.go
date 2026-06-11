@@ -540,7 +540,10 @@ func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
 	offset := (page - 1) * pageSize
 	order := sortBy + " " + sortDir + ", track_num"
 	var tracks []database.Track
-	if err := tx.Order(order).Offset(offset).Limit(pageSize).Find(&tracks).Error; err != nil {
+	// Bolt Optimization: Select only necessary columns to reduce memory allocation and database I/O.
+	// We include 'path' because it's often needed for underlying media logic even if not rendered.
+	if err := tx.Select("id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre").
+		Order(order).Offset(offset).Limit(pageSize).Find(&tracks).Error; err != nil {
 		return c.SendString("<div class=\"error\">Error loading tracks.</div>")
 	}
 

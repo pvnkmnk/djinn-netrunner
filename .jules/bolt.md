@@ -33,3 +33,11 @@
 ## 2026-04-06 - Targeted Column Selection in Dashboard Partials
 **Learning:** Found that dashboard partials (Watchlists, Artists, Schedules, Libraries, Jobs) were performing "SELECT *" queries, fetching large blobs and unused fields. Additionally, some partials were performing unnecessary or inefficient preloads (e.g., fetching full QualityProfiles when only the name was needed, or when not needed at all).
 **Action:** Applied `.Select()` to all dashboard partial handlers to fetch only the columns required by the Pongo2 templates. Optimized the `Watchlist` preload in `RenderSchedulesPartial` to only fetch `id` and `name`, and removed the `QualityProfile` preload from `RenderWatchlistsPartial`. This reduces memory allocation and database I/O for the most frequently polled endpoints in the application.
+
+## 2026-06-11 - Global Redundant Page Load Queries
+**Learning:** Extended the pattern of removing redundant queries from dashboard page handlers to all domain page handlers (Watchlists, Libraries, Profiles, Schedules, Artists, Jobs). These handlers were fetching full lists of entities that were never used by the Pongo2 "shell" templates, as the data is loaded asynchronously via HTMX.
+**Action:** Removed redundant database queries from all page handlers in `backend/internal/api/pages.go`. This reduces the database load by dozens of queries across the application's main navigation paths and improves perceived initial page load time.
+
+## 2026-06-11 - Targeted Column Selection in Track Browsing
+**Learning:** The `BrowseTracks` endpoint, which handles paginated track listings for libraries, was performing a full `SELECT *` on the `tracks` table. This table contains several large fields (e.g., `enrichment_provenance`, `fingerprint`) that are not displayed in the browse table.
+**Action:** Implemented targeted column selection in `BrowseTracks` (`id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre`). This significantly reduces memory allocation and database I/O when browsing large music libraries.

@@ -356,3 +356,31 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		"CoverArtSources":     profile.CoverArtSources,
 	})
 }
+
+// RenderProfilesPartial returns profiles HTML for HTMX
+func (h *ProfileHandler) RenderProfilesPartial(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	isHtmx := c.Get("Htmx-Request") == "true"
+
+	if !ok {
+		if isHtmx {
+			return c.SendString("<div class=\"error\">Not authenticated.</div>")
+		}
+		return c.Redirect("/", 302)
+	}
+
+	var profiles []database.QualityProfile
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select("id, name, is_default, description, prefer_lossless, allowed_formats, min_bitrate, cover_art_sources").Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+
+	if err := query.Find(&profiles).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading profiles.</div>")
+	}
+
+	return c.Render("partials/profiles", fiber.Map{
+		"profiles": profiles,
+	})
+}
