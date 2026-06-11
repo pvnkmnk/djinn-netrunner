@@ -27,6 +27,10 @@ var privateCIDRs = []string{
 // parsedCIDRs is populated at init time.
 var parsedCIDRs []*net.IPNet
 
+// allowLoopback permits connections to loopback/private addresses.
+// Set to true only in tests.
+var allowLoopback = false
+
 func init() {
 	for _, cidr := range privateCIDRs {
 		_, network, err := net.ParseCIDR(cidr)
@@ -75,7 +79,7 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	}
 	var safeIP net.IP
 	for _, ip := range ips {
-		if isPrivateIP(ip) {
+		if !allowLoopback && isPrivateIP(ip) {
 			continue
 		}
 		safeIP = ip
@@ -103,6 +107,23 @@ func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 // that a single proxy configuration covers every provider.
 func NewProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg != nil && cfg.ProxyURL != "" {
+		proxyURL, err := url.Parse(cfg.ProxyURL)
+		if err != nil {
+			slog.Warn("Invalid PROXY_URL, running without proxy", "error", err)
+		} else {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
+// NewSafeProxyAwareHTTPClient creates an *http.Client that routes traffic through
+// the configured PROXY_URL when set, and prevents connections to private/internal
+// IP addresses. Use this for all outbound API clients for external providers.
+func NewSafeProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = safeDialContext
 	if cfg != nil && cfg.ProxyURL != "" {
 		proxyURL, err := url.Parse(cfg.ProxyURL)
 		if err != nil {

@@ -25,7 +25,7 @@ func NewMusicBrainzService(cfg *config.Config) *MusicBrainzService {
 	return &MusicBrainzService{
 		cfg:         cfg,
 		baseURL:     "https://musicbrainz.org",
-		httpClient:  NewProxyAwareHTTPClient(cfg, 30*time.Second),
+		httpClient:  NewSafeProxyAwareHTTPClient(cfg, 30*time.Second),
 		rateLimiter: time.NewTicker(time.Second),
 	}
 }

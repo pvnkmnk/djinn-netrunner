@@ -34,3 +34,8 @@
 **Vulnerability:** Non-admin users could promote their own quality profiles to system-wide defaults by setting the `is_default` flag in create/update requests.
 **Learning:** Resource attributes that affect global system state (like a 'default' flag) must be explicitly protected by role-based checks in the API handlers.
 **Prevention:** In handlers that accept boolean flags for global settings, verify that the authenticated user has the necessary administrative role before allowing those flags to be modified.
+
+## 2026-06-11 - [Server-Side Request Forgery (SSRF) in Data Providers]
+**Vulnerability:** External data providers (RSS, MusicBrainz, Discogs, AcoustID) could be used to probe or attack internal network resources by supplying URLs pointing to private IP ranges.
+**Learning:** Standard HTTP clients follow redirects and resolve DNS to any IP. A secure dialer must be used to validate the resolved IP against private CIDR ranges *before* the connection is established to prevent SSRF and DNS rebinding.
+**Prevention:** Use a centralized `NewSafeProxyAwareHTTPClient` that implements IP validation at the socket level for all outbound requests to untrusted external services.
