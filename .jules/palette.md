@@ -9,3 +9,7 @@
 ## 2026-04-09 - [UX: Card Focus States for Keyboard Navigation]
 **Learning:** Adding `:focus-within` to container cards that house interactive elements (like action buttons) provides essential visual feedback for keyboard users. It ensures that the "current" card is highlighted even if the focus is on a small button inside it, matching the hover behavior.
 **Action:** Always pair `:hover` styles with `:focus-within` for interactive card components to maintain consistent feedback across different input methods.
+
+## 2026-06-11 - [Accessibility: Sortable Table Headers]
+**Learning:** Sortable data tables must use `scope="col"` on headers and the `aria-sort` attribute (ascending/descending/none) to explicitly communicate the table structure and current sort state to assistive technologies. Visually indicating sort with icons is insufficient for screen reader users.
+**Action:** Always include `scope="col"` and `aria-sort` on table headers in sortable interfaces to maintain accessibility.
