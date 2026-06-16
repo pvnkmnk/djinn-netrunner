@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNotificationService_NotifyJobCompletion(t *testing.T) {
@@ -93,7 +95,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 	t.Run("payload contains all required fields", func(t *testing.T) {
 		var payload map[string]interface{}
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			json.NewDecoder(r.Body).Decode(&payload)
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 			w.WriteHeader(http.StatusOK)
 		}))
 		defer server.Close()
@@ -114,7 +116,7 @@ func TestNotificationService_NotifyJobCompletion(t *testing.T) {
 	t.Run("large summary does not break payload", func(t *testing.T) {
 		var payload map[string]interface{}
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			json.NewDecoder(r.Body).Decode(&payload)
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 			w.WriteHeader(http.StatusOK)
 		}))
 		defer server.Close()

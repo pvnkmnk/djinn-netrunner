@@ -21,8 +21,10 @@ func TestMultiNodeJobClaim(t *testing.T) {
 		t.Fatalf("failed to connect to db: %v", err)
 	}
 	sqlDB, _ := db.DB()
-	defer sqlDB.Close()
-	database.Migrate(db)
+	defer func() { _ = sqlDB.Close() }()
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("database.Migrate failed: %v", err)
+	}
 
 	// 2. Create multiple jobs with DIFFERENT scopes
 	numJobs := 10
@@ -74,9 +76,10 @@ func TestMultiNodeJobClaim(t *testing.T) {
 		if j.State == "running" {
 			claimedCount++
 			if j.WorkerID != nil {
-				if *j.WorkerID == "worker-1" {
+				switch *j.WorkerID {
+				case "worker-1":
 					worker1Count++
-				} else if *j.WorkerID == "worker-2" {
+				case "worker-2":
 					worker2Count++
 				}
 			}

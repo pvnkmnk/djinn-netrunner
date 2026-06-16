@@ -19,7 +19,7 @@ type LockManager interface {
 
 // NewLockManager returns the appropriate LockManager based on the database type
 func NewLockManager(db *gorm.DB) LockManager {
-	dbType := db.Dialector.Name()
+	dbType := db.Name()
 	if dbType == "postgres" {
 		return &PostgresLockManager{db: db}
 	}

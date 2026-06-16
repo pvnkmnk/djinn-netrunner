@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -113,7 +114,7 @@ func (s *DiscogsService) SearchRelease(artist, title string) (*DiscogsSearchResu
 	params.Set("type", "release")
 	params.Set("per_page", "10")
 
-	req, err := http.NewRequest("GET", s.baseURL+"/database/search?"+params.Encode(), nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, s.baseURL+"/database/search?"+params.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +129,7 @@ func (s *DiscogsService) SearchRelease(artist, title string) (*DiscogsSearchResu
 		metrics.TrackExternalCall("discogs", start, err)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		apiErr := fmt.Errorf("discogs API error: %d", resp.StatusCode)
@@ -151,7 +152,7 @@ func (s *DiscogsService) GetReleaseDetails(releaseID int) (*DiscogsRelease, erro
 	// Wait for rate limiter
 	<-s.rateLimiter.C
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/releases/%d", s.baseURL, releaseID), nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fmt.Sprintf("%s/releases/%d", s.baseURL, releaseID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +166,7 @@ func (s *DiscogsService) GetReleaseDetails(releaseID int) (*DiscogsRelease, erro
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("discogs API error: %d", resp.StatusCode)

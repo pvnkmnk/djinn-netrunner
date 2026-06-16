@@ -431,6 +431,7 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 
 			if dl == nil {
 				t.Fatal("Expected download info, got nil")
+				return
 			}
 			if string(dl.State) != tt.wantState {
 				t.Errorf("Expected state '%s', got '%s'", tt.wantState, dl.State)

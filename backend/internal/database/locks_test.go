@@ -23,7 +23,7 @@ func TestLockManager(t *testing.T) {
 	}
 
 	lm := NewLockManager(db)
-	defer lm.Close()
+	defer func() { _ = lm.Close() }()
 
 	ctx := context.Background()
 	lockKey := int64(123456789)
@@ -61,7 +61,7 @@ func TestGetScopeLockKey(t *testing.T) {
 	}
 
 	lm := NewLockManager(db)
-	defer lm.Close()
+	defer func() { _ = lm.Close() }()
 
 	ctx := context.Background()
 	key, err := lm.GetScopeLockKey(ctx, "artist", "test-artist-id")

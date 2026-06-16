@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
@@ -180,7 +181,7 @@ func (c *GonicClient) doRequest(endpoint string, params url.Values, target inter
 
 	fullURL := fmt.Sprintf("%s/%s?%s", c.baseURL, endpoint, params.Encode())
 
-	req, err := http.NewRequest("GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fullURL, nil)
 	if err != nil {
 		return err
 	}
@@ -189,7 +190,7 @@ func (c *GonicClient) doRequest(endpoint string, params url.Values, target inter
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("gonic api error: %s", resp.Status)

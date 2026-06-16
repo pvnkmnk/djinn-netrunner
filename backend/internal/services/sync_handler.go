@@ -89,7 +89,9 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 
 	if len(tracks) == 0 {
 		h.Log(jobID, "OK", "No new tracks found", nil)
-		h.watchlist.UpdateLastSynced(id, snapshotID)
+		if err := h.watchlist.UpdateLastSynced(id, snapshotID); err != nil {
+			h.Log(jobID, "WARN", fmt.Sprintf("Failed to update last synced marker: %v", err), nil)
+		}
 		return nil
 	}
 
@@ -146,7 +148,9 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 	}
 
 	// Update sync status
-	h.watchlist.UpdateLastSynced(id, snapshotID)
+	if err := h.watchlist.UpdateLastSynced(id, snapshotID); err != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Failed to update last synced marker: %v", err), nil)
+	}
 
 	return nil
 }

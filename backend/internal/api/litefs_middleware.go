@@ -97,7 +97,7 @@ func LiteFSWriteForward(guard LiteFSNodeDetector, scheme string, port string) fi
 				"error": "primary node unreachable",
 			})
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		for k, vals := range resp.Header {
 			if len(vals) > 0 {

@@ -105,16 +105,16 @@ func (p *ListenBrainzProvider) FetchTracks(ctx context.Context, watchlist *datab
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, "", classifyHTTPStatus(resp.StatusCode, "listenbrainz")
 		}
 
-		var data lbListensResponse
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			resp.Body.Close()
-			return nil, "", err
-		}
-		resp.Body.Close()
+			var data lbListensResponse
+			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				_ = resp.Body.Close()
+				return nil, "", err
+			}
+			_ = resp.Body.Close()
 
 		if len(data.Payload.Listens) == 0 {
 			break

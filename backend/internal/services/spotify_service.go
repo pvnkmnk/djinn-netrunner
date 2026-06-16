@@ -30,7 +30,7 @@ func NewSpotifyService(cfg *config.Config) *SpotifyService {
 		ClientSecret: cfg.SpotifyClientSecret,
 		TokenURL:     spotifyauth.TokenURL,
 	}
-	
+
 	httpClient := authCfg.Client(ctx)
 	client := spotify.New(httpClient)
 
@@ -58,7 +58,7 @@ func (s *SpotifyService) GetPlaylistTracks(ctx context.Context, playlistID strin
 	}
 
 	id := spotify.ID(playlistID)
-	
+
 	var allTracks []map[string]string
 	limit := 100
 	offset := 0
@@ -68,7 +68,7 @@ func (s *SpotifyService) GetPlaylistTracks(ctx context.Context, playlistID strin
 			spotify.Limit(limit),
 			spotify.Offset(offset),
 		}
-		
+
 		start := time.Now()
 		items, err := s.client.GetPlaylistItems(ctx, id, options...)
 		metrics.TrackExternalCall("spotify", start, err)
@@ -104,7 +104,7 @@ func (s *SpotifyService) GetPlaylistTracks(ctx context.Context, playlistID strin
 	}
 
 	if s.cache != nil {
-		s.cache.Set("spotify", cacheKey, allTracks, 1*time.Hour)
+		_ = s.cache.Set("spotify", cacheKey, allTracks, 1*time.Hour)
 	}
 
 	return allTracks, nil

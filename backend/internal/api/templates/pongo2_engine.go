@@ -31,7 +31,7 @@ func tryConvertToMap(bind interface{}) (map[string]interface{}, bool) {
 // init registers Jinja2-compatible filters with pongo2.
 func init() {
 	// strftime: placeholder, handlers pass pre-formatted time strings
-	pongo2.RegisterFilter("upper", func(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	_ = pongo2.RegisterFilter("upper", func(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
 		if s, ok := in.Interface().(string); ok {
 			return pongo2.AsValue(strings.ToUpper(s)), nil
 		}

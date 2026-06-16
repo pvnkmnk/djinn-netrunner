@@ -182,7 +182,7 @@ func (w *WorkerOrchestrator) Start() {
 	}
 
 	// listenForWakeup only works for Postgres, for SQLite we rely on polling
-	if w.db.Dialector.Name() == "postgres" {
+	if w.db.Name() == "postgres" {
 		w.wg.Add(1)
 		go func() {
 			defer w.wg.Done()
@@ -289,7 +289,7 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 			default:
 			}
 		case <-time.After(1 * time.Minute):
-			go listener.Ping()
+			go func() { _ = listener.Ping() }()
 		}
 	}
 }
@@ -311,7 +311,7 @@ func (w *WorkerOrchestrator) Stop() {
 	w.jobMutex.Unlock()
 
 	w.wg.Wait()
-	w.lockManager.Close()
+	_ = w.lockManager.Close()
 	slog.Info("Shutdown complete", "worker_id", w.workerID)
 }
 
@@ -528,7 +528,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	if len(w.activeJobs) >= MaxConcurrentJobs {
 		w.jobMutex.Unlock()
 		cancel()
-		w.lockManager.ReleaseLock(context.Background(), lockKey)
+		_ = w.lockManager.ReleaseLock(context.Background(), lockKey)
 		slog.Info("Capacity reached, requeueing", "worker_id", w.workerID, "job_id", job.ID)
 		requeue("capacity_exceeded")
 		return
@@ -693,7 +693,6 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		for _, track := range tracks {
 			select {
 			case <-jc.ctx.Done():
-				err = jc.ctx.Err()
 				goto doneEnrich
 			default:
 			}
@@ -723,19 +722,20 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 	doneEnrich:
 		slog.Info("Enriched tracks for library", "count", enriched, "library", library.Name)
 	case "prune":
-		libraryID, err := uuid.Parse(jc.job.ScopeID)
+		var pruneLibID uuid.UUID
+		pruneLibID, err = uuid.Parse(jc.job.ScopeID)
 		if err != nil {
 			err = fmt.Errorf("invalid library UUID: %w", err)
 			w.finishJob(jc.job.ID, err)
 			return
 		}
 		var library database.Library
-		if err := w.db.First(&library, "id = ?", libraryID).Error; err != nil {
+		if err := w.db.First(&library, "id = ?", pruneLibID).Error; err != nil {
 			w.finishJob(jc.job.ID, err)
 			return
 		}
-		slog.Info("Pruning library", "name", library.Name, "library_id", libraryID)
-		err = w.scanService.PruneTracks(jc.ctx, libraryID, jc.job.ID)
+		slog.Info("Pruning library", "name", library.Name, "library_id", pruneLibID)
+		err = w.scanService.PruneTracks(jc.ctx, pruneLibID, jc.job.ID)
 	default:
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}
@@ -755,7 +755,7 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	w.jobMutex.Unlock()
 
 	// Release lock (use background context since worker may be shutting down)
-	w.lockManager.ReleaseLock(context.Background(), jc.lockKey)
+	_ = w.lockManager.ReleaseLock(context.Background(), jc.lockKey)
 
 	finalState := "succeeded"
 	summary := "Completed"
@@ -836,7 +836,7 @@ func main() {
 
 	slog.Info("Worker process running. Press Ctrl+C to stop.")
 	<-stop
-	metricsServer.Close()
+	_ = metricsServer.Close()
 	worker.Stop()
 }
 

@@ -69,12 +69,14 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: invalid address %q: %w", addr, err)
 	}
-	ips, err := net.LookupIP(host)
+	resolver := net.Resolver{}
+	addrs, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}
 	var safeIP net.IP
-	for _, ip := range ips {
+	for _, addr := range addrs {
+		ip := addr.IP
 		if isPrivateIP(ip) {
 			continue
 		}
@@ -93,7 +95,7 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 // HTTP clients to guard against SSRF.
 func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout:    timeout,
+		Timeout:   timeout,
 		Transport: safeTransport,
 	}
 }
@@ -126,14 +128,17 @@ func SafeGet(rawURL string) (*http.Response, error) {
 	}
 
 	hostname := u.Hostname()
-	ips, err := net.LookupIP(hostname)
+	ctx := context.Background()
+	resolver := net.Resolver{}
+	addrs, err := resolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: DNS lookup failed: %w", err)
 	}
 
 	// Find the first safe IP to connect to
 	var safeIP net.IP
-	for _, ip := range ips {
+	for _, addr := range addrs {
+		ip := addr.IP
 		if isPrivateIP(ip) {
 			continue
 		}
@@ -142,16 +147,6 @@ func SafeGet(rawURL string) (*http.Response, error) {
 	}
 	if safeIP == nil {
 		return nil, fmt.Errorf("ssrf: no public IP found for %s", hostname)
-	}
-
-	// Determine port — use explicit port or scheme default
-	port := u.Port()
-	if port == "" {
-		if u.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
 	}
 
 	// Use the shared safeTransport which validates IPs on every dial.
@@ -164,5 +159,9 @@ func SafeGet(rawURL string) (*http.Response, error) {
 		},
 	}
 
-	return client.Get(rawURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("ssrf: failed to create request: %w", err)
+	}
+	return client.Do(req)
 }

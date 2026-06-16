@@ -38,7 +38,7 @@ func (p *FileWatchlistProvider) FetchTracks(ctx context.Context, watchlist *data
 	if err != nil {
 		return nil, "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	switch ext {
 	case ".csv":

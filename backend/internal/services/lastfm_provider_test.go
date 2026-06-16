@@ -40,7 +40,7 @@ func TestLastFMProvider_FetchTracks(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(mockResponse))
+		_, _ = w.Write([]byte(mockResponse))
 	}))
 	defer server.Close()
 
@@ -74,7 +74,8 @@ func TestLastFMProvider_FetchTracks_MultiPage(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 
-		if page == "1" {
+		switch page {
+		case "1":
 			tracks := make([]map[string]interface{}, 200)
 			for i := range tracks {
 				tracks[i] = map[string]interface{}{
@@ -91,8 +92,8 @@ func TestLastFMProvider_FetchTracks_MultiPage(t *testing.T) {
 				},
 			}
 			json, _ := json.Marshal(resp)
-			w.Write(json)
-		} else if page == "2" {
+			_, _ = w.Write(json)
+		case "2":
 			tracks := make([]map[string]interface{}, 50)
 			for i := range tracks {
 				tracks[i] = map[string]interface{}{
@@ -109,7 +110,7 @@ func TestLastFMProvider_FetchTracks_MultiPage(t *testing.T) {
 				},
 			}
 			json, _ := json.Marshal(resp)
-			w.Write(json)
+			_, _ = w.Write(json)
 		}
 	}))
 	defer server.Close()
@@ -139,7 +140,7 @@ func TestLastFMProvider_FetchTracks_TopWithPeriod(t *testing.T) {
 		assert.Equal(t, "user.gettoptracks", r.URL.Query().Get("method"))
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"toptracks": {
 				"track": [
 					{

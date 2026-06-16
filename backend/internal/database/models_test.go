@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	Migrate(db)
+	require.NoError(t, Migrate(db))
 	return db
 }
 
@@ -36,15 +37,15 @@ func TestTableLockManager_AcquireRelease(t *testing.T) {
 	db := setupTestDB(t)
 	lm := &TableLockManager{db: db}
 
-	key, err := lm.GetScopeLockKey(nil, "watchlist", "test-uuid")
+	key, err := lm.GetScopeLockKey(context.TODO(), "watchlist", "test-uuid")
 	require.NoError(t, err)
 	assert.NotZero(t, key)
 
-	acquired, err := lm.AcquireTryLock(nil, key)
+	acquired, err := lm.AcquireTryLock(context.TODO(), key)
 	require.NoError(t, err)
 	assert.True(t, acquired)
 
-	err = lm.ReleaseLock(nil, key)
+	err = lm.ReleaseLock(context.TODO(), key)
 	assert.NoError(t, err)
 }
 
@@ -52,19 +53,19 @@ func TestTableLockManager_DoubleAcquire(t *testing.T) {
 	db := setupTestDB(t)
 	lm := &TableLockManager{db: db}
 
-	key, err := lm.GetScopeLockKey(nil, "artist", "test-1")
+	key, err := lm.GetScopeLockKey(context.TODO(), "artist", "test-1")
 	require.NoError(t, err)
 
-	acquired1, err := lm.AcquireTryLock(nil, key)
+	acquired1, err := lm.AcquireTryLock(context.TODO(), key)
 	require.NoError(t, err)
 	assert.True(t, acquired1)
 
 	// Second acquire should fail (already locked)
-	acquired2, err := lm.AcquireTryLock(nil, key)
+	acquired2, err := lm.AcquireTryLock(context.TODO(), key)
 	require.NoError(t, err)
 	assert.False(t, acquired2)
 
-	err = lm.ReleaseLock(nil, key)
+	err = lm.ReleaseLock(context.TODO(), key)
 	assert.NoError(t, err)
 }
 
@@ -72,29 +73,29 @@ func TestTableLockManager_DifferentKeys(t *testing.T) {
 	db := setupTestDB(t)
 	lm := &TableLockManager{db: db}
 
-	key1, _ := lm.GetScopeLockKey(nil, "watchlist", "uuid-1")
-	key2, _ := lm.GetScopeLockKey(nil, "watchlist", "uuid-2")
+	key1, _ := lm.GetScopeLockKey(context.TODO(), "watchlist", "uuid-1")
+	key2, _ := lm.GetScopeLockKey(context.TODO(), "watchlist", "uuid-2")
 
-	acquired1, err := lm.AcquireTryLock(nil, key1)
+	acquired1, err := lm.AcquireTryLock(context.TODO(), key1)
 	require.NoError(t, err)
 	assert.True(t, acquired1)
 
 	// Different key should succeed
-	acquired2, err := lm.AcquireTryLock(nil, key2)
+	acquired2, err := lm.AcquireTryLock(context.TODO(), key2)
 	require.NoError(t, err)
 	assert.True(t, acquired2)
 
-	lm.ReleaseLock(nil, key1)
-	lm.ReleaseLock(nil, key2)
+	_ = lm.ReleaseLock(context.TODO(), key1)
+	_ = lm.ReleaseLock(context.TODO(), key2)
 }
 
 func TestTableLockManager_ReleaseUnlocked(t *testing.T) {
 	db := setupTestDB(t)
 	lm := &TableLockManager{db: db}
 
-	key, _ := lm.GetScopeLockKey(nil, "test", "uuid")
+	key, _ := lm.GetScopeLockKey(context.TODO(), "test", "uuid")
 	// Releasing a lock that was never acquired should not error
-	err := lm.ReleaseLock(nil, key)
+	err := lm.ReleaseLock(context.TODO(), key)
 	assert.NoError(t, err)
 }
 
@@ -102,7 +103,7 @@ func TestPostgresLockManager_GetScopeLockKey(t *testing.T) {
 	lm := &PostgresLockManager{}
 
 	// Should produce consistent keys for same input
-	key1, err := lm.GetScopeLockKey(nil, "watchlist", "uuid-1")
+	key1, err := lm.GetScopeLockKey(context.TODO(), "watchlist", "uuid-1")
 	require.NoError(t, err)
 	key2, err := lm.GetScopeLockKey(nil, "watchlist", "uuid-1")
 	require.NoError(t, err)
@@ -115,8 +116,9 @@ func TestPostgresLockManager_GetScopeLockKey(t *testing.T) {
 }
 
 func TestNewLockManager_TableLockForSQLite(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	Migrate(db)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, Migrate(db))
 
 	lm := NewLockManager(db)
 	assert.IsType(t, &TableLockManager{}, lm)
@@ -375,8 +377,8 @@ func TestTableLockManager_ConcurrentAcquire(t *testing.T) {
 	sqlDB, _ := db.DB()
 	// Keep at least 2 connections open so the shared-cache DB stays alive
 	sqlDB.SetMaxIdleConns(2)
-	t.Cleanup(func() { sqlDB.Close() })
-	Migrate(db)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	require.NoError(t, Migrate(db))
 
 	lm := &TableLockManager{db: db}
 	key, _ := lm.GetScopeLockKey(nil, "watchlist", "concurrent-test")
@@ -386,7 +388,7 @@ func TestTableLockManager_ConcurrentAcquire(t *testing.T) {
 
 	for i := 0; i < workers; i++ {
 		go func() {
-			acquired, err := lm.AcquireTryLock(nil, key)
+			acquired, err := lm.AcquireTryLock(context.TODO(), key)
 			if err != nil {
 				results <- false
 				return
@@ -403,5 +405,5 @@ func TestTableLockManager_ConcurrentAcquire(t *testing.T) {
 	}
 
 	assert.Equal(t, 1, wins, "exactly one goroutine should acquire the lock")
-	lm.ReleaseLock(nil, key)
+	_ = lm.ReleaseLock(nil, key)
 }

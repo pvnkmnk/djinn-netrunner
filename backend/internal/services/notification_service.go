@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -80,7 +81,7 @@ func (s *NotificationService) NotifyJobCompletion(jobID uint64, jobType, state, 
 		body, err := json.Marshal(payload)
 		if err != nil {
 			slog.Error("Failed to marshal webhook payload", "error", err)
-		} else if req, err := http.NewRequest(http.MethodPost, s.webhookURL, bytes.NewReader(body)); err != nil {
+		} else if req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.webhookURL, bytes.NewReader(body)); err != nil {
 			slog.Error("Failed to create webhook request", "error", err)
 		} else {
 			req.Header.Set("Content-Type", "application/json")
@@ -89,8 +90,10 @@ func (s *NotificationService) NotifyJobCompletion(jobID uint64, jobType, state, 
 			if err != nil {
 				slog.Error("Webhook POST failed", "error", err)
 			} else {
-				io.Copy(io.Discard, resp.Body)
-				resp.Body.Close()
+				if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+					slog.Warn("Failed to drain webhook response body", "error", err)
+				}
+				_ = resp.Body.Close()
 				if resp.StatusCode >= 300 {
 					slog.Warn("Webhook returned non-success status", "status", resp.StatusCode)
 				} else {
@@ -125,7 +128,7 @@ func (s *NotificationService) NotifyQuotaWarning(usage *LibraryUsage, thresholdP
 		return
 	}
 
-	req, err := http.NewRequest(http.MethodPost, s.webhookURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.webhookURL, bytes.NewReader(body))
 	if err != nil {
 		slog.Error("Failed to create quota alert request", "error", err)
 		return
@@ -139,8 +142,10 @@ func (s *NotificationService) NotifyQuotaWarning(usage *LibraryUsage, thresholdP
 		slog.Error("Quota alert webhook POST failed", "error", err)
 		return
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		slog.Warn("Failed to drain quota alert response body", "error", err)
+	}
 
 	if resp.StatusCode >= 300 {
 		slog.Warn("Quota alert webhook returned non-success status", "status", resp.StatusCode)

@@ -55,7 +55,7 @@ func TestLastFMSnapshotID_IntegrationViaFetch(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		require.NoError(t, json.NewEncoder(w).Encode(resp))
 	}))
 	defer srv.Close()
 
@@ -121,7 +121,7 @@ func TestDiscogsSnapshotID_IntegrationViaFetch(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		require.NoError(t, json.NewEncoder(w).Encode(resp))
 	}))
 	defer srv.Close()
 

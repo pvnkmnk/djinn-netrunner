@@ -28,8 +28,8 @@ func TestSmoke_Auth_RegisterLoginLogout(t *testing.T) {
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		t.Fatalf("Register expected 200/201, got %d", resp.StatusCode)
 	}
-	resp.Body.Close()
-
+	_ = resp.Body.Close()
+	
 	// Login
 	resp, err = client.Post(baseURL+"/api/auth/login", "application/json", strings.NewReader(body))
 	if err != nil {
@@ -38,20 +38,20 @@ func TestSmoke_Auth_RegisterLoginLogout(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("Login expected 200, got %d — body: %s", resp.StatusCode, readBody(resp))
 	}
-
+	
 	// Verify login response
 	var loginResp map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&loginResp)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if loginResp["status"] != "ok" {
 		t.Fatalf("Login response unexpected: %v", loginResp)
 	}
-
+	
 	// Verify session cookie was set (cookiejar stores it)
 	if len(client.Jar.Cookies(resp.Request.URL)) == 0 {
 		t.Fatal("No session cookie set after login")
 	}
-
+	
 	// Logout
 	resp, err = client.Post(baseURL+"/api/auth/logout", "application/json", nil)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestSmoke_Auth_RegisterLoginLogout(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("Logout expected 200, got %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestSmoke_Auth_RateLimit(t *testing.T) {
@@ -79,10 +79,10 @@ func TestSmoke_Auth_RateLimit(t *testing.T) {
 		}
 		if resp.StatusCode == 429 {
 			rateLimited = true
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			break
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if !rateLimited {
 		t.Error("Expected rate limit (429) after rapid login attempts, never triggered")
@@ -96,6 +96,6 @@ func readBody(resp *http.Response) string {
 	}
 	buf := new(strings.Builder)
 	io.Copy(buf, resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return buf.String()
 }

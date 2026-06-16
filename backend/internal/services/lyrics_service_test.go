@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestLyricsService_FetchLyrics tests the FetchLyrics method
@@ -35,7 +37,7 @@ func TestLyricsService_FetchLyrics(t *testing.T) {
 				SyncedLyrics: "[00:01.00]Line 1\n[00:02.00]Line 2\n[00:03.00]Line 3",
 			},
 		}
-		json.NewEncoder(w).Encode(results)
+		require.NoError(t, json.NewEncoder(w).Encode(results))
 	}))
 	defer server.Close()
 
@@ -72,7 +74,7 @@ func TestLyricsService_FetchLyrics_NotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Return empty array
 		results := []Lyrics{}
-		json.NewEncoder(w).Encode(results)
+		require.NoError(t, json.NewEncoder(w).Encode(results))
 	}))
 	defer server.Close()
 

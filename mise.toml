@@ -1,0 +1,313 @@
+# ─────────────────────────────────────────────────────────
+# mise.toml — NetRunner Dev Environment
+# ─────────────────────────────────────────────────────────
+# Architecture:
+#   Tools     — Build-time only (Go, linters). Daemons like
+#               Postgres are installed on demand.
+#   Tasks     — Organized by: system entry points, quality
+#               gates, database lifecycle, dev lifecycle
+#   Env       — Sensible dev defaults + loads .env overrides
+#   Depends   — Dependency chains encode quality pyramid
+#
+# Quick start:
+#   mise install               # install Go + linters + security tools
+#   mise run validate          # pre-commit gate (vet+build+test+shell+secrets)
+#   mise run dev               # start dev server (SQLite, zero deps)
+#   mise run ci                # full CI pipeline (validate + coverage + lint + vuln)
+#
+# To use Postgres instead of SQLite:
+#   mise install postgres@17   # install Postgres via mise
+#   mise run db-init           # initialize data directory
+#   mise run dev-pg            # start server with Postgres
+#
+# See also:
+#   codemap.md           — project architecture reference
+#   AGENTS.md            — agent workflows and conventions
+#   scripts/validate.sh  — legacy pre-commit script
+# ─────────────────────────────────────────────────────────
+
+[tools]
+go = "1.25.8"
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+
+# Lint & security tools — CI gates
+#   golangci-lint: comprehensive Go linting (errcheck, staticcheck, unused, …)
+#   shellcheck:    POSIX shell script static analysis
+#   actionlint:    GitHub Actions workflow validation
+#   gitleaks:      Git-integrated secret/credential scanner
+golangci-lint = "latest"
+shellcheck = "latest"
+actionlint = "latest"
+gitleaks = "latest"
+
+# ─────────────────────────────────────────────────────────
+# Environment
+# ─────────────────────────────────────────────────────────
+# Base env vars for all tasks.  Load .env first (secrets,
+# overrides), then fill dev defaults for anything missing.
+#
+# Database modes (default is SQLite — zero deps):
+#   SQLite:     DATABASE_URL=netrunner.db (no setup)
+#   Postgres:   set DATABASE_URL per missive below
+#               (needs mise install postgres@17 + db-init first)
+#
+# Local overrides: mise.local.toml (gitignored)
+# ─────────────────────────────────────────────────────────
+
+[env]
+_.file = ".env"
+
+# Runtime mode
+ENVIRONMENT = { value = "development" }
+PORT = { value = "8080" }
+DOMAIN = { value = "localhost" }
+JWT_SECRET = { value = "dev-secret-do-not-use-in-production" }
+
+# Library paths (defaults work for repo checkout)
+MUSIC_LIBRARY = { value = "./music_library" }
+TEMPLATES_PATH = { value = "./ops/web/templates" }
+STATIC_FILES_PATH = { value = "./ops/web/static" }
+
+# Test defaults
+SKIP_NETWORK_TESTS = { value = "true" }
+
+# Database — leave unset for code default (netrunner.db or :memory:).
+# Override for Postgres:
+#   DATABASE_URL=postgresql://localhost:5433/musicops?sslmode=disable
+
+# ─────────────────────────────────────────────────────────
+# System Entry Points
+# Maps to codemap.md architecture — one task per binary.
+# ─────────────────────────────────────────────────────────
+
+[tasks.build]
+description = "Build all 4 binaries — compiler check for all entry points"
+dir = "backend"
+run = "go build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent"
+
+[tasks.build-server]
+description = "Build HTTP server binary only"
+dir = "backend"
+run = "go build -o ../dist/server ./cmd/server"
+
+[tasks.build-worker]
+description = "Build worker binary only"
+dir = "backend"
+run = "go build -o ../dist/worker ./cmd/worker"
+
+[tasks.build-cli]
+description = "Build CLI binary only"
+dir = "backend"
+run = "go build -o ../dist/cli ./cmd/cli"
+
+[tasks.build-agent]
+description = "Build MCP agent binary only"
+dir = "backend"
+run = "go build -o ../dist/agent ./cmd/agent"
+
+# ─────────────────────────────────────────────────────────
+# Quality Gates
+# Ordered by speed — fast gates first enables rapid iteration.
+# ─────────────────────────────────────────────────────────
+
+[tasks.vet]
+description = "Static analysis — fast (<5s), catches real bugs"
+dir = "backend"
+run = "go vet ./..."
+
+[tasks.test-core]
+description = "Core unit tests — skips flaky cmd/worker multinode test + yt-dlp, completes <30s"
+dir = "backend"
+run = "go test ./cmd/agent ./cmd/cli ./cmd/server ./internal/config ./internal/database ./internal/services ./internal/agent -count=1"
+
+[tasks.test-full]
+description = "All unit tests — may hit yt-dlp network flake"
+dir = "backend"
+run = "go test ./... -count=1"
+env = { SKIP_NETWORK_TESTS = "false" }
+
+[tasks.test-coverage]
+description = "Core unit tests with coverage profile — CI use only"
+dir = "backend"
+run = "go test ./cmd/agent ./cmd/cli ./cmd/server ./internal/config ./internal/database ./internal/services ./internal/agent -count=1 -coverprofile=coverage.out"
+
+[tasks.test-integration]
+description = "Dockerized integration tests — requires full stack (mise run up)"
+run = "./scripts/integration-tests.sh test"
+
+[tasks.vuln]
+description = "Vulnerability scan"
+dir = "backend"
+run = "govulncheck ./..."
+
+[tasks.mod-tidy]
+description = "Tidy Go module dependencies"
+dir = "backend"
+run = "go mod tidy"
+
+# ─────────────────────────────────────────────────────────
+# Lint & Security Gates
+# These are CI-grade checks — longer runtime, deeper analysis.
+# Excluded from pre-commit validate for speed.
+# ─────────────────────────────────────────────────────────
+
+[tasks.lint-go]
+description = "Comprehensive Go linting via golangci-lint (~30s, CI only)"
+dir = "backend"
+run = "golangci-lint run ./... --timeout 3m"
+
+[tasks.lint-shell]
+description = "Shell script static analysis via shellcheck"
+run = "shellcheck scripts/*.sh"
+
+[tasks.lint-actions]
+description = "GitHub Actions workflow linting via actionlint"
+run = "actionlint"
+
+[tasks.detect-secrets]
+description = "Scan working tree for exposed credentials via gitleaks"
+run = "gitleaks detect --no-git -s . -v"
+
+[tasks.check]
+description = "CI-quality check: Go lint → shell lint → action lint → secrets → vuln"
+depends = ["lint-go", "lint-shell", "lint-actions", "detect-secrets", "vuln"]
+
+# ─────────────────────────────────────────────────────────
+# Composite Gates
+# Dependency chains encode the project's quality pyramid.
+# ─────────────────────────────────────────────────────────
+
+[tasks.validate]
+description = "Pre-commit gate: vet → build → test-core → shellcheck → secrets  (<2 min)"
+depends = ["vet", "build", "test-core", "lint-shell", "detect-secrets"]
+
+[tasks.ci]
+description = "Full CI pipeline: validate + coverage + Go lint + action lint + vuln"
+depends = ["validate", "test-coverage", "lint-go", "lint-actions", "vuln"]
+
+# ─────────────────────────────────────────────────────────
+# Database Lifecycle (mise-managed Postgres)
+# Uses port 5433 to avoid conflicts with system Postgres.
+# Data lives in .postgres-data/ (gitignored).
+#
+# Prerequisite: mise install postgres@17
+# ─────────────────────────────────────────────────────────
+
+[tasks.db-init]
+description = "Initialize Postgres data directory (run once after mise install postgres@17)"
+hide = true
+run = """
+  if [ -f .postgres-data/PG_VERSION ]; then
+    echo 'Data directory already initialized at .postgres-data/'
+    exit 0
+  fi
+  initdb -D .postgres-data
+  # Trust auth for local dev — no passwords needed on loopback
+  echo 'host all all 127.0.0.1/32 trust' >> .postgres-data/pg_hba.conf
+  echo 'host all all ::1/128 trust' >> .postgres-data/pg_hba.conf
+  echo 'local all all trust' >> .postgres-data/pg_hba.conf
+  echo 'Postgres initialized with trust auth for local dev'
+"""
+
+[tasks.db-start]
+description = "Start local Postgres daemon (idempotent)"
+hide = true
+depends = ["db-init"]
+run = """
+  if ! command -v pg_ctl >/dev/null 2>&1; then
+    echo 'Postgres not found. Run: mise install postgres@17'
+    exit 1
+  fi
+  if pg_ctl status -D .postgres-data >/dev/null 2>&1; then
+    echo 'Postgres is already running'
+  else
+    pg_ctl start -D .postgres-data -l .postgres-data/logfile -o '-p 5433 -k /tmp'
+    # Poll until ready
+    for i in $(seq 1 10); do
+      if pg_isready -p 5433 -h localhost -q 2>/dev/null; then
+        echo 'Postgres started on port 5433'
+        break
+      fi
+      sleep 0.5
+    done
+  fi
+"""
+
+[tasks.db-create]
+description = "Create the musicops database (run once after db-start)"
+hide = true
+run = """
+  if ! command -v createdb >/dev/null 2>&1; then
+    echo 'Postgres not found. Run: mise install postgres@17'
+    exit 1
+  fi
+  createdb -p 5433 -h localhost musicops 2>/dev/null || echo 'Database already exists'
+"""
+
+[tasks.db-stop]
+description = "Stop local Postgres daemon"
+hide = true
+run = "pg_ctl stop -D .postgres-data"
+
+[tasks.db-status]
+description = "Check Postgres daemon status"
+hide = true
+run = "pg_ctl status -D .postgres-data"
+
+# ─────────────────────────────────────────────────────────
+# Dev Lifecycle — Server & Worker
+# ─────────────────────────────────────────────────────────
+
+[tasks.dev]
+description = "Run dev server (SQLite, zero deps) — standard dev loop"
+dir = "backend"
+run = "go run ./cmd/server"
+
+[tasks.dev-pg]
+description = "Run dev server with local Postgres (auto-starts daemon)"
+depends = ["db-start", "db-create"]
+dir = "backend"
+env = { DATABASE_URL = "postgresql://localhost:5433/musicops?sslmode=disable" }
+run = "go run ./cmd/server"
+
+[tasks.worker]
+description = "Run worker process (SQLite)"
+dir = "backend"
+run = "go run ./cmd/worker"
+
+[tasks.worker-pg]
+description = "Run worker process with local Postgres (auto-starts daemon)"
+depends = ["db-start", "db-create"]
+dir = "backend"
+env = { DATABASE_URL = "postgresql://localhost:5433/musicops?sslmode=disable" }
+run = "go run ./cmd/worker"
+
+[tasks.cli]
+description = "Run CLI with args (usage: mise run cli -- status)"
+dir = "backend"
+run = "go run ./cmd/cli"
+
+[tasks.up]
+description = "Start full Docker stack (server + worker + db + caddy)"
+hide = true
+run = "docker compose up -d --build"
+
+[tasks.down]
+description = "Stop full Docker stack"
+hide = true
+run = "docker compose down"
+
+[tasks.smoke]
+description = "Full Docker stack + smoke test (health/auth/CRUD)"
+depends = ["up"]
+run = "./scripts/smoke-test.sh"
+
+[tasks.clean]
+description = "Clean build artifacts, test cache, and Postgres data"
+dir = "backend"
+run = "go clean -cache && rm -f coverage.out && rm -rf ../dist && rm -rf ../.postgres-data"
+
+[tasks.logs]
+description = "Follow app logs in Docker stack"
+hide = true
+run = "docker compose logs -f netrunner"

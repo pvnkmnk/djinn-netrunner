@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,7 @@ import (
 func setupAdminTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	database.Migrate(db)
+	require.NoError(t, database.Migrate(db))
 	return db
 }
 
@@ -73,7 +74,7 @@ func TestAdminAuth_Unauthenticated(t *testing.T) {
 	// Create app without any auth middleware — no user in Locals
 	app := setupAdminTestAppNoAuth(t, db)
 
-	req := httptest.NewRequest("GET", "/api/admin/users", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/admin/users", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, 401, resp.StatusCode)
@@ -98,7 +99,7 @@ func TestAdminAuth_NonAdmin(t *testing.T) {
 	app := setupAdminTestApp(t, db, nonAdminUser)
 
 	// Test admin route with non-admin user
-	req := httptest.NewRequest("GET", "/api/admin/users", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/admin/users", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, 403, resp.StatusCode)
@@ -123,18 +124,18 @@ func TestAdminAuth_AdminAccess(t *testing.T) {
 	app := setupAdminTestApp(t, db, adminUser)
 
 	// Test admin route with admin user - should succeed
-	req := httptest.NewRequest("GET", "/api/admin/users", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/admin/users", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	// Test other admin routes
-	req = httptest.NewRequest("GET", "/api/admin/audit", nil)
+	req = httptest.NewRequestWithContext(context.Background(), "GET", "/api/admin/audit", nil)
 	resp, err = app.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	req = httptest.NewRequest("GET", "/api/admin/config", nil)
+	req = httptest.NewRequestWithContext(context.Background(), "GET", "/api/admin/config", nil)
 	resp, err = app.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -160,9 +161,10 @@ func TestAdminAuth_CreateUser_Admin(t *testing.T) {
 		"password": "password123",
 		"role":     "user",
 	}
-	body, _ := json.Marshal(payload)
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
 
-	req := httptest.NewRequest("POST", "/api/admin/users", bytes.NewBuffer(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/admin/users", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := app.Test(req)
@@ -195,9 +197,10 @@ func TestAdminAuth_CreateUser_NonAdmin(t *testing.T) {
 		"password": "password123",
 		"role":     "user",
 	}
-	body, _ := json.Marshal(payload)
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
 
-	req := httptest.NewRequest("POST", "/api/admin/users", bytes.NewBuffer(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/admin/users", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := app.Test(req)

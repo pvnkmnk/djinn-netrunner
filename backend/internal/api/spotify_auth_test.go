@@ -34,7 +34,7 @@ func TestGenerateOAuthState_Format(t *testing.T) {
 	}
 
 	for _, c := range state {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("invalid hex character: %c", c)
 		}
 	}

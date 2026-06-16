@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -94,12 +95,17 @@ func (h *HealthHandler) checkDatabase() HealthCheck {
 
 func (h *HealthHandler) checkHTTP(url string, timeout time.Duration) HealthCheck {
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		slog.Error("Health check: HTTP request creation failed", "url", url, "error", err)
+		return HealthCheck{Status: "error", Error: "service unreachable"}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		slog.Error("Health check: HTTP request failed", "url", url, "error", err)
 		return HealthCheck{Status: "error", Error: "service unreachable"}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return HealthCheck{Status: "error", Error: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
@@ -112,7 +118,7 @@ func (h *HealthHandler) checkDisk(path string) HealthCheck {
 		slog.Error("Health check: disk open failed", "path", path, "error", err)
 		return HealthCheck{Status: "error", Error: "disk check failed"}
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 
 	if _, err := dir.Readdirnames(1); err != nil && err != io.EOF {
 		slog.Error("Health check: disk read failed", "path", path, "error", err)

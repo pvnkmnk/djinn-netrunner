@@ -33,7 +33,7 @@ func TestYtdlpService_DownloadAudio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DownloadAudio failed: %v", err)
 	}
-	defer os.Remove(outputPath) // Clean up
+	defer func() { _ = os.Remove(outputPath) }() // Clean up
 
 	// Verify output file exists
 	if _, err := os.Stat(outputPath); os.IsNotExist(err) {

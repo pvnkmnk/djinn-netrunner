@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -171,7 +173,9 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 
 func TestStatsHandler_GetLibraryStats_Integration(t *testing.T) {
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	database.Migrate(db)
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("failed to migrate test DB: %v", err)
+	}
 
 	user := database.User{Email: "admin@example.com", Role: "admin"}
 	db.Create(&user)
@@ -190,12 +194,12 @@ func TestStatsHandler_GetLibraryStats_Integration(t *testing.T) {
 	})
 	app.Get("/api/stats/library", handler.GetLibraryStats)
 
-	resp, err := app.Test(httptest.NewRequest("GET", "/api/stats/library", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(context.Background(), "GET", "/api/stats/library", nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var stats LibraryStats
-	json.NewDecoder(resp.Body).Decode(&stats)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&stats))
 
 	assert.Equal(t, int64(2), stats.TotalTracks)
 	assert.Equal(t, int64(3072*1024), stats.TotalSize)
@@ -207,7 +211,9 @@ func TestStatsHandler_GetLibraryStats_Integration(t *testing.T) {
 
 func TestStatsHandler_BOLA_Integration(t *testing.T) {
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	database.Migrate(db)
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("failed to migrate test DB: %v", err)
+	}
 
 	user1 := database.User{ID: 1, Email: "user1@example.com", Role: "user"}
 	user2 := database.User{ID: 2, Email: "user2@example.com", Role: "user"}
@@ -234,10 +240,10 @@ func TestStatsHandler_BOLA_Integration(t *testing.T) {
 	})
 	app1.Get("/api/stats/activity", handler.GetActivityStats)
 
-	resp, err := app1.Test(httptest.NewRequest("GET", "/api/stats/activity", nil))
+	resp, err := app1.Test(httptest.NewRequestWithContext(context.Background(), "GET", "/api/stats/activity", nil))
 	assert.NoError(t, err)
 	var activity ActivityStats
-	json.NewDecoder(resp.Body).Decode(&activity)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&activity))
 
 	// Should only see user 1's data
 	assert.Equal(t, int64(1), activity.MonitoredArtists)
@@ -252,10 +258,10 @@ func TestStatsHandler_BOLA_Integration(t *testing.T) {
 	})
 	app2.Get("/api/stats/library", handler.GetLibraryStats)
 
-	resp, err = app2.Test(httptest.NewRequest("GET", "/api/stats/library", nil))
+	resp, err = app2.Test(httptest.NewRequestWithContext(context.Background(), "GET", "/api/stats/library", nil))
 	assert.NoError(t, err)
 	var library LibraryStats
-	json.NewDecoder(resp.Body).Decode(&library)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&library))
 
 	// Should see 0 tracks (none belong to user 2's libraries)
 	assert.Equal(t, int64(0), library.TotalTracks)
@@ -264,7 +270,7 @@ func TestStatsHandler_BOLA_Integration(t *testing.T) {
 
 func TestStatsHandler_RenderStatsPartial_RejectsEmptyLocalsUser(t *testing.T) {
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	database.Migrate(db)
+	require.NoError(t, database.Migrate(db))
 	handler := NewStatsHandler(db)
 
 	testCases := []struct {

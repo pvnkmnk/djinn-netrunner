@@ -21,7 +21,9 @@ func setupAPITestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("Failed to connect to test DB: %v", err)
 	}
-	database.Migrate(db)
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("Failed to migrate test DB: %v", err)
+	}
 	return db
 }
 
@@ -36,29 +38,6 @@ func setupTestApp(t *testing.T, db *gorm.DB) *fiber.App {
 		return c.SendString("ok")
 	})
 	return app
-}
-
-func registerAndLogin(t *testing.T, app *fiber.App, email, password string) string {
-	t.Helper()
-	// Register
-	regBody, _ := json.Marshal(map[string]string{"email": email, "password": password})
-	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(regBody))
-	req.Header.Set("Content-Type", "application/json")
-	app.Test(req)
-
-	// Login
-	loginBody, _ := json.Marshal(map[string]string{"email": email, "password": password})
-	req = httptest.NewRequest("POST", "/login", bytes.NewBuffer(loginBody))
-	req.Header.Set("Content-Type", "application/json")
-	resp, _ := app.Test(req)
-
-	// Extract session cookie
-	for _, c := range resp.Cookies() {
-		if c.Name == SessionCookie {
-			return c.Value
-		}
-	}
-	return ""
 }
 
 func TestRegister_MissingFields_New(t *testing.T) {

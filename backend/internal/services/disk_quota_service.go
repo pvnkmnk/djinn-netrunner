@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -30,7 +31,8 @@ type LibraryUsage struct {
 // CalculateLibraryUsage returns the total byte size of all tracks in a library.
 func (s *DiskQuotaService) CalculateLibraryUsage(libraryID string) (int64, error) {
 	var total int64
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(
+		context.Background(),
 		"SELECT COALESCE(SUM(file_size), 0) FROM tracks WHERE library_id = ?", libraryID,
 	).Scan(&total)
 	return total, err
@@ -94,11 +96,11 @@ func (s *DiskQuotaService) CheckQuotaAlert(lib database.Library) (*LibraryUsage,
 
 // CheckAllLibraryQuotas checks all libraries and returns those over threshold.
 func (s *DiskQuotaService) CheckAllLibraryQuotas() ([]LibraryUsage, error) {
-	rows, err := s.db.Query("SELECT id, name, path, max_size_bytes, quota_alert_at FROM libraries")
+	rows, err := s.db.QueryContext(context.Background(), "SELECT id, name, path, max_size_bytes, quota_alert_at FROM libraries")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var alerts []LibraryUsage
 	for rows.Next() {

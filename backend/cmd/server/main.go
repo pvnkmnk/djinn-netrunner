@@ -181,7 +181,7 @@ func main() {
 
 	slog.Info("Shutting down server...")
 	listenerCancel()
-	app.Shutdown()
+	_ = app.Shutdown()
 }
 
 func listenAddress(cfg *config.Config) string {

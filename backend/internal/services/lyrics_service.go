@@ -69,7 +69,7 @@ func (s *LyricsService) FetchLyrics(ctx context.Context, artist, title, album st
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("lrclib api returned status: %d", resp.StatusCode)

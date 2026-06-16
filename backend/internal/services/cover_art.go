@@ -101,7 +101,7 @@ func (h *AcquisitionHandler) fetchCoverFromSourceURL(ctx context.Context, item *
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("source URL returned %d", resp.StatusCode)
 	}
@@ -140,7 +140,7 @@ func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item
 			if err != nil {
 				continue
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode == http.StatusOK {
 				data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverSize+1))
 				if err == nil && len(data) > maxCoverSize {
@@ -159,7 +159,7 @@ func (h *AcquisitionHandler) fetchCoverFromMusicBrainz(ctx context.Context, item
 		if err != nil {
 			return nil, fmt.Errorf("no front cover from MB")
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode == http.StatusOK {
 		data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverSize+1))
 		if err == nil && len(data) > maxCoverSize {
@@ -183,13 +183,13 @@ func (h *AcquisitionHandler) fetchCoverFromDiscogs(ctx context.Context, item *da
 	if err != nil || coverURL == "" {
 		return nil, err
 	}
-	resp, err := SafeGet(coverURL)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+		resp, err := SafeGet(coverURL)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Discogs returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("discogs returned %d", resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverSize+1))
 	if err != nil {

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,8 +30,8 @@ func (s *AcoustIDService) SetCache(cache *CacheService) {
 }
 
 type AcoustIDResult struct {
-	ID    string  `json:"id"`
-	Score float64 `json:"score"`
+	ID         string  `json:"id"`
+	Score      float64 `json:"score"`
 	Recordings []struct {
 		ID string `json:"id"`
 	} `json:"recordings"`
@@ -59,12 +60,17 @@ func (s *AcoustIDService) Lookup(fingerprint string, duration int) ([]AcoustIDRe
 	start := time.Now()
 	fullURL := fmt.Sprintf("https://api.acoustid.org/v2/lookup?%s", params.Encode())
 
-	resp, err := s.httpClient.Get(fullURL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fullURL, nil)
 	if err != nil {
 		metrics.TrackExternalCall("acoustid", start, err)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		metrics.TrackExternalCall("acoustid", start, err)
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		apiErr := fmt.Errorf("acoustid api error: %s", resp.Status)
@@ -86,7 +92,7 @@ func (s *AcoustIDService) Lookup(fingerprint string, duration int) ([]AcoustIDRe
 	}
 
 	if s.cache != nil {
-		s.cache.Set("acoustid", cacheKey, data.Results, 168*time.Hour) // Cache for a week
+		_ = s.cache.Set("acoustid", cacheKey, data.Results, 168*time.Hour) // Cache for a week
 	}
 
 	metrics.TrackExternalCall("acoustid", start, nil)

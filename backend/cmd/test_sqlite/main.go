@@ -12,7 +12,7 @@ import (
 func main() {
 	// 1. Setup SQLite config
 	dbFile := "test_standalone.db"
-	defer os.Remove(dbFile)
+	defer func() { _ = os.Remove(dbFile) }()
 
 	cfg := &config.Config{
 		DatabaseURL: dbFile,

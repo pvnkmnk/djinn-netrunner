@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -66,7 +67,7 @@ func (s *MusicBrainzService) SearchArtist(query string) ([]MusicBrainzArtist, er
 
 	url := fmt.Sprintf("%s/ws/2/artist?query=artist:%s&fmt=json&limit=5", s.baseURL, url.QueryEscape(query))
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create musicbrainz request: %w", err)
 	}
@@ -111,7 +112,7 @@ func (s *MusicBrainzService) SearchArtist(query string) ([]MusicBrainzArtist, er
 	}
 
 	if s.cache != nil && len(artists) > 0 {
-		s.cache.Set("musicbrainz", cacheKey, artists, 24*time.Hour)
+		_ = s.cache.Set("musicbrainz", cacheKey, artists, 24*time.Hour)
 	}
 
 	return artists, nil
@@ -132,7 +133,7 @@ func (s *MusicBrainzService) SearchRecording(query string) ([]MusicBrainzRecordi
 
 	url := fmt.Sprintf("%s/ws/2/recording?query=%s&fmt=json&limit=5", s.baseURL, url.QueryEscape(query))
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create musicbrainz request: %w", err)
 	}
@@ -191,7 +192,7 @@ func (s *MusicBrainzService) SearchRecording(query string) ([]MusicBrainzRecordi
 	}
 
 	if s.cache != nil && len(recordings) > 0 {
-		s.cache.Set("musicbrainz", cacheKey, recordings, 24*time.Hour)
+		_ = s.cache.Set("musicbrainz", cacheKey, recordings, 24*time.Hour)
 	}
 
 	return recordings, nil
@@ -217,7 +218,7 @@ func (s *MusicBrainzService) GetArtistDiscography(artistID string) (map[string]i
 	}
 
 	if s.cache != nil {
-		s.cache.Set("musicbrainz", cacheKey, result, 12*time.Hour)
+		_ = s.cache.Set("musicbrainz", cacheKey, result, 12*time.Hour)
 	}
 
 	return result, nil
@@ -232,7 +233,7 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 	baseURL := "https://musicbrainz.org/ws/2/"
 	fullURL := fmt.Sprintf("%s%s?%s", baseURL, endpoint, params.Encode())
 
-	req, err := http.NewRequest("GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fullURL, nil)
 	if err != nil {
 		metrics.TrackExternalCall("musicbrainz", start, err)
 		return nil, err

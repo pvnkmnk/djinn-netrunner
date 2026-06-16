@@ -84,8 +84,8 @@ const (
 
 	// SpotDL's well-known Spotify OAuth client credentials.
 	// Used for client_credentials flow — public data only, no 429 blocks.
-	spotdlClientID     = "5f573c9620494bae87890c0f08a60293"
-	spotdlClientSecret = "212476d9b0f3472eaa762d90b19b0ba8"
+	spotdlClientID     = "5f573c9620494bae87890c0f08a60293"   // gitleaks:allow — well-known SpotDL OAuth client ID
+	spotdlClientSecret = "212476d9b0f3472eaa762d90b19b0ba8" // gitleaks:allow — well-known SpotDL OAuth client secret
 
 	// GraphQL persisted query hashes (scraped from Spotify web player JS bundles).
 	hashLibraryV3         = "973e511ca44261fda7eebac8b653155e7caee3675abb4fb110cc1b8c78b091c3"
@@ -488,7 +488,7 @@ func (a *SpDcAuth) getClientVersionLocked() string {
 	}
 
 	match := clientVersionRegex.FindSubmatch(body)
-	if match != nil && len(match) > 1 {
+	if len(match) > 1 {
 		version := string(match[1])
 		slog.Debug("scraped Spotify client version", "version", version)
 		a.clientVersion = version
@@ -599,7 +599,7 @@ func (a *SpDcAuth) FetchPlaylistTracksViaWebAPI(playlistID string) ([]map[string
 
 		resp, err := a.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("Web API request failed: %w", err)
+			return nil, fmt.Errorf("web API request failed: %w", err)
 		}
 
 		if resp.StatusCode == http.StatusUnauthorized {
@@ -617,7 +617,7 @@ func (a *SpDcAuth) FetchPlaylistTracksViaWebAPI(playlistID string) ([]map[string
 
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			return nil, fmt.Errorf("Web API returned HTTP %d for playlist %s", resp.StatusCode, playlistID)
+			return nil, fmt.Errorf("web API returned HTTP %d for playlist %s", resp.StatusCode, playlistID)
 		}
 
 		body, err := io.ReadAll(resp.Body)
