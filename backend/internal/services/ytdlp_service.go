@@ -90,6 +90,9 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 	}
 	args = append(args, "--", url)
 
+	// SECURITY: s.ytdlpPath is set from YTDLP_PATH env var at startup (not user input).
+	// All user-supplied values (URL, format) are validated/whitelisted above.
+	// The "--" separator before the URL prevents argument injection.
 	cmd := exec.Command(s.ytdlpPath, args...)
 
 	// Run command and capture output

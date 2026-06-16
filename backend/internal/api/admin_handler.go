@@ -239,6 +239,8 @@ func (h *AdminHandler) UpdateConfig(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "key is required"})
 	}
 
+	// Standard GORM upsert pattern: Where provides the primary key (Key) for match and create,
+	// Assign provides the field to update. Setting.Key is the primary key.
 	if err := h.db.Where("key = ?", payload.Key).Assign(database.Setting{Value: payload.Value}).FirstOrCreate(&database.Setting{}).Error; err != nil {
 		return internalServerError(c, err)
 	}
