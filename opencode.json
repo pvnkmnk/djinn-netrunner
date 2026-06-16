@@ -10,6 +10,15 @@
   "plugin": [
     "oh-my-opencode-slim"
   ],
+  "mcp_servers": {
+    "netrunner-agent": {
+      "type": "local",
+      "command": ["go", "run", "./cmd/agent"],
+      "args": [],
+      "env": {},
+      "enabled": true
+    }
+  },
   "agent": {
     "build": {
       "description": "Primary implementer for netrunner features \u2014 Go handlers, GORM models, Docker services, HTMX components.",

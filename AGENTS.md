@@ -134,6 +134,8 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `./scripts/validate.sh` or `validate.ps1` | Pre-commit validation checks | Before PR/merge |
 | `govulncheck ./...` | Vulnerability scan for reachable issues in code + deps | Security/dependency maintenance |
 
+> **Note for agents:** When running backend commands through command-wrapping tools (e.g., `snip`), `cd` is not available as a standalone command. Use the `workdir` parameter on the Bash tool instead of `cd backend && <command>` chains.
+
 ## API / Interface Reference
 
 ### HTTP API (Fiber)
@@ -383,6 +385,7 @@ The `WorkerOrchestrator` acquires advisory locks per scope ID before processing 
 - `skills/watchlist-operations.md` - Watchlist lifecycle and sync workflow.
 - `skills/artist-monitoring.md` - Monitored artist and release-tracking workflow.
 - `skills/acquisition-pipeline.md` - Queue-to-import acquisition pipeline operations and validation.
+- `release-readiness-review` - Two-phase audit+closure pattern for shipping releases. See `.agents/skills/release-readiness-review/SKILL.md`.
 
 ## Cloned Dependency Source
 
