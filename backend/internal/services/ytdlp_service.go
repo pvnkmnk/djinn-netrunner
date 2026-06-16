@@ -13,6 +13,7 @@ import (
 // YtdlpService handles yt-dlp based audio extraction
 type YtdlpService struct {
 	ytdlpPath string // path to yt-dlp binary
+	jsRuntime string // JS runtime for yt-dlp extraction (e.g., "node")
 }
 
 // NewYtdlpService creates a new yt-dlp service with auto-detected binary path
@@ -21,7 +22,15 @@ func NewYtdlpService() *YtdlpService {
 	if path == "" {
 		path = "yt-dlp"
 	}
-	return &YtdlpService{ytdlpPath: path}
+	// Detect available JS runtime for yt-dlp's JavaScript extraction.
+	// yt-dlp 2026+ requires an explicit --js-runtimes flag.
+	jsRuntime := os.Getenv("YTDLP_JS_RUNTIME")
+	if jsRuntime == "" {
+		if _, err := exec.LookPath("node"); err == nil {
+			jsRuntime = "node"
+		}
+	}
+	return &YtdlpService{ytdlpPath: path, jsRuntime: jsRuntime}
 }
 
 // DownloadAudio extracts audio from a URL using yt-dlp
@@ -61,20 +70,27 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 		return "", fmt.Errorf("unsupported audio format: %s (supported: flac, mp3, wav, aac, ogg, m4a, opus)", audioFormat)
 	}
 
-	// Generate output template
-	outputTemplate := filepath.Join(outputDir, "%(title)s.%(ext)s")
+	// Generate output template — use video ID as base filename to avoid
+	// filesystem issues with very long YouTube titles
+	outputTemplate := filepath.Join(outputDir, "%(id)s.%(ext)s")
 
 	// Build yt-dlp command with audio extraction flags
 	// SECURITY: All arguments are passed as separate slice elements, never concatenated into a shell string
-	cmd := exec.Command(s.ytdlpPath,
+	args := []string{
 		"--extract-audio",
 		"--audio-format", audioFormat,
 		"--output", outputTemplate,
 		"--no-playlist",
 		"--print", "after_move:filepath",
-		"--",
-		url,
-	)
+	}
+	if s.jsRuntime != "" {
+		args = append(args, "--js-runtimes", s.jsRuntime)
+		// yt-dlp 2026+ uses remote component solvers for JS challenges
+		args = append(args, "--remote-components", "ejs:github")
+	}
+	args = append(args, "--", url)
+
+	cmd := exec.Command(s.ytdlpPath, args...)
 
 	// Run command and capture output
 	output, err := cmd.CombinedOutput()
