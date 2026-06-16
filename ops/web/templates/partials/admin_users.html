@@ -1,0 +1,37 @@
+<h3>Users</h3>
+<table class="admin-table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Created</th>
+            <th>Last Login</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in Users %}
+        <tr>
+            <td>{{ user.ID }}</td>
+            <td>{{ user.Email|escape }}</td>
+            <td>
+                <span class="role-badge role-{{ user.Role|escape }}">{{ user.Role|escape }}</span>
+            </td>
+            <td>{{ user.CreatedAt|date:"2006-01-02 15:04" }}</td>
+            <td>{% if user.LastLoginAt %}{{ user.LastLoginAt|date:"2006-01-02 15:04" }}{% else %}never{% endif %}</td>
+            <td>
+                <button class="btn btn-sm btn-outline"
+                        hx-patch="/api/admin/users/{{ user.ID }}/role"
+                        hx-vals='{"role": "{% if user.Role == "admin" %}user{% else %}admin{% endif %}"}'
+                        hx-swap="none"
+                        hx-confirm="Toggle role for {{ user.Email|escape }}?">Toggle Role</button>
+                <button class="btn btn-sm btn-danger"
+                        hx-delete="/api/admin/users/{{ user.ID }}"
+                        hx-swap="none"
+                        hx-confirm="Delete user {{ user.Email|escape }}?">Delete</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

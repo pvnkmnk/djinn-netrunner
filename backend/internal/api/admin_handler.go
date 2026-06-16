@@ -32,6 +32,13 @@ func (h *AdminHandler) AdminOnly(c *fiber.Ctx) error {
 	return c.Next()
 }
 
+// AdminPage renders the admin dashboard page
+func (h *AdminHandler) AdminPage(c *fiber.Ctx) error {
+	return c.Render("pages/admin", fiber.Map{
+		"Page": "admin",
+	})
+}
+
 // GET /api/admin/users — list all users (sensitive fields excluded)
 func (h *AdminHandler) ListUsers(c *fiber.Ctx) error {
 	var users []database.User
