@@ -52,7 +52,7 @@ Watchlists are the primary acquisition trigger. Each watchlist specifies a sourc
 - Cyberpunk terminal aesthetic with glassmorphic cards
 - Real-time console via WebSocket per-job log streaming
 - Mobile-responsive nav with hamburger toggle and keyboard accessibility
-- Role-based dashboard views (admin sees "All Users" scope, non-admin scoped)
+- Role-based dashboard views (admin sees "All Users" scope, non-admin users are scoped to their own data)
 - Modal-based CRUD for all entities (watchlists, artists, schedules, profiles)
 - Quality profile editor with format/bitrate/priority preferences
 - Library browse with searchable/sortable/paginated track table
@@ -68,7 +68,7 @@ Watchlists are the primary acquisition trigger. Each watchlist specifies a sourc
 
 - MCP server at `backend/cmd/agent` (20 tools) for AI agent interaction
 - CLI at `backend/cmd/cli` for manual management
-- Tools: probe system status, manage watchlists/artists/libraries, trigger syncs/scan, query library, manage jobs (cancel/retry), webhook registration
+- Tools: probe system status, manage watchlists/artists/libraries, trigger syncs/scans, query library, manage jobs (cancel/retry), webhook registration
 
 ## Configuration
 

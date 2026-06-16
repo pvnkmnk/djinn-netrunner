@@ -220,7 +220,7 @@ PROXY_URL=http://proxy.example.com:8080
 
 ## 📊 Observability
 
-NetRunner exposes `/metrics` endpoints in Prometheus exposition format. The server exposes on `:8080/metrics` and the worker on `:9090/metrics`. Scraped metrics include:
+NetRunner exposes `/metrics` endpoints in Prometheus exposition format. The server exposes metrics on `:8080/metrics` and the worker on `:9090/metrics`. Scraped metrics include:
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|

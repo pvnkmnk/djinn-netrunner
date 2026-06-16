@@ -2,7 +2,6 @@ package api
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 // PageData contains common page data
@@ -25,8 +24,8 @@ func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) erro
 
 // WatchlistsPage renders the watchlists page shell
 func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
-	if _, ok := c.Locals("user").(database.User); !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
 	// Bolt Optimization: Removed redundant database queries for watchlists and profiles.
@@ -36,8 +35,8 @@ func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
 
 // LibrariesPage renders the libraries page shell
 func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
-	if _, ok := c.Locals("user").(database.User); !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
 	// Bolt Optimization: Removed redundant database query for libraries.
@@ -47,8 +46,8 @@ func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
 
 // ProfilesPage renders the profiles page shell
 func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
-	if _, ok := c.Locals("user").(database.User); !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
 	// Bolt Optimization: Removed redundant database query for profiles.
@@ -58,8 +57,8 @@ func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
 
 // SchedulesPage renders the schedules page shell
 func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
-	if _, ok := c.Locals("user").(database.User); !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
 	// Bolt Optimization: Removed redundant database queries for schedules and watchlists.
@@ -69,8 +68,8 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 
 // ArtistsPage renders the artists page shell
 func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
-	if _, ok := c.Locals("user").(database.User); !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
 	// Bolt Optimization: Removed redundant database query for artists.
@@ -80,9 +79,9 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 
 // JobsPage renders the jobs page shell
 func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
+	user, ok, err := requirePageUser(c)
 	if !ok {
-		return c.Redirect("/", 302)
+		return err
 	}
 
 	// Bolt Optimization: Removed redundant database query for jobs.
