@@ -6,7 +6,7 @@ The core UX is a “protocol console”: structured logs are the primary progres
 
 ## Goals
 - Provide a reliable, observable pipeline from playlist/source → acquired files → organized library → streamable catalog.
-- Keep critical state in PostgreSQL so crashes/restarts are recoverable and explainable.
+- Keep critical state in a database (SQLite WAL for dev, PostgreSQL for production) so crashes/restarts are recoverable and explainable.
 - Maintain predictable concurrency and fairness under multiple simultaneous jobs.
 
 ## Non-goals
@@ -24,16 +24,16 @@ Both modes share the same schema and GORM models. Production invariants (row loc
 ## System overview
 NETRUNNER runs as a small container stack:
 - Caddy: edge proxy + TLS termination
-- PostgreSQL: system-of-record (jobs, logs, metadata, concurrency primitives)
+- PostgreSQL (or SQLite WAL for dev): system-of-record (jobs, logs, metadata, concurrency primitives)
 - ops-web: operations UI + API (Go/Fiber + HTMX + server-rendered templates) and WebSockets for console streaming
 - ops-worker: async orchestration (job claims, locks, round-robin dispatch, heartbeats, reaper)
 - slskd: acquisition daemon (Soulseek)
 - Gonic: Subsonic-compatible streaming
 
 The system uses:
-- PostgreSQL row-level locking (SKIP LOCKED) for safe claiming
-- PostgreSQL advisory locks for per-scope exclusivity
-- PostgreSQL LISTEN/NOTIFY for event-driven wakeups and UI fanout
+- `FOR UPDATE SKIP LOCKED` (PostgreSQL) or atomic status updates (SQLite) for safe claiming
+- Advisory locks (PostgreSQL) or table-based lock manager (SQLite) for per-scope exclusivity
+- PostgreSQL LISTEN/NOTIFY (or polling in SQLite mode) for event-driven wakeups and UI fanout
 
 ## Pipeline flow (end-to-end)
 1. Source registration
@@ -69,8 +69,10 @@ The console is a first-class operations surface:
 
 ## Deployment posture (production)
 - Caddy terminates TLS and routes traffic to ops-web and Gonic.
-- PostgreSQL is not exposed publicly.
+- The database is not exposed publicly.
 - Secrets are provided via environment variables and should be rotated and locked down as part of standard ops hygiene.
+- For multi-worker production deployments, use PostgreSQL for proper advisory locking.
+- SQLite WAL is suitable for single-user/local dev, with a startup warning if `MaxConcurrentJobs > 1`.
 
 ## Extensibility
 A new job type typically requires:

@@ -182,7 +182,7 @@ NetRunner supports both SQLite and PostgreSQL. Choose based on your deployment:
 
 > A startup warning is emitted when SQLite is used with `MaxConcurrentJobs > 1` — switch to Postgres for concurrent workloads.
 
-For operational runbooks (backup, upgrade, migration), see [`ops/docs/`](ops/docs/).
+For operational runbooks (backup, upgrade, migration), see [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
 ---
 
@@ -220,7 +220,7 @@ PROXY_URL=http://proxy.example.com:8080
 
 ## 📊 Observability
 
-NetRunner exposes a `/metrics` endpoint in Prometheus exposition format. Scraped metrics include:
+NetRunner exposes `/metrics` endpoints in Prometheus exposition format. The server exposes on `:8080/metrics` and the worker on `:9090/metrics`. Scraped metrics include:
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -268,4 +268,4 @@ We welcome contributions that align with our "Console-First" and "Standalone" de
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
-**Architecture**: Go 1.25, SQLite, Fiber, HTMX
+**Architecture**: Go 1.25+, SQLite/PostgreSQL, Fiber, HTMX

@@ -20,13 +20,17 @@ The worker orchestrates multiple specialized services:
 - **MusicBrainzService**: Client for MusicBrainz API with caching.
 - **AcoustIDService**: Audio fingerprinting lookup (Chromaprint/fpcalc) for metadata enrichment.
 - **CacheService**: Persistent shadow cache for external API responses (MusicBrainz/Spotify/AcoustID).
-- **NotificationService**: Webhook dispatcher for job completion events and quota warnings.
-- **DiskQuotaService**: Calculates library disk usage and checks quota thresholds (Phase 8).
+- **NotificationService**: Webhook and SMTP email dispatcher for job completion events and quota warnings.
+- **DiskQuotaService**: Calculates library disk usage and checks quota thresholds.
 - **SlskdService**: Client wrapper for the slskd daemon (Soulseek download API).
 - **SpotifyService**: Spotify client with background token refresh and caching.
 - **DiscogsService**: Discogs API client for cover art, genre, and year enrichment.
 - **GonicClient**: Subsonic API client for library streaming.
+- **NavidromeClient**: Alternative Subsonic-compatible client with scan trigger fallback.
 - **ProfileService**: Manages quality profile CRUD and defaults.
+- **LyricsService**: Fetches synced/plain lyrics from LRCLIB for post-import enrichment.
+- **TranscoderService**: Audio transcoding for format conversion post-import.
+- **YtdlpService**: Direct download fallback when Soulseek acquisition is unavailable.
 
 ## Core Data Model
 ### Tables (minimum)

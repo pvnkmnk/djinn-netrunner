@@ -62,7 +62,6 @@ Ten cycles of development have shipped (Cycle A through Cycle 9), covering found
 - [x] PostgreSQL advisory locks with concurrent test coverage
 - [x] GORM auto-migrations
 - [x] Prometheus metrics (server :8080, worker :9090)
-- [x] SMTP email notifications (decoupled from webhook)
 - [x] Webhook notifications
 
 #### UI & Accessibility
@@ -100,4 +99,4 @@ Ten cycles of development have shipped (Cycle A through Cycle 9), covering found
 - [ ] Multi-environment config file support (if deployment complexity warrants)
 - [ ] Horizontal worker scaling via LiteFS write forwarding
 - [ ] Admin panel with user management UI
-- [ ] Grafana dashboard JSON export in repo
+- [x] Grafana dashboard JSON export in repo (`ops/grafana/netrunner-dashboard.json`)

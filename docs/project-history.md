@@ -164,7 +164,7 @@ Cycle A targeted the foundation layer — Docker packaging, CI/CD, dependency he
 - [x] Library scanning + metadata enrichment
 - [x] Quality profiles
 - [x] WebSocket console streaming
-- [x] MCP agent interface (15+ tools)
+- [x] MCP agent interface (20 tools)
 - [x] CLI interface
 - [x] CI pipeline (go vet + test + coverage)
 - [x] Caddy reverse proxy with CSP
