@@ -4,25 +4,12 @@ package integration
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
-	"os"
 	"strings"
 	"testing"
 )
-
-func skipIfShort(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration smoke test in short mode")
-	}
-}
-
-func GetEnvOrDefault(key, defaultValue string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return defaultValue
-}
 
 func TestSmoke_Auth_RegisterLoginLogout(t *testing.T) {
 	skipIfShort(t)
@@ -108,7 +95,7 @@ func readBody(resp *http.Response) string {
 		return ""
 	}
 	buf := new(strings.Builder)
-	buf.ReadFrom(resp.Body)
+	io.Copy(buf, resp.Body)
 	resp.Body.Close()
 	return buf.String()
 }
