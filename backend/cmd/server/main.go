@@ -256,6 +256,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	// Partial routes (all protected)
 	app.Get("/partials/stats", auth.AuthMiddleware, stats.RenderStatsPartial)
 	app.Get("/partials/watchlists", auth.AuthMiddleware, watchlist.RenderWatchlistsPartial)
+	app.Get("/partials/profiles", auth.AuthMiddleware, profile.RenderProfilesPartial)
 	app.Get("/partials/libraries", auth.AuthMiddleware, library.RenderLibrariesPartial)
 	app.Get("/partials/schedules", auth.AuthMiddleware, schedulesHandler.RenderSchedulesPartial)
 	app.Get("/partials/artists", auth.AuthMiddleware, artistsHandler.RenderPartial)
