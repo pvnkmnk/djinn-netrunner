@@ -7,15 +7,18 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds all configuration for the application
 type Config struct {
 	// Server
 	Environment string
+	ConfigEnv   string
 	Port        string
 	Domain      string
 
@@ -104,6 +107,77 @@ func generateSecureSecret() string {
 	return hex.EncodeToString(b)
 }
 
+// configFileCandidates returns file paths to search for config YAML overlays,
+// preferring the current working directory first, then the project root (../../).
+func configFileCandidates(configEnv string) []string {
+	wd, _ := os.Getwd()
+	base := filepath.Join(wd, "config.yaml")
+	envFile := filepath.Join(wd, fmt.Sprintf("config.%s.yaml", configEnv))
+
+	parentBase := filepath.Join(wd, "..", "..", "config.yaml")
+	parentEnv := filepath.Join(wd, "..", "..", fmt.Sprintf("config.%s.yaml", configEnv))
+
+	return []string{base, envFile, parentBase, parentEnv}
+}
+
+// loadYAMLOverrides reads YAML config overlays and applies them to cfg.
+// Env vars still take highest precedence (loaded after this runs at startup).
+// Only known keys are applied to prevent arbitrary config injection.
+func loadYAMLOverrides(cfg *Config, configEnv string) {
+	for _, file := range configFileCandidates(configEnv) {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				slog.Warn("Failed to read config file", "file", file, "error", err)
+			}
+			continue
+		}
+		var overlay map[string]interface{}
+		if err := yaml.Unmarshal(data, &overlay); err != nil {
+			slog.Warn("Failed to parse config file", "file", file, "error", err)
+			continue
+		}
+		applyOverlay(cfg, overlay)
+		slog.Info("Loaded config overlay", "file", file)
+	}
+}
+
+// applyOverlay applies known YAML config keys to the Config struct.
+// This is a whitelist — unknown keys are silently ignored.
+func applyOverlay(cfg *Config, overlay map[string]interface{}) {
+	if v, ok := overlay["environment"].(string); ok && v != "" {
+		cfg.Environment = v
+	}
+	// Rate limiter
+	if v, ok := overlay["auth_rate_limit_max"].(int); ok && v > 0 {
+		cfg.AuthRateLimitMax = v
+	}
+	if v, ok := overlay["auth_rate_limit_expiration"].(string); ok && v != "" {
+		cfg.AuthRateLimitExpiration = v
+	}
+	// Server
+	if v, ok := overlay["port"].(string); ok && v != "" {
+		cfg.Port = v
+	}
+	if v, ok := overlay["domain"].(string); ok && v != "" {
+		cfg.Domain = v
+	}
+	// Notifications
+	if v, ok := overlay["notification_enabled"].(bool); ok {
+		cfg.NotificationEnabled = v
+	}
+	if v, ok := overlay["notification_webhook_url"].(string); ok && v != "" {
+		cfg.NotificationWebhookURL = v
+	}
+	// Library
+	if v, ok := overlay["music_library_path"].(string); ok && v != "" {
+		cfg.MusicLibraryPath = v
+	}
+	if v, ok := overlay["download_staging_path"].(string); ok && v != "" {
+		cfg.DownloadStagingPath = v
+	}
+}
+
 // Load reads configuration from environment variables
 func Load(filenames ...string) (*Config, error) {
 	// Try to load .env file if provided, otherwise default to project root
@@ -132,8 +206,15 @@ func Load(filenames ...string) (*Config, error) {
 		slog.Warn("GONIC_USER or GONIC_PASS not set — Gonic integration will fail until credentials are configured.")
 	}
 
+	// Determine config environment (defaults to ENVIRONMENT if CONFIG_ENV not set)
+	configEnv := getEnv("CONFIG_ENV", "")
+	if configEnv == "" {
+		configEnv = getEnv("ENVIRONMENT", "development")
+	}
+
 	cfg := &Config{
 		Environment: getEnv("ENVIRONMENT", "development"),
+		ConfigEnv:   configEnv,
 		Port:        getEnv("PORT", "8080"),
 		Domain:      getEnv("DOMAIN", "localhost"),
 		JWTSecret:   jwtSecret,
@@ -188,6 +269,20 @@ func Load(filenames ...string) (*Config, error) {
 		AuthRateLimitMax:        getEnvAsInt("AUTH_RATE_LIMIT_MAX", 10),
 		AuthRateLimitExpiration: getEnv("AUTH_RATE_LIMIT_EXPIRATION", "1m"),
 	}
+
+	// Load YAML config overlays
+	loadYAMLOverrides(cfg, configEnv)
+
+	// Env vars take highest precedence — re-override fields that YAML may have set
+	cfg.Environment = getEnv("ENVIRONMENT", cfg.Environment)
+	cfg.Port = getEnv("PORT", cfg.Port)
+	cfg.Domain = getEnv("DOMAIN", cfg.Domain)
+	cfg.AuthRateLimitMax = getEnvAsInt("AUTH_RATE_LIMIT_MAX", cfg.AuthRateLimitMax)
+	cfg.AuthRateLimitExpiration = getEnv("AUTH_RATE_LIMIT_EXPIRATION", cfg.AuthRateLimitExpiration)
+	cfg.NotificationEnabled = getEnvBool("NOTIFICATION_ENABLED", cfg.NotificationEnabled)
+	cfg.NotificationWebhookURL = getEnv("NOTIFICATION_WEBHOOK_URL", cfg.NotificationWebhookURL)
+	cfg.MusicLibraryPath = getEnv("MUSIC_LIBRARY", cfg.MusicLibraryPath)
+	cfg.DownloadStagingPath = getEnv("DOWNLOAD_STAGING", cfg.DownloadStagingPath)
 
 	// Validate required fields
 	if cfg.DatabaseURL == "" {

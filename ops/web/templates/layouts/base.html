@@ -9,7 +9,7 @@
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
-    <a class="sr-only sr-only-focusable skip-link" href="#main-content">Skip to main content</a>
+    <a href="#main-content" class="skip-link">Skip to content</a>
     <header class="app-header" role="banner">
         <h1>NETRUNNER</h1>
         <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav" aria-label="Toggle navigation">
@@ -23,6 +23,7 @@
             <a href="/schedules" {% if Page == "schedules" %}class="active" aria-current="page"{% endif %}>Schedules</a>
             <a href="/artists" {% if Page == "artists" %}class="active" aria-current="page"{% endif %}>Artists</a>
             <a href="/jobs" {% if Page == "jobs" %}class="active" aria-current="page"{% endif %}>Jobs</a>
+            <a href="/admin" {% if Page == "admin" %}class="active" aria-current="page"{% endif %}>Admin</a>
         </nav>
     </header>
     <main id="main-content" class="app-main" role="main" tabindex="-1">

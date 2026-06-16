@@ -1,0 +1,24 @@
+<h3>System Config</h3>
+<table class="admin-table">
+    <thead>
+        <tr>
+            <th>Key</th>
+            <th>Value</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for setting in Settings %}
+        <tr>
+            <td><code>{{ setting.Key|escape }}</code></td>
+            <td>{{ setting.Value|escape }}</td>
+            <td>
+                <button class="btn btn-sm btn-outline"
+                        hx-get="/partials/admin/config-edit?key={{ setting.Key|escape }}"
+                        hx-target="closest tr"
+                        hx-swap="outerHTML">Edit</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

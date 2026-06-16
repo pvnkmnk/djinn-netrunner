@@ -130,6 +130,7 @@ func main() {
 	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
 	schedulesHandler := api.NewSchedulesHandler(db)
 	acquireHandler := api.NewAcquireHandler(db)
+	adminHandler := api.NewAdminHandler(db)
 
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
@@ -164,7 +165,7 @@ func main() {
 	}()
 
 	// Routes
-	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler)
+	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler, adminHandler)
 
 	// Start server
 	go func() {
@@ -191,7 +192,7 @@ func listenAddress(cfg *config.Config) string {
 	return ":" + port
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler, adminHandler *api.AdminHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -252,6 +253,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/schedules", auth.AuthMiddleware, schedulesHandler.SchedulesPage)
 	app.Get("/artists", auth.AuthMiddleware, artistsHandler.ArtistsPage)
 	app.Get("/jobs", auth.AuthMiddleware, stats.JobsPage)
+	app.Get("/admin", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.AdminPage)
 
 	// Partial routes (all protected)
 	app.Get("/partials/stats", auth.AuthMiddleware, stats.RenderStatsPartial)
@@ -266,6 +268,11 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/partials/libraries/:id/browse", auth.AuthMiddleware, library.BrowseTracks)
 	app.Get("/partials/tracks/:id", auth.AuthMiddleware, library.TrackDetail)
 	app.Get("/partials/acquire-form", auth.AuthMiddleware, acquireHandler.GetForm)
+
+	// Admin partial routes
+	app.Get("/partials/admin/users", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderUsersPartial)
+	app.Get("/partials/admin/audit", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderAuditPartial)
+	app.Get("/partials/admin/config", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderConfigPartial)
 
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
@@ -421,7 +428,18 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		}
 		return c.JSON(fiber.Map{"status": "scan_triggered"})
 	})
-}
+
+	// Admin routes (admin-only)
+	adminRoutes := apiProtected.Group("/admin", adminHandler.AdminOnly)
+	adminRoutes.Get("/users", adminHandler.ListUsers)
+	adminRoutes.Post("/users", adminHandler.CreateUser)
+	adminRoutes.Delete("/users/:id", adminHandler.DeleteUser)
+	adminRoutes.Patch("/users/:id/role", adminHandler.UpdateRole)
+	adminRoutes.Post("/users/:id/reset-password", adminHandler.ResetPassword)
+	adminRoutes.Get("/audit", adminHandler.ListAudit)
+	adminRoutes.Get("/config", adminHandler.ListConfig)
+	adminRoutes.Patch("/config", adminHandler.UpdateConfig)
+	}
 
 func parseUint64(s string) (uint64, error) {
 	n, err := strconv.ParseUint(s, 10, 64)

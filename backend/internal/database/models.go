@@ -448,6 +448,17 @@ func (p *PeerReputation) IsIgnored() bool {
 	return p.TotalDownloads >= 5 && p.SuccessRate() < 0.2
 }
 
+// AuditLog records administrative actions for auditing
+type AuditLog struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement"`
+	Action     string    `gorm:"not null;index"`
+	ActorID    uint64    `gorm:"not null;index"`
+	TargetType string    `gorm:"not null"`
+	TargetID   string    `gorm:""`
+	Metadata   string    `gorm:"type:text"` // JSON blob
+	CreatedAt  time.Time `gorm:"index"`
+}
+
 // TableName overrides for GORM
 func (Job) TableName() string             { return "jobs" }
 func (JobItem) TableName() string         { return "jobitems" }
@@ -460,3 +471,4 @@ func (TrackedRelease) TableName() string  { return "tracked_releases" }
 func (Lock) TableName() string            { return "locks" }
 func (Setting) TableName() string         { return "settings" }
 func (PeerReputation) TableName() string  { return "peer_reputations" }
+func (AuditLog) TableName() string        { return "audit_logs" }

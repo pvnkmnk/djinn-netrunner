@@ -95,13 +95,16 @@ textarea:focus-visible,
 }
 .skip-link {
     position: absolute;
-    top: 0.25rem;
-    left: 0.25rem;
-    z-index: 2000;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--accent-cyan);
+    top: -40px;
+    left: 0;
+    background: var(--accent, #0066cc);
+    color: white;
+    padding: 8px;
+    z-index: 100;
+    transition: top 0.1s;
+}
+.skip-link:focus {
+    top: 0;
 }
 .sr-only-focusable {
     clip: rect(0, 0, 0, 0);
@@ -112,6 +115,16 @@ textarea:focus-visible,
     height: auto;
     margin: 0;
     white-space: normal;
+}
+
+/* Focus ring styles */
+:focus-visible {
+    outline: 2px solid var(--accent, #0066cc);
+    outline-offset: 2px;
+}
+/* Remove focus outline for mouse users */
+:focus:not(:focus-visible) {
+    outline: none;
 }
 .nav-toggle {
     display: none;

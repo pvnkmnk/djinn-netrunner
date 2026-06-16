@@ -11,17 +11,27 @@ function getCookie(name) {
 }
 
 // Modal management
+let lastFocusedElement = null;
+
 function closeModal() {
     const container = document.getElementById('modal-container');
     if (container) {
         container.classList.remove('active');
         container.innerHTML = '';
+        // Restore focus to the element that was focused before modal opened
+        if (lastFocusedElement) {
+            lastFocusedElement.focus();
+            lastFocusedElement = null;
+        }
     }
 }
 
 function openModal(html) {
     const container = document.getElementById('modal-container');
     if (container) {
+        // Save the currently focused element before opening modal
+        lastFocusedElement = document.activeElement;
+        
         // NOTE: DOMParser prevents <script> execution but inline handlers
         // (onerror, onclick, etc.) in the parsed HTML remain active once
         // inserted. Currently unused — HTML source is server-generated and
@@ -37,6 +47,14 @@ function openModal(html) {
         // Trigger reflow
         container.offsetHeight;
         container.classList.add('active');
+        
+        // Focus the first focusable element inside the modal
+        const focusable = container.querySelectorAll(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length > 0) {
+            focusable[0].focus();
+        }
     }
 }
 
@@ -58,6 +76,16 @@ document.addEventListener('DOMContentLoaded', function() {
             const expanded = navToggle.getAttribute('aria-expanded') === 'true';
             navToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
             primaryNav.classList.toggle('nav-open', !expanded);
+        });
+        
+        // Keyboard support for mobile nav toggle
+        navToggle.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const expanded = navToggle.getAttribute('aria-expanded') === 'true';
+                navToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                primaryNav.classList.toggle('nav-open', !expanded);
+            }
         });
     }
 

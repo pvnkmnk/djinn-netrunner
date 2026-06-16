@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/dcp.json",
+  "archives": [
+    {
+      "topic": "architecture",
+      "retain": ["docs/", "*.md"]
+    },
+    {
+      "topic": "config",
+      "retain": ["opencode.json", "dcp.jsonc", "AGENTS.md"]
+    },
+    {
+      "topic": "skills",
+      "retain": [".agents/skills/"]
+    }
+  ]
+}

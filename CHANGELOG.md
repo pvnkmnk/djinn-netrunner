@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1] - 2026-06-16
+
+### Infrastructure
+- Added Node.js 22 LTS and fresh yt-dlp (pip) to Docker runtime image, configurable via `YTDLP_PATH` env var
+- Added multi-environment YAML config support via `CONFIG_ENV` (`config.yaml`, `config.<env>.yaml`)
+- Added LiteFS configuration for SQLite multi-worker scaling
+- Fixed CI workflows to properly skip integration-tagged tests in unit test runs
+- Documented `YTDLP_PATH` and `CONFIG_ENV` in `.env.example`
+
+### Testing
+- Added auth E2E smoke test (register, login, logout, rate limiting)
+- Added watchlist, library, and job E2E smoke tests
+- Added webhook delivery and quota warning E2E tests
+- Performed mobile navigation and keyboard accessibility audit with fixes
+
+### Admin Panel
+- Added admin panel backend: user CRUD, role management, password reset, audit logging, system config editor
+- Added admin panel frontend: user management, audit log viewer, system config editor pages (HTMX)
+- Added admin route authorization tests
+- Added admin panel integration smoke test
+
+### Release
+- Initial public release v0.0.1
+
 ## [Unreleased]
 
 ## [0.0.1] — 2026-05-XX
