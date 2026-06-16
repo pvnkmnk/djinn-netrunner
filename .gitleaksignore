@@ -1,0 +1,7 @@
+# .slim/ — code maps and cloned dependency repos (generated dev data)
+.slim/cartography.json:generic-api-key:38
+.slim/clonedeps/repos/gofiber__fiber/.github/testdata/ssl.key:private-key:1
+.slim/clonedeps/repos/gofiber__fiber/docs/api/middleware/keyauth.md:curl-auth-header:206
+.slim/codemap.json:generic-api-key:41
+.slim/codemap.json:generic-api-key:42
+.slim/codemap.json:generic-api-key:169
