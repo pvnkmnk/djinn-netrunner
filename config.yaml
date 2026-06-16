@@ -1,0 +1,3 @@
+# Base configuration for NetRunner
+# Environment-specific overrides go in config.<env>.yaml
+environment: development

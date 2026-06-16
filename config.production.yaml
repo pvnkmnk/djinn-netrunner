@@ -1,0 +1,5 @@
+# Production overrides
+# Loaded when ENVIRONMENT=production or CONFIG_ENV=production
+environment: production
+auth_rate_limit_max: 30
+notification_enabled: true
