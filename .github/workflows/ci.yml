@@ -12,29 +12,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.11'
+      # Installs Go + govulncheck + linters from mise.toml [tools]
+      - uses: jdx/mise-action@v4
 
       - name: Download dependencies
         working-directory: backend
         run: go mod download
 
+      # Fast gates (parallel-safe, <1 min)
       - name: Vet
-        working-directory: backend
-        run: go vet ./...
+        run: mise run vet
 
+      - name: Shell check
+        run: mise run lint-shell
+
+      - name: Secrets scan
+        run: mise run detect-secrets
+
+      # Build all binaries
+      - name: Build
+        run: mise run build
+
+      # Tests with coverage
       - name: Test
-        working-directory: backend
-        run: go test $(go list ./... | grep -v /integration/) -coverprofile=coverage.out
+        run: mise run test-coverage
         env:
           CGO_ENABLED: 0
 
+      # Deep analysis (CI only — ~30-60s each)
+      - name: Go lint
+        run: mise run lint-go
+
+      - name: Workflow lint
+        run: mise run lint-actions
+
       - name: Vulnerability scan
-        working-directory: backend
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+        run: mise run vuln
 
       - name: Upload coverage
         if: always()
@@ -42,18 +55,3 @@ jobs:
         with:
           name: coverage
           path: backend/coverage.out
-
-  # lint job disabled until golangci-lint supports go1.25
-  # lint:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-go@v5
-  #       with:
-  #         go-version: '1.25'
-  #     - name: golangci-lint
-  #       uses: golangci/golangci-lint-action@v6
-  #       with:
-  #         working-directory: backend
-  #         version: latest
-  #         args: --timeout=5m

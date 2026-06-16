@@ -1,0 +1,30 @@
+# ─────────────────────────────────────────────────────────
+# golangci-lint config — NetRunner
+# ─────────────────────────────────────────────────────────
+# Minimal, fast, high-signal linters only.
+# Focus on real bugs (unchecked errors, dead code,
+# context leaks, duration pitfalls), not style.
+# ─────────────────────────────────────────────────────────
+
+run:
+  timeout: 3m
+  modules-download-mode: readonly
+
+linters:
+  # Default enabled: errcheck, gosimple, govet, ineffassign,
+  #                  staticcheck, typecheck, unused
+  # Added extras:   durationcheck (time.Duration bugs),
+  #                  noctx (context cancellation leaks)
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - durationcheck
+    - noctx
+
+issues:
+  exclude-use-default: false
