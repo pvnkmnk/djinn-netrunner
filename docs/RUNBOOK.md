@@ -14,6 +14,45 @@ This runbook covers day-to-day operation and common troubleshooting for NETRUNNE
   - docker compose logs -f ops-web
   - docker compose logs -f slskd
 
+## LiteFS / SQLite multi-worker scaling
+
+When using SQLite instead of PostgreSQL, LiteFS enables multiple worker processes to share the same database file.
+
+### Architecture
+- **Primary node**: Receives all write operations and replicates to replicas via FUSE.
+- **Replica nodes**: Read from the local LiteFS mount. Writes are forwarded to the primary transparently.
+- All nodes connect via a Consul cluster for leader election (or static lease for single-node testing).
+
+### Enabling LiteFS
+1. Uncomment the `litefs` service in `docker-compose.yml`.
+2. Add volumes for shared SQLite data:
+   ```yaml
+   volumes:
+     netrunner-sqlite-data:
+     netrunner-litefs-data:
+   ```
+3. Change `DATABASE_URL` on each service to point at the LiteFS proxy:
+   ```
+   DATABASE_URL: /litefs/netrunner.db
+   ```
+4. Start with multiple workers:
+   ```bash
+   docker compose up --scale ops-worker=3 -d
+   ```
+
+### When to use PostgreSQL vs SQLite + LiteFS
+| Scenario | Recommendation |
+|---|---|
+| Single worker, local dev | SQLite (no LiteFS needed) |
+| Multi-worker, production | PostgreSQL (recommended) |
+| Multi-worker, constrained resources | SQLite + LiteFS |
+| Horizontal scaling across hosts | PostgreSQL |
+
+### Known limitations
+- LiteFS requires the `SYS_ADMIN` capability and `/dev/fuse` device access.
+- Consul cluster is required for automatic leader election across hosts.
+- Write throughput is limited to primary node only.
+
 ## Database access
 Connect:
 - docker compose exec postgres psql -U musicops -d musicops
