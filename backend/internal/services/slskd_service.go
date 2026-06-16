@@ -312,8 +312,14 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		"filterResponses": true,
 	}
 
-	jsonPayload, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", u, bytes.NewBuffer(jsonPayload))
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, u, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 

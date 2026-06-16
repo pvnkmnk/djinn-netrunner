@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestNavidromeClient_TriggerScan tests the TriggerScan method
@@ -29,7 +31,7 @@ func TestNavidromeClient_TriggerScan(t *testing.T) {
 				Status: "ok",
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		require.NoError(t, json.NewEncoder(w).Encode(response))
 	}))
 	defer server.Close()
 
@@ -62,7 +64,7 @@ func TestNavidromeClient_HealthCheck(t *testing.T) {
 				Status: "ok",
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		require.NoError(t, json.NewEncoder(w).Encode(response))
 	}))
 	defer server.Close()
 

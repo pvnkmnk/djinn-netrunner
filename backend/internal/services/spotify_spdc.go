@@ -488,7 +488,7 @@ func (a *SpDcAuth) getClientVersionLocked() string {
 	}
 
 	match := clientVersionRegex.FindSubmatch(body)
-	if match != nil && len(match) > 1 {
+	if len(match) > 1 {
 		version := string(match[1])
 		slog.Debug("scraped Spotify client version", "version", version)
 		a.clientVersion = version
@@ -599,7 +599,7 @@ func (a *SpDcAuth) FetchPlaylistTracksViaWebAPI(playlistID string) ([]map[string
 
 		resp, err := a.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("Web API request failed: %w", err)
+			return nil, fmt.Errorf("web API request failed: %w", err)
 		}
 
 		if resp.StatusCode == http.StatusUnauthorized {
@@ -617,7 +617,7 @@ func (a *SpDcAuth) FetchPlaylistTracksViaWebAPI(playlistID string) ([]map[string
 
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			return nil, fmt.Errorf("Web API returned HTTP %d for playlist %s", resp.StatusCode, playlistID)
+			return nil, fmt.Errorf("web API returned HTTP %d for playlist %s", resp.StatusCode, playlistID)
 		}
 
 		body, err := io.ReadAll(resp.Body)

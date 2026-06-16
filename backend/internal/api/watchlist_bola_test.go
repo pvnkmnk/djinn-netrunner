@@ -89,7 +89,7 @@ func TestWatchlistBOLA(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 	// Check that response contains "Watchlist not found" and NOT the form content
 	body := new(bytes.Buffer)
-	body.ReadFrom(resp.Body)
+	_, _ = body.ReadFrom(resp.Body)
 	assert.Contains(t, body.String(), "Watchlist not found")
 	assert.NotContains(t, body.String(), "User1 Watchlist")
 }

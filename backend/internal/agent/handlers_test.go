@@ -8,6 +8,7 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -31,7 +32,7 @@ func TestConfigTools(t *testing.T) {
 	// Setup in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&database.Setting{})
+	_ = db.AutoMigrate(&database.Setting{})
 
 	cfg := &config.Config{
 		Port: "8080",
@@ -57,7 +58,7 @@ func TestWatchlistTools(t *testing.T) {
 	// Setup in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&database.Watchlist{}, &database.QualityProfile{}, &database.User{})
+	_ = db.AutoMigrate(&database.Watchlist{}, &database.QualityProfile{}, &database.User{})
 
 	// Create a default profile and user
 	profile := database.QualityProfile{Name: "Standard"}
@@ -82,7 +83,7 @@ func TestLibraryTools(t *testing.T) {
 	// Setup in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&database.Library{}, &database.Track{}, &database.Job{}, &database.User{})
+	_ = db.AutoMigrate(&database.Library{}, &database.Track{}, &database.Job{}, &database.User{})
 
 	user := database.User{Email: "library@test.com", PasswordHash: "xxx"}
 	db.Create(&user)
@@ -118,7 +119,7 @@ func TestJobMonitoringTools(t *testing.T) {
 	// Setup in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&database.Job{}, &database.JobLog{}, &database.User{}, &database.JobItem{})
+	require.NoError(t, db.AutoMigrate(&database.Job{}, &database.JobLog{}, &database.User{}, &database.JobItem{}))
 
 	user := database.User{Email: "job@test.com", PasswordHash: "xxx"}
 	db.Create(&user)
@@ -171,7 +172,7 @@ func TestSearchLibrary(t *testing.T) {
 	// Setup in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&database.Acquisition{})
+	require.NoError(t, db.AutoMigrate(&database.Acquisition{}))
 
 	// Create a test acquisition
 	db.Create(&database.Acquisition{
@@ -191,7 +192,7 @@ func TestAgentNotification(t *testing.T) {
 	// Setup in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
-	db.AutoMigrate(&database.Setting{})
+	require.NoError(t, db.AutoMigrate(&database.Setting{}))
 
 	// Test RegisterWebhook
 	err = RegisterWebhook(db, "http://agent-callback.com/webhook")

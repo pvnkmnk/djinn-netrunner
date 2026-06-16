@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -36,12 +37,16 @@ func ProbeSystem(db *gorm.DB, cfg *config.Config) (*SystemStatus, error) {
 	// 2. Check Gonic (if configured)
 	if cfg.GonicURL != "" {
 		client := &http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(cfg.GonicURL + "/ping")
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, cfg.GonicURL+"/ping", nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			status.GonicConnected = true
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}
 

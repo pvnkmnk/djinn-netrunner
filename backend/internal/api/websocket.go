@@ -85,7 +85,7 @@ func (m *WebSocketManager) ListenForJobLogs(ctx context.Context, dbURL string, d
 	}
 
 	listener := pq.NewListener(dbURL, 10*time.Second, time.Minute, reportProblem)
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	err := listener.Listen("opsevents")
 	if err != nil {
 		slog.Error("Failed to listen for logs", "error", err)
@@ -131,7 +131,7 @@ func (m *WebSocketManager) ListenForJobLogs(ctx context.Context, dbURL string, d
 				}
 			}
 		case <-time.After(1 * time.Minute):
-			go listener.Ping()
+			go func() { _ = listener.Ping() }()
 		}
 	}
 }
@@ -144,8 +144,8 @@ func (m *WebSocketManager) HandleEvents(c *websocket.Conn) {
 	// ✅ SECURITY: Only admins can subscribe to the system-wide event stream
 	user, ok := c.Locals("user").(database.User)
 	if !ok || user.Role != "admin" {
-		c.WriteMessage(websocket.TextMessage, []byte("Access denied: Admin role required for system events"))
-		c.Close()
+		_ = c.WriteMessage(websocket.TextMessage, []byte("Access denied: Admin role required for system events"))
+		_ = c.Close()
 		return
 	}
 
@@ -168,20 +168,20 @@ func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 	// ✅ SECURITY: Verify job ownership or admin role
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
-		c.Close()
+		_ = c.Close()
 		return
 	}
 
 	var job database.Job
 	if err := db.First(&job, jobIDUint).Error; err != nil {
-		c.WriteMessage(websocket.TextMessage, []byte("Job not found"))
-		c.Close()
+		_ = c.WriteMessage(websocket.TextMessage, []byte("Job not found"))
+		_ = c.Close()
 		return
 	}
 
 	if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
-		c.WriteMessage(websocket.TextMessage, []byte("Access denied: You do not own this job"))
-		c.Close()
+		_ = c.WriteMessage(websocket.TextMessage, []byte("Access denied: You do not own this job"))
+		_ = c.Close()
 		return
 	}
 
@@ -232,7 +232,9 @@ func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 				jobLog.Level,
 				html.EscapeString(jobLog.Message),
 			)
-			c.WriteMessage(websocket.TextMessage, []byte(logHTML))
+			if err := c.WriteMessage(websocket.TextMessage, []byte(logHTML)); err != nil {
+				return
+			}
 		}
 	}
 

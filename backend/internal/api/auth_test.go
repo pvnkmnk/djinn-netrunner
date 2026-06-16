@@ -21,7 +21,7 @@ func setupTestDBForAuth(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	database.Migrate(db)
+	_ = database.Migrate(db)
 	return db
 }
 

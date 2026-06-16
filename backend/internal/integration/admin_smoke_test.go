@@ -11,24 +11,10 @@ import (
 	"testing"
 )
 
-// skipIfShort is copied from smoke_test.go to avoid import cycles
-func skipIfShort(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration smoke test in short mode")
-	}
-}
 
-// GetEnvOrDefault is copied from test_runner.go to avoid import cycles
-func GetEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
 
 func TestSmoke_Admin_Panel(t *testing.T) {
-	skipIfShort(t)
-	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
+	baseURL := "http://localhost:8080"
 	
 	// Step 1: Register a user (creates regular user with role "user")
 	email := "smoke-admin-" + t.Name() + "@test.com"
@@ -40,7 +26,7 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
 		t.Fatalf("Register expected 200/201, got %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	
 	// Step 2: Login as the registered user
 	jar, _ := cookiejar.New(nil)
@@ -52,7 +38,7 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("Login expected 200, got %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	
 	// Step 3: Promote the user to admin via DB (since registration creates regular users)
 	// We need to directly update the user's role in the database
@@ -84,7 +70,7 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("Admin login expected 200, got %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	
 	// Step 6: Access admin routes (GET /api/admin/users)
 	resp, err = client.Get(baseURL + "/api/admin/users")
@@ -96,7 +82,7 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	}
 	var users []map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&users)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	t.Logf("Found %d users via admin endpoint", len(users))
 	
 	// Step 7: Access admin config route (GET /api/admin/config)
@@ -109,7 +95,7 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	}
 	var settings []map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&settings)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	t.Logf("Found %d config settings via admin endpoint", len(settings))
 	
 	// Step 8: Create another user via POST /api/admin/users
@@ -123,7 +109,7 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	}
 	var createdRegular map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&createdRegular)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	regularID := createdRegular["id"]
 	t.Logf("Created regular user with ID: %v", regularID)
 	
@@ -137,7 +123,7 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	}
 	var auditResponse map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&auditResponse)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	auditEntries, ok := auditResponse["entries"].([]interface{})
 	if !ok {
 		t.Fatal("Audit response entries is not a slice")

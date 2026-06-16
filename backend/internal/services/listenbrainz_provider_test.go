@@ -38,7 +38,7 @@ func TestListenBrainzProvider_FetchTracks(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(mockResponse))
+		_, _ = w.Write([]byte(mockResponse))
 	}))
 	defer server.Close()
 
@@ -93,7 +93,7 @@ func TestListenBrainzProvider_FetchTracks_Pagination(t *testing.T) {
 				},
 			}
 			data, _ := json.Marshal(resp)
-			w.Write(data)
+			_, _ = w.Write(data)
 		} else {
 			ts, _ := strconv.ParseInt(maxTSParam, 10, 64)
 			assert.Equal(t, int64(1000), ts)
@@ -117,7 +117,7 @@ func TestListenBrainzProvider_FetchTracks_Pagination(t *testing.T) {
 				},
 			}
 			data, _ := json.Marshal(resp)
-			w.Write(data)
+			_, _ = w.Write(data)
 		}
 	}))
 	defer server.Close()

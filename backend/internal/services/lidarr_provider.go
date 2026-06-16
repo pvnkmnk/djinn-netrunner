@@ -38,12 +38,6 @@ type lidarrAlbum struct {
 	ReleaseDate string `json:"releaseDate"`
 }
 
-// lidarrArtist represents an artist from Lidarr API
-type lidarrArtist struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
-}
-
 // lidarrWantedResponse represents the response from Lidarr wanted/missing endpoint
 type lidarrWantedResponse struct {
 	Records []lidarrAlbum `json:"records"`
@@ -83,7 +77,7 @@ func (p *LidarrProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 	if err != nil {
 		return nil, "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("lidarr api returned status: %d", resp.StatusCode)
@@ -139,7 +133,7 @@ func (p *LidarrProvider) fetchArtistName(ctx context.Context, baseURL *url.URL, 
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("lidarr api returned status: %d", resp.StatusCode)

@@ -89,16 +89,16 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, "", classifyHTTPStatus(resp.StatusCode, "discogs")
 		}
 
 		var data discogsWantlistResponse
 		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, "", err
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		for _, w := range data.Wants {
 			artistName := ""

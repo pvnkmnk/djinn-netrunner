@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -31,7 +32,7 @@ func setupAcquireTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User) {
 func TestAcquireHandler_CreateAlbumWorkflowQueuesArtistAlbumQuery(t *testing.T) {
 	app, db, user := setupAcquireTestApp(t)
 
-	req := httptest.NewRequest("POST", "/api/acquire", strings.NewReader("artist=Radiohead&album=OK+Computer"))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/acquire", strings.NewReader("artist=Radiohead&album=OK+Computer"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := app.Test(req)
 
@@ -50,7 +51,7 @@ func TestAcquireHandler_CreateAlbumWorkflowQueuesArtistAlbumQuery(t *testing.T) 
 func TestAcquireHandler_CreateSongWorkflowQueuesArtistTitleQuery(t *testing.T) {
 	app, db, user := setupAcquireTestApp(t)
 
-	req := httptest.NewRequest("POST", "/api/acquire", strings.NewReader("artist=Radiohead&title=Paranoid+Android"))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/acquire", strings.NewReader("artist=Radiohead&title=Paranoid+Android"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := app.Test(req)
 

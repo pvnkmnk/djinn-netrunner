@@ -14,7 +14,9 @@ func TestAcquisitionHandler_FailItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to db: %v", err)
 	}
-	database.Migrate(db)
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("database.Migrate failed: %v", err)
+	}
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 

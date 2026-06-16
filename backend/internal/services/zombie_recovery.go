@@ -80,7 +80,9 @@ func (z *ZombieRecovery) cleanup(ctx context.Context, workerID string) {
 
 		lockKey, err := z.lockManager.GetScopeLockKey(ctx, job.ScopeType, job.ScopeID)
 		if err == nil {
-			z.lockManager.ReleaseLock(ctx, lockKey)
+			if err := z.lockManager.ReleaseLock(ctx, lockKey); err != nil {
+				slog.Warn("Failed to release recovered zombie job lock", "job_id", job.ID, "error", err)
+			}
 		}
 	}
 }

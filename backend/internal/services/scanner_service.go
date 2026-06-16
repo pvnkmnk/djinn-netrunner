@@ -99,8 +99,7 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 		if fpErr == nil {
 			fingerprint = fp
 		}
-		var track database.Track
-		track = database.Track{
+		track := database.Track{
 			LibraryID:   libraryID,
 			Title:       meta.Title,
 			Artist:      meta.Artist,
@@ -160,18 +159,24 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID, j
 	for _, t := range tracks {
 		select {
 		case <-ctx.Done():
-			database.AppendJobLog(s.db, jobID, "INFO", fmt.Sprintf("Prune interrupted: %d items identified for removal, %d errors", removed, errors), nil)
+			if err := database.AppendJobLog(s.db, jobID, "INFO", fmt.Sprintf("Prune interrupted: %d items identified for removal, %d errors", removed, errors), nil); err != nil {
+				slog.Warn("Failed to append prune interruption log", "job_id", jobID, "error", err)
+			}
 			return ctx.Err()
 		default:
 			if _, err := os.Stat(t.Path); err != nil {
 				if os.IsNotExist(err) {
 					slog.Warn("Pruning missing file", "library_id", libraryID, "path", t.Path)
-					database.AppendJobLog(s.db, jobID, "OK", fmt.Sprintf("Removed: %s", filepath.Base(t.Path)), nil)
+					if err := database.AppendJobLog(s.db, jobID, "OK", fmt.Sprintf("Removed: %s", filepath.Base(t.Path)), nil); err != nil {
+						slog.Warn("Failed to append prune removal log", "job_id", jobID, "error", err)
+					}
 					toDelete = append(toDelete, t.ID)
 					removed++
 				} else {
 					slog.Error("Error checking file during prune", "path", t.Path, "error", err)
-					database.AppendJobLog(s.db, jobID, "ERR", fmt.Sprintf("Error checking file %s: %v", filepath.Base(t.Path), err), nil)
+					if err := database.AppendJobLog(s.db, jobID, "ERR", fmt.Sprintf("Error checking file %s: %v", filepath.Base(t.Path), err), nil); err != nil {
+						slog.Warn("Failed to append prune error log", "job_id", jobID, "error", err)
+					}
 					errors++
 				}
 			}
@@ -180,13 +185,17 @@ func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID, j
 
 	if len(toDelete) > 0 {
 		if err := s.db.Delete(&database.Track{}, "id IN ?", toDelete).Error; err != nil {
-			database.AppendJobLog(s.db, jobID, "ERR", "Database delete operation failed", nil)
+			if err := database.AppendJobLog(s.db, jobID, "ERR", "Database delete operation failed", nil); err != nil {
+				slog.Warn("Failed to append prune database error log", "job_id", jobID, "error", err)
+			}
 			return err
 		}
 	}
 
 	kept := len(tracks) - removed
-	database.AppendJobLog(s.db, jobID, "INFO", fmt.Sprintf("Prune complete: %d kept, %d removed, %d errors", kept, removed, errors), nil)
+	if err := database.AppendJobLog(s.db, jobID, "INFO", fmt.Sprintf("Prune complete: %d kept, %d removed, %d errors", kept, removed, errors), nil); err != nil {
+		slog.Warn("Failed to append prune completion log", "job_id", jobID, "error", err)
+	}
 	slog.Info("Prune complete", "library_id", libraryID, "removed", removed)
 	return nil
 }

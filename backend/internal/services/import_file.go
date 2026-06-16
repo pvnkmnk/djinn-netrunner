@@ -124,11 +124,14 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 			metrics.AcquisitionDedupTotal.WithLabelValues("recording_id").Inc()
 			h.Log(jobID, "OK", fmt.Sprintf("Duplicate recording detected (MB ID: %s, existing acquisition #%d at %s). "+
 				"Quality-aware replacement deferred — see DJI-366 docs.", mbIDs.RecordingID, existing.ID, existing.FinalPath), &itemID)
-			h.db.Model(&item).Updates(map[string]interface{}{
+			if err := h.db.Model(&item).Updates(map[string]interface{}{
 				"status":      "completed (duplicate recording)",
 				"finished_at": time.Now(),
 				"final_path":  existing.FinalPath,
-			})
+			}).Error; err != nil {
+				h.Log(jobID, "ERR", fmt.Sprintf("Failed to update duplicate item status: %v", err), &itemID)
+				return err
+			}
 			return nil
 		}
 	}
@@ -138,7 +141,10 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	if libraryRoot == "" {
 		libraryRoot = "./music_library"
 	}
-	os.MkdirAll(libraryRoot, 0755)
+	if err := os.MkdirAll(libraryRoot, 0755); err != nil {
+		h.failItem(jobID, itemID, fmt.Sprintf("Failed to create library root: %v", err))
+		return nil
+	}
 
 	finalPath := h.ext.GenerateLibraryPath(metadata, libraryRoot)
 
@@ -148,7 +154,10 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		base := strings.TrimSuffix(finalPath, ext)
 		finalPath = fmt.Sprintf("%s_%s%s", base, time.Now().Format("20060102_150405"), ext)
 	}
-	os.MkdirAll(filepath.Dir(finalPath), 0755)
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
+		h.failItem(jobID, itemID, fmt.Sprintf("Failed to create target directory: %v", err))
+		return nil
+	}
 
 	// Move file
 	cleanupErr, copyErr := h.moveFile(downloadPath, finalPath)
@@ -204,7 +213,9 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 			if transcodeErr != nil {
 				h.Log(jobID, "WARN", fmt.Sprintf("Transcoding failed: %v", transcodeErr), &itemID)
 			} else {
-				os.Remove(finalPath)
+				if err := os.Remove(finalPath); err != nil {
+					h.Log(jobID, "WARN", fmt.Sprintf("Failed to remove original after transcode: %v", err), &itemID)
+				}
 				finalPath = transcodedPath
 				if md, mdErr := h.ext.Extract(finalPath); mdErr == nil && md != nil {
 					metadata = md
@@ -218,11 +229,14 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	}
 
 	// Update DB
-	h.db.Model(&item).Updates(map[string]interface{}{
+	if err := h.db.Model(&item).Updates(map[string]interface{}{
 		"status":      "imported",
 		"finished_at": time.Now(),
 		"final_path":  finalPath,
-	})
+	}).Error; err != nil {
+		h.failItem(jobID, itemID, fmt.Sprintf("Failed to update imported item: %v", err))
+		return nil
+	}
 
 	// Create acquisition record
 	acq := database.Acquisition{
@@ -241,7 +255,10 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		MBArtistID:    mbIDs.ArtistID,
 		AcoustIDScore: acoustidScore,
 	}
-	h.db.Create(&acq)
+	if err := h.db.Create(&acq).Error; err != nil {
+		h.failItem(jobID, itemID, fmt.Sprintf("Failed to create acquisition record: %v", err))
+		return nil
+	}
 
 	h.Log(jobID, "OK", fmt.Sprintf("Imported: %s", finalPath), &itemID)
 	return nil
@@ -255,13 +272,17 @@ func (h *AcquisitionHandler) moveFile(src, dst string) (cleanupErr error, copyEr
 	if err != nil {
 		return nil, err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dst)
 	if err != nil {
 		return nil, err
 	}
-	defer out.Close()
+	defer func() {
+		if err := out.Close(); err != nil && copyErr == nil {
+			copyErr = err
+		}
+	}()
 
 	if _, err = io.Copy(out, in); err != nil {
 		return nil, err

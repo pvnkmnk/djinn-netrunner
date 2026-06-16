@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/stretchr/testify/require"
 )
 
 // TestLidarrProvider_FetchTracks tests the FetchTracks method
@@ -29,17 +30,17 @@ func TestLidarrProvider_FetchTracks(t *testing.T) {
 					{ID: 2, Title: "Album 2", ArtistID: 102, ReleaseDate: "2024-02-01"},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			require.NoError(t, json.NewEncoder(w).Encode(response))
 
 		case "/api/v1/artist/101":
 			// Return artist 101
 			artist := lidarrArtistResponse{ID: 101, Name: "Artist One"}
-			json.NewEncoder(w).Encode(artist)
+			require.NoError(t, json.NewEncoder(w).Encode(artist))
 
 		case "/api/v1/artist/102":
 			// Return artist 102
 			artist := lidarrArtistResponse{ID: 102, Name: "Artist Two"}
-			json.NewEncoder(w).Encode(artist)
+			require.NoError(t, json.NewEncoder(w).Encode(artist))
 
 		default:
 			http.NotFound(w, r)

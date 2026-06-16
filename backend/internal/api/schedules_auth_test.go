@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSchedulesAuthorization(t *testing.T) {
@@ -80,7 +81,7 @@ func TestSchedulesAuthorization(t *testing.T) {
 	resp, _ := app.Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 	var schedules []database.Schedule
-	json.NewDecoder(resp.Body).Decode(&schedules)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&schedules))
 	assert.Empty(t, schedules)
 
 	// 2. User2 tries to create a schedule for User1's watchlist - should be 403

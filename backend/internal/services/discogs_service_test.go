@@ -2,7 +2,6 @@ package services
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,7 +52,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -71,7 +70,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := discogsMockSearchResponse{Pagination: discogsMockPagination{Items: 0}, Results: []discogsMockItem{}}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -112,7 +111,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -137,7 +136,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -172,7 +171,7 @@ func TestDiscogsService_SearchRelease(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -193,7 +192,7 @@ func TestDiscogsService_SearchRelease(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"message": "Rate limit exceeded"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Rate limit exceeded"})
 		}))
 		defer server.Close()
 
@@ -210,7 +209,7 @@ func TestDiscogsService_SearchRelease(t *testing.T) {
 	t.Run("invalid JSON response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{invalid json`))
+			_, _ = w.Write([]byte(`{invalid json`))
 		}))
 		defer server.Close()
 
@@ -224,7 +223,6 @@ func TestDiscogsService_SearchRelease(t *testing.T) {
 	t.Run("network error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Close immediately without responding — causes a connection reset / network error
-			return
 		}))
 		serverURL := server.URL
 		server.Close()
@@ -252,7 +250,7 @@ func TestDiscogsService_GetGenre(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -270,7 +268,7 @@ func TestDiscogsService_GetGenre(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := discogsMockSearchResponse{Pagination: discogsMockPagination{Items: 0}, Results: []discogsMockItem{}}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -296,7 +294,7 @@ func TestDiscogsService_GetYear(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -319,7 +317,7 @@ func TestDiscogsService_GetYear(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -342,7 +340,7 @@ func TestDiscogsService_GetYear(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -374,7 +372,7 @@ func TestDiscogsService_EnrichTrack(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -398,7 +396,7 @@ func TestDiscogsService_EnrichTrack(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := discogsMockSearchResponse{Pagination: discogsMockPagination{Items: 0}, Results: []discogsMockItem{}}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -407,11 +405,7 @@ func TestDiscogsService_EnrichTrack(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for no results")
 		}
-		var netErr error
-		if errors.Is(err, netErr) {
-			// ignore
-		}
-		_ = netErr
+		// err is expected to be a network error from the closed server
 	})
 }
 

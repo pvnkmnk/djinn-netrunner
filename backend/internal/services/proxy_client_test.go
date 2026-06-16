@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,7 +42,7 @@ func TestProxyRouting(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer upstream.Close()
 
@@ -75,7 +76,7 @@ func TestProxyRouting(t *testing.T) {
 			}
 		}
 		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
+		_, _ = io.Copy(w, resp.Body)
 	}))
 	defer proxy.Close()
 
@@ -83,19 +84,21 @@ func TestProxyRouting(t *testing.T) {
 
 	// Provider 1: simulate MusicBrainz-style client
 	client1 := NewProxyAwareHTTPClient(cfg, 10*time.Second)
-	resp1, err := client1.Get(upstream.URL + "/ws/2/release?query=test")
+	req1, err := http.NewRequestWithContext(context.Background(), http.MethodGet, upstream.URL+"/ws/2/release?query=test", nil)
 	require.NoError(t, err)
-	defer resp1.Body.Close()
+	resp1, err := client1.Do(req1)
+	require.NoError(t, err)
+	defer func() { _ = resp1.Body.Close() }()
 	assert.Equal(t, http.StatusOK, resp1.StatusCode)
 
 	// Provider 2: simulate Discogs-style client
 	client2 := NewProxyAwareHTTPClient(cfg, 10*time.Second)
-	req, err := http.NewRequest("GET", upstream.URL+"/users/testuser/wants", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", upstream.URL+"/users/testuser/wants", nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Discogs token=test-token")
 	resp2, err := client2.Do(req)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
 
 	// Both requests should have passed through the proxy
@@ -121,9 +124,11 @@ func TestProxyNotUsedWhenUnset(t *testing.T) {
 
 	cfg := &config.Config{ProxyURL: ""}
 	client := NewProxyAwareHTTPClient(cfg, 10*time.Second)
-	resp, err := client.Get(upstream.URL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, upstream.URL, nil)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, int64(0), proxiedRequests.Load(),
 		"no requests should route through proxy when PROXY_URL is empty")
@@ -140,7 +145,7 @@ func TestProxyAwareHTTPClient_ProviderIntegration(t *testing.T) {
 		// Return valid but minimal responses for each provider type
 		path := r.URL.Path
 		if strings.Contains(path, "wants") {
-			w.Write([]byte(`{"pagination":{"items":0},"wants":[]}`))
+			_, _ = w.Write([]byte(`{"pagination":{"items":0},"wants":[]}`))
 		} else {
 			w.Write([]byte(`{"lovedtracks":{"track":[],"@attr":{"total":"0"}}}`))
 		}
@@ -151,21 +156,25 @@ func TestProxyAwareHTTPClient_ProviderIntegration(t *testing.T) {
 		proxiedHosts = append(proxiedHosts, r.Host)
 
 		targetURL := r.RequestURI
-		proxyReq, _ := http.NewRequest(r.Method, targetURL, r.Body)
+		proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		proxyReq.Header = r.Header
 		resp, err := http.DefaultTransport.RoundTrip(proxyReq)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		for k, vv := range resp.Header {
 			for _, v := range vv {
 				w.Header().Add(k, v)
 			}
 		}
 		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
+		_, _ = io.Copy(w, resp.Body)
 	}))
 	defer proxy.Close()
 
@@ -178,12 +187,20 @@ func TestProxyAwareHTTPClient_ProviderIntegration(t *testing.T) {
 	// Test DiscogsProvider uses proxy client
 	dp := NewDiscogsProvider("test-token", proxyClient)
 	dp.BaseURL = upstream.URL + "/"
-	_, _ = proxyClient.Get(upstream.URL + "/users/testuser/wants")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, upstream.URL+"/users/testuser/wants", nil)
+	require.NoError(t, err)
+	resp, err := proxyClient.Do(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
 
 	// Test LastFMProvider uses proxy client
 	lfm := NewLastFMProvider("test-key", proxyClient)
 	lfm.BaseURL = upstream.URL + "/"
-	_, _ = proxyClient.Get(upstream.URL + "/2.0/?method=user.getlovedtracks")
+	req, err = http.NewRequestWithContext(context.Background(), http.MethodGet, upstream.URL+"/2.0/?method=user.getlovedtracks", nil)
+	require.NoError(t, err)
+	resp, err = proxyClient.Do(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
 
 	assert.GreaterOrEqual(t, len(proxiedHosts), 2,
 		"at least 2 provider requests should have been proxied")

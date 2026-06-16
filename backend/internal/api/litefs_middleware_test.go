@@ -56,7 +56,7 @@ func TestLiteFSWriteForward_ForwardsToPrimary(t *testing.T) {
 		assert.Equal(t, "true", r.Header.Get("X-LiteFS-Forward"))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(201)
-		w.Write([]byte(`{"forwarded":true}`))
+		_, _ = w.Write([]byte(`{"forwarded":true}`))
 	}))
 	defer primary.Close()
 

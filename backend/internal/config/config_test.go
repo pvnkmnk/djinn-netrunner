@@ -1,16 +1,13 @@
 package config
 
 import (
-	"os"
 	"testing"
 )
 
 func TestLoad(t *testing.T) {
 	// Set required environment variable
-	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
-	os.Setenv("MUSICBRAINZ_API_KEY", "test-key")
-	defer os.Unsetenv("DATABASE_URL")
-	defer os.Unsetenv("MUSICBRAINZ_API_KEY")
+	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	t.Setenv("MUSICBRAINZ_API_KEY", "test-key")
 
 	// Pass a non-existent file to avoid loading real .env
 	cfg, err := Load(".non-existent-env")
@@ -33,7 +30,7 @@ func TestLoad(t *testing.T) {
 
 func TestLoad_MissingRequired(t *testing.T) {
 	// Ensure DATABASE_URL is NOT set
-	os.Unsetenv("DATABASE_URL")
+	t.Setenv("DATABASE_URL", "")
 
 	_, err := Load(".non-existent-env")
 	if err == nil {

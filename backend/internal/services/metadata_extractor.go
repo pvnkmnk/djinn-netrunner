@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -99,7 +100,7 @@ func (e *MetadataExtractor) embedMP3(filePath string, artData []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to open mp3 for tagging: %w", err)
 	}
-	defer tag.Close()
+	defer func() { _ = tag.Close() }()
 
 	pic := id3v2.PictureFrame{
 		Encoding:    id3v2.EncodingUTF8,
@@ -145,7 +146,7 @@ func (e *MetadataExtractor) Extract(path string) (*AudioMetadata, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	m, err := tag.ReadFrom(f)
 	if err != nil {
@@ -233,7 +234,7 @@ func (e *MetadataExtractor) HashFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := md5.New()
 	if _, err := io.Copy(h, f); err != nil {
@@ -250,7 +251,7 @@ func (e *MetadataExtractor) Fingerprint(path string) (string, int, error) {
 		return "", 0, fmt.Errorf("file does not exist: %s", path)
 	}
 
-	cmd := exec.Command("fpcalc", "-json", "--", cleanPath)
+	cmd := exec.CommandContext(context.Background(), "fpcalc", "-json", "--", cleanPath)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", 0, fmt.Errorf("fpcalc failed: %w", err)

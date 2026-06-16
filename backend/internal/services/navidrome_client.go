@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -177,7 +178,7 @@ func (c *NavidromeClient) doRequest(endpoint string, params url.Values, target i
 
 	fullURL := fmt.Sprintf("%s/%s?%s", c.baseURL, endpoint, params.Encode())
 
-	req, err := http.NewRequest("GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fullURL, nil)
 	if err != nil {
 		return err
 	}
@@ -234,7 +235,7 @@ func NewPlexClient(baseURL, token string, httpClient *http.Client) *PlexClient {
 func (c *PlexClient) TriggerLibraryRefresh(sectionID int) error {
 	url := fmt.Sprintf("%s/library/sections/%d/refresh?X-Plex-Token=%s", c.baseURL, sectionID, c.token)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -243,7 +244,7 @@ func (c *PlexClient) TriggerLibraryRefresh(sectionID int) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("plex api error: %s", resp.Status)
@@ -275,7 +276,7 @@ func NewJellyfinClient(baseURL, apiKey string, httpClient *http.Client) *Jellyfi
 func (c *JellyfinClient) TriggerLibraryRefresh() error {
 	url := fmt.Sprintf("%s/Library/Refresh", c.baseURL)
 
-	req, err := http.NewRequest("POST", url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, nil)
 	if err != nil {
 		return err
 	}

@@ -66,12 +66,13 @@ type lastFMTopResponse struct {
 }
 
 func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
-	method := ""
-	if watchlist.SourceType == "lastfm_loved" {
+	var method string
+	switch watchlist.SourceType {
+	case "lastfm_loved":
 		method = "user.getlovedtracks"
-	} else if watchlist.SourceType == "lastfm_top" {
+	case "lastfm_top":
 		method = "user.gettoptracks"
-	} else {
+	default:
 		return nil, "", fmt.Errorf("unsupported lastfm source type: %s", watchlist.SourceType)
 	}
 
@@ -108,7 +109,7 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, "", classifyHTTPStatus(resp.StatusCode, "last.fm")
 		}
 
@@ -118,29 +119,29 @@ func (p *LastFMProvider) FetchTracks(ctx context.Context, watchlist *database.Wa
 		if watchlist.SourceType == "lastfm_loved" {
 			var data lastFMLovedResponse
 			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil, "", err
 			}
 			pageTracks = data.LovedTracks.Track
 			total, err = strconv.Atoi(data.LovedTracks.Attr.Total)
 			if err != nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", data.LovedTracks.Attr.Total)
 			}
 		} else {
 			var data lastFMTopResponse
 			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil, "", err
 			}
 			pageTracks = data.TopTracks.Track
 			total, err = strconv.Atoi(data.TopTracks.Attr.Total)
 			if err != nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return nil, "", fmt.Errorf("invalid total in lastfm response: %q", data.TopTracks.Attr.Total)
 			}
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		for _, t := range pageTracks {
 			allTracks = append(allTracks, p.mapTrack(t))

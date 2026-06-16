@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http/httptest"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestHealthCheck(t *testing.T) {
 	acquireHandler := &api.AcquireHandler{}
 	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{})
 
-	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(context.Background(), "GET", "/api/health", nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 503, resp.StatusCode)
 }

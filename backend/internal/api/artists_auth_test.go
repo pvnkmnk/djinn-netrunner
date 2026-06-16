@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -67,18 +68,18 @@ func TestArtistsAuthorization(t *testing.T) {
 	db.Create(&artist1)
 
 	// 1. User2 tries to list artists - should NOT see User1's artist
-	req := httptest.NewRequest("GET", "/api/artists", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/artists", nil)
 	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
 	resp, _ := app.Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 	var artists []database.MonitoredArtist
-	json.NewDecoder(resp.Body).Decode(&artists)
+	_ = json.NewDecoder(resp.Body).Decode(&artists)
 	assert.Empty(t, artists, "User2 should not see User1's artists")
 
 	// 2. User2 tries to delete User1's artist - should be 200 (but deleted count 0) or 404/403
 	// The current implementation of DeleteMonitoredArtist returns success even if no rows were deleted if GORM didn't error.
 	// But it uses .Where("owner_user_id = ?", userID) so it won't delete it.
-	req = httptest.NewRequest("DELETE", "/api/artists/"+artist1.ID.String(), nil)
+	req = httptest.NewRequestWithContext(context.Background(), "DELETE", "/api/artists/"+artist1.ID.String(), nil)
 	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
 	resp, _ = app.Test(req)
 	assert.Equal(t, 200, resp.StatusCode)

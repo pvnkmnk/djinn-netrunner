@@ -19,7 +19,7 @@ import (
 func setupInMemoryDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	database.Migrate(db)
+	_ = database.Migrate(db)
 	return db
 }
 
@@ -40,7 +40,7 @@ func TestRegister_NewUser(t *testing.T) {
 	assert.Equal(t, 201, resp.StatusCode)
 
 	var result map[string]string
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, "ok", result["status"])
 }
 
@@ -69,8 +69,8 @@ func TestRegister_ExistingUser_NoEnumeration(t *testing.T) {
 	assert.Equal(t, resp1.StatusCode, resp2.StatusCode)
 
 	var result1, result2 map[string]string
-	json.NewDecoder(resp1.Body).Decode(&result1)
-	json.NewDecoder(resp2.Body).Decode(&result2)
+	_ = json.NewDecoder(resp1.Body).Decode(&result1)
+	_ = json.NewDecoder(resp2.Body).Decode(&result2)
 	assert.Equal(t, result1, result2, "duplicate registration must return identical response")
 }
 
@@ -142,7 +142,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 	app.Post("/login", auth.Login)
 
 	body, _ := json.Marshal(map[string]string{"email": "user@example.com", "password": "correct"})
-	app.Test(httptest.NewRequest("POST", "/register", bytes.NewBuffer(body)))
+	_, _ = app.Test(httptest.NewRequest("POST", "/register", bytes.NewBuffer(body)))
 
 	body, _ = json.Marshal(map[string]string{"email": "user@example.com", "password": "wrong"})
 	req := httptest.NewRequest("POST", "/login", bytes.NewBuffer(body))

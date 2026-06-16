@@ -22,7 +22,7 @@ import (
 func TestValidateLibraryPath_ValidDirectory(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "netrunner-lib-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	err = validateLibraryPath(tmpDir)
 	assert.NoError(t, err)
@@ -57,8 +57,8 @@ func TestValidateLibraryPath_NonExistentPath(t *testing.T) {
 func TestValidateLibraryPath_FileNotDirectory(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "netrunner-lib-file-*")
 	require.NoError(t, err)
-	tmpFile.Close()
-	defer os.Remove(tmpFile.Name())
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	err = validateLibraryPath(tmpFile.Name())
 	require.Error(t, err)
@@ -82,7 +82,7 @@ func TestValidateLibraryPath_TraversalResolvesToValidDirectory(t *testing.T) {
 	// Create a nested temp dir, then reference its parent via traversal.
 	tmpDir, err := os.MkdirTemp("", "netrunner-lib-parent-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	childDir := filepath.Join(tmpDir, "child")
 	require.NoError(t, os.Mkdir(childDir, 0o755))
@@ -99,7 +99,7 @@ func TestValidateLibraryPath_CleanedPathMatchesExpected(t *testing.T) {
 	// stored in the DB should match filepath.Clean of the input.
 	tmpDir, err := os.MkdirTemp("", "netrunner-lib-clean-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Path with redundant slashes and a trailing slash
 	messyPath := tmpDir + "//"
@@ -188,8 +188,8 @@ func TestCreateLibrary_PathIsFile(t *testing.T) {
 
 	tmpFile, err := os.CreateTemp("", "netrunner-lib-file-*")
 	require.NoError(t, err)
-	tmpFile.Close()
-	defer os.Remove(tmpFile.Name())
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	body, _ := json.Marshal(map[string]string{
 		"name": "My Music",
@@ -213,7 +213,7 @@ func TestCreateLibrary_ValidPath(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "netrunner-lib-valid-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	body, _ := json.Marshal(map[string]string{
 		"name": "My Music",
@@ -244,7 +244,7 @@ func TestCreateLibrary_PathStoredCleaned(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "netrunner-lib-clean-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Submit path with a trailing slash — should be stored as clean path
 	messyPath := tmpDir + "/"
@@ -275,7 +275,7 @@ func TestUpdateLibrary_RelativePath(t *testing.T) {
 	// Seed a library with a valid existing path
 	tmpDir, err := os.MkdirTemp("", "netrunner-lib-update-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	lib := database.Library{
 		ID:          uuid.New(),
@@ -305,7 +305,7 @@ func TestUpdateLibrary_NonExistentPath(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "netrunner-lib-update-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	lib := database.Library{
 		ID:          uuid.New(),
@@ -336,11 +336,11 @@ func TestUpdateLibrary_ValidPath(t *testing.T) {
 
 	tmpDir1, err := os.MkdirTemp("", "netrunner-lib-orig-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir1)
+	defer func() { _ = os.RemoveAll(tmpDir1) }()
 
 	tmpDir2, err := os.MkdirTemp("", "netrunner-lib-new-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir2)
+	defer func() { _ = os.RemoveAll(tmpDir2) }()
 
 	lib := database.Library{
 		ID:          uuid.New(),

@@ -15,7 +15,9 @@ func TestClaimNextJobItem_WithBackoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to db: %v", err)
 	}
-	database.Migrate(db)
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("database.Migrate failed: %v", err)
+	}
 
 	processor := services.NewJobItemProcessor(db, nil)
 

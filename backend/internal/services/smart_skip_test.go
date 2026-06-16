@@ -39,7 +39,9 @@ func TestAcquisitionHandler_SmartSkip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to db: %v", err)
 	}
-	database.Migrate(db)
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("failed to migrate test DB: %v", err)
+	}
 
 	gonic := NewGonicClient(ts.URL, "user", "pass", nil)
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonic, nil, nil, nil, nil, nil, nil)

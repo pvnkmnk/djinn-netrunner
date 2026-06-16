@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -59,7 +60,7 @@ func (s *TranscoderService) Transcode(inputPath, outputFormat string) (string, e
 
 	// Build FFmpeg command
 	// SECURITY: All arguments passed as separate slice elements, never concatenated
-	cmd := exec.Command("ffmpeg", "-i", inputPath, "-y", outputPath)
+	cmd := exec.CommandContext(context.Background(), "ffmpeg", "-i", inputPath, "-y", outputPath)
 
 	// Run command and capture output
 	output, err := cmd.CombinedOutput()

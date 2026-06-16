@@ -38,7 +38,7 @@ func TestDiscogsProvider_FetchTracks(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(mockResponse))
+		_, _ = w.Write([]byte(mockResponse))
 	}))
 	defer server.Close()
 
@@ -72,7 +72,8 @@ func TestDiscogsProvider_FetchTracks_MultiPage(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 
-		if page == "1" {
+		switch page {
+		case "1":
 			wants := make([]map[string]interface{}, 100)
 			for i := range wants {
 				wants[i] = map[string]interface{}{
@@ -89,8 +90,8 @@ func TestDiscogsProvider_FetchTracks_MultiPage(t *testing.T) {
 				"wants":      wants,
 			}
 			data, _ := json.Marshal(resp)
-			w.Write(data)
-		} else if page == "2" {
+			_, _ = w.Write(data)
+		case "2":
 			wants := make([]map[string]interface{}, 30)
 			for i := range wants {
 				wants[i] = map[string]interface{}{
@@ -107,7 +108,7 @@ func TestDiscogsProvider_FetchTracks_MultiPage(t *testing.T) {
 				"wants":      wants,
 			}
 			data, _ := json.Marshal(resp)
-			w.Write(data)
+			_, _ = w.Write(data)
 		}
 	}))
 	defer server.Close()
