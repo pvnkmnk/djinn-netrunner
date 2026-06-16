@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"log/slog"
+	"net/mail"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -22,7 +24,7 @@ func NewAdminHandler(db *gorm.DB) *AdminHandler {
 
 // AdminOnly middleware checks the authenticated user has admin role.
 func (h *AdminHandler) AdminOnly(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
+	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -61,6 +63,11 @@ func (h *AdminHandler) CreateUser(c *fiber.Ctx) error {
 	if payload.Email == "" || payload.Password == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password required"})
 	}
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid email address"})
+	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
 	if payload.Role == "" {
 		payload.Role = "user"
 	}
@@ -68,7 +75,7 @@ func (h *AdminHandler) CreateUser(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "role must be 'user' or 'admin'"})
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(payload.Password), BcryptCost)
 	if err != nil {
 		return internalServerError(c, err)
 	}
@@ -93,7 +100,10 @@ func (h *AdminHandler) DeleteUser(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid user ID"})
 	}
 	// Prevent self-deletion
-	actor := c.Locals("user").(database.User)
+	actor, ok := currentUserFromLocals(c)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
 	if actor.ID == id {
 		return c.Status(400).JSON(fiber.Map{"error": "cannot delete yourself"})
 	}
@@ -126,8 +136,21 @@ func (h *AdminHandler) UpdateRole(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "role must be 'user' or 'admin'"})
 	}
 
-	if err := h.db.Model(&database.User{}).Where("id = ?", id).Update("role", payload.Role).Error; err != nil {
-		return internalServerError(c, err)
+	// Prevent self-demotion
+	actor, ok := currentUserFromLocals(c)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+	if actor.ID == id {
+		return c.Status(400).JSON(fiber.Map{"error": "cannot change your own role"})
+	}
+
+	result := h.db.Model(&database.User{}).Where("id = ?", id).Update("role", payload.Role)
+	if result.Error != nil {
+		return internalServerError(c, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 
 	h.logAudit("user_role_update", c, "user", strconv.FormatUint(id, 10), map[string]string{"role": payload.Role})
@@ -150,12 +173,16 @@ func (h *AdminHandler) ResetPassword(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "password required"})
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(payload.Password), BcryptCost)
 	if err != nil {
 		return internalServerError(c, err)
 	}
-	if err := h.db.Model(&database.User{}).Where("id = ?", id).Update("password_hash", string(hash)).Error; err != nil {
-		return internalServerError(c, err)
+	result := h.db.Model(&database.User{}).Where("id = ?", id).Update("password_hash", string(hash))
+	if result.Error != nil {
+		return internalServerError(c, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 
 	h.logAudit("password_reset", c, "user", strconv.FormatUint(id, 10), nil)
@@ -216,20 +243,33 @@ func (h *AdminHandler) UpdateConfig(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
-	h.logAudit("config_update", c, "config", payload.Key, map[string]string{"value": payload.Value})
+	// Mask sensitive config values in audit log
+	auditValue := payload.Value
+	sensitiveSuffixes := []string{"secret", "password", "token", "key", "api_key", "api-key"}
+	for _, suffix := range sensitiveSuffixes {
+		if strings.HasSuffix(strings.ToLower(payload.Key), suffix) {
+			auditValue = "****"
+			break
+		}
+	}
+	h.logAudit("config_update", c, "config", payload.Key, map[string]string{"value": auditValue})
 	return c.JSON(fiber.Map{"status": "updated"})
 }
 
 // Helper: write audit log entry asynchronously
 func (h *AdminHandler) logAudit(action string, c *fiber.Ctx, targetType, targetID string, metadata map[string]string) {
-	actor, ok := c.Locals("user").(database.User)
+	actor, ok := currentUserFromLocals(c)
 	if !ok {
 		return
 	}
 	metaJSON := ""
 	if metadata != nil {
-		b, _ := json.Marshal(metadata)
-		metaJSON = string(b)
+		b, err := json.Marshal(metadata)
+		if err != nil {
+			slog.Warn("Failed to marshal audit metadata", "error", err)
+		} else {
+			metaJSON = string(b)
+		}
 	}
 	entry := database.AuditLog{
 		Action:     action,
