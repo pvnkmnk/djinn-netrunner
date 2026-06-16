@@ -7,6 +7,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// profileListColumns are the columns needed for the profiles list view.
+// Update this when the QualityProfile struct changes.
+const profileListColumns = "id, name, is_default, description, prefer_lossless, allowed_formats, min_bitrate, cover_art_sources"
+
 type ProfileHandler struct {
 	db *gorm.DB
 }
@@ -318,7 +322,7 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 // GetForm returns the profile form for add/edit
 func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -354,5 +358,28 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		"PreferSceneReleases": profile.PreferSceneReleases,
 		"PreferWebReleases":   profile.PreferWebReleases,
 		"CoverArtSources":     profile.CoverArtSources,
+	})
+}
+
+// RenderProfilesPartial returns profiles HTML for HTMX
+func (h *ProfileHandler) RenderProfilesPartial(c *fiber.Ctx) error {
+	user, ok, err := requirePartialUser(c)
+	if !ok {
+		return err
+	}
+
+	var profiles []database.QualityProfile
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select(profileListColumns).Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+
+	if err := query.Find(&profiles).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading profiles.</div>")
+	}
+
+	return c.Render("partials/profiles", fiber.Map{
+		"profiles": profiles,
 	})
 }

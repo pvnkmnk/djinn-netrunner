@@ -3,6 +3,10 @@
 {% block title %}Jobs - NETRUNNER{% endblock %}
 
 {% block content %}
+<noscript>
+    <div class="error-banner">JavaScript is required for this page. Please enable JavaScript or use a supported browser.</div>
+</noscript>
+
 <div class="page-header">
     <h2>Jobs{% if IsAdmin %} <span class="stats-scope-label jobs-scope-label">All Users</span>{% endif %}</h2>
     <button class="btn btn-primary" hx-get="/partials/acquire-form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Start new acquisition">

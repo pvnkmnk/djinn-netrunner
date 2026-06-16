@@ -32,5 +32,15 @@
     <footer class="app-footer">
         NetRunner v1.0.0 | Music Acquisition Pipeline
     </footer>
+<script>
+// Global HTMX error handling for async partials
+document.body.addEventListener("htmx:responseError", function(evt) {
+    var target = evt.detail.target;
+    if (target && target.hasAttribute("hx-get")) {
+        target.innerHTML = '<div class="error-banner">Failed to load content. <button onclick="location.reload()">Retry</button></div>';
+    }
+});
+</script>
+
 </body>
 </html>

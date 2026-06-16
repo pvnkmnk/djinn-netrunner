@@ -13,6 +13,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// Column lists for targeted queries.
+// New DB columns will NOT be automatically included — update these constants
+// when the corresponding model structs change.
+
+// trackBrowseColumns are the columns needed for the BrowseTracks list view.
+// Intentionally excludes: EnrichmentProvenance, Fingerprint (large fields unused in browse).
+// Path is included because it is required for media serving logic.
+const trackBrowseColumns = "id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre"
+
+// libraryListColumns are the columns needed for the library list view.
+const libraryListColumns = "id, name, path"
+
 // validateLibraryPath validates that a library path is safe to use.
 // It ensures the path is absolute, resolves any traversal segments via
 // filepath.Clean, and verifies the resolved path exists and is a directory.
@@ -52,7 +64,7 @@ func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
 
 	var libraries []database.Library
 	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
-	query := h.db.Select("id, name, path").Order("name")
+	query := h.db.Select(libraryListColumns).Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -540,10 +552,7 @@ func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
 	offset := (page - 1) * pageSize
 	order := sortBy + " " + sortDir + ", track_num"
 	var tracks []database.Track
-	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
-	// Large fields like EnrichmentProvenance and Fingerprint are omitted as they are not used in the browse list.
-	// The path field is included as it's required for media logic.
-	if err := tx.Select("id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre").
+	if err := tx.Select(trackBrowseColumns).
 		Order(order).Offset(offset).Limit(pageSize).Find(&tracks).Error; err != nil {
 		return c.SendString("<div class=\"error\">Error loading tracks.</div>")
 	}
