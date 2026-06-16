@@ -256,7 +256,7 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 	payload := map[string]interface{}{
 		"searchText":      query,
 		"searchTimeout":   timeout * 1000,
-		"filterResponses": true,
+		"filterResponses": false,
 	}
 
 	jsonPayload, _ := json.Marshal(payload)

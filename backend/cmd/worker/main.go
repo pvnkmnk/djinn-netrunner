@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const MaxConcurrentJobs = 5
+const MaxConcurrentJobs = 1
 
 type WorkerOrchestrator struct {
 	workerID string
