@@ -11,11 +11,17 @@ import (
 )
 
 // YtdlpService handles yt-dlp based audio extraction
-type YtdlpService struct{}
+type YtdlpService struct {
+	ytdlpPath string // path to yt-dlp binary
+}
 
-// NewYtdlpService creates a new yt-dlp service
+// NewYtdlpService creates a new yt-dlp service with auto-detected binary path
 func NewYtdlpService() *YtdlpService {
-	return &YtdlpService{}
+	path := os.Getenv("YTDLP_PATH")
+	if path == "" {
+		path = "yt-dlp"
+	}
+	return &YtdlpService{ytdlpPath: path}
 }
 
 // DownloadAudio extracts audio from a URL using yt-dlp
@@ -60,7 +66,7 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 
 	// Build yt-dlp command with audio extraction flags
 	// SECURITY: All arguments are passed as separate slice elements, never concatenated into a shell string
-	cmd := exec.Command("yt-dlp",
+	cmd := exec.Command(s.ytdlpPath,
 		"--extract-audio",
 		"--audio-format", audioFormat,
 		"--output", outputTemplate,
@@ -96,6 +102,6 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 
 // IsYtdlpAvailable checks if yt-dlp is installed and accessible
 func (s *YtdlpService) IsYtdlpAvailable() bool {
-	_, err := exec.LookPath("yt-dlp")
+	_, err := exec.LookPath(s.ytdlpPath)
 	return err == nil
 }

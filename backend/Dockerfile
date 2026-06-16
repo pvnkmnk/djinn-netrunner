@@ -29,8 +29,9 @@ RUN chmod +x entrypoint.sh
 # Stage 2: Runtime
 FROM alpine:3.21
 
-# Install wget for healthcheck
-RUN apk add --no-cache wget
+# Install runtime dependencies: wget, Node.js for yt-dlp JS sites, Python/pip for yt-dlp
+RUN apk add --no-cache wget nodejs npm python3 py3-pip && \
+    pip3 install --upgrade yt-dlp
 
 # Create app directory
 WORKDIR /app
@@ -54,6 +55,7 @@ RUN mkdir -p /app/config /app/data /app/logs /app/downloads /app/music && \
 ENV STATIC_FILES_PATH=/app/static
 ENV TEMPLATES_PATH=/app/templates
 ENV PORT=8080
+ENV YTDLP_PATH=/usr/bin/yt-dlp
 
 # Expose port
 EXPOSE 8080
