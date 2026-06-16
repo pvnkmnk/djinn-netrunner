@@ -269,6 +269,11 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/partials/tracks/:id", auth.AuthMiddleware, library.TrackDetail)
 	app.Get("/partials/acquire-form", auth.AuthMiddleware, acquireHandler.GetForm)
 
+	// Admin partial routes
+	app.Get("/partials/admin/users", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderUsersPartial)
+	app.Get("/partials/admin/audit", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderAuditPartial)
+	app.Get("/partials/admin/config", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderConfigPartial)
+
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
 

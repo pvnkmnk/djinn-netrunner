@@ -283,3 +283,24 @@ func (h *AdminHandler) logAudit(action string, c *fiber.Ctx, targetType, targetI
 		slog.Error("Failed to write audit log", "action", action, "error", err)
 	}
 }
+
+// GET /partials/admin/users — renders users list partial
+func (h *AdminHandler) RenderUsersPartial(c *fiber.Ctx) error {
+	var users []database.User
+	h.db.Select("id, email, role, created_at, last_login_at").Find(&users)
+	return c.Render("partials/admin_users", fiber.Map{"Users": users})
+}
+
+// GET /partials/admin/audit — renders audit log partial
+func (h *AdminHandler) RenderAuditPartial(c *fiber.Ctx) error {
+	var entries []database.AuditLog
+	h.db.Order("created_at DESC").Limit(50).Find(&entries)
+	return c.Render("partials/admin_audit", fiber.Map{"Entries": entries})
+}
+
+// GET /partials/admin/config — renders system config partial
+func (h *AdminHandler) RenderConfigPartial(c *fiber.Ctx) error {
+	var settings []database.Setting
+	h.db.Order("key ASC").Find(&settings)
+	return c.Render("partials/admin_config", fiber.Map{"Settings": settings})
+}
