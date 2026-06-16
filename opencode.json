@@ -8,9 +8,19 @@
     "docs/API_CONTRACTS.md"
   ],
   "plugin": [
-    "oh-my-opencode-slim"
+    "oh-my-opencode-slim",
+    "/home/idols/.config/opencode/plugins/agentmemory-capture.ts"
   ],
   "mcp_servers": {
+    "agentmemory": {
+      "type": "local",
+      "command": ["npx", "-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENTMEMORY_URL": "http://localhost:3111",
+        "AGENTMEMORY_TOOLS": "all"
+      },
+      "enabled": true
+    },
     "netrunner-agent": {
       "type": "local",
       "command": ["go", "run", "./cmd/agent"],

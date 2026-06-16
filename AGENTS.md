@@ -134,7 +134,28 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `./scripts/validate.sh` or `validate.ps1` | Pre-commit validation checks | Before PR/merge |
 | `govulncheck ./...` | Vulnerability scan for reachable issues in code + deps | Security/dependency maintenance |
 
-> **Note for agents:** When running backend commands through command-wrapping tools (e.g., `snip`), `cd` is not available as a standalone command. Use the `workdir` parameter on the Bash tool instead of `cd backend && <command>` chains.
+## Multi-Model Council (@council)
+
+For high-stakes decisions, complex debugging, or critical reviews, use `@council <question>` to get parallel analysis from multiple models. The council synthesizes independent perspectives into a structured consensus.
+
+| Preset | Models | Best for |
+|---|---|---|
+| `full` (default) | mimo-v2.5, north-mini-code, nemotron-3-ultra, deepseek-v4-flash | High-stakes decisions, hard bugs, anything critical |
+| `@council[code-review]` | nemotron-3-ultra, mimo-v2.5, deepseek-v4-flash | PR reviews, bug hunts, correctness checks |
+| `@council[architect]` | mimo-v2.5, north-mini-code, nemotron-3-ultra | Architecture decisions, refactor planning, API design |
+| `@council[lean]` | mimo-v2.5, deepseek-v4-flash | Quick sanity checks, low-stakes decisions |
+
+The master synthesizer (`big-pickle`) receives all councillor responses and produces a final consensus. Use `@council[preset] <question>` to select a specific preset.
+
+## Snip Behavior for Subagents
+
+Commands run through `snip` (a token-reduction wrapper applied by the `opencode-snip` plugin) are **prefixed automatically** — you don't need to invoke it manually. Key behaviors:
+
+- **`cd` works normally** in compound commands like `cd backend && go test ./...` — the `snip` plugin bypasses `cd` while wrapping the rest.
+- **`go test`/`go build`/`go vet` output is condensed** by built-in snip filters. If a test or build fails, snip may collapse error details into a brief summary. If you see a vague failure signal without details, the root cause is likely a **compilation error in test files** or a test assertion failure — run `go test -v` isolated to the failing package, or check the raw output in `/home/idols/.local/share/snip/tee/` for the full log.
+- Use the `workdir` parameter on the Bash tool instead of `cd backend && <command>` chains for cleaner separation.
+
+> **Note for agents:** When running backend commands, prefer the `workdir` parameter on the Bash tool instead of `cd backend && <command>` chains.
 
 ## API / Interface Reference
 
