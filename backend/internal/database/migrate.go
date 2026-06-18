@@ -71,9 +71,7 @@ func Migrate(db *gorm.DB) error {
 		// Step 2b: Ensure job_type is backfilled before AutoMigrate can enforce NOT NULL.
 		// Legacy rows can exist with NULL/blank type due to partial migrations.
 		// Check if jobs table exists before updating (handles fresh installs)
-		var tableExists bool
-		db.Raw(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'jobs')`).Scan(&tableExists)
-		if tableExists {
+		if db.Migrator().HasTable("jobs") {
 			db.Exec("UPDATE jobs SET job_type = COALESCE(NULLIF(job_type, ''), 'sync') WHERE job_type IS NULL OR job_type = ''")
 		}
 
