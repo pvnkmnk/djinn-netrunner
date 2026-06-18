@@ -236,7 +236,8 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 	var sched database.Schedule
 	var watchlists []database.Watchlist
 
-	wQuery := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns for the form dropdown.
+	wQuery := h.db.Select("id, name").Order("name")
 	if user.Role != "admin" {
 		wQuery = wQuery.Where("owner_user_id = ?", user.ID)
 	}

@@ -7,24 +7,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
-	"os"
 	"testing"
 )
 
-// skipIfShort is copied from smoke_test.go to avoid import cycles
-func skipIfShort(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration smoke test in short mode")
-	}
-}
-
-// GetEnvOrDefault is copied from test_runner.go to avoid import cycles
-func GetEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
 
 func TestSmoke_Admin_Panel(t *testing.T) {
 	skipIfShort(t)

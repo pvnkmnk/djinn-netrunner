@@ -221,7 +221,8 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 	// Get library names in a single query to avoid N+1
 	// BOLA: Only fetch libraries for this user (or all for admin)
 	var libraries []database.Library
-	libQuery2 := h.db
+	// Bolt Optimization: Select only necessary columns for the name mapping map.
+	libQuery2 := h.db.Select("id, name")
 	if user.Role != "admin" {
 		libQuery2 = libQuery2.Where("owner_user_id = ?", user.ID)
 	}

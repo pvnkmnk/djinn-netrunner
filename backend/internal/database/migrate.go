@@ -70,7 +70,10 @@ func Migrate(db *gorm.DB) error {
 
 		// Step 2b: Ensure job_type is backfilled before AutoMigrate can enforce NOT NULL.
 		// Legacy rows can exist with NULL/blank type due to partial migrations.
-		db.Exec("UPDATE jobs SET job_type = COALESCE(NULLIF(job_type, ''), 'sync') WHERE job_type IS NULL OR job_type = ''")
+		// Check if jobs table exists before updating (handles fresh installs)
+		if db.Migrator().HasTable("jobs") {
+			db.Exec("UPDATE jobs SET job_type = COALESCE(NULLIF(job_type, ''), 'sync') WHERE job_type IS NULL OR job_type = ''")
+		}
 
 		// Step 3: Convert remaining ENUM columns to text (idempotent if already text or gone).
 		for _, m := range []struct{ table, column, enumType string }{
