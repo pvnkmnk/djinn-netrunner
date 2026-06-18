@@ -140,7 +140,8 @@ func (h *AcquireHandler) GetForm(c *fiber.Ctx) error {
 	}
 
 	var profiles []database.QualityProfile
-	query := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns for the form dropdown.
+	query := h.db.Select("id, name").Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?", user.ID, true)
 	}
@@ -158,7 +159,8 @@ func (h *AcquireHandler) GetForm(c *fiber.Ctx) error {
 func (h *AcquireHandler) renderFormWithError(c *fiber.Ctx, artist, album, title, errMsg string) error {
 	user, _ := currentUserFromLocals(c)
 	var profiles []database.QualityProfile
-	query := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns for the form dropdown.
+	query := h.db.Select("id, name").Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?", user.ID, true)
 	}
