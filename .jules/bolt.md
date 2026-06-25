@@ -41,3 +41,7 @@
 ## 2026-06-11 - Targeted Column Selection in Track Browsing
 **Learning:** The `BrowseTracks` endpoint, which handles paginated track listings for libraries, was performing a full `SELECT *` on the `tracks` table. This table contains several large fields (e.g., `enrichment_provenance`, `fingerprint`) that are not displayed in the browse table.
 **Action:** Implemented targeted column selection in `BrowseTracks` (`id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre`). This significantly reduces memory allocation and database I/O when browsing large music libraries.
+
+## 2026-06-25 - Consolidated Library and Activity Stats Queries
+**Learning:** `GetLibraryStats` was performing 4 separate queries and `GetSummary` was triggering GORM "invalid field found" errors when scanning into structs with nested slices. GORM's reflection-based scanning can be expensive and error-prone for complex result sets.
+**Action:** Reduced `GetLibraryStats` queries to 2 by using JOINs and in-memory aggregation. Consolidated `GetSummary` into a single RAW query with a flat temporary struct for scanning. This eliminates GORM's relationship scanning errors and reduces database roundtrips.

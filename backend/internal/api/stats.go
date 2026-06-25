@@ -182,60 +182,38 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 
 	var stats LibraryStats
 
-	// Build base query with BOLA filtering for non-admin users
-	// Non-admin users should only see stats for their own libraries
-	baseQuery := h.db.Model(&database.Track{})
+	// 1. Fetch Library Breakdown with names joined to avoid N+1 and extra queries.
+	// This also provides the data needed for global totals.
+	libQuery := h.db.Table("tracks").
+		Select("tracks.library_id, libraries.name as library_name, COUNT(*) as track_count, COALESCE(SUM(tracks.file_size), 0) as total_size").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id")
+
 	if user.Role != "admin" {
-		// Only count tracks in libraries owned by this user
-		baseQuery = baseQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
+		libQuery = libQuery.Where("libraries.owner_user_id = ?", user.ID)
 	}
 
-	// Total tracks and size
-	baseQuery.Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&stats)
+	if err := libQuery.Group("tracks.library_id, libraries.name").Scan(&stats.LibraryBreakdown).Error; err != nil {
+		slog.Error("Error fetching library breakdown", "error", err)
+	}
 
+	// Calculate global totals in-memory from the library breakdown
+	for _, lib := range stats.LibraryBreakdown {
+		stats.TotalTracks += lib.TrackCount
+		stats.TotalSize += lib.TotalSize
+	}
 	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
 
-	// Format breakdown - with BOLA filtering
-	formatQuery := h.db.Model(&database.Track{})
-	if user.Role != "admin" {
-		formatQuery = formatQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
-	}
-	formatQuery.Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
-		Group("format").
-		Order("count DESC").
-		Scan(&stats.FormatBreakdown)
+	// 2. Fetch Format Breakdown
+	formatQuery := h.db.Table("tracks").
+		Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id")
 
-	// Library breakdown - with BOLA filtering
-	libQuery := h.db.Model(&database.Track{})
 	if user.Role != "admin" {
-		libQuery = libQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
-	}
-	libQuery.Select("library_id, COUNT(*) as track_count, COALESCE(SUM(file_size), 0) as total_size").
-		Group("library_id").
-		Scan(&stats.LibraryBreakdown)
-
-	// Get library names in a single query to avoid N+1
-	// BOLA: Only fetch libraries for this user (or all for admin)
-	var libraries []database.Library
-	libQuery2 := h.db
-	if user.Role != "admin" {
-		libQuery2 = libQuery2.Where("owner_user_id = ?", user.ID)
-	}
-	libQuery2.Find(&libraries)
-	libraryNames := make(map[string]string)
-	for _, lib := range libraries {
-		libraryNames[lib.ID.String()] = lib.Name
+		formatQuery = formatQuery.Where("libraries.owner_user_id = ?", user.ID)
 	}
 
-	// Map library names
-	for i := range stats.LibraryBreakdown {
-		if name, ok := libraryNames[stats.LibraryBreakdown[i].LibraryID]; ok {
-			stats.LibraryBreakdown[i].LibraryName = name
-		}
+	if err := formatQuery.Group("format").Order("count DESC").Scan(&stats.FormatBreakdown).Error; err != nil {
+		slog.Error("Error fetching format breakdown", "error", err)
 	}
 
 	return c.JSON(stats)
@@ -322,18 +300,17 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 		summary.Jobs.SuccessRate = float64(summary.Jobs.Succeeded) / float64(completed) * 100
 	}
 
-	// Library stats - with BOLA filtering
-	libQuery := h.db.Model(&database.Track{})
-	if user.Role != "admin" {
-		libQuery = libQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
-	}
-	libQuery.Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&summary.Library)
-	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
-
-	// Activity stats - with BOLA filtering
+	// Library and Activity stats - with BOLA filtering
+	// Bolt Optimization: Consolidate library totals and activity counts into a single query.
 	since24h := time.Now().Add(-24 * time.Hour)
+
+	// We use a temporary struct to avoid GORM's relationship scanning errors on LibraryStats/SummaryStats
+	var combined struct {
+		ActivityStats
+		TotalTracks int64
+		TotalSize   int64
+	}
+
 	if user.Role == "admin" {
 		h.db.Raw(`
 			SELECT
@@ -341,8 +318,10 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 				(SELECT COUNT(*) FROM watchlists) as watchlists,
 				(SELECT COUNT(*) FROM quality_profiles) as quality_profiles,
 				(SELECT COUNT(*) FROM libraries) as libraries,
-				(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs24h
-		`, since24h).Scan(&summary.Activity)
+				(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs24h,
+				(SELECT COUNT(*) FROM tracks) as total_tracks,
+				(SELECT COALESCE(SUM(file_size), 0) FROM tracks) as total_size
+		`, since24h).Scan(&combined)
 	} else {
 		h.db.Raw(`
 			SELECT
@@ -350,9 +329,16 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 				(SELECT COUNT(*) FROM watchlists WHERE owner_user_id = ?) as watchlists,
 				(SELECT COUNT(*) FROM quality_profiles WHERE owner_user_id = ?) as quality_profiles,
 				(SELECT COUNT(*) FROM libraries WHERE owner_user_id = ?) as libraries,
-				(SELECT COUNT(*) FROM jobs WHERE owner_user_id = ? AND requested_at > ?) as recent_jobs24h
-		`, user.ID, user.ID, user.ID, user.ID, user.ID, since24h).Scan(&summary.Activity)
+				(SELECT COUNT(*) FROM jobs WHERE owner_user_id = ? AND requested_at > ?) as recent_jobs24h,
+				(SELECT COUNT(*) FROM tracks JOIN libraries ON libraries.id = tracks.library_id WHERE libraries.owner_user_id = ?) as total_tracks,
+				(SELECT COALESCE(SUM(file_size), 0) FROM tracks JOIN libraries ON libraries.id = tracks.library_id WHERE libraries.owner_user_id = ?) as total_size
+		`, user.ID, user.ID, user.ID, user.ID, user.ID, since24h, user.ID, user.ID).Scan(&combined)
 	}
+
+	summary.Activity = combined.ActivityStats
+	summary.Library.TotalTracks = combined.TotalTracks
+	summary.Library.TotalSize = combined.TotalSize
+	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
 	return c.JSON(summary)
 }
