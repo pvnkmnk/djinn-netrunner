@@ -34,3 +34,8 @@
 **Vulnerability:** Non-admin users could promote their own quality profiles to system-wide defaults by setting the `is_default` flag in create/update requests.
 **Learning:** Resource attributes that affect global system state (like a 'default' flag) must be explicitly protected by role-based checks in the API handlers.
 **Prevention:** In handlers that accept boolean flags for global settings, verify that the authenticated user has the necessary administrative role before allowing those flags to be modified.
+
+## 2026-07-02 - [SSRF Protection for External API Clients]
+**Vulnerability:** External API clients (RSS, MusicBrainz, etc.) were proxy-aware but lacked SSRF protection, risking internal network exposure via user-supplied URLs.
+**Learning:** Outbound HTTP clients hitting public APIs must balance proxy support with SSRF mitigation. A shared transport with custom dialing is necessary to prevent DNS rebinding.
+**Prevention:** Use `NewSafeProxyAwareHTTPClient` for all outbound requests to public endpoints, while explicitly using unsafe clients only for known internal-only services like Lidarr.

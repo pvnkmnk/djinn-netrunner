@@ -19,8 +19,9 @@ type AcoustIDService struct {
 
 func NewAcoustIDService(cfg *config.Config) *AcoustIDService {
 	return &AcoustIDService{
-		cfg:        cfg,
-		httpClient: NewProxyAwareHTTPClient(cfg, 15*time.Second),
+		cfg: cfg,
+		// ✅ SECURITY: Use SSRF-protected client for external AcoustID API.
+		httpClient: NewSafeProxyAwareHTTPClient(cfg, 15*time.Second),
 	}
 }
 
