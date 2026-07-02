@@ -203,6 +203,26 @@ func TestStatsHandler_GetLibraryStats_Integration(t *testing.T) {
 	assert.Len(t, stats.FormatBreakdown, 2)
 	assert.Len(t, stats.LibraryBreakdown, 1)
 	assert.Equal(t, "Library 1", stats.LibraryBreakdown[0].LibraryName)
+
+	// Test with empty library
+	lib2 := database.Library{ID: uuid.New(), Name: "Library 2", Path: "/tmp/lib2"}
+	db.Create(&lib2)
+
+	resp, err = app.Test(httptest.NewRequest("GET", "/api/stats/library", nil))
+	assert.NoError(t, err)
+	json.NewDecoder(resp.Body).Decode(&stats)
+
+	assert.Equal(t, int64(2), stats.TotalTracks) // Still 2
+	assert.Len(t, stats.LibraryBreakdown, 2)      // Now 2 including the empty one
+
+	foundEmpty := false
+	for _, lib := range stats.LibraryBreakdown {
+		if lib.LibraryName == "Library 2" {
+			assert.Equal(t, int64(0), lib.TrackCount)
+			foundEmpty = true
+		}
+	}
+	assert.True(t, foundEmpty)
 }
 
 func TestStatsHandler_BOLA_Integration(t *testing.T) {

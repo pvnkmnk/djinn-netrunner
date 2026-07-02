@@ -99,12 +99,14 @@ func (h *StatsHandler) GetJobStats(c *fiber.Ctx) error {
 	if user.Role != "admin" {
 		jobQuery = jobQuery.Where("owner_user_id = ?", user.ID)
 	}
-	jobQuery.Select("COUNT(*) as total, " +
+	if err := jobQuery.Select("COUNT(*) as total, " +
 		"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
 		"COUNT(*) FILTER (WHERE state = 'running') as running, " +
 		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
 		"COUNT(*) FILTER (WHERE state = 'failed') as failed").
-		Scan(&stats)
+		Scan(&stats).Error; err != nil {
+		return internalServerError(c, err)
+	}
 
 	// Calculate success rate (excluding queued/running)
 	completed := stats.Succeeded + stats.Failed
@@ -182,60 +184,51 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 
 	var stats LibraryStats
 
-	// Build base query with BOLA filtering for non-admin users
-	// Non-admin users should only see stats for their own libraries
-	baseQuery := h.db.Model(&database.Track{})
-	if user.Role != "admin" {
-		// Only count tracks in libraries owned by this user
-		baseQuery = baseQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
-	}
-
-	// Total tracks and size
-	baseQuery.Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&stats)
-
-	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
-
-	// Format breakdown - with BOLA filtering
+	// Bolt Optimization: Reduce database roundtrips from 4 to 2.
+	// 1. Fetch format breakdown and calculate global totals in-memory.
 	formatQuery := h.db.Model(&database.Track{})
 	if user.Role != "admin" {
 		formatQuery = formatQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
 			Where("libraries.owner_user_id = ?", user.ID)
 	}
-	formatQuery.Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
+	if err := formatQuery.Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
 		Group("format").
 		Order("count DESC").
-		Scan(&stats.FormatBreakdown)
+		Scan(&stats.FormatBreakdown).Error; err != nil {
+		return internalServerError(c, err)
+	}
 
-	// Library breakdown - with BOLA filtering
-	libQuery := h.db.Model(&database.Track{})
+	for _, f := range stats.FormatBreakdown {
+		stats.TotalTracks += f.Count
+		stats.TotalSize += f.TotalSize
+	}
+	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
+
+	// 2. Fetch library breakdown with names using a single JOIN.
+	// This also ensures libraries with 0 tracks are included in the results.
+	libBreakdownQuery := `
+		SELECT
+			l.id as library_id,
+			l.name as library_name,
+			COUNT(t.id) as track_count,
+			COALESCE(SUM(t.file_size), 0) as total_size
+		FROM libraries l
+		LEFT JOIN tracks t ON l.id = t.library_id
+	`
 	if user.Role != "admin" {
-		libQuery = libQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
+		libBreakdownQuery += " WHERE l.owner_user_id = ?"
 	}
-	libQuery.Select("library_id, COUNT(*) as track_count, COALESCE(SUM(file_size), 0) as total_size").
-		Group("library_id").
-		Scan(&stats.LibraryBreakdown)
+	libBreakdownQuery += " GROUP BY l.id, l.name ORDER BY l.name ASC"
 
-	// Get library names in a single query to avoid N+1
-	// BOLA: Only fetch libraries for this user (or all for admin)
-	var libraries []database.Library
-	libQuery2 := h.db
-	if user.Role != "admin" {
-		libQuery2 = libQuery2.Where("owner_user_id = ?", user.ID)
-	}
-	libQuery2.Find(&libraries)
-	libraryNames := make(map[string]string)
-	for _, lib := range libraries {
-		libraryNames[lib.ID.String()] = lib.Name
+	var err error
+	if user.Role == "admin" {
+		err = h.db.Raw(libBreakdownQuery).Scan(&stats.LibraryBreakdown).Error
+	} else {
+		err = h.db.Raw(libBreakdownQuery, user.ID).Scan(&stats.LibraryBreakdown).Error
 	}
 
-	// Map library names
-	for i := range stats.LibraryBreakdown {
-		if name, ok := libraryNames[stats.LibraryBreakdown[i].LibraryID]; ok {
-			stats.LibraryBreakdown[i].LibraryName = name
-		}
+	if err != nil {
+		return internalServerError(c, err)
 	}
 
 	return c.JSON(stats)
@@ -304,55 +297,93 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 
 	var summary SummaryStats
 
-	// Job stats (last 24h) - with BOLA filtering
+	// Bolt Optimization: Consolidate multiple statistics queries into 2 database roundtrips.
+	// 1. Job stats (last 24h) - with BOLA filtering
 	since := time.Now().Add(-24 * time.Hour)
 	jobQuery := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
 	if user.Role != "admin" {
 		jobQuery = jobQuery.Where("owner_user_id = ?", user.ID)
 	}
-	jobQuery.Select("COUNT(*) as total, " +
+	if err := jobQuery.Select("COUNT(*) as total, " +
 		"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
 		"COUNT(*) FILTER (WHERE state = 'running') as running, " +
 		"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
 		"COUNT(*) FILTER (WHERE state = 'failed') as failed").
-		Scan(&summary.Jobs)
+		Scan(&summary.Jobs).Error; err != nil {
+		return internalServerError(c, err)
+	}
 
 	completed := summary.Jobs.Succeeded + summary.Jobs.Failed
 	if completed > 0 {
 		summary.Jobs.SuccessRate = float64(summary.Jobs.Succeeded) / float64(completed) * 100
 	}
 
-	// Library stats - with BOLA filtering
-	libQuery := h.db.Model(&database.Track{})
-	if user.Role != "admin" {
-		libQuery = libQuery.Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
-	}
-	libQuery.Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&summary.Library)
-	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
-
-	// Activity stats - with BOLA filtering
+	// 2. Consolidated Activity and Library totals - with BOLA filtering
 	since24h := time.Now().Add(-24 * time.Hour)
 	if user.Role == "admin" {
-		h.db.Raw(`
+		// Use a flat struct for scanning to be safe and clear.
+		var flat struct {
+			MonitoredArtists int64 `gorm:"column:monitored_artists"`
+			Watchlists       int64 `gorm:"column:watchlists"`
+			QualityProfiles  int64 `gorm:"column:quality_profiles"`
+			Libraries        int64 `gorm:"column:libraries"`
+			RecentJobs24h    int64 `gorm:"column:recent_jobs24h"`
+			TotalTracks      int64 `gorm:"column:total_tracks"`
+			TotalSize        int64 `gorm:"column:total_size"`
+		}
+		if err := h.db.Raw(`
 			SELECT
 				(SELECT COUNT(*) FROM monitored_artists) as monitored_artists,
 				(SELECT COUNT(*) FROM watchlists) as watchlists,
 				(SELECT COUNT(*) FROM quality_profiles) as quality_profiles,
 				(SELECT COUNT(*) FROM libraries) as libraries,
-				(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs24h
-		`, since24h).Scan(&summary.Activity)
+				(SELECT COUNT(*) FROM jobs WHERE requested_at > ?) as recent_jobs24h,
+				(SELECT COUNT(*) FROM tracks) as total_tracks,
+				(SELECT COALESCE(SUM(file_size), 0) FROM tracks) as total_size
+		`, since24h).Scan(&flat).Error; err != nil {
+			return internalServerError(c, err)
+		}
+
+		summary.Activity.MonitoredArtists = flat.MonitoredArtists
+		summary.Activity.Watchlists = flat.Watchlists
+		summary.Activity.QualityProfiles = flat.QualityProfiles
+		summary.Activity.Libraries = flat.Libraries
+		summary.Activity.RecentJobs24h = flat.RecentJobs24h
+		summary.Library.TotalTracks = flat.TotalTracks
+		summary.Library.TotalSize = flat.TotalSize
 	} else {
-		h.db.Raw(`
+		var flat struct {
+			MonitoredArtists int64 `gorm:"column:monitored_artists"`
+			Watchlists       int64 `gorm:"column:watchlists"`
+			QualityProfiles  int64 `gorm:"column:quality_profiles"`
+			Libraries        int64 `gorm:"column:libraries"`
+			RecentJobs24h    int64 `gorm:"column:recent_jobs24h"`
+			TotalTracks      int64 `gorm:"column:total_tracks"`
+			TotalSize        int64 `gorm:"column:total_size"`
+		}
+		if err := h.db.Raw(`
 			SELECT
 				(SELECT COUNT(*) FROM monitored_artists WHERE owner_user_id = ?) as monitored_artists,
 				(SELECT COUNT(*) FROM watchlists WHERE owner_user_id = ?) as watchlists,
 				(SELECT COUNT(*) FROM quality_profiles WHERE owner_user_id = ?) as quality_profiles,
 				(SELECT COUNT(*) FROM libraries WHERE owner_user_id = ?) as libraries,
-				(SELECT COUNT(*) FROM jobs WHERE owner_user_id = ? AND requested_at > ?) as recent_jobs24h
-		`, user.ID, user.ID, user.ID, user.ID, user.ID, since24h).Scan(&summary.Activity)
+				(SELECT COUNT(*) FROM jobs WHERE owner_user_id = ? AND requested_at > ?) as recent_jobs24h,
+				(SELECT COUNT(*) FROM tracks t JOIN libraries l ON l.id = t.library_id WHERE l.owner_user_id = ?) as total_tracks,
+				(SELECT COALESCE(SUM(file_size), 0) FROM tracks t JOIN libraries l ON l.id = t.library_id WHERE l.owner_user_id = ?) as total_size
+		`, user.ID, user.ID, user.ID, user.ID, user.ID, since24h, user.ID, user.ID).Scan(&flat).Error; err != nil {
+			return internalServerError(c, err)
+		}
+
+		summary.Activity.MonitoredArtists = flat.MonitoredArtists
+		summary.Activity.Watchlists = flat.Watchlists
+		summary.Activity.QualityProfiles = flat.QualityProfiles
+		summary.Activity.Libraries = flat.Libraries
+		summary.Activity.RecentJobs24h = flat.RecentJobs24h
+		summary.Library.TotalTracks = flat.TotalTracks
+		summary.Library.TotalSize = flat.TotalSize
 	}
+
+	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
 	return c.JSON(summary)
 }
