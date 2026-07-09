@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
-	"os"
 	"testing"
 )
 
