@@ -473,7 +473,8 @@ func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 	}
 
 	var libraries []database.Library
-	query := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select(libraryListColumns).Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
