@@ -14,14 +14,15 @@ import (
 
 // privateCIDRs contains CIDR ranges that should never be reachable via outbound HTTP.
 var privateCIDRs = []string{
-	"10.0.0.0/8",
-	"172.16.0.0/12",
-	"192.168.0.0/16",
-	"127.0.0.0/8",
-	"169.254.0.0/16",
-	"::1/128",
-	"fc00::/7",
-	"0.0.0.0/8",
+	"10.0.0.0/8",      // RFC 1918
+	"172.16.0.0/12",   // RFC 1918
+	"192.168.0.0/16",  // RFC 1918
+	"127.0.0.0/8",     // IPv4 Loopback
+	"169.254.0.0/16",  // IPv4 Link-Local
+	"0.0.0.0/8",       // Current network
+	"::1/128",         // IPv6 Loopback
+	"fc00::/7",        // IPv6 Unique Local
+	"fe80::/10",       // IPv6 Link-Local
 }
 
 // parsedCIDRs is populated at init time.
@@ -39,6 +40,12 @@ func init() {
 
 // isPrivateIP returns true if ip is in a private/loopback/link-local range.
 func isPrivateIP(ip net.IP) bool {
+	// Normalize IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1) to 4-byte IPv4.
+	// This prevents bypasses where an attacker uses the IPv6 representation of a private IPv4.
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+
 	for _, network := range parsedCIDRs {
 		if network.Contains(ip) {
 			return true
@@ -47,14 +54,6 @@ func isPrivateIP(ip net.IP) bool {
 	return false
 }
 
-// SafeGet performs an HTTP GET after verifying the target does not resolve to a
-// private IP address. This prevents SSRF (Server-Side Request Forgery) attacks
-// where an attacker supplies a URL pointing to internal services.
-//
-// Mitigates DNS rebinding (TOCTOU) by resolving DNS once, validating the IP,
-// and dialing directly to the verified IP via a custom transport. Redirects
-// are disabled to prevent redirect-based SSRF.
-// See: https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
 // safeTransport is a shared HTTP transport that validates all outbound
 // connections against private IP ranges to prevent SSRF.
 var safeTransport = &http.Transport{
@@ -93,7 +92,7 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 // HTTP clients to guard against SSRF.
 func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout:    timeout,
+		Timeout:   timeout,
 		Transport: safeTransport,
 	}
 }
@@ -114,54 +113,40 @@ func NewProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Cl
 	return &http.Client{Transport: transport, Timeout: timeout}
 }
 
+// NewSafeProxyAwareHTTPClient creates an *http.Client that routes traffic through
+// the configured PROXY_URL when set AND prevents SSRF for direct connections.
+//
+// If a proxy is configured, SSRF protection is offloaded to the proxy, and we
+// allow connecting to the proxy even if it resides on a private IP address.
+func NewSafeProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Client {
+	if cfg != nil && cfg.ProxyURL != "" {
+		// If using a proxy, use the standard proxy-aware client.
+		return NewProxyAwareHTTPClient(cfg, timeout)
+	}
+
+	// No proxy: use the safe client that validates all direct outbound dials.
+	return NewSafeHTTPClient(timeout)
+}
+
+// SafeGet performs an HTTP GET after verifying the target does not resolve to a
+// private IP address. This prevents SSRF (Server-Side Request Forgery) attacks
+// where an attacker supplies a URL pointing to internal services.
+//
+// Mitigates DNS rebinding (TOCTOU) by resolving DNS once, validating the IP,
+// and dialing directly to the verified IP via a custom transport.
+// See: https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
 func SafeGet(rawURL string) (*http.Response, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return nil, fmt.Errorf("ssrf: invalid URL: %w", err)
-	}
+	client := NewSafeHTTPClient(30 * time.Second)
 
-	if u.Scheme != "http" && u.Scheme != "https" {
-		slog.Warn("Blocked unsupported scheme", "url", rawURL, "scheme", u.Scheme)
-		return nil, fmt.Errorf("ssrf: unsupported scheme %q", u.Scheme)
-	}
-
-	hostname := u.Hostname()
-	ips, err := net.LookupIP(hostname)
-	if err != nil {
-		return nil, fmt.Errorf("ssrf: DNS lookup failed: %w", err)
-	}
-
-	// Find the first safe IP to connect to
-	var safeIP net.IP
-	for _, ip := range ips {
-		if isPrivateIP(ip) {
-			continue
+	// Custom CheckRedirect to ensure redirected URLs are also validated.
+	// NewSafeHTTPClient uses safeTransport which validates on every Dial,
+	// so even redirected URLs will be checked at dial time.
+	// We allow up to 10 redirects.
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("too many redirects")
 		}
-		safeIP = ip
-		break
-	}
-	if safeIP == nil {
-		return nil, fmt.Errorf("ssrf: no public IP found for %s", hostname)
-	}
-
-	// Determine port — use explicit port or scheme default
-	port := u.Port()
-	if port == "" {
-		if u.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-
-	// Use the shared safeTransport which validates IPs on every dial.
-	// Also disable redirects — an attacker could redirect a safe URL to an internal one.
-	client := &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: safeTransport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+		return nil
 	}
 
 	return client.Get(rawURL)
