@@ -12,7 +12,7 @@ require (
 	github.com/go-flac/go-flac/v2 v2.0.4
 	github.com/gofiber/adaptor/v2 v2.2.1
 	github.com/gofiber/contrib/websocket v1.3.4
-	github.com/gofiber/fiber/v2 v2.52.13
+	github.com/gofiber/fiber/v2 v2.52.14
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.11.2
@@ -23,7 +23,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/zmb3/spotify/v2 v2.4.3
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
