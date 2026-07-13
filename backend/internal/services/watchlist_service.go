@@ -31,6 +31,7 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 
 	// Shared proxy-aware client for internal/unrestricted HTTP calls
 	proxyClient := NewProxyAwareHTTPClient(cfg, 30*time.Second)
+	safeProxyClient := NewSafeProxyAwareHTTPClient(cfg, 30*time.Second)
 
 	// SSRF-protected proxy-aware client for external provider HTTP calls
 	safeProxyClient := NewSafeProxyAwareHTTPClient(cfg, 30*time.Second)

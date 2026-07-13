@@ -7,9 +7,16 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 )
+
+// testSlskdClient returns a plain HTTP client without SSRF validation,
+// safe for tests with httptest mock servers on 127.0.0.1.
+func testSlskdClient() *http.Client {
+	return &http.Client{Timeout: 10 * time.Second}
+}
 
 const testAPIKey = "test-key"
 
@@ -66,7 +73,7 @@ func TestSlskdServiceHealthCheck(t *testing.T) {
 				SlskdURL:    server.URL,
 				SlskdAPIKey: tt.apiKey,
 			}
-			svc := NewSlskdService(cfg, nil)
+			svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 			if got := svc.HealthCheck(); got != tt.want {
 				t.Errorf("HealthCheck() = %v, want %v", got, tt.want)
@@ -142,7 +149,7 @@ func TestSlskdServiceSearch(t *testing.T) {
 		SlskdURL:    server.URL,
 		SlskdAPIKey: testAPIKey,
 	}
-	svc := NewSlskdService(cfg, nil)
+	svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 	results, err := svc.Search("test artist test song", 0, nil)
 	if err != nil {
@@ -248,7 +255,7 @@ func TestSlskdServiceEnqueueDownload(t *testing.T) {
 				SlskdURL:    server.URL,
 				SlskdAPIKey: tt.apiKey,
 			}
-			svc := NewSlskdService(cfg, nil)
+			svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 			gotID, err := svc.EnqueueDownload("testuser", "test_song.mp3", 5242880)
 			if (err != nil) != tt.wantErr {
@@ -270,7 +277,7 @@ func TestSlskdService_EnqueueDownload_MalformedJSON(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
-	svc := NewSlskdService(cfg, nil)
+	svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 	_, err := svc.EnqueueDownload("testuser", "test_song.mp3", 5242880)
 	if err == nil {
@@ -291,7 +298,7 @@ func TestSlskdService_EnqueueDownload_FailedItems(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
-	svc := NewSlskdService(cfg, nil)
+	svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 	_, err := svc.EnqueueDownload("testuser", "test_song.mp3", 5242880)
 	if err == nil {
@@ -311,7 +318,7 @@ func TestSlskdService_EnqueueDownload_EmptyResponse(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
-	svc := NewSlskdService(cfg, nil)
+	svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 	_, err := svc.EnqueueDownload("testuser", "test_song.mp3", 5242880)
 	if err == nil {
@@ -340,7 +347,7 @@ func TestSlskdService_EnqueueDownload_ErrorStatusCodes(t *testing.T) {
 			defer server.Close()
 
 			cfg := &config.Config{SlskdURL: server.URL, SlskdAPIKey: testAPIKey}
-			svc := NewSlskdService(cfg, nil)
+			svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 			_, err := svc.EnqueueDownload("username", "filename.mp3", 1024)
 			if (err != nil) != tt.wantErr {
@@ -410,7 +417,7 @@ func TestSlskdServiceGetDownload(t *testing.T) {
 				SlskdAPIKey:         tt.apiKey,
 				DownloadStagingPath: "/downloads",
 			}
-			svc := NewSlskdService(cfg, nil)
+			svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 			dl, err := svc.GetDownload("testuser", testID)
 			if (err != nil) != tt.wantErr {
@@ -486,7 +493,7 @@ func TestResolveDownloadPath(t *testing.T) {
 		SlskdAPIKey:         "key",
 		DownloadStagingPath: staging,
 	}
-	svc := NewSlskdService(cfg, nil)
+	svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 	tests := []struct {
 		username string
@@ -515,7 +522,7 @@ func TestResolveDownloadPath_Traversal(t *testing.T) {
 		SlskdAPIKey:         "key",
 		DownloadStagingPath: staging,
 	}
-	svc := NewSlskdService(cfg, nil)
+	svc := NewSlskdServiceWithClient(cfg, nil, testSlskdClient())
 
 	result := svc.resolveDownloadPath("john", "../../etc/passwd")
 	parent := filepath.Clean(staging) + string(filepath.Separator)

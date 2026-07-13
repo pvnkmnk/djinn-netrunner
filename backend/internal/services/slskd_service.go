@@ -278,9 +278,19 @@ func (s *SlskdService) Stop() {
 }
 
 func NewSlskdService(cfg *config.Config, db *gorm.DB) *SlskdService {
+	return NewSlskdServiceWithClient(cfg, db, nil)
+}
+
+// NewSlskdServiceWithClient creates a new SlskdService with an optional
+// pre-configured HTTP client. If httpClient is nil, a safe SSRF-protected
+// client is created automatically.
+func NewSlskdServiceWithClient(cfg *config.Config, db *gorm.DB, httpClient *http.Client) *SlskdService {
+	if httpClient == nil {
+		httpClient = NewSafeProxyAwareHTTPClient(cfg, 60*time.Second)
+	}
 	return &SlskdService{
 		cfg:         cfg,
-		httpClient:  NewProxyAwareHTTPClient(cfg, 60*time.Second),
+		httpClient:  httpClient,
 		rateLimiter: newSearchRateLimiter(),
 		db:          db,
 	}
