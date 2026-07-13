@@ -320,7 +320,7 @@ func (h *WatchlistHandler) SyncWatchlist(c *fiber.Ctx) error {
 
 	if err := h.db.Create(&job).Error; err != nil {
 		slog.Error("Failed to create watchlist sync job", "error", err, "watchlistID", wl.ID)
-		return c.Type("html").SendString(`<div class="console-entry error">Failed to trigger sync for watchlist ` + html.EscapeString(wl.Name) + `.</div>`)
+		return c.Status(500).Type("html").SendString(`<div class="console-entry error">Failed to trigger sync for watchlist ` + html.EscapeString(wl.Name) + `.</div>`)
 	}
 
 	return c.Type("html").SendString(`<div class="console-entry">Sync triggered for watchlist ` + html.EscapeString(wl.Name) + `... (job #` + fmt.Sprintf("%d", job.ID) + `)</div>`)
