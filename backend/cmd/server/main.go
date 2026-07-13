@@ -280,6 +280,9 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
 
+	// Audio streaming (outside group so path is /tracks/:id/stream)
+	app.Get("/tracks/:id/stream", auth.AuthMiddleware, library.StreamTrack)
+
 	// Watchlists
 	watchlistRoutes := apiProtected.Group("/watchlists")
 	watchlistRoutes.Get("/", watchlist.ListWatchlists)
