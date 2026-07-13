@@ -67,8 +67,10 @@
                 <td class="cell-format">{{ track.Format | escape }}</td>
                 <td class="cell-size">{{ track.FileSize / 1048576 }} MB</td>
                 <td class="cell-actions">
-                    <button class="btn btn-sm btn-play"
-                            onclick="NetPlayer.play('{{ track.ID }}', '{{ track.Title|escape }}', '{{ track.Artist|escape }}')"
+                    <button class="btn btn-sm np-play-btn"
+                            data-track-id="{{ track.ID }}"
+                            data-track-title="{{ track.Title|escape }}"
+                            data-track-artist="{{ track.Artist|escape }}"
                             aria-label="Play {{ track.Title | escape }}">
                         ▶
                     </button>

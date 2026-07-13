@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -34,12 +35,11 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 
 	// 3. Load track with ownership check (single query)
 	var track struct {
-		Path      string
-		Format    string
-		LibraryID uuid.UUID
+		Path   string
+		Format string
 	}
 	err = h.db.Table("tracks").
-		Select("tracks.path, tracks.format, tracks.library_id").
+		Select("tracks.path, tracks.format").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
 		Where("tracks.id = ? AND libraries.owner_user_id = ?", trackID, user.ID).
 		Take(&track).Error
@@ -110,16 +110,34 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 	}
 
 	// Parse Range header: "bytes=start-end"
-	var start, end int64
-	n, err := fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end)
-	if err != nil || n < 1 {
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
 
-	// Handle open-ended range: "bytes=1000-"
-	if n == 1 || end == 0 {
+	rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
+	parts := strings.SplitN(rangeSpec, "-", 2)
+	if len(parts) != 2 {
+		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
+		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
+	}
+
+	start, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
+		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
+	}
+
+	var end int64
+	if parts[1] == "" {
+		// Open-ended range: "bytes=1000-"
 		end = fileSize - 1
+	} else {
+		end, err = strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
+			return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
+		}
 	}
 
 	// Validate range

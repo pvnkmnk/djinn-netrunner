@@ -78,6 +78,37 @@
     },
   };
 
+  // ── Click delegation for play buttons with data attributes ──
+  document.addEventListener('click', function (evt) {
+    var btn = evt.target.closest('.np-play-btn[data-track-id]');
+    if (!btn) return;
+    var trackId = btn.getAttribute('data-track-id');
+    var title = btn.getAttribute('data-track-title') || '';
+    var artist = btn.getAttribute('data-track-artist') || '';
+    window.NetPlayer.play(trackId, title, artist);
+  });
+
+  // ── Progress bar: click-to-seek + keyboard seek ──
+  document.addEventListener('click', function (evt) {
+    var bar = evt.target.closest('.np-progress-bar');
+    if (!bar || !master || !master.duration) return;
+    var pct = (evt.offsetX / bar.offsetWidth) * 100;
+    window.NetPlayer.seek(pct);
+  });
+
+  document.addEventListener('keydown', function (evt) {
+    var bar = evt.target.closest('.np-progress-bar');
+    if (!bar || !master || !master.duration) return;
+    var step = 5; // seconds
+    if (evt.key === 'ArrowRight') {
+      master.currentTime = Math.min(master.duration, master.currentTime + step);
+      evt.preventDefault();
+    } else if (evt.key === 'ArrowLeft') {
+      master.currentTime = Math.max(0, master.currentTime - step);
+      evt.preventDefault();
+    }
+  });
+
   // ── Progress bar updater ──
   // Every 250ms update all progress-bar-fill and time-display elements
   // that are bound to the master player.

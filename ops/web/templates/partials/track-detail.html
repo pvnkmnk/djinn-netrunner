@@ -7,12 +7,14 @@
         <div class="np-controls" data-track-id="{{ track.ID }}">
             <div class="np-buttons">
                 <button class="btn np-play-btn"
-                        onclick="NetPlayer.play('{{ track.ID }}', '{{ track.Title|escape }}', '{{ track.Artist|escape }}')"
+                        data-track-id="{{ track.ID }}"
+                        data-track-title="{{ track.Title|escape }}"
+                        data-track-artist="{{ track.Artist|escape }}"
                         aria-label="Play {{ track.Title | escape }}">▶ Play</button>
             </div>
             <div class="np-progress">
                 <span class="np-current">0:00</span>
-                <div class="np-progress-bar" onclick="NetPlayer.seek((event.offsetX / this.offsetWidth) * 100)">
+                <div class="np-progress-bar" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div class="np-progress-fill" style="width:0%"></div>
                 </div>
                 <span class="np-total">0:00</span>
