@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/xml"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -757,33 +759,176 @@ func (h *SubsonicHandler) Stream(c *fiber.Ctx) error {
 		return h.respondError(c, 70, "Track not found")
 	}
 
-	// Check if file exists
 	if _, err := os.Stat(track.Path); err != nil {
 		return h.respondError(c, 70, "File not found")
 	}
 
-	// Set content type based on file extension
-	contentType := "application/octet-stream"
-	switch {
-	case strings.HasSuffix(track.Path, ".mp3"):
-		contentType = "audio/mpeg"
-	case strings.HasSuffix(track.Path, ".flac"):
-		contentType = "audio/flac"
-	case strings.HasSuffix(track.Path, ".wav"):
-		contentType = "audio/wav"
-	case strings.HasSuffix(track.Path, ".ogg"):
-		contentType = "audio/ogg"
-	case strings.HasSuffix(track.Path, ".m4a"):
-		contentType = "audio/m4a"
+	// Determine requested format
+	requestedFormat := c.Query("format")
+	if requestedFormat == "" {
+		// Try Accept header negotiation
+		requestedFormat = negotiateFormat(c.Get("Accept"))
 	}
 
-	// Serve file with Range support
+	// Normalize format to lowercase
+	requestedFormat = strings.ToLower(requestedFormat)
+
+	// Get source format (stored uppercase in DB)
+	sourceFormat := strings.ToLower(track.Format)
+
+	// Determine if transcoding is needed
+	needsTranscode := false
+	if requestedFormat != "" && requestedFormat != sourceFormat && h.cfg.Transcode.Enabled {
+		needsTranscode = true
+	}
+
+	if needsTranscode {
+		// Parse bitrate
+		bitrate := 0
+		if b := c.Query("bitrate"); b != "" {
+			if parsed, err := strconv.Atoi(b); err == nil && parsed > 0 {
+				bitrate = parsed
+				if h.cfg.Transcode.MaxBitrate > 0 && bitrate > h.cfg.Transcode.MaxBitrate {
+					bitrate = h.cfg.Transcode.MaxBitrate
+				}
+			}
+		}
+
+		// Set content type for transcoded output
+		contentType := formatToMIME(requestedFormat)
+		c.Set("Content-Type", contentType)
+		c.Set("Accept-Ranges", "none") // Streaming transcode doesn't support range requests
+
+		// Stream transcoded audio
+		return h.streamTranscoded(c, track.Path, requestedFormat, bitrate)
+	}
+
+	// Serve original file (existing behavior)
+	contentType := formatToMIME(sourceFormat)
+	if contentType == "" {
+		// Fallback to extension-based detection
+		contentType = "application/octet-stream"
+		switch {
+		case strings.HasSuffix(track.Path, ".mp3"):
+			contentType = "audio/mpeg"
+		case strings.HasSuffix(track.Path, ".flac"):
+			contentType = "audio/flac"
+		case strings.HasSuffix(track.Path, ".wav"):
+			contentType = "audio/wav"
+		case strings.HasSuffix(track.Path, ".ogg"):
+			contentType = "audio/ogg"
+		case strings.HasSuffix(track.Path, ".m4a"):
+			contentType = "audio/m4a"
+		}
+	}
+
 	c.Set("Content-Type", contentType)
 	c.Set("Accept-Ranges", "bytes")
 	c.Set("Content-Length", strconv.FormatInt(track.FileSize, 10))
 
-	// Use SendFile which handles Range requests automatically
 	return c.SendFile(track.Path)
+}
+
+// streamTranscoded pipes FFmpeg output to the HTTP response
+func (h *SubsonicHandler) streamTranscoded(c *fiber.Ctx, inputPath, outputFormat string, bitrate int) error {
+	// Set up streaming response
+	c.Set("Transfer-Encoding", "chunked")
+	c.Set("Cache-Control", "no-cache")
+
+	// Create a pipe to connect FFmpeg stdout to HTTP response
+	pr, pw := io.Pipe()
+
+	// Start FFmpeg in a goroutine
+	go func() {
+		defer pw.Close()
+
+		ffmpegPath := h.cfg.Transcode.FFmpegPath
+		if ffmpegPath == "" {
+			ffmpegPath = "ffmpeg"
+		}
+
+		args := []string{"-i", inputPath, "-f", outputFormat}
+		if bitrate > 0 && isLossyFormat(outputFormat) {
+			args = append(args, "-b:a", fmt.Sprintf("%dk", bitrate))
+		}
+		args = append(args, "-v", "quiet", "pipe:1")
+
+		cmd := exec.Command(ffmpegPath, args...)
+		cmd.Stdout = pw
+
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			pw.CloseWithError(fmt.Errorf("transcode failed: %w: %s", err, stderr.String()))
+		}
+	}()
+
+	// Stream the pipe reader to the response
+	defer pr.Close()
+	_, err := io.Copy(c.Response().BodyWriter(), pr)
+	return err
+}
+
+// negotiateFormat parses the Accept header and returns the best audio format
+func negotiateFormat(accept string) string {
+	if accept == "" {
+		return ""
+	}
+
+	// Simple priority-based negotiation
+	// Check for common audio MIME types
+	acceptLower := strings.ToLower(accept)
+
+	if strings.Contains(acceptLower, "audio/mpeg") || strings.Contains(acceptLower, "audio/mp3") {
+		return "mp3"
+	}
+	if strings.Contains(acceptLower, "audio/ogg") {
+		return "ogg"
+	}
+	if strings.Contains(acceptLower, "audio/opus") {
+		return "opus"
+	}
+	if strings.Contains(acceptLower, "audio/aac") || strings.Contains(acceptLower, "audio/mp4") {
+		return "aac"
+	}
+	if strings.Contains(acceptLower, "audio/flac") {
+		return "flac"
+	}
+	if strings.Contains(acceptLower, "audio/wav") {
+		return "wav"
+	}
+
+	return ""
+}
+
+// formatToMIME converts a format string to its MIME type
+func formatToMIME(format string) string {
+	switch strings.ToLower(format) {
+	case "mp3":
+		return "audio/mpeg"
+	case "flac":
+		return "audio/flac"
+	case "wav":
+		return "audio/wav"
+	case "ogg":
+		return "audio/ogg"
+	case "opus":
+		return "audio/opus"
+	case "aac", "m4a":
+		return "audio/mp4"
+	default:
+		return ""
+	}
+}
+
+// isLossyFormat returns true if the format is lossy (supports bitrate control)
+func isLossyFormat(format string) bool {
+	switch strings.ToLower(format) {
+	case "mp3", "aac", "ogg", "opus", "m4a":
+		return true
+	}
+	return false
 }
 
 // GetCoverArt handles the getCoverArt endpoint

@@ -98,6 +98,15 @@ type Config struct {
 		Password string `envconfig:"SUBSONIC_PASSWORD"`
 	}
 
+	// Transcode
+	Transcode struct {
+		Enabled    bool
+		FFmpegPath string
+		CacheDir   string
+		MaxBitrate int
+		MaxCacheMB int64
+	}
+
 	// Rate Limiter
 	AuthRateLimitMax        int
 	AuthRateLimitExpiration string
@@ -278,6 +287,21 @@ func Load(filenames ...string) (*Config, error) {
 		NotificationWebhookURL: getEnv("NOTIFICATION_WEBHOOK_URL", ""),
 		NotificationEnabled:    getEnvBool("NOTIFICATION_ENABLED", false),
 
+		// Transcode
+		Transcode: struct {
+			Enabled    bool
+			FFmpegPath string
+			CacheDir   string
+			MaxBitrate int
+			MaxCacheMB int64
+		}{
+			Enabled:    getEnv("TRANSCODE_ENABLED", "true") == "true",
+			FFmpegPath: getEnv("FFMPEG_PATH", "ffmpeg"),
+			CacheDir:   getEnv("TRANSCODE_CACHE_DIR", "/tmp/netrunner-transcode"),
+			MaxBitrate: getEnvAsInt("TRANSCODE_MAX_BITRATE", 320),
+			MaxCacheMB: getEnvAsInt64("TRANSCODE_MAX_CACHE_MB", 512),
+		},
+
 		// Rate Limiter
 		AuthRateLimitMax:        getEnvAsInt("AUTH_RATE_LIMIT_MAX", 10),
 		AuthRateLimitExpiration: getEnv("AUTH_RATE_LIMIT_EXPIRATION", "1m"),
@@ -336,6 +360,16 @@ func getEnvBool(key string, defaultVal bool) bool {
 func getEnvAsInt(key string, defaultVal int) int {
 	if val := os.Getenv(key); val != "" {
 		if v, err := strconv.Atoi(val); err == nil {
+			return v
+		}
+	}
+	return defaultVal
+}
+
+// getEnvAsInt64 retrieves a 64-bit integer environment variable or returns a default value
+func getEnvAsInt64(key string, defaultVal int64) int64 {
+	if val := os.Getenv(key); val != "" {
+		if v, err := strconv.ParseInt(val, 10, 64); err == nil {
 			return v
 		}
 	}
