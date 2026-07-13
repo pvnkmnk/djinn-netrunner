@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/css/styles.css">
     <script src="/static/js/htmx.min.js"></script>
     <script src="/static/js/app.js" defer></script>
+    <script src="/static/js/player.js" defer></script>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to content</a>
@@ -33,6 +34,7 @@
     <footer class="app-footer">
         NetRunner v1.0.0 | Music Acquisition Pipeline
     </footer>
+    <audio id="master-player" preload="metadata" style="display:none"></audio>
 <script>
 // Global HTMX error handling for async partials
 document.body.addEventListener("htmx:responseError", function(evt) {

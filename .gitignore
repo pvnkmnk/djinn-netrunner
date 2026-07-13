@@ -40,6 +40,8 @@ yarn-error.log*
 # Build artifacts
 dist/
 build/
+backend/server
+backend/worker
 .next/
 target/
 
