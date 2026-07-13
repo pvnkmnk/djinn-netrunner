@@ -257,10 +257,16 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/admin", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.AdminPage)
 	app.Get("/playlists", auth.AuthMiddleware, playlistHandler.PlaylistsPage)
 
+	// Console attach (minimal implementation)
+	app.Post("/console/attach", auth.AuthMiddleware, func(c *fiber.Ctx) error {
+		return c.Type("html").SendString(`<div class="console-entry">Select a running job to attach to its console output.</div>`)
+	})
+
 	// Partial routes (all protected)
 	app.Get("/partials/stats", auth.AuthMiddleware, stats.RenderStatsPartial)
 	app.Get("/partials/watchlists", auth.AuthMiddleware, watchlist.RenderWatchlistsPartial)
 	app.Get("/partials/profiles", auth.AuthMiddleware, profile.RenderProfilesPartial)
+	app.Get("/partials/profile-form", auth.AuthMiddleware, profile.GetForm)
 	app.Get("/partials/libraries", auth.AuthMiddleware, library.RenderLibrariesPartial)
 	app.Get("/partials/schedules", auth.AuthMiddleware, schedulesHandler.RenderSchedulesPartial)
 	app.Get("/partials/artists", auth.AuthMiddleware, artistsHandler.RenderPartial)
@@ -276,6 +282,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/partials/admin/users", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderUsersPartial)
 	app.Get("/partials/admin/audit", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderAuditPartial)
 	app.Get("/partials/admin/config", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderConfigPartial)
+	app.Get("/partials/admin/config-edit", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderConfigEditPartial)
 
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
@@ -289,6 +296,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
 	watchlistRoutes.Patch("/:id/toggle", watchlist.ToggleWatchlist)
 	watchlistRoutes.Get("/form", watchlist.GetForm)
+	watchlistRoutes.Post("/:id/sync", watchlist.SyncWatchlist)
 	watchlistPreviewHandler := api.NewWatchlistPreviewHandler(db, watchlistService)
 	watchlistRoutes.Get("/:id/preview", watchlistPreviewHandler.GetPreview)
 
@@ -300,6 +308,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	profileRoutes.Get("/:id", profile.Get)
 	profileRoutes.Patch("/:id", profile.Update)
 	profileRoutes.Delete("/:id", profile.Delete)
+	profileRoutes.Post("/:id/set-default", profile.SetDefault)
 
 	// Artists
 	artistsRoutes := apiProtected.Group("/artists")

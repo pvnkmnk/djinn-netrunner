@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/mail"
 	"strconv"
@@ -255,6 +256,20 @@ func (h *AdminHandler) UpdateConfig(c *fiber.Ctx) error {
 		}
 	}
 	h.logAudit("config_update", c, "config", payload.Key, map[string]string{"value": auditValue})
+
+	// If HTMX request, return the read-only row HTML
+	if isHTMXRequest(c) {
+		return c.SendString(fmt.Sprintf(`<tr>
+			<td><code>%s</code></td>
+			<td>%s</td>
+			<td>
+				<button class="btn btn-sm btn-outline"
+						hx-get="/partials/admin/config-edit?key=%s"
+						hx-target="closest tr"
+						hx-swap="outerHTML">Edit</button>
+			</td>
+		</tr>`, payload.Key, payload.Value, payload.Key))
+	}
 	return c.JSON(fiber.Map{"status": "updated"})
 }
 
@@ -305,4 +320,37 @@ func (h *AdminHandler) RenderConfigPartial(c *fiber.Ctx) error {
 	var settings []database.Setting
 	h.db.Order("key ASC").Find(&settings)
 	return c.Render("partials/admin_config", fiber.Map{"Settings": settings})
+}
+
+// GET /partials/admin/config-edit — renders inline edit row for a config setting
+func (h *AdminHandler) RenderConfigEditPartial(c *fiber.Ctx) error {
+	key := c.Query("key")
+	if key == "" {
+		return c.Status(400).SendString("<div class=\"error\">key parameter required</div>")
+	}
+
+	var setting database.Setting
+	if err := h.db.Where("key = ?", key).First(&setting).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(404).SendString("<div class=\"error\">setting not found</div>")
+		}
+		return internalServerError(c, err)
+	}
+
+	return c.SendString(fmt.Sprintf(`<tr>
+		<td><code>%s</code></td>
+		<td><input type="text" name="value" value="%s" id="config-value-%s" /></td>
+		<td>
+			<button class="btn btn-sm btn-primary"
+					hx-patch="/api/admin/config"
+					hx-include="#config-value-%s"
+					hx-vals='{"key": "%s"}'
+					hx-target="closest tr"
+					hx-swap="outerHTML">Save</button>
+			<button class="btn btn-sm"
+					hx-get="/partials/admin/config"
+					hx-target="#admin-content"
+					hx-swap="innerHTML">Cancel</button>
+		</td>
+	</tr>`, setting.Key, setting.Value, setting.Key, setting.Key, setting.Key))
 }

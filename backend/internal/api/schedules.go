@@ -95,6 +95,9 @@ func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderSchedulesPartial(c)
+	}
 	return c.Status(201).JSON(schedule)
 }
 
@@ -126,6 +129,9 @@ func (h *SchedulesHandler) Delete(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderSchedulesPartial(c)
+	}
 	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
@@ -181,6 +187,9 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderSchedulesPartial(c)
+	}
 	return c.JSON(fiber.Map{"status": "updated"})
 }
 
