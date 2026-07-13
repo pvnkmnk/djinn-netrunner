@@ -455,24 +455,24 @@ func GetJobStats(db *gorm.DB) (*JobStats, error) {
 func GetLibraryStats(db *gorm.DB) (*LibraryStats, error) {
 	var stats LibraryStats
 
+	// Bolt Optimization: Reduce database roundtrips from 2 to 1 by deriving totals from breakdown.
 	err := db.Model(&database.Track{}).
-		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&stats).Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
-
-	// Format breakdown
-	err = db.Model(&database.Track{}).
 		Select("format, COUNT(*) as count, COALESCE(SUM(file_size), 0) as total_size").
 		Group("format").
 		Order("count DESC").
 		Scan(&stats.FormatBreakdown).Error
 
-	return &stats, err
+	if err != nil {
+		return nil, err
+	}
+
+	for _, f := range stats.FormatBreakdown {
+		stats.TotalTracks += f.Count
+		stats.TotalSize += f.TotalSize
+	}
+	stats.TotalSizeMB = float64(stats.TotalSize) / (1024 * 1024)
+
+	return &stats, nil
 }
 
 // GetStatsSummary returns combined summary statistics
@@ -497,25 +497,33 @@ func GetStatsSummary(db *gorm.DB) (*SummaryStats, error) {
 		summary.Jobs.SuccessRate = float64(summary.Jobs.Succeeded) / float64(completed) * 100
 	}
 
-	// Library stats
-	err = db.Model(&database.Track{}).
-		Select("COUNT(*) as total_tracks, COALESCE(SUM(file_size), 0) as total_size").
-		Scan(&summary.Library).Error
+	// Bolt Optimization: Consolidate multiple count queries into a single SQL statement.
+	var flat struct {
+		MonitoredArtists int64 `gorm:"column:monitored_artists"`
+		Watchlists       int64 `gorm:"column:watchlists"`
+		Libraries        int64 `gorm:"column:libraries"`
+		TotalTracks      int64 `gorm:"column:total_tracks"`
+		TotalSize        int64 `gorm:"column:total_size"`
+	}
+
+	err = db.Raw(`
+		SELECT
+			(SELECT COUNT(*) FROM monitored_artists) as monitored_artists,
+			(SELECT COUNT(*) FROM watchlists) as watchlists,
+			(SELECT COUNT(*) FROM libraries) as libraries,
+			(SELECT COUNT(*) FROM tracks) as total_tracks,
+			(SELECT COALESCE(SUM(file_size), 0) FROM tracks) as total_size
+	`).Scan(&flat).Error
 	if err != nil {
 		return nil, err
 	}
-	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
-	// Activity stats
-	if err := db.Model(&database.MonitoredArtist{}).Count(&summary.Activity.MonitoredArtists).Error; err != nil {
-		return nil, err
-	}
-	if err := db.Model(&database.Watchlist{}).Count(&summary.Activity.Watchlists).Error; err != nil {
-		return nil, err
-	}
-	if err := db.Model(&database.Library{}).Count(&summary.Activity.Libraries).Error; err != nil {
-		return nil, err
-	}
+	summary.Activity.MonitoredArtists = flat.MonitoredArtists
+	summary.Activity.Watchlists = flat.Watchlists
+	summary.Activity.Libraries = flat.Libraries
+	summary.Library.TotalTracks = flat.TotalTracks
+	summary.Library.TotalSize = flat.TotalSize
+	summary.Library.TotalSizeMB = float64(summary.Library.TotalSize) / (1024 * 1024)
 
 	return &summary, nil
 }

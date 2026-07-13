@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-
 func TestSmoke_Admin_Panel(t *testing.T) {
 	skipIfShort(t)
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
