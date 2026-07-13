@@ -104,7 +104,14 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("yt-dlp failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+		errMsg := strings.TrimSpace(stderr.String())
+		if outMsg := strings.TrimSpace(stdout.String()); outMsg != "" {
+			errMsg = outMsg + ": " + errMsg
+		}
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return "", fmt.Errorf("yt-dlp failed: %s", errMsg)
 	}
 
 	// Parse output to find downloaded file
