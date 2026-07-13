@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -67,6 +69,9 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "failed to create watchlist"})
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderWatchlistsPartial(c)
+	}
 	return c.Status(201).JSON(watchlist)
 }
 
@@ -105,6 +110,9 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderWatchlistsPartial(c)
+	}
 	return c.JSON(watchlist)
 }
 
@@ -126,6 +134,9 @@ func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderWatchlistsPartial(c)
+	}
 	return c.Status(204).Send(nil)
 }
 
@@ -269,4 +280,47 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 		"watchlists":  watchlists,
 		"spDcLinked":  spDcLinked,
 	})
+}
+
+// SyncWatchlist triggers a sync job for a watchlist
+func (h *WatchlistHandler) SyncWatchlist(c *fiber.Ctx) error {
+	user, hasAuth := currentUserFromLocals(c)
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+	}
+
+	var wl database.Watchlist
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&wl).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(404).JSON(fiber.Map{"error": "watchlist not found"})
+		}
+		return internalServerError(c, err)
+	}
+
+	// Create sync job
+	job := database.Job{
+		Type:        "watchlist_sync",
+		State:       "queued",
+		ScopeType:   "watchlist",
+		ScopeID:     wl.ID.String(),
+		RequestedAt: time.Now(),
+		CreatedBy:   "ui",
+		OwnerUserID: &user.ID,
+	}
+
+	if err := h.db.Create(&job).Error; err != nil {
+		slog.Error("Failed to create watchlist sync job", "error", err, "watchlistID", wl.ID)
+		return c.Status(500).SendString(`<div class="console-entry error">Failed to trigger sync for watchlist ` + wl.Name + `.</div>`)
+	}
+
+	return c.SendString(`<div class="console-entry">Sync triggered for watchlist ` + wl.Name + `... (job #` + fmt.Sprintf("%d", job.ID) + `)</div>`)
 }

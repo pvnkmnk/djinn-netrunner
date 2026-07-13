@@ -107,6 +107,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
+    // Process HTMX attributes in modal content after swap
+    document.body.addEventListener('htmx:afterSettle', function(evt) {
+        const container = document.getElementById('modal-container');
+        if (container && (container === evt.detail.target || container.contains(evt.detail.target))) {
+            htmx.process(container);
+        }
+    });
+    
     // Listen for HTMX closeModal trigger (fired via HX-Trigger response header)
     document.body.addEventListener('closeModal', function() {
         closeModal();

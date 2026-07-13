@@ -138,6 +138,9 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		if err != nil {
 			return internalServerError(c, err)
 		}
+		if isHTMXRequest(c) {
+			return h.RenderProfilesPartial(c)
+		}
 		return c.Status(201).JSON(profile)
 	}
 
@@ -160,6 +163,9 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderProfilesPartial(c)
+	}
 	return c.Status(201).JSON(profile)
 }
 
@@ -222,6 +228,9 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		}); err != nil {
 			return internalServerError(c, err)
 		}
+		if isHTMXRequest(c) {
+			return h.RenderProfilesPartial(c)
+		}
 		return c.JSON(profile)
 	}
 
@@ -269,6 +278,9 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderProfilesPartial(c)
+	}
 	return c.JSON(profile)
 }
 
@@ -316,6 +328,9 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderProfilesPartial(c)
+	}
 	return c.SendStatus(204)
 }
 
@@ -376,6 +391,56 @@ func (h *ProfileHandler) RenderProfilesPartial(c *fiber.Ctx) error {
 	}
 
 	if err := query.Find(&profiles).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading profiles.</div>")
+	}
+
+	return c.Render("partials/profiles", fiber.Map{
+		"profiles": profiles,
+	})
+}
+
+// SetDefault sets a profile as the default
+func (h *ProfileHandler) SetDefault(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid profile ID"})
+	}
+
+	var profile database.QualityProfile
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&profile).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
+		}
+		return internalServerError(c, err)
+	}
+
+	// Clear is_default on all profiles and set it on the target
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&database.QualityProfile{}).Where("owner_user_id = ? OR is_default = ?", user.ID, true).Update("is_default", false).Error; err != nil {
+			return err
+		}
+		profile.IsDefault = true
+		return tx.Save(&profile).Error
+	}); err != nil {
+		return internalServerError(c, err)
+	}
+
+	// Re-render the profiles list
+	var profiles []database.QualityProfile
+	listQuery := h.db.Select(profileListColumns).Order("name")
+	if user.Role != "admin" {
+		listQuery = listQuery.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	if err := listQuery.Find(&profiles).Error; err != nil {
 		return c.SendString("<div class=\"error\">Error loading profiles.</div>")
 	}
 

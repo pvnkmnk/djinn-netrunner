@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -95,6 +96,9 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "failed to add artist"})
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderPartial(c)
+	}
 	return c.Status(201).JSON(monitored)
 }
 
@@ -114,6 +118,9 @@ func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderPartial(c)
+	}
 	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
@@ -190,6 +197,9 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 		[]string{"queued", "running"},
 	).First(&existingJob).Error; err == nil {
 		c.Set("HX-Trigger", "sync-already-active")
+		if isHTMXRequest(c) {
+			return c.SendString("<div class=\"scan-status\">Sync already active for artist " + artist.Name + " (job #" + fmt.Sprintf("%d", existingJob.ID) + ")</div>")
+		}
 		return c.JSON(fiber.Map{
 			"status": "sync_already_active",
 			"job_id": existingJob.ID,
@@ -215,6 +225,9 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 	}
 
 	c.Set("HX-Trigger", "sync-queued")
+	if isHTMXRequest(c) {
+		return c.SendString("<div class=\"scan-status\">Sync triggered for artist " + artist.Name + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+	}
 	return c.JSON(fiber.Map{
 		"status": "sync_queued",
 		"job_id": job.ID,

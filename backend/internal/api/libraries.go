@@ -141,6 +141,9 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderLibrariesPartial(c)
+	}
 	return c.Status(201).JSON(library)
 }
 
@@ -215,6 +218,9 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderLibrariesPartial(c)
+	}
 	return c.JSON(library)
 }
 
@@ -252,6 +258,9 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderLibrariesPartial(c)
+	}
 	return c.SendStatus(204)
 }
 
@@ -294,6 +303,9 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return c.SendString("<div class=\"scan-status\">Scan triggered for library " + library.Name + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "scan job queued",
 		"job_id":  job.ID,
@@ -339,6 +351,9 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return c.SendString("<div class=\"scan-status\">Enrich triggered for library " + library.Name + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "enrich job queued",
 		"job_id":  job.ID,
@@ -384,6 +399,9 @@ func (h *LibraryHandler) TriggerPrune(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return c.SendString("<div class=\"scan-status\">Prune triggered for library " + library.Name + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "prune job queued",
 		"job_id":  job.ID,

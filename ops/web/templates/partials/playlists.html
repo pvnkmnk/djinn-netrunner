@@ -1,7 +1,7 @@
-<div class="playlists-region">
+<div class="playlists-region" id="playlists-region">
     <div class="section-header">
         <h2>Playlists</h2>
-        <button class="btn btn-primary" hx-post="/api/playlists" hx-vals='{"name": "New Playlist"}' hx-trigger="click" hx-target="#playlists-region" hx-swap="innerHTML" aria-label="Create new playlist">
+        <button class="btn btn-primary" id="create-playlist-btn" hx-post="/api/playlists" hx-vals='{"name": "New Playlist"}' hx-target="#playlists-region" hx-swap="innerHTML" aria-label="Create new playlist">
             New Playlist
         </button>
     </div>
@@ -19,7 +19,7 @@
             </div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm btn-danger" hx-delete="/api/playlists/{{ playlist.ID }}" hx-target="#playlist-{{ playlist.ID }}" hx-swap="outerHTML" hx-confirm="Delete playlist {{ playlist.Name | escape }}?" aria-label="Delete playlist {{ playlist.Name | escape }}">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/playlists/{{ playlist.ID }}" hx-target="#playlists-region" hx-swap="innerHTML" hx-confirm="Delete playlist {{ playlist.Name | escape }}?" aria-label="Delete playlist {{ playlist.Name | escape }}">
                 Delete
             </button>
         </div>

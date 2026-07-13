@@ -116,6 +116,11 @@ func (h *PlaylistHandler) Create(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	// For HTMX requests, return the updated partial HTML
+	if c.Get("HX-Request") == "true" {
+		return h.RenderPlaylistsPartial(c)
+	}
+
 	return c.Status(201).JSON(playlist)
 }
 
