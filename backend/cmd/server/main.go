@@ -439,7 +439,22 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	adminRoutes.Get("/audit", adminHandler.ListAudit)
 	adminRoutes.Get("/config", adminHandler.ListConfig)
 	adminRoutes.Patch("/config", adminHandler.UpdateConfig)
+
+	// Subsonic API routes (when enabled)
+	if cfg.Subsonic.Enabled {
+		subsonicHandler := api.NewSubsonicHandler(db, cfg)
+		subsonic := app.Group("/rest")
+		subsonic.Get("/ping.view", subsonicHandler.AuthMiddleware, subsonicHandler.Ping)
+		subsonic.Get("/license.view", subsonicHandler.AuthMiddleware, subsonicHandler.License)
+		subsonic.Get("/getIndexes.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetIndexes)
+		subsonic.Get("/getMusicDirectory.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetMusicDirectory)
+		subsonic.Get("/getSong.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetSong)
+		subsonic.Get("/getAlbum.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetAlbum)
+		subsonic.Get("/getArtist.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetArtist)
+		subsonic.Get("/stream.view", subsonicHandler.AuthMiddleware, subsonicHandler.Stream)
+		subsonic.Get("/getCoverArt.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetCoverArt)
 	}
+}
 
 func parseUint64(s string) (uint64, error) {
 	n, err := strconv.ParseUint(s, 10, 64)
