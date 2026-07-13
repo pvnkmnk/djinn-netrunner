@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
@@ -81,6 +82,7 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 		"--audio-format", audioFormat,
 		"--output", outputTemplate,
 		"--no-playlist",
+		"--no-split-chapters",
 		"--print", "after_move:filepath",
 	}
 	if s.jsRuntime != "" {
@@ -95,21 +97,25 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 	// The "--" separator before the URL prevents argument injection.
 	cmd := exec.Command(s.ytdlpPath, args...)
 
-	// Run command and capture output
-	output, err := cmd.CombinedOutput()
+	// Capture stdout and stderr separately -- yt-dlp may emit warnings on stderr
+	// (e.g. "your version is old") that would pollute the --print filepath on stdout.
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("yt-dlp failed: %w: %s", err, string(output))
+		return "", fmt.Errorf("yt-dlp failed: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 
 	// Parse output to find downloaded file
-	// yt-dlp with --print after_move:filepath outputs the final file path
-	outputStr := strings.TrimSpace(string(output))
+	// yt-dlp with --print after_move:filepath outputs the final file path on stdout
+	outputStr := strings.TrimSpace(stdout.String())
 	if outputStr == "" {
 		return "", errors.New("yt-dlp completed but no output file detected")
 	}
 
 	// The output should be the downloaded file path
-	downloadedFile := strings.TrimSpace(outputStr)
+	downloadedFile := outputStr
 
 	// Verify the file exists
 	if _, err := os.Stat(downloadedFile); os.IsNotExist(err) {

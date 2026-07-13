@@ -21,19 +21,9 @@ func NewArtistsHandler(db *gorm.DB, at *services.ArtistTrackingService, mb *serv
 	return &ArtistsHandler{db: db, atService: at, mbService: mb}
 }
 
-func (h *ArtistsHandler) resolveAuthenticatedUser(c *fiber.Ctx) (database.User, bool) {
-	if localUser, ok := c.Locals("user").(database.User); ok && localUser.ID != 0 {
-		return localUser, true
-	}
-	if localUser, ok := c.Locals("user").(*database.User); ok && localUser != nil && localUser.ID != 0 {
-		return *localUser, true
-	}
-	return database.User{}, false
-}
-
 // GET /api/artists - List monitored artists
 func (h *ArtistsHandler) List(c *fiber.Ctx) error {
-	user, hasAuth := h.resolveAuthenticatedUser(c)
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -47,7 +37,7 @@ func (h *ArtistsHandler) List(c *fiber.Ctx) error {
 
 // POST /api/artists - Add new artist by name
 func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
-	user, hasAuth := h.resolveAuthenticatedUser(c)
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -110,7 +100,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 
 // DELETE /api/artists/:id - Remove monitored artist
 func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
-	user, hasAuth := h.resolveAuthenticatedUser(c)
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -129,7 +119,7 @@ func (h *ArtistsHandler) Delete(c *fiber.Ctx) error {
 
 // PATCH /api/artists/:id - Update artist monitoring settings
 func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
-	user, hasAuth := h.resolveAuthenticatedUser(c)
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -169,7 +159,7 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 
 // Sync queues a background discography sync for a monitored artist.
 func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
-	user, hasAuth := h.resolveAuthenticatedUser(c)
+	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
@@ -234,7 +224,7 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 
 // GetForm returns the artist form
 func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
-	user, hasAuth := h.resolveAuthenticatedUser(c)
+	user, hasAuth := currentUserFromLocals(c)
 
 	isHtmx := c.Get("Htmx-Request") == "true"
 
@@ -263,7 +253,7 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 
 // RenderPartial returns artists HTML for HTMX
 func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
-	user, hasAuth := h.resolveAuthenticatedUser(c)
+	user, hasAuth := currentUserFromLocals(c)
 
 	isHtmx := c.Get("Htmx-Request") == "true"
 

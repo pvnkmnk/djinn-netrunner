@@ -9,7 +9,7 @@ import (
 
 // profileListColumns are the columns needed for the profiles list view.
 // Update this when the QualityProfile struct changes.
-const profileListColumns = "id, name, is_default, description, prefer_lossless, allowed_formats, min_bitrate, cover_art_sources"
+const profileListColumns = "id, name, is_default, description, prefer_lossless, allowed_formats, min_bitrate, cover_art_sources, owner_user_id"
 
 type ProfileHandler struct {
 	db *gorm.DB
