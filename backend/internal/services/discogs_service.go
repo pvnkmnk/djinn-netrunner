@@ -75,7 +75,15 @@ type DiscogsSearchItem struct {
 
 // NewDiscogsService creates a new Discogs service.
 // If baseURL is non-empty it will be used instead of the default Discogs API URL.
+// If httpClient is provided it will be used instead of creating one (useful for tests).
 func NewDiscogsService(cfg *config.Config, baseURLs ...string) *DiscogsService {
+	return NewDiscogsServiceWithClient(cfg, nil, baseURLs...)
+}
+
+// NewDiscogsServiceWithClient creates a new Discogs service with an optional
+// pre-configured HTTP client. If httpClient is nil, a safe SSRF-protected
+// client is created automatically.
+func NewDiscogsServiceWithClient(cfg *config.Config, httpClient *http.Client, baseURLs ...string) *DiscogsService {
 	token := ""
 	if cfg != nil {
 		token = cfg.DiscogsToken
@@ -85,11 +93,12 @@ func NewDiscogsService(cfg *config.Config, baseURLs ...string) *DiscogsService {
 		baseURL = baseURLs[0]
 	}
 
-	var httpClient *http.Client
-	if cfg != nil {
-		httpClient = NewProxyAwareHTTPClient(cfg, 30*time.Second)
-	} else {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+	if httpClient == nil {
+		if cfg != nil {
+			httpClient = NewSafeProxyAwareHTTPClient(cfg, 30*time.Second)
+		} else {
+			httpClient = NewSafeHTTPClient(30 * time.Second)
+		}
 	}
 
 	return &DiscogsService{

@@ -7,9 +7,16 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 )
+
+// testHTTPClient returns a plain HTTP client without SSRF validation,
+// safe for tests with httptest mock servers on 127.0.0.1.
+func testHTTPClient() *http.Client {
+	return &http.Client{Timeout: 10 * time.Second}
+}
 
 // discogsMockSearchResponse mirrors the Discogs /database/search response structure.
 type discogsMockSearchResponse struct {
@@ -57,7 +64,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		url, err := svc.GetCoverArt("Radiohead", "OK Computer")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -75,7 +82,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		_, err := svc.GetCoverArt("nonexistent", "notfound")
 		if err == nil {
 			t.Error("expected error for no results")
@@ -91,7 +98,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		_, err := svc.GetCoverArt("Radiohead", "OK Computer")
 		if err == nil {
 			t.Error("expected error for server error")
@@ -116,7 +123,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		url, err := svc.GetCoverArt("Radiohead", "OK Computer")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -141,7 +148,7 @@ func TestDiscogsService_GetCoverArt(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		url, err := svc.GetCoverArt("Radiohead", "OK Computer")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -176,7 +183,7 @@ func TestDiscogsService_SearchRelease(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		result, err := svc.SearchRelease("Radiohead", "OK Computer")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -197,7 +204,7 @@ func TestDiscogsService_SearchRelease(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		_, err := svc.SearchRelease("Radiohead", "OK Computer")
 		if err == nil {
 			t.Error("expected error for rate limit")
@@ -214,7 +221,7 @@ func TestDiscogsService_SearchRelease(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		_, err := svc.SearchRelease("Radiohead", "OK Computer")
 		if err == nil {
 			t.Error("expected error for invalid JSON")
@@ -256,7 +263,7 @@ func TestDiscogsService_GetGenre(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		genre, err := svc.GetGenre("Radiohead", "OK Computer")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -274,7 +281,7 @@ func TestDiscogsService_GetGenre(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		_, err := svc.GetGenre("nonexistent", "notfound")
 		if err == nil {
 			t.Error("expected error for no results")
@@ -300,7 +307,7 @@ func TestDiscogsService_GetYear(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		year, err := svc.GetYear("Radiohead", "OK Computer")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -323,7 +330,7 @@ func TestDiscogsService_GetYear(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		year, err := svc.GetYear("Pink Floyd", "The Wall")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -346,7 +353,7 @@ func TestDiscogsService_GetYear(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		year, err := svc.GetYear("Unknown", "Unknown")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -378,7 +385,7 @@ func TestDiscogsService_EnrichTrack(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		enriched, err := svc.EnrichTrack("Radiohead", "OK Computer")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -402,7 +409,7 @@ func TestDiscogsService_EnrichTrack(t *testing.T) {
 		}))
 		defer server.Close()
 
-		svc := NewDiscogsService(&config.Config{DiscogsToken: "test-token"}, server.URL)
+		svc := NewDiscogsServiceWithClient(&config.Config{DiscogsToken: "test-token"}, testHTTPClient(), server.URL)
 		_, err := svc.EnrichTrack("nonexistent", "notfound")
 		if err == nil {
 			t.Error("expected error for no results")

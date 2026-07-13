@@ -196,3 +196,102 @@ func TestProxyAwareHTTPClient_ProviderIntegration(t *testing.T) {
 	assert.Equal(t, proxyClient, dp.httpClient, "DiscogsProvider should use injected client")
 	assert.Equal(t, proxyClient, lfm.httpClient, "LastFMProvider should use injected client")
 }
+
+// TestNewSafeProxyAwareHTTPClient_NoProxy tests that NewSafeProxyAwareHTTPClient
+// returns a client with safe transport when no proxy is configured.
+func TestNewSafeProxyAwareHTTPClient_NoProxy(t *testing.T) {
+	cfg := &config.Config{ProxyURL: ""}
+	client := NewSafeProxyAwareHTTPClient(cfg, 5*time.Second)
+
+	assert.NotNil(t, client)
+	assert.Equal(t, 5*time.Second, client.Timeout)
+	// Verify the transport has safeDialContext configured
+	assert.NotNil(t, client.Transport)
+}
+
+// TestNewSafeProxyAwareHTTPClient_Proxy tests that NewSafeProxyAwareHTTPClient
+// creates a client with safeAddressValidator when a proxy URL is configured,
+// and rejects requests to private IP targets.
+func TestNewSafeProxyAwareHTTPClient_Proxy(t *testing.T) {
+	var proxiedRequests atomic.Int64
+
+	// Upstream API server (simulates MusicBrainz / Discogs)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer upstream.Close()
+
+	// MITM proxy that forwards to the upstream
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxiedRequests.Add(1)
+
+		targetURL := r.URL.String()
+		if r.URL.Host == "" {
+			targetURL = r.RequestURI
+		}
+
+		proxyReq, err := http.NewRequest(r.Method, targetURL, r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		proxyReq.Header = r.Header
+
+		resp, err := http.DefaultTransport.RoundTrip(proxyReq)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+
+		for k, vv := range resp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	}))
+	defer proxy.Close()
+
+	cfg := &config.Config{ProxyURL: proxy.URL}
+	client := NewSafeProxyAwareHTTPClient(cfg, 10*time.Second)
+
+	// The safe proxy client should reject requests to private IP targets,
+	// even when a proxy is configured.
+	upstreamURL := upstream.URL // e.g., http://127.0.0.1:PORT
+	_, err := client.Get(upstreamURL + "/ws/2/release?query=test")
+	require.Error(t, err, "requests to private IP targets should be rejected")
+	assert.Contains(t, err.Error(), "ssrf: target")
+	assert.Contains(t, err.Error(), "private IP")
+
+	// The request should NOT have reached the proxy
+	assert.Equal(t, int64(0), proxiedRequests.Load(),
+		"no requests should reach the proxy for private IP targets")
+}
+
+// TestNewSafeProxyAwareHTTPClient_ProxyConstructed validates that
+// NewSafeProxyAwareHTTPClient returns a correctly configured client with the
+// safeAddressValidator transport when a proxy URL is set.
+func TestNewSafeProxyAwareHTTPClient_ProxyConstructed(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxy.Close()
+
+	cfg := &config.Config{ProxyURL: proxy.URL}
+	client := NewSafeProxyAwareHTTPClient(cfg, 10*time.Second)
+
+	assert.NotNil(t, client)
+	assert.Equal(t, 10*time.Second, client.Timeout)
+	_, ok := client.Transport.(*safeAddressValidator)
+	assert.True(t, ok, "transport should be a *safeAddressValidator when proxy is set")
+
+	// Invalid proxy URL should fall back to safe client
+	cfgBad := &config.Config{ProxyURL: "://invalid"}
+	fallback := NewSafeProxyAwareHTTPClient(cfgBad, 5*time.Second)
+	assert.NotNil(t, fallback)
+	assert.Equal(t, 5*time.Second, fallback.Timeout)
+}

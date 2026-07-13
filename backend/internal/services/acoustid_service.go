@@ -20,7 +20,7 @@ type AcoustIDService struct {
 func NewAcoustIDService(cfg *config.Config) *AcoustIDService {
 	return &AcoustIDService{
 		cfg:        cfg,
-		httpClient: NewProxyAwareHTTPClient(cfg, 15*time.Second),
+		httpClient: NewSafeProxyAwareHTTPClient(cfg, 15*time.Second),
 	}
 }
 

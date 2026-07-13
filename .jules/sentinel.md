@@ -34,3 +34,8 @@
 **Vulnerability:** Non-admin users could promote their own quality profiles to system-wide defaults by setting the `is_default` flag in create/update requests.
 **Learning:** Resource attributes that affect global system state (like a 'default' flag) must be explicitly protected by role-based checks in the API handlers.
 **Prevention:** In handlers that accept boolean flags for global settings, verify that the authenticated user has the necessary administrative role before allowing those flags to be modified.
+
+## 2026-04-14 - [SSRF Protection with IPv6 and Proxy Support]
+**Vulnerability:** Naive SSRF filters can be bypassed using IPv4-mapped IPv6 addresses (e.g., ::ffff:127.0.0.1) or redirected to internal services.
+**Learning:** Go's net.IP.To4() should be used to normalize addresses before CIDR checks. Additionally, if an outbound proxy is used, SSRF protection must be delegated to the proxy to avoid blocking legitimate internal proxy connections while still protecting direct dials.
+**Prevention:** Use a centralized safe HTTP client factory that normalizes IPs and provides architectural separation between internal-only and external-facing requests.

@@ -67,6 +67,7 @@ func Migrate(db *gorm.DB) error {
 			}
 		}
 
+
 		// Step 3: Convert remaining ENUM columns to text (idempotent if already text or gone).
 		for _, m := range []struct{ table, column, enumType string }{
 			{"jobs", "state", "jobstate"},
