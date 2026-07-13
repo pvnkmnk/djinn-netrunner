@@ -52,6 +52,18 @@ type subsonicResponse struct {
 	Album           *subsonicAlbum   `xml:"album,omitempty" json:"album,omitempty"`
 	Indexes         *subsonicIndexes `xml:"indexes,omitempty" json:"indexes,omitempty"`
 	License         *subsonicLicense `xml:"license,omitempty" json:"license,omitempty"`
+	SearchResult3   *searchResult3   `xml:"searchResult3,omitempty" json:"searchResult3,omitempty"`
+	AlbumList2      *albumList2      `xml:"albumList2,omitempty" json:"albumList2,omitempty"`
+	RandomSongs     *randomSongs     `xml:"randomSongs,omitempty" json:"randomSongs,omitempty"`
+	ScanStatus      *scanStatus      `xml:"scanStatus,omitempty" json:"scanStatus,omitempty"`
+}
+
+// respond formats and sends a Subsonic response as XML or JSON based on the f parameter
+func (h *SubsonicHandler) respond(c *fiber.Ctx, resp *subsonicResponse) error {
+	if c.Query("f") == "json" {
+		return h.respondJSON(c, resp)
+	}
+	return h.respondXML(c, resp)
 }
 
 type subsonicError struct {
@@ -113,6 +125,25 @@ type subsonicArtist struct {
 
 type subsonicLicense struct {
 	Valid bool `xml:"valid,attr" json:"valid"`
+}
+
+type searchResult3 struct {
+	Artist []subsonicArtist `xml:"artist,omitempty" json:"artist,omitempty"`
+	Album  []subsonicAlbum  `xml:"album,omitempty" json:"album,omitempty"`
+	Song   []subsonicSong   `xml:"song,omitempty" json:"song,omitempty"`
+}
+
+type albumList2 struct {
+	Album []subsonicAlbum `xml:"album,omitempty" json:"album,omitempty"`
+}
+
+type randomSongs struct {
+	Song []subsonicSong `xml:"song,omitempty" json:"song,omitempty"`
+}
+
+type scanStatus struct {
+	Scanning bool `xml:"scanning,attr" json:"scanning"`
+	Count    int  `xml:"count,attr" json:"count"`
 }
 
 // AuthMiddleware validates Subsonic authentication parameters
@@ -180,11 +211,7 @@ func (h *SubsonicHandler) respondError(c *fiber.Ctx, code int, message string) e
 		Error:   error,
 	}
 
-	format := c.Query("f", "xml")
-	if format == "json" {
-		return h.respondJSON(c, resp)
-	}
-	return h.respondXML(c, resp)
+	return h.respond(c, resp)
 }
 
 // Ping handles the ping endpoint
@@ -195,28 +222,19 @@ func (h *SubsonicHandler) Ping(c *fiber.Ctx) error {
 		Type:    "netrunner",
 	}
 
-	format := c.Query("f", "xml")
-	if format == "json" {
-		return h.respondJSON(c, resp)
-	}
-	return h.respondXML(c, resp)
+	return h.respond(c, resp)
 }
 
 // License handles the license endpoint
 func (h *SubsonicHandler) License(c *fiber.Ctx) error {
-	license := &subsonicLicense{Valid: true}
 	resp := &subsonicResponse{
-		Status:    "ok",
-		Version:   "1.16.1",
-		Type:      "netrunner",
-		License:   license,
+		Status:  "ok",
+		Version: "1.16.1",
+		Type:    "netrunner",
+		License: &subsonicLicense{Valid: true},
 	}
 
-	format := c.Query("f", "xml")
-	if format == "json" {
-		return h.respondJSON(c, resp)
-	}
-	return h.respondXML(c, resp)
+	return h.respond(c, resp)
 }
 
 // GetIndexes handles the getIndexes endpoint
@@ -284,11 +302,7 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 		Indexes:    &subsonicIndexes{LastModified: lastModified, Index: indexes},
 	}
 
-	format := c.Query("f", "xml")
-	if format == "json" {
-		return h.respondJSON(c, resp)
-	}
-	return h.respondXML(c, resp)
+	return h.respond(c, resp)
 }
 
 // GetMusicDirectory handles the getMusicDirectory endpoint
@@ -345,11 +359,7 @@ func (h *SubsonicHandler) GetMusicDirectory(c *fiber.Ctx) error {
 		MusicDirectory: &directory,
 	}
 
-	format := c.Query("f", "xml")
-	if format == "json" {
-		return h.respondJSON(c, resp)
-	}
-	return h.respondXML(c, resp)
+	return h.respond(c, resp)
 }
 
 // getArtistDirectory returns a directory for an artist
@@ -550,11 +560,7 @@ func (h *SubsonicHandler) GetSong(c *fiber.Ctx) error {
 		Song:    song,
 	}
 
-	format := c.Query("f", "xml")
-	if format == "json" {
-		return h.respondJSON(c, resp)
-	}
-	return h.respondXML(c, resp)
+	return h.respond(c, resp)
 }
 
 // GetAlbum handles the getAlbum endpoint
@@ -622,11 +628,7 @@ func (h *SubsonicHandler) GetAlbum(c *fiber.Ctx) error {
 		Album:   album,
 	}
 
-	format := c.Query("f", "xml")
-	if format == "json" {
-		return h.respondJSON(c, resp)
-	}
-	return h.respondXML(c, resp)
+	return h.respond(c, resp)
 }
 
 // GetArtist handles the getArtist endpoint
@@ -684,11 +686,7 @@ h.db.Table("tracks").
 		Indexes: &subsonicIndexes{Index: []subsonicIndex{{Name: "A", Artist: []subsonicArtist{*artist}}}},
 	}
 
-	format := c.Query("f", "xml")
-	if format == "json" {
-		return h.respondJSON(c, resp)
-	}
-	return h.respondXML(c, resp)
+	return h.respond(c, resp)
 }
 
 // Stream handles the stream endpoint
@@ -813,4 +811,346 @@ func findCoverArtInDirectory(path string) string {
 		}
 	}
 	return ""
+}
+
+// Search3 handles the search3 endpoint
+func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return h.respondError(c, 40, "Authentication required")
+	}
+
+	// Parse query parameters
+	query := c.Query("query")
+	if query == "" {
+		return h.respondError(c, 10, "Missing parameter: query")
+	}
+
+	artistCount := 20
+	if count := c.Query("artistCount"); count != "" {
+		if parsed, err := strconv.Atoi(count); err == nil && parsed > 0 {
+			artistCount = parsed
+		}
+	}
+
+	albumCount := 20
+	if count := c.Query("albumCount"); count != "" {
+		if parsed, err := strconv.Atoi(count); err == nil && parsed > 0 {
+			albumCount = parsed
+		}
+	}
+
+	songCount := 20
+	if count := c.Query("songCount"); count != "" {
+		if parsed, err := strconv.Atoi(count); err == nil && parsed > 0 {
+			songCount = parsed
+		}
+	}
+
+	// Parse the search query
+	q := "%" + strings.ToLower(query) + "%"
+
+	// Search songs (tracks)
+	var tracks []database.Track
+	h.db.Table("tracks").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Where("libraries.owner_user_id = ? AND (LOWER(title) LIKE ? OR LOWER(artist) LIKE ? OR LOWER(album) LIKE ?)", user.ID, q, q, q).
+		Limit(songCount).
+		Find(&tracks)
+
+	// Search artists (distinct)
+	var artists []struct{ Name string }
+	h.db.Table("tracks").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Where("libraries.owner_user_id = ? AND LOWER(artist) LIKE ?", user.ID, q).
+		Select("DISTINCT artist").
+		Limit(artistCount).
+		Find(&artists)
+
+	// Search albums (distinct album+artist)
+	var albums []struct{ Album, Artist string }
+	h.db.Table("tracks").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Where("libraries.owner_user_id = ? AND LOWER(album) LIKE ?", user.ID, q).
+		Select("DISTINCT album, artist").
+		Limit(albumCount).
+		Find(&albums)
+
+	// Build search result
+	searchResult := &searchResult3{}
+
+	// Fill artists
+	for _, artist := range artists {
+		// Count tracks for this artist
+		var count int64
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artist.Name).
+			Count(&count)
+
+		searchResult.Artist = append(searchResult.Artist, subsonicArtist{
+			ID:         "artist-" + url.PathEscape(artist.Name),
+			Name:       artist.Name,
+			AlbumCount: int(count),
+		})
+	}
+
+	// Fill albums
+	for _, album := range albums {
+		// Count songs for this album
+		var songCount int64
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, album.Album, album.Artist).
+			Count(&songCount)
+
+		// Get year from first track
+		var firstTrack database.Track
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, album.Album, album.Artist).
+			First(&firstTrack)
+
+		searchResult.Album = append(searchResult.Album, subsonicAlbum{
+			ID:        "album-" + url.PathEscape(album.Album) + "-" + url.PathEscape(album.Artist),
+			Name:      album.Album,
+			Artist:    album.Artist,
+			ArtistID:  "",
+			SongCount: int(songCount),
+			Year:      safeDeref(firstTrack.Year),
+			Genre:     firstTrack.Genre,
+			CoverArt:  firstTrack.CoverURL,
+			Duration:  h.getAlbumDuration(user, album.Album, album.Artist),
+		})
+	}
+
+	// Fill songs
+	for _, track := range tracks {
+		searchResult.Song = append(searchResult.Song, subsonicSong{
+			ID:       track.ID.String(),
+			Title:    track.Title,
+			Artist:   track.Artist,
+			Album:    track.Album,
+			Path:     track.Path,
+			Track:    safeDeref(track.TrackNum),
+			Year:     safeDeref(track.Year),
+			Genre:    track.Genre,
+			Size:     track.FileSize,
+			Format:   track.Format,
+			Duration: h.getTrackDuration(track.Path),
+			ArtistID: "",
+			AlbumID:  "",
+			CoverArt: track.CoverURL,
+		})
+	}
+
+	resp := &subsonicResponse{
+		Status:     "ok",
+		Version:    "1.16.1",
+		Type:       "netrunner",
+		SearchResult3: searchResult,
+	}
+
+	return h.respond(c, resp)
+}
+
+// GetAlbumList2 handles the getAlbumList2 endpoint
+func (h *SubsonicHandler) GetAlbumList2(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return h.respondError(c, 40, "Authentication required")
+	}
+
+	// Parse query parameters
+	listType := c.Query("type")
+	if listType == "" {
+		listType = "random"
+	}
+
+	size := 50
+	if s := c.Query("size"); s != "" {
+		if parsed, err := strconv.Atoi(s); err == nil && parsed > 0 {
+			size = parsed
+		}
+	}
+
+	offset := 0
+	if o := c.Query("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	// Query distinct album+artist combinations from tracks
+	type albumRow struct {
+		Album  string
+		Artist string
+		Year   *int
+		Genre  string
+	}
+
+	var rows []albumRow
+
+	tx := h.db.Table("tracks").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Where("libraries.owner_user_id = ?", user.ID).
+		Select("album, artist, MAX(year) as year").
+		Group("album, artist")
+
+	switch listType {
+	case "random":
+		tx = tx.Order("RANDOM()")
+	case "newest":
+		tx = tx.Order("COALESCE(MAX(year), 0) DESC")
+	case "alphabeticalByName":
+		tx = tx.Order("album")
+	case "alphabeticalByArtist":
+		tx = tx.Order("artist, album")
+	default:
+		tx = tx.Order("album")
+	}
+
+	tx.Offset(offset).Limit(size).Find(&rows)
+
+	// Build album list result
+	albumList := &albumList2{}
+
+	for _, row := range rows {
+		// Get song count and total duration
+		var songCount int64
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, row.Album, row.Artist).
+			Count(&songCount)
+
+		var totalDuration int
+		var tracks []database.Track
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, row.Album, row.Artist).
+			Find(&tracks)
+
+		for _, track := range tracks {
+			totalDuration += h.getTrackDuration(track.Path)
+		}
+
+		albumList.Album = append(albumList.Album, subsonicAlbum{
+			ID:        "album-" + url.PathEscape(row.Album) + "-" + url.PathEscape(row.Artist),
+			Name:      row.Album,
+			Artist:    row.Artist,
+			ArtistID:  "",
+			SongCount: int(songCount),
+			Year:      safeDeref(row.Year),
+			Genre:     row.Genre,
+			CoverArt:  "", // Would need to get from first track
+			Duration:  totalDuration,
+		})
+	}
+
+	resp := &subsonicResponse{
+		Status:     "ok",
+		Version:    "1.16.1",
+		Type:       "netrunner",
+		AlbumList2: albumList,
+	}
+
+	return h.respond(c, resp)
+}
+
+// GetRandomSongs handles the getRandomSongs endpoint
+func (h *SubsonicHandler) GetRandomSongs(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return h.respondError(c, 40, "Authentication required")
+	}
+
+	// Parse query parameters
+	size := 10
+	if s := c.Query("size"); s != "" {
+		if parsed, err := strconv.Atoi(s); err == nil && parsed > 0 {
+			size = parsed
+		}
+	}
+
+	// Query random tracks
+	var tracks []database.Track
+
+h.db.Table("tracks").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Where("libraries.owner_user_id = ?", user.ID).
+		Order("RANDOM()").
+		Limit(size).
+		Find(&tracks)
+
+	// Build random songs result
+	randomSongs := &randomSongs{}
+
+	for _, track := range tracks {
+		randomSongs.Song = append(randomSongs.Song, subsonicSong{
+			ID:       track.ID.String(),
+			Title:    track.Title,
+			Artist:   track.Artist,
+			Album:    track.Album,
+			Path:     track.Path,
+			Track:    safeDeref(track.TrackNum),
+			Year:     safeDeref(track.Year),
+			Genre:    track.Genre,
+			Size:     track.FileSize,
+			Format:   track.Format,
+			Duration: h.getTrackDuration(track.Path),
+			ArtistID: "",
+			AlbumID:  "",
+			CoverArt: track.CoverURL,
+		})
+	}
+
+	resp := &subsonicResponse{
+		Status:      "ok",
+		Version:     "1.16.1",
+		Type:        "netrunner",
+		RandomSongs: randomSongs,
+	}
+
+	return h.respond(c, resp)
+}
+
+// GetScanStatus handles the getScanStatus endpoint
+func (h *SubsonicHandler) GetScanStatus(c *fiber.Ctx) error {
+	// For now, return a scan status indicating scanning is not running
+	// In a real implementation, this would check for scan jobs
+	scanStatus := &scanStatus{
+		Scanning: false,
+		Count:    0,
+	}
+
+	resp := &subsonicResponse{
+		Status:   "ok",
+		Version:  "1.16.1",
+		Type:     "netrunner",
+		ScanStatus: scanStatus,
+	}
+
+	return h.respond(c, resp)
+}
+
+// StartScan handles the startScan endpoint
+func (h *SubsonicHandler) StartScan(c *fiber.Ctx) error {
+	// For now, just return a scan status indicating scanning is not running
+	// In a real implementation, this would trigger a scan job
+	return h.GetScanStatus(c)
+}
+
+// getAlbumDuration calculates the total duration of an album
+func (h *SubsonicHandler) getAlbumDuration(user database.User, albumName, artistName string) int {
+	var tracks []database.Track
+	h.db.Table("tracks").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, albumName, artistName).
+		Find(&tracks)
+
+	totalDuration := 0
+	for _, track := range tracks {
+		totalDuration += h.getTrackDuration(track.Path)
+	}
+	return totalDuration
 }

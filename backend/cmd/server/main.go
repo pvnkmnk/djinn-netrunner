@@ -453,6 +453,11 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		subsonic.Get("/getArtist.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetArtist)
 		subsonic.Get("/stream.view", subsonicHandler.AuthMiddleware, subsonicHandler.Stream)
 		subsonic.Get("/getCoverArt.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetCoverArt)
+		subsonic.Get("/search3.view", subsonicHandler.AuthMiddleware, subsonicHandler.Search3)
+		subsonic.Get("/getAlbumList2.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetAlbumList2)
+		subsonic.Get("/getRandomSongs.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetRandomSongs)
+		subsonic.Get("/getScanStatus.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetScanStatus)
+		subsonic.Get("/startScan.view", subsonicHandler.AuthMiddleware, subsonicHandler.StartScan)
 	}
 }
 
