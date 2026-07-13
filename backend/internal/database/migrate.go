@@ -119,6 +119,8 @@ func Migrate(db *gorm.DB) error {
 		&JobItem{},
 		&Acquisition{}, &Library{},
 		&Track{},
+		&Playlist{},
+		&PlaylistTrack{},
 		&Schedule{},
 		&MetadataCache{},
 		&Lock{},

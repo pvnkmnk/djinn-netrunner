@@ -131,6 +131,7 @@ func main() {
 	schedulesHandler := api.NewSchedulesHandler(db)
 	acquireHandler := api.NewAcquireHandler(db)
 	adminHandler := api.NewAdminHandler(db)
+	playlistHandler := api.NewPlaylistHandler(db)
 
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
@@ -165,7 +166,7 @@ func main() {
 	}()
 
 	// Routes
-	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler, adminHandler)
+	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler, adminHandler, playlistHandler)
 
 	// Start server
 	go func() {
@@ -192,7 +193,7 @@ func listenAddress(cfg *config.Config) string {
 	return ":" + port
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler, adminHandler *api.AdminHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler, adminHandler *api.AdminHandler, playlistHandler *api.PlaylistHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -254,6 +255,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/artists", auth.AuthMiddleware, artistsHandler.ArtistsPage)
 	app.Get("/jobs", auth.AuthMiddleware, stats.JobsPage)
 	app.Get("/admin", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.AdminPage)
+	app.Get("/playlists", auth.AuthMiddleware, playlistHandler.PlaylistsPage)
 
 	// Partial routes (all protected)
 	app.Get("/partials/stats", auth.AuthMiddleware, stats.RenderStatsPartial)
@@ -268,6 +270,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/partials/libraries/:id/browse", auth.AuthMiddleware, library.BrowseTracks)
 	app.Get("/partials/tracks/:id", auth.AuthMiddleware, library.TrackDetail)
 	app.Get("/partials/acquire-form", auth.AuthMiddleware, acquireHandler.GetForm)
+	app.Get("/partials/playlists", auth.AuthMiddleware, playlistHandler.RenderPlaylistsPartial)
 
 	// Admin partial routes
 	app.Get("/partials/admin/users", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderUsersPartial)
@@ -328,6 +331,17 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	libraryRoutes.Post("/:id/enrich", library.TriggerEnrich)
 	libraryRoutes.Post("/:id/prune", library.TriggerPrune)
 	libraryRoutes.Get("/:id/tracks", library.ListTracks)
+
+	// Playlists
+	playlistRoutes := apiProtected.Group("/playlists")
+	playlistRoutes.Get("/", playlistHandler.List)
+	playlistRoutes.Post("/", playlistHandler.Create)
+	playlistRoutes.Get("/:id", playlistHandler.Get)
+	playlistRoutes.Patch("/:id", playlistHandler.Update)
+	playlistRoutes.Delete("/:id", playlistHandler.Delete)
+	playlistRoutes.Post("/:id/tracks", playlistHandler.AddTrack)
+	playlistRoutes.Delete("/:id/tracks/:trackId", playlistHandler.RemoveTrack)
+	playlistRoutes.Put("/:id/tracks/order", playlistHandler.Reorder)
 
 	// Stats
 	statsRoutes := apiProtected.Group("/stats")
@@ -458,6 +472,10 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		subsonic.Get("/getRandomSongs.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetRandomSongs)
 		subsonic.Get("/getScanStatus.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetScanStatus)
 		subsonic.Get("/startScan.view", subsonicHandler.AuthMiddleware, subsonicHandler.StartScan)
+		subsonic.Get("/getPlaylists.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetPlaylists)
+		subsonic.Get("/getPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetPlaylist)
+		subsonic.Get("/createPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.CreatePlaylist)
+		subsonic.Get("/deletePlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.DeletePlaylist)
 	}
 }
 
