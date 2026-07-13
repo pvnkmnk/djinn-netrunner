@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"html"
 	"log/slog"
 	"time"
 
@@ -198,7 +199,7 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 	).First(&existingJob).Error; err == nil {
 		c.Set("HX-Trigger", "sync-already-active")
 		if isHTMXRequest(c) {
-			return c.SendString("<div class=\"scan-status\">Sync already active for artist " + artist.Name + " (job #" + fmt.Sprintf("%d", existingJob.ID) + ")</div>")
+			return c.Type("html").SendString("<div class=\"scan-status\">Sync already active for artist " + html.EscapeString(artist.Name) + " (job #" + fmt.Sprintf("%d", existingJob.ID) + ")</div>")
 		}
 		return c.JSON(fiber.Map{
 			"status": "sync_already_active",
@@ -226,7 +227,7 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 
 	c.Set("HX-Trigger", "sync-queued")
 	if isHTMXRequest(c) {
-		return c.SendString("<div class=\"scan-status\">Sync triggered for artist " + artist.Name + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+		return c.Type("html").SendString("<div class=\"scan-status\">Sync triggered for artist " + html.EscapeString(artist.Name) + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
 	}
 	return c.JSON(fiber.Map{
 		"status": "sync_queued",

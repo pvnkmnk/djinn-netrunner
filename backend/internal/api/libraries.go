@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -304,7 +305,7 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 	}
 
 	if isHTMXRequest(c) {
-		return c.SendString("<div class=\"scan-status\">Scan triggered for library " + library.Name + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+		return c.Type("html").SendString("<div class=\"scan-status\">Scan triggered for library " + html.EscapeString(library.Name) + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
 	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "scan job queued",
@@ -352,7 +353,7 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 	}
 
 	if isHTMXRequest(c) {
-		return c.SendString("<div class=\"scan-status\">Enrich triggered for library " + library.Name + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+		return c.Type("html").SendString("<div class=\"scan-status\">Enrich triggered for library " + html.EscapeString(library.Name) + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
 	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "enrich job queued",
@@ -400,7 +401,7 @@ func (h *LibraryHandler) TriggerPrune(c *fiber.Ctx) error {
 	}
 
 	if isHTMXRequest(c) {
-		return c.SendString("<div class=\"scan-status\">Prune triggered for library " + library.Name + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+		return c.Type("html").SendString("<div class=\"scan-status\">Prune triggered for library " + html.EscapeString(library.Name) + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
 	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "prune job queued",

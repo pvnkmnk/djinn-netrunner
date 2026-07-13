@@ -399,11 +399,16 @@ func (h *ProfileHandler) RenderProfilesPartial(c *fiber.Ctx) error {
 	})
 }
 
-// SetDefault sets a profile as the default
+// SetDefault sets a profile as the default (admin only — default profiles are system-wide)
 func (h *ProfileHandler) SetDefault(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	// Default profiles are global — only admins can change the system default
+	if user.Role != "admin" {
+		return c.Status(403).JSON(fiber.Map{"error": "admin only"})
 	}
 
 	id, err := uuid.Parse(c.Params("id"))
@@ -412,11 +417,7 @@ func (h *ProfileHandler) SetDefault(c *fiber.Ctx) error {
 	}
 
 	var profile database.QualityProfile
-	query := h.db.Where("id = ?", id)
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
-	}
-	if err := query.First(&profile).Error; err != nil {
+	if err := h.db.Where("id = ?", id).First(&profile).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
 		}
@@ -425,7 +426,7 @@ func (h *ProfileHandler) SetDefault(c *fiber.Ctx) error {
 
 	// Clear is_default on all profiles and set it on the target
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&database.QualityProfile{}).Where("owner_user_id = ? OR is_default = ?", user.ID, true).Update("is_default", false).Error; err != nil {
+		if err := tx.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
 			return err
 		}
 		profile.IsDefault = true

@@ -26,7 +26,7 @@
             <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ library.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit library {{ library.Name | escape }}">
                 Edit
             </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ library.ID }}" hx-target="#library-{{ library.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete library {{ library.Name | escape }}?" aria-label="Delete library {{ library.Name | escape }}">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/libraries/{{ library.ID }}" hx-target="closest .libraries-region" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete library {{ library.Name | escape }}?" aria-label="Delete library {{ library.Name | escape }}">
                 Delete
             </button>
         </div>

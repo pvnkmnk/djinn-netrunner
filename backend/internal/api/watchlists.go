@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"html"
 	"log/slog"
 	"time"
 
@@ -319,8 +320,8 @@ func (h *WatchlistHandler) SyncWatchlist(c *fiber.Ctx) error {
 
 	if err := h.db.Create(&job).Error; err != nil {
 		slog.Error("Failed to create watchlist sync job", "error", err, "watchlistID", wl.ID)
-		return c.Status(500).SendString(`<div class="console-entry error">Failed to trigger sync for watchlist ` + wl.Name + `.</div>`)
+		return c.Status(500).Type("html").SendString(`<div class="console-entry error">Failed to trigger sync for watchlist ` + html.EscapeString(wl.Name) + `.</div>`)
 	}
 
-	return c.SendString(`<div class="console-entry">Sync triggered for watchlist ` + wl.Name + `... (job #` + fmt.Sprintf("%d", job.ID) + `)</div>`)
+	return c.Type("html").SendString(`<div class="console-entry">Sync triggered for watchlist ` + html.EscapeString(wl.Name) + `... (job #` + fmt.Sprintf("%d", job.ID) + `)</div>`)
 }
