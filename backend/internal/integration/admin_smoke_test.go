@@ -46,8 +46,14 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	// to verify the current state and then create a new admin user
 	
 	// Step 4: Create a new admin user via POST /api/admin/users
-	adminCreateBody := `{"email":"admin-smoke-" + t.Name() + "@test.com","password":"AdminPass123!","role":"admin"}`
-	resp, err = client.Post(baseURL+"/api/admin/users", "application/json", bytes.NewReader([]byte(adminCreateBody)))
+	adminEmail := "admin-smoke-" + t.Name() + "@test.com"
+	adminCreatePayload := map[string]string{
+		"email":    adminEmail,
+		"password": "AdminPass123!",
+		"role":     "admin",
+	}
+	adminCreateBody, _ := json.Marshal(adminCreatePayload)
+	resp, err = client.Post(baseURL+"/api/admin/users", "application/json", bytes.NewReader(adminCreateBody))
 	if err != nil {
 		t.Fatalf("Create admin user request failed: %v", err)
 	}
@@ -60,7 +66,6 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	// adminID := createdAdmin["id"] // Not used in this test
 	
 	// Step 5: Login as the newly created admin user
-	adminEmail := "admin-smoke-" + t.Name() + "@test.com"
 	adminLoginBody := `{"email":"` + adminEmail + `","password":"AdminPass123!"}`
 	resp, err = client.Post(baseURL+"/api/auth/login", "application/json", bytes.NewReader([]byte(adminLoginBody)))
 	if err != nil {
@@ -98,8 +103,14 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	t.Logf("Found %d config settings via admin endpoint", len(settings))
 	
 	// Step 8: Create another user via POST /api/admin/users
-	regularBody := `{"email":"regular-smoke-" + t.Name() + "@test.com","password":"RegularPass123!","role":"user"}`
-	resp, err = client.Post(baseURL+"/api/admin/users", "application/json", bytes.NewReader([]byte(regularBody)))
+	regularEmail := "regular-smoke-" + t.Name() + "@test.com"
+	regularPayload := map[string]string{
+		"email":    regularEmail,
+		"password": "RegularPass123!",
+		"role":     "user",
+	}
+	regularBody, _ := json.Marshal(regularPayload)
+	resp, err = client.Post(baseURL+"/api/admin/users", "application/json", bytes.NewReader(regularBody))
 	if err != nil {
 		t.Fatalf("Create regular user request failed: %v", err)
 	}
