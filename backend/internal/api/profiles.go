@@ -425,7 +425,13 @@ func (h *ProfileHandler) SetDefault(c *fiber.Ctx) error {
 
 	// Clear is_default on all profiles and set it on the target
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&database.QualityProfile{}).Where("owner_user_id = ? OR is_default = ?", user.ID, true).Update("is_default", false).Error; err != nil {
+		clearQuery := tx.Model(&database.QualityProfile{})
+		if user.Role != "admin" {
+			clearQuery = clearQuery.Where("owner_user_id = ?", user.ID)
+		} else {
+			clearQuery = clearQuery.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+		}
+		if err := clearQuery.Update("is_default", false).Error; err != nil {
 			return err
 		}
 		profile.IsDefault = true

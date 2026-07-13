@@ -3,8 +3,10 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -259,7 +261,10 @@ func (h *AdminHandler) UpdateConfig(c *fiber.Ctx) error {
 
 	// If HTMX request, return the read-only row HTML
 	if isHTMXRequest(c) {
-		return c.SendString(fmt.Sprintf(`<tr>
+		escapedKey := html.EscapeString(payload.Key)
+		escapedValue := html.EscapeString(payload.Value)
+		encodedKey := url.QueryEscape(payload.Key)
+		return c.Type("html").SendString(fmt.Sprintf(`<tr>
 			<td><code>%s</code></td>
 			<td>%s</td>
 			<td>
@@ -268,7 +273,7 @@ func (h *AdminHandler) UpdateConfig(c *fiber.Ctx) error {
 						hx-target="closest tr"
 						hx-swap="outerHTML">Edit</button>
 			</td>
-		</tr>`, payload.Key, payload.Value, payload.Key))
+		</tr>`, escapedKey, escapedValue, encodedKey))
 	}
 	return c.JSON(fiber.Map{"status": "updated"})
 }
@@ -337,7 +342,10 @@ func (h *AdminHandler) RenderConfigEditPartial(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
-	return c.SendString(fmt.Sprintf(`<tr>
+	escapedKey := html.EscapeString(setting.Key)
+	escapedValue := html.EscapeString(setting.Value)
+	safeID := url.QueryEscape(setting.Key)
+	return c.Type("html").SendString(fmt.Sprintf(`<tr>
 		<td><code>%s</code></td>
 		<td><input type="text" name="value" value="%s" id="config-value-%s" /></td>
 		<td>
@@ -352,5 +360,5 @@ func (h *AdminHandler) RenderConfigEditPartial(c *fiber.Ctx) error {
 					hx-target="#admin-content"
 					hx-swap="innerHTML">Cancel</button>
 		</td>
-	</tr>`, setting.Key, setting.Value, setting.Key, setting.Key, setting.Key))
+	</tr>`, escapedKey, escapedValue, safeID, safeID, setting.Key))
 }
