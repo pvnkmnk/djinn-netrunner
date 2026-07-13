@@ -92,6 +92,12 @@ type Config struct {
 	NotificationWebhookURL string
 	NotificationEnabled    bool
 
+	// Subsonic
+	Subsonic struct {
+		Enabled  bool   `envconfig:"SUBSONIC_ENABLED" default:"false"`
+		Password string `envconfig:"SUBSONIC_PASSWORD"`
+	}
+
 	// Rate Limiter
 	AuthRateLimitMax        int
 	AuthRateLimitExpiration string
@@ -168,6 +174,13 @@ func applyOverlay(cfg *Config, overlay map[string]interface{}) {
 	}
 	if v, ok := overlay["notification_webhook_url"].(string); ok && v != "" {
 		cfg.NotificationWebhookURL = v
+	}
+	// Subsonic
+	if v, ok := overlay["subsonic_enabled"].(bool); ok {
+		cfg.Subsonic.Enabled = v
+	}
+	if v, ok := overlay["subsonic_password"].(string); ok && v != "" {
+		cfg.Subsonic.Password = v
 	}
 	// Library
 	if v, ok := overlay["music_library_path"].(string); ok && v != "" {
