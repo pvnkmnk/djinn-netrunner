@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log/slog"
@@ -56,6 +57,8 @@ type subsonicResponse struct {
 	AlbumList2      *albumList2      `xml:"albumList2,omitempty" json:"albumList2,omitempty"`
 	RandomSongs     *randomSongs     `xml:"randomSongs,omitempty" json:"randomSongs,omitempty"`
 	ScanStatus      *scanStatus      `xml:"scanStatus,omitempty" json:"scanStatus,omitempty"`
+	Playlists       *subsonicPlaylists `xml:"playlists,omitempty" json:"playlists,omitempty"`
+	Playlist        *subsonicPlaylist `xml:"playlist,omitempty" json:"playlist,omitempty"`
 }
 
 // respond formats and sends a Subsonic response as XML or JSON based on the f parameter
@@ -144,6 +147,44 @@ type randomSongs struct {
 type scanStatus struct {
 	Scanning bool `xml:"scanning,attr" json:"scanning"`
 	Count    int  `xml:"count,attr" json:"count"`
+}
+
+type subsonicPlaylists struct {
+	XMLName   xml.Name          `xml:"playlists" json:"-"`
+	Playlists []subsonicPlaylist `xml:"playlist" json:"playlist"`
+}
+
+type subsonicPlaylist struct {
+	XMLName   xml.Name        `xml:"playlist" json:"-"`
+	ID        string          `xml:"id,attr" json:"id"`
+	Name      string          `xml:"name,attr" json:"name"`
+	Comment   string          `xml:"comment,attr,omitempty" json:"comment,omitempty"`
+	Owner     string          `xml:"owner,attr,omitempty" json:"owner,omitempty"`
+	Public    bool            `xml:"public,attr,omitempty" json:"public,omitempty"`
+	SongCount int             `xml:"songCount,attr" json:"songCount"`
+	Duration  int             `xml:"duration,attr" json:"duration"`
+	Created   string          `xml:"created,attr" json:"created"`
+	Changed   string          `xml:"changed,attr" json:"changed"`
+	Entries   []subsonicChild `xml:"entry,omitempty" json:"entry,omitempty"`
+}
+
+type subsonicChild struct {
+	XMLName   xml.Name `xml:"child" json:"-"`
+	ID        string   `xml:"id,attr" json:"id"`
+	Title     string   `xml:"title,attr" json:"title"`
+	Artist    string   `xml:"artist,attr" json:"artist"`
+	Album     string   `xml:"album,attr" json:"album"`
+	Path      string   `xml:"path,attr" json:"path"`
+	Track     int      `xml:"track,attr" json:"track,omitempty"`
+	Year      int      `xml:"year,attr" json:"year,omitempty"`
+	Genre     string   `xml:"genre,attr" json:"genre,omitempty"`
+	Size      int64    `xml:"size,attr" json:"size,omitempty"`
+	Format    string   `xml:"contentType,attr" json:"contentType,omitempty"`
+	Duration  int      `xml:"duration,attr" json:"duration,omitempty"`
+	ArtistID  string   `xml:"artistId,attr" json:"artistId,omitempty"`
+	AlbumID   string   `xml:"albumId,attr" json:"albumId,omitempty"`
+	CoverArt  string   `xml:"coverArt,attr" json:"coverArt,omitempty"`
+	IsDir     bool     `xml:"isDir,attr" json:"isDir,omitempty"`
 }
 
 // AuthMiddleware validates Subsonic authentication parameters
@@ -1153,4 +1194,248 @@ func (h *SubsonicHandler) getAlbumDuration(user database.User, albumName, artist
 		totalDuration += h.getTrackDuration(track.Path)
 	}
 	return totalDuration
+}
+
+// GetPlaylists handles the getPlaylists endpoint
+func (h *SubsonicHandler) GetPlaylists(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return h.respondError(c, 40, "Not authenticated")
+	}
+
+	var playlists []database.Playlist
+	query := h.db.Order("name ASC")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ? OR public = ?", user.ID, true)
+	}
+	if err := query.Find(&playlists).Error; err != nil {
+		return h.respondError(c, 0, "Failed to fetch playlists")
+	}
+
+	// For each playlist, count tracks
+	var result []subsonicPlaylist
+	for _, p := range playlists {
+		var count int64
+		h.db.Model(&database.PlaylistTrack{}).Where("playlist_id = ?", p.ID).Count(&count)
+
+		// Get owner name
+		var ownerName string
+		if p.OwnerUserID != nil {
+			var owner database.User
+			h.db.First(&owner, *p.OwnerUserID)
+			ownerName = owner.Email
+		}
+
+		result = append(result, subsonicPlaylist{
+			ID:        p.ID.String(),
+			Name:      p.Name,
+			Comment:   p.Description,
+			Owner:     ownerName,
+			Public:    p.Public,
+			SongCount: int(count),
+			Duration:  0, // Track has no duration field
+			Created:   p.CreatedAt.Format(time.RFC3339),
+			Changed:   p.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+
+	return h.respond(c, &subsonicResponse{
+		Status:  "ok",
+		Version: "1.16.1",
+		Type:    "netrunner",
+		Playlists: &subsonicPlaylists{Playlists: result},
+	})
+}
+
+// GetPlaylist handles the getPlaylist endpoint
+func (h *SubsonicHandler) GetPlaylist(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return h.respondError(c, 40, "Not authenticated")
+	}
+
+	id := c.Query("id")
+	if id == "" {
+		return h.respondError(c, 10, "Missing playlist id")
+	}
+
+	playlistUUID, err := uuid.Parse(id)
+	if err != nil {
+		return h.respondError(c, 10, "Invalid playlist id")
+	}
+
+	var playlist database.Playlist
+	if err := h.db.First(&playlist, "id = ?", playlistUUID).Error; err != nil {
+		return h.respondError(c, 70, "Playlist not found")
+	}
+
+	// Check access
+	if !playlist.Public && user.Role != "admin" && (playlist.OwnerUserID == nil || *playlist.OwnerUserID != user.ID) {
+		return h.respondError(c, 50, "Access denied")
+	}
+
+	// Get ordered tracks
+	var playlistTracks []database.PlaylistTrack
+	h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track").Find(&playlistTracks)
+
+	var ownerName string
+	if playlist.OwnerUserID != nil {
+		var owner database.User
+		h.db.First(&owner, *playlist.OwnerUserID)
+		ownerName = owner.Email
+	}
+
+	var entries []subsonicChild
+	for _, pt := range playlistTracks {
+		entries = append(entries, subsonicChild{
+			ID:        pt.Track.ID.String(),
+			Title:     pt.Track.Title,
+			Artist:    pt.Track.Artist,
+			Album:     pt.Track.Album,
+			Path:      pt.Track.Path,
+			Track:     safeDeref(pt.Track.TrackNum),
+			Year:      safeDeref(pt.Track.Year),
+			Genre:     pt.Track.Genre,
+			Size:      pt.Track.FileSize,
+			Format:    pt.Track.Format,
+			Duration:  h.getTrackDuration(pt.Track.Path),
+			CoverArt:  pt.Track.CoverURL,
+		})
+	}
+
+	return h.respond(c, &subsonicResponse{
+		Status:  "ok",
+		Version: "1.16.1",
+		Type:    "netrunner",
+		Playlist: &subsonicPlaylist{
+			ID:        playlist.ID.String(),
+			Name:      playlist.Name,
+			Comment:   playlist.Description,
+			Owner:     ownerName,
+			Public:    playlist.Public,
+			SongCount: len(entries),
+			Duration:  0,
+			Created:   playlist.CreatedAt.Format(time.RFC3339),
+			Changed:   playlist.UpdatedAt.Format(time.RFC3339),
+			Entries:   entries,
+		},
+	})
+}
+
+// CreatePlaylist handles the createPlaylist endpoint
+func (h *SubsonicHandler) CreatePlaylist(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return h.respondError(c, 40, "Not authenticated")
+	}
+
+	playlistID := c.Query("playlistId")
+	name := c.Query("name")
+
+	if playlistID != "" {
+		// Update existing playlist name
+		playlistUUID, err := uuid.Parse(playlistID)
+		if err != nil {
+			return h.respondError(c, 10, "Invalid playlist id")
+		}
+		var playlist database.Playlist
+		if err := h.db.First(&playlist, "id = ?", playlistUUID).Error; err != nil {
+			return h.respondError(c, 70, "Playlist not found")
+		}
+		if user.Role != "admin" && (playlist.OwnerUserID == nil || *playlist.OwnerUserID != user.ID) {
+			return h.respondError(c, 50, "Access denied")
+		}
+		if name != "" {
+			playlist.Name = name
+			h.db.Save(&playlist)
+		}
+		return h.respond(c, &subsonicResponse{
+			Status:  "ok",
+			Version: "1.16.1",
+			Type:    "netrunner",
+			Playlist: &subsonicPlaylist{
+				ID:   playlist.ID.String(),
+				Name: playlist.Name,
+			},
+		})
+	}
+
+	// Create new playlist
+	if name == "" {
+		return h.respondError(c, 10, "Missing playlist name")
+	}
+
+	playlist := database.Playlist{
+		Name:        name,
+		Description: c.Query("comment", ""),
+		Public:      c.Query("public") == "true",
+		OwnerUserID: &user.ID,
+	}
+	if err := h.db.Create(&playlist).Error; err != nil {
+		return h.respondError(c, 0, "Failed to create playlist")
+	}
+
+	// Add songs if provided
+	songIDs := c.Query("songId") // Subsonic allows multiple songId params
+	// Note: fiber doesn't easily support repeated query params, so we handle comma-separated
+	if songIDs != "" {
+		for i, sid := range strings.Split(songIDs, ",") {
+			trackUUID, err := uuid.Parse(strings.TrimSpace(sid))
+			if err != nil {
+				continue
+			}
+			h.db.Create(&database.PlaylistTrack{
+				PlaylistID: playlist.ID,
+				TrackID:    trackUUID,
+				Position:   i,
+			})
+		}
+	}
+
+	return h.respond(c, &subsonicResponse{
+		Status:  "ok",
+		Version: "1.16.1",
+		Type:    "netrunner",
+		Playlist: &subsonicPlaylist{
+			ID:   playlist.ID.String(),
+			Name: playlist.Name,
+		},
+	})
+}
+
+// DeletePlaylist handles the deletePlaylist endpoint
+func (h *SubsonicHandler) DeletePlaylist(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return h.respondError(c, 40, "Not authenticated")
+	}
+
+	id := c.Query("id")
+	if id == "" {
+		return h.respondError(c, 10, "Missing playlist id")
+	}
+
+	playlistUUID, err := uuid.Parse(id)
+	if err != nil {
+		return h.respondError(c, 10, "Invalid playlist id")
+	}
+
+	var playlist database.Playlist
+	if err := h.db.First(&playlist, "id = ?", playlistUUID).Error; err != nil {
+		return h.respondError(c, 70, "Playlist not found")
+	}
+
+	if user.Role != "admin" && (playlist.OwnerUserID == nil || *playlist.OwnerUserID != user.ID) {
+		return h.respondError(c, 50, "Access denied")
+	}
+
+	// Delete playlist tracks first, then playlist
+	h.db.Where("playlist_id = ?", playlistUUID).Delete(&database.PlaylistTrack{})
+	h.db.Delete(&playlist)
+
+	return h.respond(c, &subsonicResponse{
+		Status:  "ok",
+		Version: "1.16.1",
+		Type:    "netrunner",
+	})
 }
