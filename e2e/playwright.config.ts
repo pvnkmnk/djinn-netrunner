@@ -22,7 +22,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'docker compose --env-file ../.env.e2e -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --build && ./setup-test-db.sh',
+    command: 'docker compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build && ./setup-test-db.sh',
     url: 'http://localhost:8080/api/health',
     reuseExistingServer: !process.env.CI,
     timeout: 180 * 1000, // 3 min for Docker build + startup
