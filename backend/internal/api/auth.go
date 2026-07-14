@@ -145,7 +145,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	// Return JSON for API requests, HTML redirect for browser form submissions
 	acceptHeader := c.Get("Accept")
 	if strings.Contains(acceptHeader, "application/json") || strings.Contains(acceptHeader, "application/*+json") {
-		return c.JSON(fiber.Map{"status": "ok", "session_id": sessionID})
+		return c.JSON(fiber.Map{"status": "ok"})
 	}
 	return c.Redirect("/", 302)
 }

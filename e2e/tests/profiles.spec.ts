@@ -250,10 +250,10 @@ test.describe('Quality Profiles (DJI-427)', () => {
       await expect(updatedCard.locator('.badge')).toContainText('Default');
     });
 
-    test('17. default profile cannot be deleted - try deleting default, verify error', async ({ adminPage: page }) => {
+    test('17. default profile can be deleted when unused - verify deletion succeeds', async ({ adminPage: page }) => {
       // Create a profile and set it as default
       const response = await createProfileViaAPI(page, {
-        name: `NonDeletable Default ${uniqueSuffix}`,
+        name: `Deletable Default ${uniqueSuffix}`,
         is_default: true
       });
       expect(response.status()).toBe(201);
@@ -266,11 +266,9 @@ test.describe('Quality Profiles (DJI-427)', () => {
       const profileCard = page.locator(`#profile-${profile.id}`);
       await expect(profileCard.locator('button:has-text("Set Default")')).not.toBeVisible();
 
-      // Try to delete via API
+      // Delete via API - should succeed since profile is unused
       const deleteResponse = await deleteProfileViaAPI(page, profile.id);
-      // Default profiles can be deleted via API, but in the UI the delete button should still work
-      // This test verifies the API behavior
-      expect(deleteResponse.status()).toBeLessThan(500);
+      expect([200, 204]).toContain(deleteResponse.status());
     });
   });
 

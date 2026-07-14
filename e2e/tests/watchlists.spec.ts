@@ -656,11 +656,8 @@ test.describe('Watchlists Feature - DJI-426', () => {
     await page.locator('#modal-container .modal-close').click();
     await waitForHtmx(page, 500);
 
-    // Modal should be hidden (check that the modal overlay is gone or has no visible modal)
-    const modalOverlay = page.locator('#modal-container .modal-overlay');
-    if (await modalOverlay.isVisible()) {
-      await expect(page.locator('#modal-container .modal')).not.toBeVisible();
-    }
+    // Modal should be hidden
+    await expect(page.locator('#modal-container .modal-overlay')).not.toBeVisible({ timeout: 5000 });
   });
 
   test('30. Click outside modal (overlay) closes modal', async ({ authenticatedPage: page }) => {

@@ -93,12 +93,12 @@ export const test = base.extend<AuthFixtures>({
 
     // Ensure admin exists
     await ensureUserExists(page, ADMIN_USER);
-    
-    // Login fresh for this test
-    await loginViaAPI(page, ADMIN_USER);
 
-    // Promote admin role in database
+    // Promote admin role in database before generating the session
     promoteAdminUser();
+
+    // Login fresh for this test (session will have admin role)
+    await loginViaAPI(page, ADMIN_USER);
 
     await use(page);
     await context.close();

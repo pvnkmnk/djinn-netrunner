@@ -110,6 +110,9 @@ type Config struct {
 	// Rate Limiter
 	AuthRateLimitMax        int
 	AuthRateLimitExpiration string
+
+	// E2E
+	E2EEnableTestAPI bool
 }
 
 // generateSecureSecret generates a cryptographically secure random secret
@@ -305,6 +308,9 @@ func Load(filenames ...string) (*Config, error) {
 		// Rate Limiter
 		AuthRateLimitMax:        getEnvAsInt("AUTH_RATE_LIMIT_MAX", 10),
 		AuthRateLimitExpiration: getEnv("AUTH_RATE_LIMIT_EXPIRATION", "1m"),
+
+		// E2E
+		E2EEnableTestAPI: getEnvBool("E2E_ENABLE_TEST_API", false),
 	}
 
 	// Load YAML config overlays

@@ -88,15 +88,11 @@ test.describe('Dashboard (DJI-424)', () => {
     const statsRegion = page.locator('.stats-region');
     await expect(statsRegion).toBeVisible();
 
-    // Give HTMX time to swap content
-    await page.waitForTimeout(2000);
-
     // Verify the stats region has meaningful content (not just loading text)
+    await expect(statsRegion).not.toHaveText(/^loading\.\.\.\.?$/i, { timeout: 5000 });
     const statsText = await statsRegion.textContent();
     expect(statsText).toBeDefined();
     expect(statsText?.trim().length).toBeGreaterThan(0);
-    // Should not be just "Loading..."
-    expect(statsText?.toLowerCase()).not.toBe('loading...');
   });
 
   // ========================================================================
@@ -161,10 +157,8 @@ test.describe('Dashboard (DJI-424)', () => {
     await page.goto('/');
     await expect(page.locator('.dashboard')).toBeVisible({ timeout: 10000 });
 
-    // Give HTMX time to load
-    await page.waitForTimeout(2000);
-
     const statsRegion = page.locator('.stats-region');
+    await expect(statsRegion).not.toHaveText(/^loading\.\.\.\.?$/i, { timeout: 5000 });
     const watchlistsRegion = page.locator('.watchlists-region');
     const consoleRegion = page.locator('.console-region');
 
@@ -214,8 +208,6 @@ test.describe('Dashboard (DJI-424)', () => {
 
     if (toggleVisible) {
       await navToggle.click();
-      // After clicking, nav should become more visible or show menu
-      await page.waitForTimeout(500);
     }
 
     // Verify nav is functional - either visible or expanded
@@ -279,13 +271,9 @@ test.describe('Dashboard (DJI-424)', () => {
     await page.goto('/');
     await expect(page.locator('.dashboard')).toBeVisible({ timeout: 10000 });
 
-    // Give page time to execute JS
-    await page.waitForTimeout(2000);
-
     // Filter out known benign errors (e.g., favicon 404, CSP violations, network errors)
     const criticalErrors = errors.filter(err =>
       !err.includes('favicon') &&
-      !err.includes('404') &&
       !err.includes('net::ERR') &&
       !err.includes('Content Security Policy') &&
       !err.toLowerCase().includes('csp')

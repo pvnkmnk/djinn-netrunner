@@ -32,7 +32,7 @@ async function subsonicPost(page: any, endpoint: string, params: Record<string, 
     f: 'json',
     ...params
   }).toString();
-  return await page.request.post(`/rest/${endpoint}?${query}`);
+  return await page.request.get(`/rest/${endpoint}?${query}`);
 }
 
 /**
@@ -109,10 +109,12 @@ test.describe('Subsonic API (DJI-433)', () => {
       expect(response.status()).toBe(200);
 
       const data = await parseSubsonicResponse(response);
+      expect(data).toHaveProperty('subsonic-response');
       expect(data['subsonic-response'].status).toBe('ok');
       // indexes may be absent or empty array depending on implementation
       const indexes = data['subsonic-response'].indexes;
       expect(indexes).toBeDefined();
+      expect(indexes === undefined || Array.isArray(indexes.index) || indexes.index === undefined).toBeTruthy();
     });
 
     test('GetAlbumList2 returns empty', async ({ authenticatedPage: page }) => {
@@ -120,6 +122,7 @@ test.describe('Subsonic API (DJI-433)', () => {
       expect(response.status()).toBe(200);
 
       const data = await parseSubsonicResponse(response);
+      expect(data).toHaveProperty('subsonic-response');
       expect(data['subsonic-response'].status).toBe('ok');
       // albumList2 may have empty album array or no albumList2 key
       const albumList = data['subsonic-response'].albumList2;
@@ -131,6 +134,7 @@ test.describe('Subsonic API (DJI-433)', () => {
       expect(response.status()).toBe(200);
 
       const data = await parseSubsonicResponse(response);
+      expect(data).toHaveProperty('subsonic-response');
       expect(data['subsonic-response'].status).toBe('ok');
       // randomSongs may be absent or empty
       const randomSongs = data['subsonic-response'].randomSongs;
@@ -142,6 +146,7 @@ test.describe('Subsonic API (DJI-433)', () => {
       expect(response.status()).toBe(200);
 
       const data = await parseSubsonicResponse(response);
+      expect(data).toHaveProperty('subsonic-response');
       expect(data['subsonic-response'].status).toBe('ok');
       // searchResult3 should exist with empty arrays
       const searchResult = data['subsonic-response'].searchResult3;

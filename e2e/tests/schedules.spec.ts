@@ -67,9 +67,12 @@ async function cleanupSchedules(page: any): Promise<void> {
 // Helper to disable a watchlist
 async function disableWatchlist(page: any, watchlistId: number): Promise<void> {
   const csrfToken = await getCsrfToken(page);
-  await page.request.patch(`/api/watchlists/${watchlistId}/toggle`, {
+  const response = await page.request.patch(`/api/watchlists/${watchlistId}/toggle`, {
     headers: { 'X-CSRF-Token': csrfToken },
   });
+  if (!response.ok()) {
+    throw new Error(`Failed to disable watchlist ${watchlistId}: ${response.status()} ${response.statusText()}`);
+  }
 }
 
 test.describe('Schedules Feature (DJI-429)', () => {
