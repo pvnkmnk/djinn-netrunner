@@ -7,3 +7,5 @@ services:
       AUTH_RATE_LIMIT_MAX: 1000
       # Use test database for E2E tests
       DATABASE_URL: postgresql://musicops:testpass@postgres:5432/musicops_test?sslmode=disable
+      # Enable Subsonic API for E2E tests
+      SUBSONIC_ENABLED: "true"
