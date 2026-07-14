@@ -76,6 +76,14 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 	return c.Status(201).JSON(watchlist)
 }
 
+type UpdateWatchlistInput struct {
+	Name             *string    `json:"name"`
+	SourceType       *string    `json:"source_type"`
+	SourceURI        *string    `json:"source_uri"`
+	QualityProfileID *uuid.UUID `json:"quality_profile_id"`
+	Enabled          *bool      `json:"enabled"`
+}
+
 // UpdateWatchlist updates an existing watchlist
 func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
@@ -98,8 +106,28 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 	}
 
-	if err := c.BodyParser(watchlist); err != nil {
+	var input UpdateWatchlistInput
+	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if input.Name != nil {
+		if *input.Name == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
+		}
+		watchlist.Name = *input.Name
+	}
+	if input.SourceType != nil {
+		watchlist.SourceType = *input.SourceType
+	}
+	if input.SourceURI != nil {
+		watchlist.SourceURI = *input.SourceURI
+	}
+	if input.QualityProfileID != nil {
+		watchlist.QualityProfileID = *input.QualityProfileID
+	}
+	if input.Enabled != nil {
+		watchlist.Enabled = *input.Enabled
 	}
 
 	// Validate again before saving
