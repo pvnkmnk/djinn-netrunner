@@ -392,7 +392,7 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {

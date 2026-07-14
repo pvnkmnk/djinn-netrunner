@@ -226,7 +226,7 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {
@@ -279,7 +279,7 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {

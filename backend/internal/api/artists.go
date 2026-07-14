@@ -242,7 +242,7 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {
@@ -272,7 +272,7 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {
