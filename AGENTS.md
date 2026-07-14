@@ -66,52 +66,25 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 
 ## Environment Variables
 
+See `.env.example` for the full list. Below are the non-obvious or conditionally required ones.
+
 | VAR_NAME | Required | Default | Purpose |
 |---|---|---|---|
-| `ENVIRONMENT` | No | `development` | Runtime environment label |
-| `PORT` | No | `8080` | HTTP server port |
-| `DOMAIN` | No | `localhost` | Caddy host/domain |
-| `JWT_SECRET` | Recommended | auto-generated random secret if unset | Session/auth crypto secret; set explicitly for stable restarts |
-| `DATABASE_URL` | Yes | none | Primary DB connection string (`postgres://...` or SQLite path) |
-| `REDIS_URL` | No | `redis://localhost:6379` | Reserved for redis-backed features/future middleware |
-| `SPOTIFY_CLIENT_ID` | No | empty | Spotify OAuth (optional; sp_dc cookie auth is preferred for user-specific data) |
-| `SPOTIFY_CLIENT_SECRET` | No | empty | Spotify OAuth (optional; sp_dc cookie auth is preferred for user-specific data) |
-| `SPOTIFY_REDIRECT_URI` | No | `http://localhost:8080/api/auth/spotify/callback` | OAuth callback URL override |
-| `MUSICBRAINZ_USER_AGENT` | No | `NetRunner/1.0.0 (contact@example.com)` | MusicBrainz request identity |
-| `MUSICBRAINZ_API_KEY` | No | empty | Optional MusicBrainz key |
-| `ACOUSTID_API_KEY` | No | empty | AcoustID fingerprint lookup |
-| `SLSKD_URL` | No | `http://localhost:5030` | slskd API base URL |
-| `SLSKD_API_KEY` | Yes (for acquisition features) | empty | slskd API auth |
-| `GONIC_URL` | No | `http://localhost:4747` | Gonic/Subsonic API URL |
-| `GONIC_USER` | Conditional | empty | Gonic auth user |
-| `GONIC_PASS` | Conditional | empty | Gonic auth password |
-| `LIDARR_URL` | No | empty | Lidarr API base URL for wanted album import |
-| `LIDARR_API_KEY` | No | empty | Lidarr API authentication key |
+| `DATABASE_URL` | Yes | none | Primary DB connection string (`postgres://...` or SQLite `.db` path) |
+| `SLSKD_API_KEY` | Yes (for acquisition) | empty | slskd API auth |
+| `JWT_SECRET` | Recommended | auto-generated | Session/auth crypto secret; set explicitly for stable restarts |
 | `MUSIC_LIBRARY` | No | `./music_library` | Library root path |
-| `TEMPLATES_PATH` | No | `./ops/web/templates` | Pongo2 template directory |
-| `STATIC_FILES_PATH` | No | `./ops/web/static` | Static files directory |
-| `LASTFM_API_KEY` | No | empty | Last.fm provider access |
-| `LISTENBRAINZ_TOKEN` | No | empty | ListenBrainz provider token |
-| `DISCOGS_TOKEN` | No | empty | Discogs API token |
-| `PROXY_URL` | No | empty | Outbound proxy for service calls |
-| `NOTIFICATION_ENABLED` | No | `false` | Enable webhook notifications |
-| `NOTIFICATION_WEBHOOK_URL` | Conditional | empty | Notification sink URL |
-| `AUTH_RATE_LIMIT_MAX` | No | `10` | Auth endpoint rate-limit max requests |
-| `AUTH_RATE_LIMIT_EXPIRATION` | No | `1m` | Auth rate-limit window |
+| `GONIC_USER` / `GONIC_PASS` | Conditional | empty | Gonic/Subsonic auth |
 | `POSTGRES_PASSWORD` | Docker-only | (required) | Postgres password for compose stack |
-| `SLSKD_USERNAME` | Docker-only | none | slskd Soulseek username |
-| `SLSKD_PASSWORD` | Docker-only | none | slskd Soulseek password |
-| `SLSKD_TEST_USERNAME` | Integration-only | `testuser` | Integration slskd user |
-| `SLSKD_TEST_PASSWORD` | Integration-only | `testpass` | Integration slskd password |
-| `SLSKD_TEST_API_KEY` | Integration-only | `test-api-key-for-integration` | Integration slskd API key |
-| `INTEGRATION_DB_PASSWORD` | Integration-only | `testpass` | Integration Postgres password |
-| `INTEGRATION_SLSKD_URL` | Integration-only | `http://localhost:15030` | Integration test slskd URL |
-| `INTEGRATION_SLSKD_API_KEY` | Integration-only | `test-api-key-for-integration` | Integration test API key |
-| `INTEGRATION_DATABASE_URL` | Integration-only | `postgresql://testuser:testpass@localhost:15432/netrunner_integration?sslmode=disable` | Integration DB connection |
-| `INTEGRATION_SLSKD_USERNAME` | Integration-only | empty | Optional download-flow test user |
-| `INTEGRATION_SLSKD_PASSWORD` | Integration-only | empty | Optional download-flow test password |
-| `SKIP_INTEGRATION_TESTS` | Integration-only | empty | Skip integration tests when `true` |
+| `SLSKD_USERNAME` / `SLSKD_PASSWORD` | Docker-only | none | slskd Soulseek credentials |
+| `SKIP_INTEGRATION_TESTS` | Test-only | empty | Skip integration tests when `true` |
 | `SKIP_NETWORK_TESTS` | Test-only | empty | Skip network-dependent tests |
+
+**Integration-only vars** (for `./scripts/integration-tests.sh`):
+- `INTEGRATION_DATABASE_URL`, `INTEGRATION_SLSKD_URL`, `INTEGRATION_SLSKD_API_KEY`
+- `SLSKD_TEST_USERNAME`, `SLSKD_TEST_PASSWORD`, `SLSKD_TEST_API_KEY`
+- `INTEGRATION_SLSKD_USERNAME`, `INTEGRATION_SLSKD_PASSWORD`
+- `INTEGRATION_DB_PASSWORD`
 
 ## Available Commands
 
@@ -137,19 +110,6 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `cd e2e && npx playwright test` | Run Playwright E2E tests against Docker stack | E2E UI testing |
 | `cd e2e && npx playwright test tests/auth.spec.ts` | Run specific E2E test spec | Targeted E2E testing |
 | `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d` | Start stack with E2E port mapping | E2E test development |
-
-## Multi-Model Council (@council)
-
-For high-stakes decisions, complex debugging, or critical reviews, use `@council <question>` to get parallel analysis from multiple models. The council synthesizes independent perspectives into a structured consensus.
-
-| Preset | Models | Best for |
-|---|---|---|
-| `full` (default) | mimo-v2.5, north-mini-code, nemotron-3-ultra, deepseek-v4-flash | High-stakes decisions, hard bugs, anything critical |
-| `@council[code-review]` | nemotron-3-ultra, mimo-v2.5, deepseek-v4-flash | PR reviews, bug hunts, correctness checks |
-| `@council[architect]` | mimo-v2.5, north-mini-code, nemotron-3-ultra | Architecture decisions, refactor planning, API design |
-| `@council[lean]` | mimo-v2.5, deepseek-v4-flash | Quick sanity checks, low-stakes decisions |
-
-The master synthesizer (`big-pickle`) receives all councillor responses and produces a final consensus. Use `@council[preset] <question>` to select a specific preset.
 
 ## E2E Testing (Playwright)
 
@@ -190,6 +150,13 @@ const csrfToken = await getCsrfToken(page);  // ✅ correct
 const csrfToken = getCsrfToken(page);          // ❌ csrfToken is "[object Promise]" → every request gets 403
 ```
 This is the #1 cause of auth-related E2E failures. `auth.spec.ts` historically had 29 call sites missing `await` (DJI-441).
+
+**CRITICAL: always run from `e2e/` directory.** `npx playwright` from the repo root resolves to a globally-installed playwright (v1.61.0), which mismatches the local `@playwright/test` (v1.61.1) and produces the cryptic error `"test.describe() called from async test.describe() block"`.
+
+**After backend/frontend code changes,** rebuild the Docker stack before re-running E2E tests (the stack runs compiled binaries, not live source):
+```bash
+docker compose --env-file ../.env.e2e -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --build
+```
 
 **CI:** `.github/workflows/e2e.yml` runs on push/PR to main/develop
 
@@ -341,10 +308,6 @@ Schema/migration sources:
 - Coverage:
   - CI uses `go test ./... -coverprofile=coverage.out`
 
-Known caveat (2026-05-07, resolved 2026-05-19):
-- ~~`go test ./...` currently fails in `internal/api` on path-validation expectation mismatches in `libraries_test.go` on this Windows workspace.~~
-- **RESOLVED**: Commit `1250fe4` fixed cross-platform path handling in `libraries_test.go`. All tests pass on both Windows and Linux.
-
 ## Database Driver Behavior
 
 NetRunner supports SQLite WAL and PostgreSQL. The database driver is auto-detected from `DATABASE_URL`:
@@ -436,19 +399,10 @@ The `WorkerOrchestrator` acquires advisory locks per scope ID before processing 
 - **Multiple create handlers don't close the modal after HTMX submit.** The JS listens for `HX-Trigger: closeModal` header, but only `AcquireHandler.Create` sets it. Any new form handler needs `c.Set("HX-Trigger", "closeModal")` before returning the partial (DJI-440).
 
 ## Skill Index
-- `skills/repo-setup.md` - End-to-end local environment setup and first successful validation run.
-- `skills/run-tests.md` - Unit/integration test execution patterns and failure triage.
-- `skills/add-feature.md` - Canonical feature-delivery workflow for this repo.
-- `skills/fix-bug.md` - Structured bug reproduction, isolation, patching, and verification.
-- `skills/data-model.md` - Schema/model update workflow across GORM + SQL migrations.
-- `skills/api-usage.md` - HTTP API, CLI, and MCP interface usage patterns.
-- `skills/deploy.md` - Build/package/deploy and rollback checks for Docker/Caddy stack.
-- `skills/debugging.md` - Logging, tracing, worker/job diagnostics, and common probes.
-- `skills/dependency-management.md` - Dependency update, lock resolution, and vulnerability scanning.
-- `skills/watchlist-operations.md` - Watchlist lifecycle and sync workflow.
-- `skills/artist-monitoring.md` - Monitored artist and release-tracking workflow.
-- `skills/acquisition-pipeline.md` - Queue-to-import acquisition pipeline operations and validation.
-- `release-readiness-review` - Two-phase audit+closure pattern for shipping releases. See `.agents/skills/release-readiness-review/SKILL.md`.
+- `release-readiness-review` — Two-phase audit+closure pattern for shipping releases. See `.agents/skills/release-readiness-review/SKILL.md`.
+- `e2e-test-spec-generator` — Generate Playwright E2E test specs from Linear issue descriptions.
+- `auto-linear-update` — Automatically update Linear issues with E2E test results after test runs.
+- See `.agents/skills/` for additional project-specific skills.
 
 ## Cloned Dependency Source
 
