@@ -1,0 +1,4 @@
+services:
+  ops-web:
+    ports:
+      - "8080:8080"
