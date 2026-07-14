@@ -17,10 +17,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       await expect(page.locator('#login-form button[type="submit"]')).toContainText('Sign In');
     });
 
-    test.skip('shows register form when clicking Create Account', async ({ page }) => {
-      // SKIPPED: Docker container doesn't serve static files (JS not loaded)
-      // This test requires app.js to toggle between login/register cards
-      // Works with manual Go server, fails with Docker
+    test('shows register form when clicking Create Account', async ({ page }) => {
       await page.goto('/');
 
       // Wait for the login card to be visible before interacting
@@ -30,7 +27,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       await page.locator('#show-register').click();
 
       // Wait for the toggle to complete
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(500);
 
       // Register card should be visible, login card hidden
       await expect(page.locator('#register-card')).toBeVisible();
@@ -40,8 +37,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       await expect(page.locator('#register-form button[type="submit"]')).toContainText('Create Account');
     });
 
-    test.skip('toggles back to login from register form', async ({ page }) => {
-      // SKIPPED: Docker container doesn't serve static files (JS not loaded)
+    test('toggles back to login from register form', async ({ page }) => {
       await page.goto('/');
 
       // Wait for the login card to be visible before interacting
@@ -49,12 +45,12 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       // Go to register
       await page.locator('#show-register').click();
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(500);
       await expect(page.locator('#register-card')).toBeVisible();
 
       // Go back to login
       await page.locator('#show-login').click();
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(500);
       await expect(page.locator('#login-card')).toBeVisible();
       await expect(page.locator('#register-card')).toBeHidden();
     });
@@ -115,8 +111,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       await expect(page.locator('.dashboard')).toBeVisible({ timeout: 5000 });
     });
 
-    test.skip('shows error for wrong password', async ({ page }) => {
-      // SKIPPED: Docker container doesn't serve static files (JS not loaded)
+    test('shows error for wrong password', async ({ page }) => {
       // Register first
       const email = `wrongpw-${timestamp}@netrunner.dev`;
       await page.request.post('/api/auth/register', {
@@ -142,8 +137,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       expect(errorText).toMatch(/invalid credentials|too many requests/i);
     });
 
-    test.skip('shows error for non-existent user', async ({ page }) => {
-      // SKIPPED: Docker container doesn't serve static files (JS not loaded)
+    test('shows error for non-existent user', async ({ page }) => {
       await page.goto('/');
 
       // Wait for the login card to be visible
