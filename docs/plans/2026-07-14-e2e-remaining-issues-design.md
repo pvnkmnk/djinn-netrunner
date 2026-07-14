@@ -130,3 +130,5 @@ For each phase:
 - **Phase 1:** All 5 remaining suites pass at >= 95% (accept pre-existing infrastructure limits)
 - **Phase 2:** Watchlists pass >= 90% (accept SKIP for provider types requiring external auth)
 - **Total E2E coverage:** 300+ tests across 12 spec files running reliably
+
+> Release gate: Phase 1 passes >= 95% with only documented skips; Phase 2 passes >= 90%; no regressions on previously passing suites.

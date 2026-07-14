@@ -36,7 +36,8 @@ async function createWatchlistViaAPI(page: any, data: {
     headers: { 'X-CSRF-Token': csrfToken }
   });
 
-  if (response.status() === 201 || response.status() === 200) {
+  const status = response.status();
+  if (status === 201 || status === 200) {
     const body = await getResponseJSON(response);
     if (body) {
       return { id: body.ID || body.id || 0, success: true };
@@ -44,7 +45,6 @@ async function createWatchlistViaAPI(page: any, data: {
   }
 
   // Log error for debugging
-  const status = response.status();
   const errorBody = await getResponseJSON(response);
   console.log(`createWatchlistViaAPI failed: ${status}`, errorBody);
 
@@ -83,12 +83,8 @@ async function updateWatchlistViaAPI(page: any, id: number, data: Record<string,
 async function listWatchlistsViaAPI(page: any): Promise<any[]> {
   const response = await page.request.get('/api/watchlists');
   if (response.ok()) {
-    try {
-      const data = await response.json();
-      return Array.isArray(data) ? data : [];
-    } catch {
-      return [];
-    }
+    const data = await getResponseJSON(response);
+    return Array.isArray(data) ? data : [];
   }
   return [];
 }

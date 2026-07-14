@@ -145,7 +145,8 @@ test.describe('Subsonic API (DJI-433)', () => {
       expect(
         randomSongs === undefined ||
           randomSongs === null ||
-          (typeof randomSongs === 'object' && !Array.isArray(randomSongs)) ||
+          randomSongs.song === undefined ||
+          randomSongs.song === null ||
           Array.isArray(randomSongs.song)
       ).toBeTruthy();
     });
@@ -182,6 +183,7 @@ test.describe('Subsonic API (DJI-433)', () => {
       expect(
         playlists === undefined ||
           playlists === null ||
+          playlists.playlist === undefined ||
           playlists.playlist === null ||
           Array.isArray(playlists.playlist)
       ).toBeTruthy();

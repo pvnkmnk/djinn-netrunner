@@ -1,6 +1,6 @@
 # E2E Remaining Issues — Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Implementation guidance:** Execute this plan task-by-task, committing after each completed task and verifying each phase independently.
 
 **Goal:** Fix all remaining E2E test failures across 6 test suites in two phases.
 
@@ -137,7 +137,7 @@ git commit -m "fix(e2e): fix remaining schedules test issues"
 cd e2e && npx playwright test tests/subsonic.spec.ts tests/permissions.spec.ts tests/playlists.spec.ts tests/artists.spec.ts tests/schedules.spec.ts
 ```
 
-Expected: All tests pass (or only known pre-existing infrastructure limits).
+Expected: Phase 1 suites pass at >= 95% with only documented skips.
 
 **Step 2: Push and create PR #188**
 
@@ -233,7 +233,7 @@ git commit -m "fix(e2e): fix watchlists HTMX interaction timing"
 cd e2e && npx playwright test tests/watchlists.spec.ts
 ```
 
-Expected: >= 90% pass. Accept SKIP for provider types requiring external auth.
+Expected: Phase 2 passes >= 90% (accept SKIP for provider types requiring external auth).
 
 **Step 2: Run full suite to check regressions**
 
@@ -241,7 +241,7 @@ Expected: >= 90% pass. Accept SKIP for provider types requiring external auth.
 cd e2e && npx playwright test
 ```
 
-Expected: All Phase 1 suites still pass.
+Expected: All Phase 1 suites still pass at >= 95%; no regressions on previously passing suites.
 
 **Step 3: Push and create PR #189**
 

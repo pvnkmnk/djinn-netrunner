@@ -26,7 +26,7 @@ async function getQualityProfileId(page: any): Promise<string> {
     throw new Error(`Failed to parse profiles response`);
   }
 
-  if (!profiles || profiles.length === 0) {
+  if (!Array.isArray(profiles) || profiles.length === 0) {
     throw new Error('No quality profiles available');
   }
 

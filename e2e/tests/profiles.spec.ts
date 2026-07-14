@@ -148,6 +148,7 @@ test.describe('Quality Profiles (DJI-427)', () => {
       expect(profile.Name).toBe(`API Test Profile ${uniqueSuffix}`);
       expect(profile.PreferLossless).toBe(true);
       // Note: allowed_formats and min_bitrate may not store correctly due to backend field mapping
+      // TODO(DJI-437): Field-mapping bug — AllowedFormats/MinBitrate silently dropped on create/update
     });
 
     test('8. profile appears in list - create via API, navigate to page, verify profile card with name', async ({ authenticatedPage: page }) => {
@@ -186,6 +187,7 @@ test.describe('Quality Profiles (DJI-427)', () => {
       await expect(profileCard.locator('.description')).toContainText('Detailed test profile');
       await expect(profileCard.locator('.details')).toContainText('Lossless: true');
       // Note: Formats may not display correctly due to backend field mapping
+      // TODO(DJI-437): Field-mapping bug — AllowedFormats/MinBitrate silently dropped on create/update
     });
 
     test('10. multiple profiles - create 3 profiles, verify all appear', async ({ authenticatedPage: page }) => {
@@ -326,6 +328,9 @@ test.describe('Quality Profiles (DJI-427)', () => {
       // Verify modal opens with pre-filled form
       await expect(page.locator('#modal-container')).toBeVisible();
       await expect(page.locator('input[name="name"]')).toHaveValue(profileName);
+      // Note: fill/submit/persist assertions omitted because the modal form submit
+      // doesn't close the modal after HTMX create (see DJI-440). Once closeModal
+      // header is added to the create handler, extend this test with full update flow.
     });
   });
 
@@ -411,6 +416,7 @@ test.describe('Quality Profiles (DJI-427)', () => {
 
       expect(profile.PreferLossless).toBe(true);
       // Note: allowed_formats and min_bitrate may not store correctly due to backend field mapping
+      // TODO(DJI-437): Field-mapping bug — AllowedFormats/MinBitrate silently dropped on create/update
       expect(profile.PreferSceneReleases).toBe(true);
       expect(profile.PreferWebReleases).toBe(true);
       expect(profile.CoverArtSources).toBe('musicbrainz,discogs');
