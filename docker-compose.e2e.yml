@@ -2,3 +2,6 @@ services:
   ops-web:
     ports:
       - "8080:8080"
+    environment:
+      # E2E tests make many auth requests; higher limit for testing
+      AUTH_RATE_LIMIT_MAX: 1000
