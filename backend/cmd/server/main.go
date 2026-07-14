@@ -363,9 +363,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
 		}
 
-		user, ok := c.Locals("user").(database.User)
-		if !ok || user.Role != "admin" {
-			return c.Status(403).JSON(fiber.Map{"error": "admin role required"})
+		if _, ok := c.Locals("user").(database.User); !ok {
+			return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 		}
 
 		var payload struct {

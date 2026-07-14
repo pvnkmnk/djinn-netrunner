@@ -9,3 +9,5 @@ services:
       DATABASE_URL: postgresql://musicops:testpass@postgres:5432/musicops_test?sslmode=disable
       # Enable Subsonic API for E2E tests
       SUBSONIC_ENABLED: "true"
+      # Enable E2E test helper API (create-dir, etc.)
+      E2E_ENABLE_TEST_API: "true"
