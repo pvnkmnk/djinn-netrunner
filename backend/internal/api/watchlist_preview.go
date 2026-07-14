@@ -1,6 +1,8 @@
 package api
 
 import (
+	"log/slog"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -65,6 +67,7 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 
 	allTracks, _, err := h.watchlistService.FetchWatchlistTracks(c.Context(), watchlist)
 	if err != nil {
+		slog.Error("Failed to fetch watchlist tracks for preview", "error", err, "watchlist_id", watchlist.ID)
 		if isHtmx {
 			return c.SendString(`<div class="error">Failed to fetch tracks.</div>`)
 		}

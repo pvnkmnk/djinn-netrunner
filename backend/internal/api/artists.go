@@ -97,11 +97,10 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "failed to add artist"})
 	}
 
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
-		c.Set("HX-Trigger", "closeModal")
 		return h.RenderPartial(c)
 	}
-	c.Set("HX-Trigger", "closeModal")
 	return c.Status(201).JSON(monitored)
 }
 

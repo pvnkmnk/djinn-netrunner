@@ -95,11 +95,10 @@ func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
-		c.Set("HX-Trigger", "closeModal")
 		return h.RenderSchedulesPartial(c)
 	}
-	c.Set("HX-Trigger", "closeModal")
 	return c.Status(201).JSON(schedule)
 }
 

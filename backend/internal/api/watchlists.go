@@ -70,11 +70,10 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "failed to create watchlist"})
 	}
 
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
-		c.Set("HX-Trigger", "closeModal")
 		return h.RenderWatchlistsPartial(c)
 	}
-	c.Set("HX-Trigger", "closeModal")
 	return c.Status(201).JSON(watchlist)
 }
 
@@ -130,6 +129,9 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 	}
 	if input.Enabled != nil {
 		watchlist.Enabled = *input.Enabled
+	} else if c.Is("form") {
+		// ponytail: unchecked checkboxes are omitted in form submissions, treat as false
+		watchlist.Enabled = false
 	}
 
 	// Validate again before saving
