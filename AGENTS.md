@@ -1,6 +1,6 @@
 # Agents Guide - NetRunner
 
-> Last updated by Codex ingestion: 2026-05-23
+> Last updated: 2026-07-14
 
 ## Codemap
 
@@ -39,8 +39,9 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `ops/web/` | Web assets | Static files (CSS, JS) + Pongo2 HTML templates | Yes |
 | `ops/web/static/js/` | Client JS | Minimal vanilla JS for modals, console, WebSocket | Yes |
 | `ops/web/templates/` | HTML templates | Layouts, pages, HTMX partials for server-side rendering | Yes |
-| `.github/workflows/` | CI/CD | Go CI (`go vet`, `go test`, coverage artifact), Docker build/push, PR reviews (PRGuard, PR-Sentry) | Yes |
+| `.github/workflows/` | CI/CD | Go CI (`go vet`, `go test`, coverage artifact), Docker build/push, E2E tests (Playwright), PR reviews (PRGuard, PR-Sentry) | Yes |
 | `scripts/` | Ops scripts | Integration test (`integration-tests.sh`), smoke test (`smoke-test.sh`), validation (`validate.sh`, `validate.ps1`) | Yes |
+| `e2e/` | Playwright E2E tests | Browser-based E2E tests against Docker Compose stack | Yes |
 | `docs/` | Documentation | Architecture/plans/runbooks | Yes |
 | `conductor/` | (removed) | Legacy/archived docs area — content captured in Linear | No |
 | `examples/` | Examples | Sample content and helper artifacts | Sometimes |
@@ -133,6 +134,9 @@ Current authentication is session-cookie based (`session_id`) with role checks (
 | `./scripts/smoke-test.sh` | Deploy Docker stack + health/auth/CRUD checks | End-to-end smoke test |
 | `./scripts/validate.sh` or `validate.ps1` | Pre-commit validation checks | Before PR/merge |
 | `govulncheck ./...` | Vulnerability scan for reachable issues in code + deps | Security/dependency maintenance |
+| `cd e2e && npx playwright test` | Run Playwright E2E tests against Docker stack | E2E UI testing |
+| `cd e2e && npx playwright test tests/auth.spec.ts` | Run specific E2E test spec | Targeted E2E testing |
+| `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d` | Start stack with E2E port mapping | E2E test development |
 
 ## Multi-Model Council (@council)
 
@@ -147,15 +151,35 @@ For high-stakes decisions, complex debugging, or critical reviews, use `@council
 
 The master synthesizer (`big-pickle`) receives all councillor responses and produces a final consensus. Use `@council[preset] <question>` to select a specific preset.
 
-## Snip Behavior for Subagents
+## E2E Testing (Playwright)
 
-Commands run through `snip` (a token-reduction wrapper applied by the `opencode-snip` plugin) are **prefixed automatically** — you don't need to invoke it manually. Key behaviors:
+E2E tests use Playwright against the full Docker Compose stack (Postgres, slskd, gonic, caddy, web, worker).
 
-- **`cd` works normally** in compound commands like `cd backend && go test ./...` — the `snip` plugin bypasses `cd` while wrapping the rest.
-- **`go test`/`go build`/`go vet` output is condensed** by built-in snip filters. If a test or build fails, snip may collapse error details into a brief summary. If you see a vague failure signal without details, the root cause is likely a **compilation error in test files** or a test assertion failure — run `go test -v` isolated to the failing package, or check the raw output in `/home/idols/.local/share/snip/tee/` for the full log.
-- Use the `workdir` parameter on the Bash tool instead of `cd backend && <command>` chains for cleaner separation.
+**Key files:**
+- `e2e/playwright.config.ts` — Playwright config with Docker webServer
+- `e2e/fixtures/auth.fixture.ts` — Auth fixtures (`authenticatedPage`, `adminPage`)
+- `e2e/setup-test-db.sh` — Postgres test database setup
+- `docker-compose.e2e.yml` — Port 8080 exposure + higher rate limit for tests
 
-> **Note for agents:** When running backend commands, prefer the `workdir` parameter on the Bash tool instead of `cd backend && <command>` chains.
+**Running tests:**
+```bash
+cd e2e && npx playwright test                    # All tests
+cd e2e && npx playwright test tests/auth.spec.ts  # Specific spec
+```
+
+**How it works:**
+1. `webServer` runs `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build`
+2. `setup-test-db.sh` waits for Postgres, creates fresh `musicops_test` database
+3. Tests run against `http://localhost:8080`
+4. `globalTeardown` runs `docker compose down -v --remove-orphans`
+
+**Auth fixture pattern:**
+- Uses API-based auth (register + login via `/api/auth/*`)
+- CSRF token from `csrf_` cookie required for POST requests
+- `authenticatedPage` and `adminPage` fixtures auto-login
+- Rate limit set to 1000 req/min in `docker-compose.e2e.yml` for test stability
+
+**CI:** `.github/workflows/e2e.yml` runs on push/PR to main/develop
 
 ## API / Interface Reference
 
