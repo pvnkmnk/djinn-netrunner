@@ -309,6 +309,15 @@ func Load(filenames ...string) (*Config, error) {
 		AuthRateLimitMax:        getEnvAsInt("AUTH_RATE_LIMIT_MAX", 10),
 		AuthRateLimitExpiration: getEnv("AUTH_RATE_LIMIT_EXPIRATION", "1m"),
 
+		// Subsonic
+		Subsonic: struct {
+			Enabled  bool   `envconfig:"SUBSONIC_ENABLED" default:"false"`
+			Password string `envconfig:"SUBSONIC_PASSWORD"`
+		}{
+			Enabled:  getEnvBool("SUBSONIC_ENABLED", false),
+			Password: getEnv("SUBSONIC_PASSWORD", ""),
+		},
+
 		// E2E
 		E2EEnableTestAPI: getEnvBool("E2E_ENABLE_TEST_API", false),
 	}
