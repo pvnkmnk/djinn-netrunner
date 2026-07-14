@@ -355,6 +355,23 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	playlistRoutes.Delete("/:id/tracks/:trackId", playlistHandler.RemoveTrack)
 	playlistRoutes.Put("/:id/tracks/order", playlistHandler.Reorder)
 
+	// Test helper: create directory (used by E2E tests to create library paths)
+	apiProtected.Post("/test/create-dir", func(c *fiber.Ctx) error {
+		var payload struct {
+			Path string `json:"path"`
+		}
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
+		}
+		if payload.Path == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "path required"})
+		}
+		if err := os.MkdirAll(payload.Path, 0755); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to create directory"})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "path": payload.Path})
+	})
+
 	// Stats
 	statsRoutes := apiProtected.Group("/stats")
 	statsRoutes.Get("/jobs", stats.GetJobStats)
