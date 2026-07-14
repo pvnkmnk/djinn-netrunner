@@ -111,7 +111,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       await page.goto('/');
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const response = await page.request.post('/api/auth/register', {
         data: { email: uniqueEmail, password: testPassword },
@@ -125,7 +125,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       const duplicateEmail = `dup-api-${timestamp}@netrunner.dev`;
 
       await page.goto('/');
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       // First registration should succeed
       const firstResponse = await page.request.post('/api/auth/register', {
@@ -145,7 +145,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     test('registration with empty email returns validation error', async ({ page }) => {
       await page.goto('/');
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const response = await page.request.post('/api/auth/register', {
         data: { email: '', password: testPassword },
@@ -158,7 +158,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     test('registration with empty password returns validation error', async ({ page }) => {
       await page.goto('/');
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const response = await page.request.post('/api/auth/register', {
         data: { email: `empty-pw-${timestamp}@netrunner.dev`, password: '' },
@@ -171,7 +171,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     test('registration with missing fields returns 400', async ({ page }) => {
       await page.goto('/');
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const response = await page.request.post('/api/auth/register', {
         data: {},
@@ -196,7 +196,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       const email = `login-api-${timestamp}@netrunner.dev`;
       await page.goto('/');
       let cookies = await page.context().cookies();
-      let csrfToken = await getCsrfToken(page);
+      let csrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/register', {
         data: { email, password: testPassword },
@@ -206,7 +206,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       // Now login
       await page.goto('/');
       cookies = await page.context().cookies();
-      csrfToken = await getCsrfToken(page);
+      csrfToken = getCsrfToken(page);
 
       const loginResponse = await page.request.post('/api/auth/login', {
         data: { email, password: testPassword },
@@ -220,7 +220,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       const email = `wrongpw-${timestamp}@netrunner.dev`;
       await page.goto('/');
       let cookies = await page.context().cookies();
-      let csrfToken = await getCsrfToken(page);
+      let csrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/register', {
         data: { email, password: testPassword },
@@ -272,7 +272,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       const email = `session-cookie-${timestamp}@netrunner.dev`;
       await page.goto('/');
       let cookies = await page.context().cookies();
-      let csrfToken = await getCsrfToken(page);
+      let csrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/register', {
         data: { email, password: testPassword },
@@ -281,7 +281,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       await page.goto('/');
       cookies = await page.context().cookies();
-      csrfToken = await getCsrfToken(page);
+      csrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/login', {
         data: { email, password: testPassword },
@@ -297,7 +297,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     test('login with incorrect credentials does not set session cookie', async ({ page }) => {
       await page.goto('/');
       let cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/login', {
         data: { email: 'nonexistent@test.com', password: 'wrongpass' },
@@ -319,7 +319,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       await expect(page.locator('.dashboard')).toBeVisible();
 
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const response = await page.request.post('/api/auth/logout', {
         headers: { 'X-CSRF-Token': csrfToken },
@@ -360,7 +360,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       await expect(page.locator('.dashboard')).toBeVisible();
 
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/logout', {
         headers: { 'X-CSRF-Token': csrfToken },
@@ -377,7 +377,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       await expect(page.locator('.dashboard')).toBeVisible();
 
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/logout', {
         headers: { 'X-CSRF-Token': csrfToken },
@@ -433,7 +433,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       // Register first
       const email = `no-csrf-${timestamp}@netrunner.dev`;
       await page.goto('/');
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/register', {
         data: { email, password: testPassword },
@@ -464,7 +464,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       // Create a user
       await page.goto('/');
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const email = `expired-session-${timestamp}@netrunner.dev`;
       await page.request.post('/api/auth/register', {
@@ -473,7 +473,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       });
 
       // Login
-      const loginCsrfToken = await getCsrfToken(page);
+      const loginCsrfToken = getCsrfToken(page);
 
       await page.request.post('/api/auth/login', {
         data: { email, password: testPassword },
@@ -542,7 +542,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       // Register both users
       await page1.goto('/');
       let cookies = await page1.context().cookies();
-      let csrfToken = await getCsrfToken(page1);
+      let csrfToken = getCsrfToken(page);
 
       await page1.request.post('/api/auth/register', {
         data: { email: email1, password: testPassword },
@@ -551,7 +551,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       await page2.goto('/');
       cookies = await page2.context().cookies();
-      csrfToken = await getCsrfToken(page2);
+      csrfToken = getCsrfToken(page);
 
       await page2.request.post('/api/auth/register', {
         data: { email: email2, password: testPassword },
@@ -561,7 +561,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       // Login user 1
       await page1.goto('/');
       cookies = await page1.context().cookies();
-      csrfToken = await getCsrfToken(page1);
+      csrfToken = getCsrfToken(page);
 
       await page1.request.post('/api/auth/login', {
         data: { email: email1, password: testPassword },
@@ -571,7 +571,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       // Login user 2
       await page2.goto('/');
       cookies = await page2.context().cookies();
-      csrfToken = await getCsrfToken(page2);
+      csrfToken = getCsrfToken(page);
 
       await page2.request.post('/api/auth/login', {
         data: { email: email2, password: testPassword },
@@ -600,7 +600,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       // Register user
       await page1.goto('/');
       let cookies = await page1.context().cookies();
-      let csrfToken = await getCsrfToken(page1);
+      let csrfToken = getCsrfToken(page);
 
       await page1.request.post('/api/auth/register', {
         data: { email, password: testPassword },
@@ -610,7 +610,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       // Login in context 1
       await page1.goto('/');
       cookies = await page1.context().cookies();
-      csrfToken = await getCsrfToken(page1);
+      csrfToken = getCsrfToken(page);
 
       await page1.request.post('/api/auth/login', {
         data: { email, password: testPassword },
@@ -719,7 +719,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       await page.goto('/');
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       // Make several rapid requests - none should cause server issues
       for (let i = 0; i < 5; i++) {
@@ -737,7 +737,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       await page.goto('/');
       let cookies = await page.context().cookies();
-      let csrfToken = await getCsrfToken(page);
+      let csrfToken = getCsrfToken(page);
 
       // Register
       await page.request.post('/api/auth/register', {
@@ -749,7 +749,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       for (let i = 0; i < 3; i++) {
         await page.goto('/');
         cookies = await page.context().cookies();
-        csrfToken = await getCsrfToken(page);
+        csrfToken = getCsrfToken(page);
 
         await page.request.post('/api/auth/login', {
           data: { email, password: 'wrong' },
@@ -760,7 +760,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       // Should still be able to login successfully
       await page.goto('/');
       cookies = await page.context().cookies();
-      csrfToken = await getCsrfToken(page);
+      csrfToken = getCsrfToken(page);
 
       const response = await page.request.post('/api/auth/login', {
         data: { email, password: testPassword },
@@ -828,7 +828,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     test('malformed JSON returns 400', async ({ page }) => {
       await page.goto('/');
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const response = await page.request.post('/api/auth/login', {
         data: 'not-valid-json',
@@ -844,7 +844,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     test('login with SQL injection attempt is safely rejected', async ({ page }) => {
       await page.goto('/');
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const response = await page.request.post('/api/auth/login', {
         data: { email: "admin'--", password: 'anything' },
@@ -858,7 +858,7 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     test('register with XSS attempt is safely handled', async ({ page }) => {
       await page.goto('/');
       const cookies = await page.context().cookies();
-      const csrfToken = await getCsrfToken(page);
+      const csrfToken = getCsrfToken(page);
 
       const xssEmail = `<script>alert('xss')</script>${timestamp}@netrunner.dev`;
 
