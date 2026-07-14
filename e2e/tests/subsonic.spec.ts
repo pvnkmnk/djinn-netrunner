@@ -217,7 +217,7 @@ test.describe('Subsonic API (DJI-433)', () => {
         playlistId = createData['subsonic-response'].playlist.id;
       }
 
-      const response = await subsonicGet(page, 'getPlaylist.view', { id: playlistId });
+      const response = await subsonicGet(page, 'getPlaylist.view', { id: playlistId! });
       expect(response.status()).toBe(200);
 
       const data = await parseSubsonicResponse(response);
