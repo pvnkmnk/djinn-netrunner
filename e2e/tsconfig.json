@@ -8,7 +8,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "types": ["node"],
     "outDir": "./dist"
   },
   "include": ["tests/**/*.ts", "fixtures/**/*.ts", "utils/**/*.ts", "playwright.config.ts"]
