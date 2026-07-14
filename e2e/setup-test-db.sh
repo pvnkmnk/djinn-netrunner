@@ -67,13 +67,12 @@ WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'e2e-admin@netrunner.dev');
 fi
 
 # Seed a default quality profile needed by watchlist and schedule tests
+# AutoMigrate creates one with random UUID, so we ensure the expected UUID exists
 echo "=== Seeding default quality profile ==="
-if ! $COMPOSE exec -T postgres psql -U musicops -d musicops_test -c "
+$COMPOSE exec -T postgres psql -U musicops -d musicops_test -c "
+DELETE FROM quality_profiles WHERE name = 'Default';
 INSERT INTO quality_profiles (id, name, description, prefer_lossless, allowed_formats, min_bitrate, is_default, created_at, updated_at)
-SELECT '11111111-1111-4111-8111-111111111111', 'Default', 'Default E2E test profile', true, 'flac,mp3,wav', 320, true, NOW(), NOW()
-WHERE NOT EXISTS (SELECT 1 FROM quality_profiles WHERE name = 'Default');
-" 2>&1; then
-  echo "Warning: Could not seed quality profile (will be created by fixture)"
-fi
+VALUES ('11111111-1111-4111-8111-111111111111', 'Default', 'Default E2E test profile', true, 'flac,mp3,wav', 320, true, NOW(), NOW());
+" 2>&1 || echo "Warning: Could not seed quality profile"
 
 echo "=== E2E setup complete ==="

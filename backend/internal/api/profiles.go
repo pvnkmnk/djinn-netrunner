@@ -365,6 +365,7 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 
 	c.Set("HX-Trigger", "openModal")
 
+	isNew := id == ""
 	return c.Render("partials/profile-form", fiber.Map{
 		"ID":                  profile.ID,
 		"Name":                profile.Name,
@@ -372,9 +373,12 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		"PreferLossless":      profile.PreferLossless,
 		"AllowedFormats":      profile.AllowedFormats,
 		"MinBitrate":          profile.MinBitrate,
+		"PreferBitrate":       profile.PreferBitrate,
 		"PreferSceneReleases": profile.PreferSceneReleases,
 		"PreferWebReleases":   profile.PreferWebReleases,
 		"CoverArtSources":     profile.CoverArtSources,
+		"IsDefault":           profile.IsDefault,
+		"IsNew":               isNew,
 	})
 }
 

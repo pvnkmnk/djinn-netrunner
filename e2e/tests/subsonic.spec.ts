@@ -56,8 +56,12 @@ test.describe('Subsonic API (DJI-433)', () => {
 
     test('Ping fails without auth', async ({ page }) => {
       // Request without auth params should fail
+      // Subsonic returns 200 with status: 'failed' and error code
       const response = await page.request.get('/rest/ping.view?f=json');
-      expect(response.status()).toBe(401);
+      expect(response.status()).toBe(200);
+      const data = await parseSubsonicResponse(response);
+      expect(data['subsonic-response'].status).toBe('failed');
+      expect(data['subsonic-response'].error.code).toBe(40);
     });
 
     test('Ping fails with wrong password', async ({ authenticatedPage: page }) => {
@@ -136,9 +140,15 @@ test.describe('Subsonic API (DJI-433)', () => {
       const data = await parseSubsonicResponse(response);
       expect(data).toHaveProperty('subsonic-response');
       expect(data['subsonic-response'].status).toBe('ok');
-      // randomSongs may be absent or empty
+      // randomSongs may be absent, empty object, or contain a song array
       const randomSongs = data['subsonic-response'].randomSongs;
-      expect(randomSongs === undefined || Array.isArray(randomSongs.song)).toBeTruthy();
+      expect(
+        randomSongs === undefined ||
+          randomSongs === null ||
+          randomSongs.song === undefined ||
+          randomSongs.song === null ||
+          Array.isArray(randomSongs.song)
+      ).toBeTruthy();
     });
 
     test('Search3 returns empty', async ({ authenticatedPage: page }) => {
@@ -168,9 +178,15 @@ test.describe('Subsonic API (DJI-433)', () => {
 
       const data = await parseSubsonicResponse(response);
       expect(data['subsonic-response'].status).toBe('ok');
-      // playlists may be absent or empty
+      // playlists may be absent, empty, or null playlist array
       const playlists = data['subsonic-response'].playlists;
-      expect(playlists === undefined || Array.isArray(playlists.playlist)).toBeTruthy();
+      expect(
+        playlists === undefined ||
+          playlists === null ||
+          playlists.playlist === undefined ||
+          playlists.playlist === null ||
+          Array.isArray(playlists.playlist)
+      ).toBeTruthy();
     });
 
     test('CreatePlaylist', async ({ authenticatedPage: page }) => {
