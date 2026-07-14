@@ -171,13 +171,25 @@ cd e2e && npx playwright test tests/auth.spec.ts  # Specific spec
 1. `webServer` runs `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build`
 2. `setup-test-db.sh` waits for Postgres, creates fresh `musicops_test` database
 3. Tests run against `http://localhost:8080`
-4. `globalTeardown` runs `docker compose down -v --remove-orphans`
+4. `globalTeardown` runs `docker compose down -v --remove-orphans` (only in CI — skipped locally for fast iteration)
+
+**Docker reuse (key iteration speedup):**
+- `playwright.config.ts` sets `reuseExistingServer: !process.env.CI` — local runs reuse the Docker stack between test runs
+- `e2e/teardown.ts` checks `process.env.CI` and skips teardown locally, so the stack stays up
+- **Impact:** iterating on a single test file takes ~4s instead of ~4min (full rebuild)
 
 **Auth fixture pattern:**
 - Uses API-based auth (register + login via `/api/auth/*`)
 - CSRF token from `csrf_` cookie required for POST requests
 - `authenticatedPage` and `adminPage` fixtures auto-login
 - Rate limit set to 1000 req/min in `docker-compose.e2e.yml` for test stability
+
+**CRITICAL auth gotcha:** `getCsrfToken()` is async (`Promise<string>`). It **must** be `await`ed:
+```typescript
+const csrfToken = await getCsrfToken(page);  // ✅ correct
+const csrfToken = getCsrfToken(page);          // ❌ csrfToken is "[object Promise]" → every request gets 403
+```
+This is the #1 cause of auth-related E2E failures. `auth.spec.ts` historically had 29 call sites missing `await` (DJI-441).
 
 **CI:** `.github/workflows/e2e.yml` runs on push/PR to main/develop
 
@@ -416,6 +428,12 @@ The `WorkerOrchestrator` acquires advisory locks per scope ID before processing 
 - `database.Migrate` contains PostgreSQL enum-to-text conversions; read it before modifying job state columns.
 - `backend/entrypoint.sh` is a single-process bootstrap for Docker (creates dirs, logs, exec). The Docker Compose stack runs `ops-web` and `ops-worker` as separate services with different `command` overrides. For local debugging, run binaries directly with `go run ./cmd/server` or `go run ./cmd/worker`.
 - Spotify OAuth defaults callback to `http://localhost:8080/api/auth/spotify/callback` unless `SPOTIFY_REDIRECT_URI` is set.
+- **Pongo2 renders Go bool as capitalized `True`/`False`**, not lowercase `true`/`false`. Use `{% if field %}true{% else %}false{% endif %}` to get lowercase. E.g., `Lossless: True` (capital T) broke E2E tests expecting `Lossless: true`.
+- **Pongo2 `{% if ID %}` is always true for UUID fields.** The zero UUID `00000000-0000-0000-0000-000000000000` is a non-empty string, so `{% if ID %}` evaluates to true. Always pass an explicit `IsNew` bool when the template needs to distinguish "add" from "edit".
+- **Go `encoding/json` silently drops fields without JSON tags.** `source_uri` (snake_case) does NOT match `SourceURI` (PascalCase) unless the struct has `json:"source_uri"`. The case-insensitive fallback only works for pure case differences, not underscore differences. Both the model AND the input struct need JSON tags (DJI-437).
+- **HTMX only swaps 2xx responses.** Error paths returning 4xx/5xx are silently discarded by HTMX — the target div stays unchanged. Always check `isHTMXRequest(c)` and return `c.SendString("<div class=\"error\">...</div>")` on error paths for HTMX requests (DJI-438).
+- **API responses use PascalCase field names** (`ID`, `Name`, `SourceType`, `IsDefault`), not camelCase. E2E tests must check `response.ID` not `response.id`.
+- **Multiple create handlers don't close the modal after HTMX submit.** The JS listens for `HX-Trigger: closeModal` header, but only `AcquireHandler.Create` sets it. Any new form handler needs `c.Set("HX-Trigger", "closeModal")` before returning the partial (DJI-440).
 
 ## Skill Index
 - `skills/repo-setup.md` - End-to-end local environment setup and first successful validation run.
