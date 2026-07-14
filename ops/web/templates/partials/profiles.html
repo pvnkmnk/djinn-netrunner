@@ -16,7 +16,7 @@
             </div>
             <div class="description">{{ profile.Description | escape }}</div>
             <div class="details">
-                <span>Lossless: {{ profile.PreferLossless }}</span>
+                <span>Lossless: {% if profile.PreferLossless %}true{% else %}false{% endif %}</span>
                 <span>Formats: {{ profile.AllowedFormats | escape }}</span>
                 <span>Min Bitrate: {{ profile.MinBitrate }}</span>
                 <span>Cover Art: {% if profile.CoverArtSources %}{{ profile.CoverArtSources | escape }}{% else %}source,musicbrainz,discogs{% endif %}</span>
