@@ -310,7 +310,30 @@ func (h *AdminHandler) logAudit(action string, c *fiber.Ctx, targetType, targetI
 func (h *AdminHandler) RenderUsersPartial(c *fiber.Ctx) error {
 	var users []database.User
 	h.db.Select("id, email, role, created_at, last_login_at").Find(&users)
-	return c.Render("partials/admin_users", fiber.Map{"Users": users})
+
+	// Convert to template-friendly struct (dereference LastLoginAt pointer)
+	type UserView struct {
+		ID          uint64
+		Email       string
+		Role        string
+		CreatedAt   time.Time
+		LastLoginAt time.Time // value type, zero value for nil
+	}
+	views := make([]UserView, len(users))
+	for i, u := range users {
+		var lastLogin time.Time
+		if u.LastLoginAt != nil {
+			lastLogin = *u.LastLoginAt
+		}
+		views[i] = UserView{
+			ID:          u.ID,
+			Email:       u.Email,
+			Role:        u.Role,
+			CreatedAt:   u.CreatedAt,
+			LastLoginAt: lastLogin,
+		}
+	}
+	return c.Render("partials/admin_users", fiber.Map{"Users": views})
 }
 
 // GET /partials/admin/audit — renders audit log partial

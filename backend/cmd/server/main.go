@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -354,6 +355,48 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	playlistRoutes.Post("/:id/tracks", playlistHandler.AddTrack)
 	playlistRoutes.Delete("/:id/tracks/:trackId", playlistHandler.RemoveTrack)
 	playlistRoutes.Put("/:id/tracks/order", playlistHandler.Reorder)
+
+	// Test helper: create directory (used by E2E tests to create library paths)
+	// Gate: E2E_ENABLE_TEST_API must be set to true
+	apiProtected.Post("/test/create-dir", func(c *fiber.Ctx) error {
+		if !cfg.E2EEnableTestAPI {
+			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
+		}
+
+		user, ok := c.Locals("user").(database.User)
+		if !ok || user.Role != "admin" {
+			return c.Status(403).JSON(fiber.Map{"error": "admin role required"})
+		}
+
+		var payload struct {
+			Path string `json:"path"`
+		}
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
+		}
+		if payload.Path == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "path required"})
+		}
+
+		// Path traversal protection: clean path and verify it starts with allowed prefix
+		cleanPath := filepath.Clean(payload.Path)
+		allowedPrefixes := []string{"/tmp/", cfg.MusicLibraryPath}
+		valid := false
+		for _, prefix := range allowedPrefixes {
+			if strings.HasPrefix(cleanPath, prefix) {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid path"})
+		}
+
+		if err := os.MkdirAll(cleanPath, 0755); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to create directory"})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "path": cleanPath})
+	})
 
 	// Stats
 	statsRoutes := apiProtected.Group("/stats")

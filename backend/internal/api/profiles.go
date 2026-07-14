@@ -363,6 +363,8 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		}
 	}
 
+	c.Set("HX-Trigger", "openModal")
+
 	return c.Render("partials/profile-form", fiber.Map{
 		"ID":                  profile.ID,
 		"Name":                profile.Name,

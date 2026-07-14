@@ -22,13 +22,13 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'docker compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build && ./setup-test-db.sh',
+    command: './setup-test-db.sh',
     url: 'http://localhost:8080/api/health',
     reuseExistingServer: !process.env.CI,
-    timeout: 180 * 1000, // 3 min for Docker build + startup
+    timeout: 300 * 1000, // 5 min for Docker build + startup
     stdout: 'pipe',
     stderr: 'pipe',
-    cwd: '/home/idols/orca/workspaces/netrunner_repo/auto-release-readiness-review-run-1-20260616T0835',
+    // No explicit cwd — Playwright defaults to config file's dir (e2e/), so ../ paths resolve to repo root
   },
 
   globalTeardown: './teardown.ts',

@@ -472,8 +472,13 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 	}
 
 	c.Set("HX-Trigger", "openModal")
+	// Only pass ID if it's non-zero (prevent zero UUID showing "Edit" instead of "Add")
+	var templateID interface{} = lib.ID.String()
+	if lib.ID == uuid.Nil {
+		templateID = nil
+	}
 	return c.Render("partials/library-form", fiber.Map{
-		"ID":   lib.ID,
+		"ID":   templateID,
 		"Name": lib.Name,
 		"Path": lib.Path,
 	})
