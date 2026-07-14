@@ -98,8 +98,10 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	}
 
 	if isHTMXRequest(c) {
+		c.Set("HX-Trigger", "closeModal")
 		return h.RenderPartial(c)
 	}
+	c.Set("HX-Trigger", "closeModal")
 	return c.Status(201).JSON(monitored)
 }
 

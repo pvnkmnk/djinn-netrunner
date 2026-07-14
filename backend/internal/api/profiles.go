@@ -139,8 +139,10 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 			return internalServerError(c, err)
 		}
 		if isHTMXRequest(c) {
+			c.Set("HX-Trigger", "closeModal")
 			return h.RenderProfilesPartial(c)
 		}
+		c.Set("HX-Trigger", "closeModal")
 		return c.Status(201).JSON(profile)
 	}
 
@@ -164,8 +166,10 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if isHTMXRequest(c) {
+		c.Set("HX-Trigger", "closeModal")
 		return h.RenderProfilesPartial(c)
 	}
+	c.Set("HX-Trigger", "closeModal")
 	return c.Status(201).JSON(profile)
 }
 

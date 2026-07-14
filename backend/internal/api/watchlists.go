@@ -71,8 +71,10 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 	}
 
 	if isHTMXRequest(c) {
+		c.Set("HX-Trigger", "closeModal")
 		return h.RenderWatchlistsPartial(c)
 	}
+	c.Set("HX-Trigger", "closeModal")
 	return c.Status(201).JSON(watchlist)
 }
 

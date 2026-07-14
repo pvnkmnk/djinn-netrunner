@@ -143,8 +143,10 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 	}
 
 	if isHTMXRequest(c) {
+		c.Set("HX-Trigger", "closeModal")
 		return h.RenderLibrariesPartial(c)
 	}
+	c.Set("HX-Trigger", "closeModal")
 	return c.Status(201).JSON(library)
 }
 
