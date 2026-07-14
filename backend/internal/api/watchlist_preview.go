@@ -29,7 +29,7 @@ type PreviewTrack struct {
 func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -41,21 +41,33 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 	idParam := c.Params("id")
 	id, err := uuid.Parse(idParam)
 	if err != nil {
+		if isHtmx {
+			return c.SendString(`<div class="error">Invalid watchlist ID.</div>`)
+		}
 		return c.Status(fiber.StatusBadRequest).SendString("invalid watchlist id")
 	}
 
 	watchlist, err := h.watchlistService.GetWatchlist(id)
 	if err != nil {
+		if isHtmx {
+			return c.SendString(`<div class="error">Watchlist not found.</div>`)
+		}
 		return c.Status(fiber.StatusNotFound).SendString("watchlist not found")
 	}
 
 	// ✅ SECURITY: Verify ownership before fetching tracks
 	if user.Role != "admin" && (watchlist.OwnerUserID == nil || *watchlist.OwnerUserID != user.ID) {
+		if isHtmx {
+			return c.SendString(`<div class="error">Forbidden.</div>`)
+		}
 		return c.Status(fiber.StatusForbidden).SendString("forbidden")
 	}
 
 	allTracks, _, err := h.watchlistService.FetchWatchlistTracks(c.Context(), watchlist)
 	if err != nil {
+		if isHtmx {
+			return c.SendString(`<div class="error">Failed to fetch tracks.</div>`)
+		}
 		return c.Status(fiber.StatusInternalServerError).SendString("failed to fetch tracks")
 	}
 
