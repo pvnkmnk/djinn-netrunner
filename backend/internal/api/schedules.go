@@ -95,6 +95,7 @@ func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderSchedulesPartial(c)
 	}
@@ -231,7 +232,7 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 // GetForm returns the schedule form for add/edit
 func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -278,7 +279,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 // RenderSchedulesPartial returns schedules HTML for HTMX
 func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {

@@ -142,6 +142,7 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderLibrariesPartial(c)
 	}
@@ -445,7 +446,7 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 // GetForm returns the library form for add/edit
 func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -487,7 +488,7 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 // RenderLibrariesPartial returns libraries HTML for HTMX
 func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -514,7 +515,7 @@ func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 // BrowseTracks returns HTML partial with searchable, sortable, paginated track listing
 func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
@@ -618,7 +619,7 @@ func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
 // TrackDetail returns HTML partial with full track metadata (for modal display)
 func (h *LibraryHandler) TrackDetail(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")

@@ -28,7 +28,7 @@ export default defineConfig({
     timeout: 300 * 1000, // 5 min for Docker build + startup
     stdout: 'pipe',
     stderr: 'pipe',
-    // No explicit cwd — Playwright defaults to config file's dir (e2e/), so ../ paths resolve to repo root
+    cwd: __dirname, // Always run from e2e/ directory regardless of where playwright is invoked
   },
 
   globalTeardown: './teardown.ts',

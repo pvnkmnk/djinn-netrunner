@@ -164,8 +164,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const container = document.getElementById('modal-container');
         if (!container || !container.classList.contains('active')) return;
         
-        // Close on overlay click
-        if (e.target.classList.contains('modal-overlay')) {
+        // Close on overlay click (container is the full viewport overlay)
+        if (e.target === container || e.target.classList.contains('modal-overlay')) {
             closeModal();
         }
         // Close on close button click

@@ -138,6 +138,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		if err != nil {
 			return internalServerError(c, err)
 		}
+		c.Set("HX-Trigger", "closeModal")
 		if isHTMXRequest(c) {
 			return h.RenderProfilesPartial(c)
 		}
@@ -163,6 +164,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderProfilesPartial(c)
 	}

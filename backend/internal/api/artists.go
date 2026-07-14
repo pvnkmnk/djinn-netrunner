@@ -97,6 +97,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "failed to add artist"})
 	}
 
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderPartial(c)
 	}
@@ -240,7 +241,7 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {
@@ -270,7 +271,7 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {
