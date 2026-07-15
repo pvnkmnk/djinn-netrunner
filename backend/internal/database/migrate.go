@@ -26,6 +26,14 @@ func Migrate(db *gorm.DB) error {
 		// All steps are idempotent — they safely handle fresh DBs, partially migrated
 		// DBs, and fully migrated DBs.
 
+		// Drop the global unique index on music_brainz_id that was replaced by
+		// a composite (owner_user_id, musicbrainz_id) index — AutoMigrate won't drop it.
+		db.Exec("DROP INDEX IF EXISTS idx_monitored_artists_musicbrainz_id")
+
+		// Remove the DEFAULT true on prefer_web_releases that was removed from the model.
+		// AutoMigrate is additive and won't drop column defaults.
+		db.Exec("ALTER TABLE quality_profiles ALTER COLUMN prefer_web_releases DROP DEFAULT")
+
 		// Convert legacy ENUM columns to text so GORM AutoMigrate can manage them.
 		// These fixup steps only run if the tables already exist (legacy migration scenario).
 		if db.Migrator().HasTable("jobs") {

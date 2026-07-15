@@ -90,6 +90,7 @@ func TestPostgresLockManager_AcquireTryLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to configured Postgres database: %v", err)
 	}
+	defer func() { if sqlDB, err := db.DB(); err == nil && sqlDB != nil { sqlDB.Close() } }()
 
 	lm := &PostgresLockManager{db: db}
 	ctx := context.Background()
@@ -105,7 +106,9 @@ func TestPostgresLockManager_AcquireTryLock(t *testing.T) {
 	}
 
 	// Clean up
-	_ = lm.ReleaseLock(ctx, lockKey)
+	if err := lm.ReleaseLock(ctx, lockKey); err != nil {
+		t.Logf("Cleanup release lock error: %v", err)
+	}
 }
 
 func TestPostgresLockManager_ReleaseLock(t *testing.T) {
@@ -123,6 +126,7 @@ func TestPostgresLockManager_ReleaseLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to configured Postgres database: %v", err)
 	}
+	defer func() { if sqlDB, err := db.DB(); err == nil && sqlDB != nil { sqlDB.Close() } }()
 
 	lm := &PostgresLockManager{db: db}
 	ctx := context.Background()
@@ -150,7 +154,9 @@ func TestPostgresLockManager_ReleaseLock(t *testing.T) {
 	}
 
 	// Clean up
-	_ = lm.ReleaseLock(ctx, lockKey)
+	if err := lm.ReleaseLock(ctx, lockKey); err != nil {
+		t.Logf("Cleanup release lock error: %v", err)
+	}
 }
 
 func TestPostgresLockManager_AcquireTryLock_Duplicate(t *testing.T) {
@@ -168,6 +174,7 @@ func TestPostgresLockManager_AcquireTryLock_Duplicate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to configured Postgres database: %v", err)
 	}
+	defer func() { if sqlDB, err := db.DB(); err == nil && sqlDB != nil { sqlDB.Close() } }()
 
 	lm := &PostgresLockManager{db: db}
 	ctx := context.Background()
@@ -189,7 +196,7 @@ func TestPostgresLockManager_AcquireTryLock_Duplicate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open second connection: %v", err)
 	}
-	defer func() { sqlDB2, _ := db2.DB(); if sqlDB2 != nil { sqlDB2.Close() } }()
+	defer func() { if sqlDB2, err := db2.DB(); err == nil && sqlDB2 != nil { sqlDB2.Close() } }()
 
 	lm2 := &PostgresLockManager{db: db2}
 
@@ -203,7 +210,9 @@ func TestPostgresLockManager_AcquireTryLock_Duplicate(t *testing.T) {
 	}
 
 	// Clean up
-	_ = lm.ReleaseLock(ctx, lockKey)
+	if err := lm.ReleaseLock(ctx, lockKey); err != nil {
+		t.Logf("Cleanup release lock error: %v", err)
+	}
 }
 
 func TestNewLockManager_Postgres(t *testing.T) {

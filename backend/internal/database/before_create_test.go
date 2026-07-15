@@ -45,11 +45,8 @@ func TestQualityProfile_BeforeCreate(t *testing.T) {
 }
 
 func TestMonitoredArtist_BeforeCreate(t *testing.T) {
-	db := setupSQLiteTestDB(t, []interface{}{&MonitoredArtist{}, &QualityProfile{}})
-
-	// Create a quality profile first
 	profile := QualityProfile{Name: "Test"}
-	require.NoError(t, db.Create(&profile).Error)
+	db := setupSQLiteTestDB(t, []interface{}{&MonitoredArtist{}, &QualityProfile{}}, &profile)
 
 	artist := MonitoredArtist{
 		MusicBrainzID:    "mbid-123",
