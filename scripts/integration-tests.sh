@@ -153,6 +153,8 @@ check_status() {
 # Run tests
 run_tests() {
     specific_test="$1"
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    backend_dir="$(cd "$script_dir/../backend" && pwd)"
     
     # Check if services are running
     if ! curl -s http://localhost:15030/api/v0/session > /dev/null 2>&1; then
@@ -163,15 +165,15 @@ run_tests() {
     echo -e "${YELLOW}Running integration tests...${NC}"
     echo ""
     
-    test_args="-v -tags=integration -timeout $TIMEOUT"
+    test_args=(-v -tags=integration -timeout "$TIMEOUT")
     if [ -n "$VERBOSE" ]; then
-        test_args="$test_args -v"
+        test_args+=(-v)
     fi
     if [ -n "$specific_test" ]; then
-        test_args="$test_args -run $specific_test"
+        test_args+=(-run "$specific_test")
     fi
     
-    if go test ./backend/internal/integration/... $test_args; then
+    if (cd "$backend_dir" && go test ./internal/integration/... "${test_args[@]}"); then
         echo ""
         echo -e "${GREEN}All integration tests passed!${NC}"
     else

@@ -2,25 +2,34 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 // DiscogsProvider implements WatchlistProvider for Discogs sources
 type DiscogsProvider struct {
-	Token   string
-	BaseURL string // For testing
+	Token      string
+	BaseURL    string // For testing
+	httpClient *http.Client
 }
 
 // NewDiscogsProvider creates a new Discogs provider
-func NewDiscogsProvider(token string) *DiscogsProvider {
+func NewDiscogsProvider(token string, httpClient *http.Client) *DiscogsProvider {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &DiscogsProvider{
-		Token:   token,
-		BaseURL: "https://api.discogs.com/",
+		Token:      token,
+		BaseURL:    "https://api.discogs.com/",
+		httpClient: httpClient,
 	}
 }
 
@@ -47,62 +56,90 @@ func (p *DiscogsProvider) FetchTracks(ctx context.Context, watchlist *database.W
 		return nil, "", fmt.Errorf("unsupported discogs source type: %s", watchlist.SourceType)
 	}
 
-	u, err := url.Parse(p.BaseURL)
-	if err != nil {
-		return nil, "", err
-	}
-	
-	u.Path = fmt.Sprintf("/users/%s/wants", watchlist.SourceURI)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if p.Token != "" {
-		req.Header.Set("Authorization", "Discogs token="+p.Token)
-	}
-	req.Header.Set("User-Agent", "NetRunner/1.0.0")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("discogs api returned status: %d", resp.StatusCode)
-	}
-
-	var data discogsWantlistResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, "", err
-	}
-
+	const perPage = 100
 	var allTracks []map[string]string
-	var lastAdded string
+	var allWants []discogsWant
 
-	for _, w := range data.Wants {
-		artistName := ""
-		if len(w.BasicInformation.Artists) > 0 {
-			artistName = w.BasicInformation.Artists[0].Name
+	for page := 1; ; page++ {
+		u, err := url.Parse(p.BaseURL)
+		if err != nil {
+			return nil, "", err
 		}
 
-		allTracks = append(allTracks, map[string]string{
-			"artist":        artistName,
-			"title":         w.BasicInformation.Title,
-			"cover_art_url": w.BasicInformation.CoverImage,
-		})
+		u.Path = fmt.Sprintf("/users/%s/wants", watchlist.SourceURI)
 
-		if w.DateAdded > lastAdded {
-			lastAdded = w.DateAdded
+		q := u.Query()
+		q.Set("page", strconv.Itoa(page))
+		q.Set("per_page", strconv.Itoa(perPage))
+		u.RawQuery = q.Encode()
+
+		req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+		if err != nil {
+			return nil, "", err
+		}
+
+		if p.Token != "" {
+			req.Header.Set("Authorization", "Discogs token="+p.Token)
+		}
+		req.Header.Set("User-Agent", "NetRunner/1.0.0")
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, "", classifyNetworkError(err, "discogs")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, "", classifyHTTPStatus(resp.StatusCode, "discogs")
+		}
+
+		var data discogsWantlistResponse
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			resp.Body.Close()
+			return nil, "", err
+		}
+		resp.Body.Close()
+
+		for _, w := range data.Wants {
+			artistName := ""
+			if len(w.BasicInformation.Artists) > 0 {
+				artistName = w.BasicInformation.Artists[0].Name
+			}
+
+			allTracks = append(allTracks, map[string]string{
+				"artist":        artistName,
+				"title":         w.BasicInformation.Title,
+				"cover_art_url": w.BasicInformation.CoverImage,
+			})
+		}
+		allWants = append(allWants, data.Wants...)
+
+		if len(data.Wants) < perPage || len(allTracks) >= data.Pagination.Items {
+			break
 		}
 	}
 
-	snapshotID := fmt.Sprintf("wantlist:%s", lastAdded)
+	snapshotID := fmt.Sprintf("wantlist:%d:%s", len(allWants), hashWantlist(allWants))
 	return allTracks, snapshotID, nil
 }
 
+// hashWantlist computes a deterministic hash of a Discogs wantlist.
+func hashWantlist(wants []discogsWant) string {
+	h := sha256.New()
+	for _, w := range wants {
+		artist := ""
+		if len(w.BasicInformation.Artists) > 0 {
+			artist = w.BasicInformation.Artists[0].Name
+		}
+		h.Write([]byte(artist))
+		h.Write([]byte(w.BasicInformation.Title))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
 func (p *DiscogsProvider) ValidateConfig(config string) error {
+	if config == "" {
+		return fmt.Errorf("discogs username must not be empty")
+	}
 	return nil
 }

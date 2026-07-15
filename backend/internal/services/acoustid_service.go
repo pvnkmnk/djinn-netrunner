@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 )
 
 type AcoustIDService struct {
@@ -18,10 +19,8 @@ type AcoustIDService struct {
 
 func NewAcoustIDService(cfg *config.Config) *AcoustIDService {
 	return &AcoustIDService{
-		cfg: cfg,
-		httpClient: &http.Client{
-			Timeout: 15 * time.Second,
-		},
+		cfg:        cfg,
+		httpClient: NewSafeProxyAwareHTTPClient(cfg, 15*time.Second),
 	}
 }
 
@@ -57,16 +56,20 @@ func (s *AcoustIDService) Lookup(fingerprint string, duration int) ([]AcoustIDRe
 	params.Add("duration", fmt.Sprintf("%d", duration))
 	params.Add("format", "json")
 
+	start := time.Now()
 	fullURL := fmt.Sprintf("https://api.acoustid.org/v2/lookup?%s", params.Encode())
 
 	resp, err := s.httpClient.Get(fullURL)
 	if err != nil {
+		metrics.TrackExternalCall("acoustid", start, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("acoustid api error: %s", resp.Status)
+		apiErr := fmt.Errorf("acoustid api error: %s", resp.Status)
+		metrics.TrackExternalCall("acoustid", start, apiErr)
+		return nil, apiErr
 	}
 
 	var data struct {
@@ -86,5 +89,6 @@ func (s *AcoustIDService) Lookup(fingerprint string, duration int) ([]AcoustIDRe
 		s.cache.Set("acoustid", cacheKey, data.Results, 168*time.Hour) // Cache for a week
 	}
 
+	metrics.TrackExternalCall("acoustid", start, nil)
 	return data.Results, nil
 }

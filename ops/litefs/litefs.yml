@@ -1,0 +1,24 @@
+# LiteFS configuration for SQLite replication
+# Docs: https://fly.io/docs/litefs/
+#
+# This is used when deploying with SQLite instead of PostgreSQL.
+# LiteFS provides a FUSE mountpoint that multiple worker replicas
+# can share for read operations, with writes forwarded to the primary.
+#
+# To use: set DATABASE_URL to point at the LiteFS proxy on each node.
+fuse:
+  mountpoint: /litefs
+
+data:
+  dir: /var/lib/litefs
+
+proxy:
+  addr: ":4827"
+  target: "localhost:8080"
+  db: "netrunner.db"
+
+lease:
+  type: "consul"
+  # For single-node testing with multiple workers, use static lease:
+  # type: "static"
+  # candidate: true

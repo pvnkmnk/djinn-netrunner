@@ -6,7 +6,20 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
-PROJECT_NAME="netrunner-smoke"
+PROJECT_NAME="${SMOKE_PROJECT_NAME:-netrunner-smoke}"
+SMOKE_HTTP_PORT="${SMOKE_HTTP_PORT:-18081}"
+SMOKE_HTTPS_PORT="${SMOKE_HTTPS_PORT:-18443}"
+SMOKE_HTTPS_UDP_PORT="${SMOKE_HTTPS_UDP_PORT:-18444}"
+BASE_URL="http://localhost:${SMOKE_HTTP_PORT}"
+HTTPS_BASE_URL="https://localhost:${SMOKE_HTTPS_PORT}"
+COOKIE_FILE="$(mktemp)"
+OVERRIDE_FILE="$(mktemp)"
+
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-smokepass}"
+export SLSKD_USERNAME="${SLSKD_USERNAME:-smokeuser}"
+export SLSKD_PASSWORD="${SLSKD_PASSWORD:-smokepass}"
+export SLSKD_API_KEY="${SLSKD_API_KEY:-smoke-api-key}"
+export JWT_SECRET="${JWT_SECRET:-smoke-jwt-secret}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,26 +30,67 @@ pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
 fail() { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
 info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
 
-# --- Dependencies ---
-command -v docker &>/dev/null || fail "Docker not installed"
-command -v curl &>/dev/null || fail "curl not installed"
+compose() {
+    docker compose -f "$COMPOSE_FILE" -f "$OVERRIDE_FILE" -p "$PROJECT_NAME" "$@"
+}
+
+csrf_token() {
+    awk '$6 == "csrf_" {print $7}' "$COOKIE_FILE" | tail -1
+}
+
+csrf_header() {
+    token="$(csrf_token)"
+    [ -n "$token" ] || fail "CSRF token was not issued"
+    printf '%s' "$token"
+}
 
 # --- Cleanup handler ---
 cleanup() {
     info "Tearing down stack..."
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down -v 2>/dev/null || true
+    compose down -v 2>/dev/null || true
+    rm -f "$COOKIE_FILE" "$OVERRIDE_FILE"
 }
 trap cleanup EXIT
 
+# --- Dependencies ---
+command -v docker &>/dev/null || fail "Docker not installed"
+command -v curl &>/dev/null || fail "curl not installed"
+
+cat > "$OVERRIDE_FILE" <<YAML
+services:
+  postgres:
+    container_name: ${PROJECT_NAME}-postgres
+  slskd:
+    container_name: ${PROJECT_NAME}-slskd
+  gonic:
+    container_name: ${PROJECT_NAME}-gonic
+  ops-web:
+    container_name: ${PROJECT_NAME}-ops-web
+    ports:
+      - "${SMOKE_HTTP_PORT}:8080"
+      - "${SMOKE_HTTPS_PORT}:8443/tcp"
+      - "${SMOKE_HTTPS_UDP_PORT}:8443/udp"
+    environment:
+      SLSKD_URL: http://slskd:5030
+      GONIC_URL: http://gonic:4747
+      JWT_SECRET: ${JWT_SECRET}
+  ops-worker:
+    container_name: ${PROJECT_NAME}-ops-worker
+    environment:
+      SLSKD_URL: http://slskd:5030
+      GONIC_URL: http://gonic:4747
+      JWT_SECRET: ${JWT_SECRET}
+YAML
+
 # --- 1. Deploy ---
 info "Starting NetRunner stack..."
-docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d --build 2>&1
+compose up -d --build postgres slskd gonic ops-web ops-worker 2>&1
 
 # --- 2. Wait for health ---
 info "Waiting for health endpoint..."
 ATTEMPTS=0
 MAX_ATTEMPTS=60
-HEALTH_URL="http://localhost:8080/api/health"
+HEALTH_URL="$BASE_URL/api/health"
 while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
     if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
         pass "Health endpoint responded"
@@ -51,40 +105,55 @@ fi
 
 # --- 3. Register ---
 info "Registering admin user..."
-REGISTER_RESP=$(curl -sf -X POST http://localhost:8080/api/auth/register \
+curl -sf -c "$COOKIE_FILE" "$BASE_URL/" > /dev/null 2>&1 || fail "Unable to fetch initial CSRF token"
+SMOKE_EMAIL="admin+$(date +%s)@smoke.test"
+LIBRARY_NAME="smoke-test-lib"
+CSRF_TOKEN="$(csrf_header)"
+REGISTER_RESP=$(curl -sf -X POST "$BASE_URL/api/auth/register" \
     -H "Content-Type: application/json" \
-    -d '{"email":"admin@smoke.test","password":"smoketest123"}' 2>&1) || fail "Register failed: $REGISTER_RESP"
+    -H "X-CSRF-Token: $CSRF_TOKEN" \
+    -b "$COOKIE_FILE" \
+    -c "$COOKIE_FILE" \
+    -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"smoketest123\"}" 2>&1) || fail "Register failed: $REGISTER_RESP"
 pass "Registration succeeded"
 
 # --- 4. Login ---
 info "Logging in..."
-LOGIN_RESP=$(curl -sf -X POST http://localhost:8080/api/auth/login \
+CSRF_TOKEN="$(csrf_header)"
+LOGIN_RESP=$(curl -sf -X POST "$BASE_URL/api/auth/login" \
     -H "Content-Type: application/json" \
-    -c "$REPO_ROOT/.smoke-cookies" \
-    -d '{"email":"admin@smoke.test","password":"smoketest123"}' 2>&1) || fail "Login failed: $LOGIN_RESP"
+    -H "X-CSRF-Token: $CSRF_TOKEN" \
+    -b "$COOKIE_FILE" \
+    -c "$COOKIE_FILE" \
+    -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"smoketest123\"}" 2>&1) || fail "Login failed: $LOGIN_RESP"
 pass "Login succeeded"
-
-COOKIE_FILE="$REPO_ROOT/.smoke-cookies"
 
 # --- 5. Create library ---
 info "Creating test library..."
-LIBRARY_RESP=$(curl -sf -X POST http://localhost:8080/api/libraries \
+CSRF_TOKEN="$(csrf_header)"
+LIBRARY_RESP=$(curl -sf -X POST "$BASE_URL/api/libraries" \
     -H "Content-Type: application/json" \
+    -H "X-CSRF-Token: $CSRF_TOKEN" \
     -b "$COOKIE_FILE" \
-    -d '{"name":"smoke-test-lib","path":"/tmp/smoke-music"}' 2>&1) || fail "Create library failed: $LIBRARY_RESP"
+    -c "$COOKIE_FILE" \
+    -d "{\"name\":\"$LIBRARY_NAME\",\"path\":\"/app/music\"}" 2>&1) || fail "Create library failed: $LIBRARY_RESP"
+LIB_ID=$(printf '%s' "$LIBRARY_RESP" | sed -n 's/.*"ID":"\([^"]*\)".*/\1/p' | head -1)
 pass "Library created"
 
 # --- 6. List libraries ---
 info "Listing libraries..."
-LIBS=$(curl -sf http://localhost:8080/api/libraries -b "$COOKIE_FILE" 2>&1) || fail "List libraries failed: $LIBS"
-echo "$LIBS" | grep -q "smoke-test-lib" || fail "Library not found in list"
+LIBS=$(curl -sf "$BASE_URL/api/libraries" -b "$COOKIE_FILE" 2>&1) || fail "List libraries failed: $LIBS"
+echo "$LIBS" | grep -q "$LIBRARY_NAME" || fail "Library not found in list"
 pass "Library listed"
 
 # --- 7. Delete library ---
 info "Cleaning up test library..."
-LIB_ID=$(echo "$LIBS" | grep -oP '"ID":"[^"]+' | head -1 | cut -d'"' -f3)
 if [ -n "$LIB_ID" ]; then
-    curl -sf -X DELETE "http://localhost:8080/api/libraries/$LIB_ID" -b "$COOKIE_FILE" > /dev/null 2>&1 || true
+    CSRF_TOKEN="$(csrf_header)"
+    curl -sf -X DELETE "$BASE_URL/api/libraries/$LIB_ID" \
+        -H "X-CSRF-Token: $CSRF_TOKEN" \
+        -b "$COOKIE_FILE" \
+        -c "$COOKIE_FILE" > /dev/null 2>&1 || true
 fi
 pass "Library cleaned up"
 

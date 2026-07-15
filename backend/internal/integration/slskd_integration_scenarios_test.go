@@ -19,7 +19,9 @@ import (
 func TestSlskdEndToEndSearch(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
-	
+
+	harness.SkipIfSlskdDisconnected(t)
+
 	tests := []struct {
 		name       string
 		query      string
@@ -79,7 +81,9 @@ func TestSlskdHealthCheck(t *testing.T) {
 func TestSlskdSearchWithQualityProfile(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
-	
+
+	harness.SkipIfSlskdDisconnected(t)
+
 	// Create quality profile with specific constraints
 	highQualityProfile := &database.QualityProfile{
 		Name:           "High Quality Test Profile",
@@ -123,8 +127,8 @@ func TestSlskdDownloadLifecycle(t *testing.T) {
 	testUsername := "test_peer"
 	testFilename := "test_artist_test_song.mp3"
 	
-	// Enqueue download
-	downloadID, err := harness.Slskd.EnqueueDownload(testUsername, testFilename)
+	// Enqueue download (size 0 for test)
+	downloadID, err := harness.Slskd.EnqueueDownload(testUsername, testFilename, 0)
 	if err != nil {
 		t.Fatalf("Failed to enqueue download: %v", err)
 	}
@@ -136,7 +140,7 @@ func TestSlskdDownloadLifecycle(t *testing.T) {
 	t.Logf("Download enqueued: %s", downloadID)
 	
 	// Verify download was created
-	download, err := harness.Slskd.GetDownload(testUsername, testFilename)
+	download, err := harness.Slskd.GetDownload(testUsername, downloadID)
 	if err != nil {
 		t.Fatalf("Failed to get download status: %v", err)
 	}
@@ -153,8 +157,8 @@ func TestSlskdDownloadLifecycle(t *testing.T) {
 	
 	completed := make(chan *services.Download, 1)
 	go func() {
-		d, err := harness.Slskd.WaitForDownload(testUsername, testFilename, 5*time.Second)
-		if err == nil && d != nil && d.State == services.DownloadStateCompleted {
+		d, err := harness.Slskd.WaitForDownload(ctx, testUsername, downloadID, 5*time.Second)
+		if err == nil && d != nil && d.State.IsSucceeded() {
 			completed <- d
 		}
 	}()
@@ -163,7 +167,7 @@ func TestSlskdDownloadLifecycle(t *testing.T) {
 	case <-ctx.Done():
 		t.Log("Download wait timed out (expected in test environment without real peers)")
 	case d := <-completed:
-		t.Logf("Download completed: %s", d.Path)
+		t.Logf("Download completed: %s", d.LocalPath)
 	}
 }
 
@@ -216,6 +220,8 @@ func TestSlskdErrorHandling(t *testing.T) {
 func TestSlskdConcurrentOperations(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
+
+	harness.SkipIfSlskdDisconnected(t)
 	
 	queries := []string{
 		"Artist One Song",
@@ -263,6 +269,8 @@ func TestSlskdConcurrentOperations(t *testing.T) {
 func TestSlskdScoreCalculation(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
+
+	harness.SkipIfSlskdDisconnected(t)
 	
 	profile := harness.TestQualityProfile
 	

@@ -19,16 +19,27 @@ The services are organized into distinct functional domains, each with a dedicat
 
 ```
 services/
+├── job_handlers.go               # JobHandler interface + BaseHandler (shared logging)
+├── sync_handler.go               # SyncHandler — watchlist sync + job item creation
+├── acquisition_pipeline.go       # AcquisitionHandler — multi-stage item pipeline
+├── cover_art.go                  # Cover art fetching with fallback chain
+├── import_file.go                # File import, dedup, metadata enrichment, move
+├── job_item_processor.go         # ClaimNextItem, ProcessItem, RunSafely (DJI-364)
+├── zombie_recovery.go            # ZombieRecovery — stale heartbeat detection (DJI-364)
 ├── artist_tracking_service.go    # Artist monitoring + MusicBrainz discography sync
 ├── watchlist_service.go          # Watchlist CRUD + provider orchestration
-├── job_handlers.go               # SyncHandler + AcquisitionHandler (job execution)
 ├── slskd_service.go              # Soulseek P2P search & download
 ├── gonic_client.go               # Subsonic API client (library indexing)
 ├── musicbrainz_service.go        # MusicBrainz API (artist/recording lookups)
 ├── spotify_service.go            # Spotify client credentials auth
-├── spotify_provider.go           # Spotify watchlist provider (liked songs, playlists)
+├── spotify_provider.go           # Spotify watchlist provider (two-pronged: CC + sp_dc + OAuth)
+├── spotify_spdc.go               # SpDcAuth — sp_dc token exchange, client token, GraphQL executor
+├── spotify_graphql.go            # GraphQL response parsers (libraryV3, fetchPlaylist, home)
+├── spotify_totp.go               # TOTP generation (XOR cipher + HMAC-SHA1 for Spotify)
+├── provider_errors.go            # ProviderError type + classifyHTTPStatus/classifyNetworkError
 ├── discogs_service.go            # Discogs API (metadata enrichment)
 ├── discogs_provider.go           # Discogs wantlist provider
+├── lidarr_provider.go             # Lidarr wanted albums provider (lidarr_wanted)
 ├── lastfm_provider.go            # Last.fm loved tracks / top tracks provider
 ├── listenbrainz_provider.go      # ListenBrainz recent listens provider
 ├── rss_provider.go               # RSS/Atom feed provider
@@ -52,9 +63,13 @@ The `WatchlistService` uses a pluggable provider architecture. Each provider imp
 
 Providers are registered at service initialization:
 ```go
-s.RegisterProvider("spotify_liked", NewSpotifyProvider(spotifyAuth))
-s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey))
-s.RegisterProvider("rss_feed", NewRSSProvider())
+spotifyProvider := NewSpotifyProviderWithSpDc(spotifyAuth, NewSpDcAuth(proxyClient))
+s.RegisterProvider("spotify_liked", spotifyProvider)
+s.RegisterProvider("spotify_playlist", spotifyProvider)
+s.RegisterProvider("spotify_discover", spotifyProvider)
+s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey, proxyClient))
+s.RegisterProvider("rss_feed", NewRSSProvider(proxyClient))
+s.RegisterProvider("lidarr_wanted", NewLidarrProvider(..., proxyClient))  // conditional on cfg.LidarrURL
 // ... etc
 ```
 
@@ -181,9 +196,10 @@ The `QualityProfile.IsMatch()` method scores search results in `SlskdService`.
 | GonicClient | Gonic music server - Subsonic REST API |
 | MusicBrainzService | musicbrainz.org - REST API |
 | DiscogsService | api.discogs.com - REST API |
-| SpotifyProvider | Spotify Web API - OAuth |
+| SpotifyProvider | Spotify Web API (client creds), GraphQL Partner API (sp_dc), OAuth (fallback) |
 | LastFMProvider | ws.audioscrobbler.com - Last.fm API |
 | ListenBrainzProvider | api.listenbrainz.org - ListenBrainz API |
+| LidarrProvider | Lidarr — REST API (wanted/missing albums) |
 | RSSProvider | Any RSS/Atom feed |
 | AcoustIDService | api.acoustid.org - AcoustID API |
 | MetadataExtractor | fpcalc (Chromaprint CLI), tag libraries |

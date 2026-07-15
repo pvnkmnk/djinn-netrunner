@@ -367,3 +367,41 @@ func TestAppendJobLog_NoItemID(t *testing.T) {
 	assert.Len(t, logs, 1)
 	assert.Nil(t, logs[0].JobItemID)
 }
+
+func TestTableLockManager_ConcurrentAcquire(t *testing.T) {
+	// Use shared-cache in-memory DB so all pool connections share the same data
+	db, err := gorm.Open(sqlite.Open("file:concurrent_lock_test?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, _ := db.DB()
+	// Keep at least 2 connections open so the shared-cache DB stays alive
+	sqlDB.SetMaxIdleConns(2)
+	t.Cleanup(func() { sqlDB.Close() })
+	Migrate(db)
+
+	lm := &TableLockManager{db: db}
+	key, _ := lm.GetScopeLockKey(nil, "watchlist", "concurrent-test")
+
+	const workers = 10
+	results := make(chan bool, workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			acquired, err := lm.AcquireTryLock(nil, key)
+			if err != nil {
+				results <- false
+				return
+			}
+			results <- acquired
+		}()
+	}
+
+	wins := 0
+	for i := 0; i < workers; i++ {
+		if <-results {
+			wins++
+		}
+	}
+
+	assert.Equal(t, 1, wins, "exactly one goroutine should acquire the lock")
+	lm.ReleaseLock(nil, key)
+}

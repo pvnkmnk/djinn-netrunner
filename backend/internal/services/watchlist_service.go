@@ -29,18 +29,48 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 		providers:   make(map[string]interfaces.WatchlistProvider),
 	}
 
-	// Register default providers
-	s.RegisterProvider("spotify_liked", NewSpotifyProvider(spotifyAuth))
-	s.RegisterProvider("spotify_playlist", NewSpotifyProvider(spotifyAuth))
-	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey))
-	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey))
-	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken))
-	s.RegisterProvider("rss_feed", NewRSSProvider())
-	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken))
+	// Shared proxy-aware client for internal/unrestricted HTTP calls
+	proxyClient := NewProxyAwareHTTPClient(cfg, 30*time.Second)
+	safeProxyClient := NewSafeProxyAwareHTTPClient(cfg, 30*time.Second)
+
+	// Initialize sp_dc auth for Spotify's two-pronged strategy
+	spdc := NewSpDcAuth(proxyClient)
+
+	// Register Spotify providers with two-pronged support:
+	// Prong 1 (client credentials) + Prong 2 (sp_dc GraphQL) + Legacy (OAuth)
+	spotifyProvider := NewSpotifyProviderWithSpDc(spotifyAuth, spdc)
+	s.RegisterProvider("spotify_liked", spotifyProvider)
+	s.RegisterProvider("spotify_playlist", spotifyProvider)
+	s.RegisterProvider("spotify_discover", spotifyProvider)
+
+	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey, safeProxyClient))
+	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey, safeProxyClient))
+	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken, safeProxyClient))
+	s.RegisterProvider("rss_feed", NewRSSProvider(safeProxyClient))
+	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken, safeProxyClient))
 	s.RegisterProvider("local_file", NewFileWatchlistProvider())
 	s.RegisterProvider("local_directory", NewDirectoryWatchlistProvider())
 
+	// Lidarr — only register when a running instance is configured
+	if cfg.LidarrURL != "" {
+		s.RegisterProvider("lidarr_wanted", NewLidarrProvider(cfg.LidarrURL, cfg.LidarrAPIKey, proxyClient))
+	}
+
 	return s
+}
+
+// GetSpDcAuth returns the SpDcAuth instance used by Spotify providers.
+// Returns nil if no SpDcAuth was initialized.
+func (s *WatchlistService) GetSpDcAuth() *SpDcAuth {
+	p, ok := s.providers["spotify_liked"]
+	if !ok {
+		return nil
+	}
+	sp, ok := p.(*SpotifyProvider)
+	if !ok {
+		return nil
+	}
+	return sp.spdc
 }
 
 // RegisterProvider registers a new watchlist provider handler

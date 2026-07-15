@@ -1,3 +1,30 @@
+# === LiteFS / SQLite Deployment Profile ===
+# By default this compose file uses PostgreSQL. For multi-worker SQLite
+# deployments with LiteFS, uncomment the litefs service below, add the
+# `sqlite` profile tag to ops-web and ops-worker, and change DATABASE_URL
+# to use the LiteFS proxy endpoint.
+#
+# Scaling workers: docker compose up --scale ops-worker=3
+# See docs/RUNBOOK.md#litefs-scaling for details.
+#
+# litefs:
+#   image: flyio/litefs:latest
+#   container_name: netrunner-litefs
+#   volumes:
+#     - ./ops/litefs/litefs.yml:/etc/litefs.yml:ro
+#     - netrunner-litefs-data:/var/lib/litefs
+#     - netrunner-sqlite-data:/litefs
+#   cap_add:
+#     - SYS_ADMIN
+#   devices:
+#     - /dev/fuse
+#   security_opt:
+#     - apparmor:unconfined
+#   depends_on:
+#     postgres:
+#       condition: service_started
+#   restart: unless-stopped
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,7 +32,7 @@ services:
     environment:
       POSTGRES_DB: musicops
       POSTGRES_USER: musicops
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - netrunner-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -68,7 +95,7 @@ services:
     container_name: ops-web
     command: ["./netrunner-server"]
     environment:
-      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
+      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
       GONIC_URL: http://netrunner-gonic:4747
@@ -96,9 +123,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
   ops-worker:
     build:
       context: .
@@ -106,7 +130,7 @@ services:
     container_name: ops-worker
     command: ["./netrunner-worker"]
     environment:
-      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD:-changeme}@postgres:5432/musicops?sslmode=disable
+      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
       GONIC_URL: http://netrunner-gonic:4747

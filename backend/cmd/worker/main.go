@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -12,9 +13,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
@@ -41,10 +44,16 @@ type WorkerOrchestrator struct {
 	litefs              *database.LiteFSGuard
 	notificationService *services.NotificationService
 	diskQuotaService    *services.DiskQuotaService
+	gonic               *services.GonicClient
+	navidrome           *services.NavidromeClient
 
 	// Handlers
 	syncHandler *services.SyncHandler
 	acqHandler  *services.AcquisitionHandler
+
+	// Extracted sub-components (DJI-364)
+	itemProcessor  *services.JobItemProcessor
+	zombieRecovery *services.ZombieRecovery
 
 	activeJobs map[uint64]*jobContext
 	jobMutex   sync.Mutex
@@ -57,10 +66,11 @@ type WorkerOrchestrator struct {
 }
 
 type jobContext struct {
-	job     database.Job
-	cancel  context.CancelFunc
-	ctx     context.Context
-	lockKey int64
+	job        database.Job
+	cancel     context.CancelFunc
+	ctx        context.Context
+	lockKey    int64
+	processing bool // true when a goroutine is actively processing this job
 }
 
 func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator {
@@ -79,8 +89,27 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	metadata := services.NewMetadataExtractor()
 	aid := services.NewAcoustIDService(cfg)
 	aid.SetCache(cache)
-	gonic := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
+	proxyClient := services.NewProxyAwareHTTPClient(cfg, 30*time.Second)
+	gonicClient := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, proxyClient)
 	discogs := services.NewDiscogsService(cfg)
+
+	// DJI-357: Initialize ctx in constructor to prevent nil panic if methods
+	// are called before Start(). Start() replaces this with a fresh context.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	lm := database.NewLockManager(db)
+	lyrics := services.NewLyricsService(proxyClient)
+	transcoder := services.NewTranscoderService()
+	ytdlp := services.NewYtdlpService()
+
+	var navidromeClient *services.NavidromeClient
+	if cfg.NavidromeURL != "" {
+		navidromeClient = services.NewNavidromeClient(cfg.NavidromeURL, cfg.NavidromeUser, cfg.NavidromePass, proxyClient)
+		slog.Info("Navidrome client configured", "url", cfg.NavidromeURL)
+	}
+
+	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonicClient, navidromeClient, discogs, cache, lyrics, transcoder, ytdlp)
+
 	return &WorkerOrchestrator{
 		workerID:            fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:                  db,
@@ -91,17 +120,27 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		watchlist:           watchlist,
 		scanService:         services.NewScannerService(db),
 		discogs:             discogs,
-		lockManager:         database.NewLockManager(db),
+		lockManager:         lm,
 		spotify:             spotify,
 		slskd:               slskd,
 		metadata:            metadata,
 		litefs:              database.NewLiteFSGuard(cfg.DatabaseURL),
 		syncHandler:         services.NewSyncHandler(db, spotify, watchlist),
-		acqHandler:          services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic, discogs, cache),
-		notificationService: services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled),
+		acqHandler:          acqHandler,
+		itemProcessor:       services.NewJobItemProcessor(db, acqHandler),
+		zombieRecovery:      services.NewZombieRecovery(db, lm, services.DefaultZombieRecoveryConfig()),
+		notificationService: func() *services.NotificationService {
+			ns := services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled, proxyClient)
+			ns.ConfigureSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom, cfg.SMTPEnabled)
+			return ns
+		}(),
+		gonic:               gonicClient,
+		navidrome:           navidromeClient,
 		diskQuotaService:    services.NewDiskQuotaService(sqlDB),
 		activeJobs:          make(map[uint64]*jobContext),
 		wakeupChan:          make(chan bool, 1),
+		ctx:                 ctx,
+		cancel:              cancel,
 	}
 }
 
@@ -111,21 +150,44 @@ func (w *WorkerOrchestrator) Start() {
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	slog.Info("Starting worker", "worker_id", w.workerID)
 
-	// Start background tasks
-	go w.heartbeatLoop()
+	if !database.IsPostgres(w.cfg.DatabaseURL) && MaxConcurrentJobs > 1 {
+		slog.Warn("SQLite detected with MaxConcurrentJobs > 1 — concurrent workers are unsafe without PostgreSQL advisory locks. Consider switching to PostgreSQL for production workloads.",
+			"max_concurrent_jobs", MaxConcurrentJobs)
+	}
+
+	// Start background tasks — all tracked in WaitGroup for graceful shutdown
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		w.heartbeatLoop()
+	}()
 
 	if w.litefs.IsPrimary() {
-		go w.schedulerLoop()
-		go w.watchlistPollingLoop()
-		go w.zombieCleanupLoop()
-		go w.rmService.StartBackgroundTask()
+		w.wg.Add(3)
+		go func() {
+			defer w.wg.Done()
+			w.schedulerLoop()
+		}()
+		go func() {
+			defer w.wg.Done()
+			w.watchlistPollingLoop()
+		}()
+		go func() {
+			defer w.wg.Done()
+			w.zombieRecovery.Run(w.ctx, w.workerID)
+		}()
+		w.rmService.StartBackgroundTask(w.ctx, &w.wg)
 	} else {
 		slog.Info("Running in replica mode. Skipping scheduler and watchlist poller.", "worker_id", w.workerID)
 	}
 
 	// listenForWakeup only works for Postgres, for SQLite we rely on polling
 	if w.db.Dialector.Name() == "postgres" {
-		go w.listenForWakeup()
+		w.wg.Add(1)
+		go func() {
+			defer w.wg.Done()
+			w.listenForWakeup()
+		}()
 	}
 
 	// Main job loop with round-robin item processing
@@ -234,6 +296,11 @@ func (w *WorkerOrchestrator) listenForWakeup() {
 
 func (w *WorkerOrchestrator) Stop() {
 	slog.Info("Shutting down worker", "worker_id", w.workerID)
+
+	// DJI-356: Stop rate limiter BEFORE cancel+wg.Wait to unblock any
+	// goroutine waiting on a search token.
+	w.slskd.Stop()
+
 	w.cancel()
 
 	w.jobMutex.Lock()
@@ -277,42 +344,7 @@ func (w *WorkerOrchestrator) checkQuotaAlerts() {
 	}
 }
 
-func (w *WorkerOrchestrator) zombieCleanupLoop() {
-	slog.Info("Starting zombie cleanup loop", "worker_id", w.workerID)
-	ticker := time.NewTicker(1 * time.Minute)
-	for {
-		select {
-		case <-w.ctx.Done():
-			return
-		case <-ticker.C:
-			// Find jobs marked as running but with stale heartbeats (> 2 mins)
-			staleThreshold := time.Now().Add(-2 * time.Minute)
-			var zombieJobs []database.Job
-			err := w.db.Where("state = ? AND heartbeat_at < ?", "running", staleThreshold).Find(&zombieJobs).Error
-			if err != nil {
-				slog.Error("Error searching for zombie jobs", "worker_id", w.workerID, "error", err)
-				continue
-			}
 
-			for _, job := range zombieJobs {
-				slog.Warn("Resetting zombie job", "worker_id", w.workerID, "job_id", job.ID, "last_heartbeat", job.HeartbeatAt)
-
-				w.db.Model(&job).Updates(map[string]interface{}{
-					"state":        "queued",
-					"worker_id":    nil,
-					"started_at":   nil,
-					"heartbeat_at": nil,
-				})
-
-				// Attempt to release the advisory lock if it was held
-				lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
-				if err == nil {
-					w.lockManager.ReleaseLock(w.ctx, lockKey)
-				}
-			}
-		}
-	}
-}
 
 func (w *WorkerOrchestrator) updateHeartbeats() {
 	w.jobMutex.Lock()
@@ -344,7 +376,7 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 			w.db.Model(&database.Schedule{}).Where("enabled = ? AND next_run_at IS NULL", true).Update("next_run_at", time.Now())
 
 			// Find due schedules
-			err := w.db.Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
+			err := w.db.Preload("Watchlist").Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
 			if err != nil {
 				slog.Error("Error fetching schedules", "worker_id", w.workerID, "error", err)
 				continue
@@ -398,6 +430,10 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 
 	var job database.Job
 
+	// Capture claim timestamp before the transaction so the same value is
+	// persisted in the DB and kept on the local struct (see post-tx block).
+	claimTime := time.Now()
+
 	// Start an immediate transaction to "lock" the row for SQLite
 	err := w.db.Transaction(func(tx *gorm.DB) error {
 		// 1. Find next queued job
@@ -406,14 +442,21 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 			return err // Will rollback and we'll try again next tick
 		}
 
-		// 2. Mark as running
-		now := time.Now()
-		return tx.Model(&job).Updates(map[string]interface{}{
+		// 2. Mark as running — guard with state='queued' to prevent two workers
+		//    claiming the same job (see also DJI-331 for item-level fix).
+		result := tx.Model(&job).Where("state = ?", "queued").Updates(map[string]interface{}{
 			"state":        "running",
 			"worker_id":    w.workerID,
-			"started_at":   &now,
-			"heartbeat_at": &now,
-		}).Error
+			"started_at":   &claimTime,
+			"heartbeat_at": &claimTime,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound // already claimed by another worker
+		}
+		return nil
 	})
 
 	if err != nil {
@@ -423,30 +466,55 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		return
 	}
 
-	// Acquire advisory lock for scope
-	lockKey, err := w.lockManager.GetScopeLockKey(context.Background(), job.ScopeType, job.ScopeID)
+	// GORM map-based Updates doesn't write back into the struct, so populate
+	// the fields we just set in the DB to keep the local copy consistent.
+	job.State = "running"
+	job.WorkerID = &w.workerID
+	job.StartedAt = &claimTime
+	job.HeartbeatAt = &claimTime
+
+	// Update queued gauge after claiming
+	var queuedCount int64
+	w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&queuedCount)
+	metrics.JobsQueued.Set(float64(queuedCount))
+
+	// requeue resets a claimed job back to queued state and updates the gauge.
+	requeue := func(reason string) {
+		if err := w.db.Model(&job).Updates(map[string]interface{}{
+			"state": "queued", "worker_id": nil, "started_at": nil, "heartbeat_at": nil,
+		}).Error; err != nil {
+			slog.Error("Failed to requeue job", "worker_id", w.workerID, "job_id", job.ID, "reason", reason, "error", err)
+			return
+		}
+		var qc int64
+		w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&qc)
+		metrics.JobsQueued.Set(float64(qc))
+	}
+
+	// Acquire advisory lock for scope (use worker context to allow cancellation).
+	// If lock key computation or acquisition fails, requeue the job immediately
+	// rather than leaving it in 'running' state for ZombieRecovery to clean up.
+	lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
 	if err != nil {
-		slog.Error("Error computing lock key", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+		slog.Error("Error computing lock key, requeueing", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+		requeue("lock_key_error")
 		return
 	}
 
-	acquired, err := w.lockManager.AcquireTryLock(context.Background(), lockKey)
+	acquired, err := w.lockManager.AcquireTryLock(w.ctx, lockKey)
 	if err != nil {
-		slog.Error("Error acquiring advisory lock", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+		slog.Error("Error acquiring advisory lock, requeueing", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+		requeue("lock_acquire_error")
 		return
 	}
 
 	if !acquired {
 		slog.Info("Scope locked, requeueing", "worker_id", w.workerID, "job_id", job.ID, "scope_type", job.ScopeType, "scope_id", job.ScopeID)
-		w.db.Model(&job).Updates(map[string]interface{}{
-			"state":      "queued",
-			"worker_id":  nil,
-			"started_at": nil,
-		})
+		requeue("scope_locked")
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(w.ctx)
 
 	jc := &jobContext{
 		job:     job,
@@ -456,7 +524,17 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	}
 
 	w.jobMutex.Lock()
+	// Re-check capacity while holding lock — prevents race between check and insertion (DJI-339)
+	if len(w.activeJobs) >= MaxConcurrentJobs {
+		w.jobMutex.Unlock()
+		cancel()
+		w.lockManager.ReleaseLock(context.Background(), lockKey)
+		slog.Info("Capacity reached, requeueing", "worker_id", w.workerID, "job_id", job.ID)
+		requeue("capacity_exceeded")
+		return
+	}
 	w.activeJobs[job.ID] = jc
+	metrics.JobsRunning.Set(float64(len(w.activeJobs)))
 	w.jobMutex.Unlock()
 
 	slog.Info("Claimed job", "worker_id", w.workerID, "job_id", job.ID, "job_type", job.Type)
@@ -473,6 +551,13 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 	for _, id := range activeIDs {
 		w.jobMutex.Lock()
 		jc, ok := w.activeJobs[id]
+		if ok && jc.processing {
+			w.jobMutex.Unlock()
+			continue
+		}
+		if ok {
+			jc.processing = true
+		}
 		w.jobMutex.Unlock()
 
 		if !ok {
@@ -485,77 +570,64 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 			// Process one item
 			w.wg.Add(1)
 			go func(jc *jobContext) {
+				defer func() {
+					w.jobMutex.Lock()
+					jc.processing = false
+					w.jobMutex.Unlock()
+				}()
 				defer w.wg.Done()
-				w.processAcquisitionItem(jc)
+				err := w.runJobSafely(jc, func() error {
+					w.processAcquisitionItem(jc)
+					return nil
+				})
+				if err != nil {
+					w.finishJob(jc.job.ID, err)
+				}
 			}(jc)
 		case "sync":
 			w.wg.Add(1)
 			go func(jc *jobContext) {
+				defer func() {
+					w.jobMutex.Lock()
+					jc.processing = false
+					w.jobMutex.Unlock()
+				}()
 				defer w.wg.Done()
-				err := w.syncHandler.Execute(jc.ctx, jc.job.ID, jc.job)
+				err := w.runJobSafely(jc, func() error {
+					return w.syncHandler.Execute(jc.ctx, jc.job.ID, jc.job)
+				})
 				w.finishJob(jc.job.ID, err)
 			}(jc)
 		default:
 			w.wg.Add(1)
 			go func(jc *jobContext) {
+				defer func() {
+					w.jobMutex.Lock()
+					jc.processing = false
+					w.jobMutex.Unlock()
+				}()
 				defer w.wg.Done()
-				w.runMonolithicJob(jc)
+				err := w.runJobSafely(jc, func() error {
+					w.runMonolithicJob(jc)
+					return nil
+				})
+				if err != nil {
+					w.finishJob(jc.job.ID, err)
+				}
 			}(jc)
 		}
 	}
 }
 
-func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
-	// Claim next item
-	itemID, err := w.claimNextJobItem(jc.job.ID)
-	if err != nil {
-		slog.Error("Error claiming item", "worker_id", w.workerID, "job_id", jc.job.ID, "error", err)
-		return
-	}
-
-	if itemID == 0 {
-		// No more items, finish job
-		w.finishJob(jc.job.ID, nil)
-		return
-	}
-
-	err = w.acqHandler.ExecuteItem(jc.ctx, jc.job.ID, itemID)
-	if err != nil {
-		slog.Error("Error processing item", "worker_id", w.workerID, "job_id", jc.job.ID, "item_id", itemID, "error", err)
-	}
+func (w *WorkerOrchestrator) runJobSafely(jc *jobContext, fn func() error) error {
+	return services.RunSafely(w.workerID, jc.job.ID, jc.job.Type, fn)
 }
 
-func (w *WorkerOrchestrator) claimNextJobItem(jobID uint64) (uint64, error) {
-	var itemID uint64
-	err := w.db.Transaction(func(tx *gorm.DB) error {
-		var item database.JobItem
-		// Find next queued item or failed item whose next_attempt_at has passed
-		err := tx.Where("job_id = ? AND (status = 'queued' OR (status = 'failed' AND next_attempt_at <= ?))", jobID, time.Now()).
-			Order("sequence ASC").
-			First(&item).Error
-
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return nil // No items found
-			}
-			return err
-		}
-
-		// Mark as running
-		now := time.Now()
-		err = tx.Model(&item).Updates(map[string]interface{}{
-			"status":     "running",
-			"started_at": &now,
-		}).Error
-		if err != nil {
-			return err
-		}
-
-		itemID = item.ID
-		return nil
-	})
-
-	return itemID, err
+func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
+	result := w.itemProcessor.ProcessItem(jc.ctx, w.workerID, jc.job.ID)
+	if result.NoItems {
+		w.finishJob(jc.job.ID, nil)
+	}
 }
 
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
@@ -569,9 +641,15 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 	case "release_monitor":
 		err = w.rmService.CheckAllArtists()
 	case "index_refresh":
-		slog.Info("Triggering Gonic index refresh", "worker_id", w.workerID, "job_id", jc.job.ID)
-		// Placeholder for actual refresh call via GonicClient
-		w.mbService.HealthCheck() // Just a dummy call to use a service
+		slog.Info("Triggering library index refresh", "worker_id", w.workerID, "job_id", jc.job.ID)
+		ok, scanErr := w.triggerLibraryScan()
+		if scanErr != nil {
+			err = fmt.Errorf("library scan trigger failed: %w", scanErr)
+		} else if !ok {
+			err = fmt.Errorf("library scan trigger returned non-ok status")
+		} else {
+			slog.Info("Gonic index refresh triggered", "worker_id", w.workerID, "job_id", jc.job.ID)
+		}
 	case "scan":
 		libraryID, err := uuid.Parse(jc.job.ScopeID)
 		if err != nil {
@@ -673,9 +751,10 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 		return
 	}
 	delete(w.activeJobs, jobID)
+	runningCount := len(w.activeJobs)
 	w.jobMutex.Unlock()
 
-	// Release lock
+	// Release lock (use background context since worker may be shutting down)
 	w.lockManager.ReleaseLock(context.Background(), jc.lockKey)
 
 	finalState := "succeeded"
@@ -699,6 +778,28 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 
 	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
 
+	// Trigger library index refresh after successful acquisition so new
+	// tracks appear in the streaming server without waiting for a manual
+	// or scheduled scan.
+	if finalState == "succeeded" && jc.job.Type == "acquisition" {
+		w.wg.Add(1)
+		go func() {
+			defer w.wg.Done()
+			if ok, err := w.triggerLibraryScan(); err != nil {
+				slog.Warn("Post-acquisition library refresh failed", "job_id", jobID, "error", err)
+			} else if !ok {
+				slog.Warn("Post-acquisition library refresh returned non-ok", "job_id", jobID)
+			}
+		}()
+	}
+
+	// Record metrics
+	metrics.JobsProcessedTotal.WithLabelValues(jc.job.Type, finalState).Inc()
+	if jc.job.StartedAt != nil {
+		metrics.JobDurationSeconds.WithLabelValues(jc.job.Type).Observe(time.Since(*jc.job.StartedAt).Seconds())
+	}
+	metrics.JobsRunning.Set(float64(runningCount))
+
 	slog.Info("Finished job", "worker_id", w.workerID, "job_id", jobID, "state", finalState)
 }
 
@@ -717,6 +818,17 @@ func main() {
 
 	worker := NewWorkerOrchestrator(cfg, db)
 
+	// Expose /metrics for Prometheus scraping on :9090
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{Addr: ":9090", Handler: metricsMux}
+	go func() {
+		slog.Info("Worker metrics server listening on :9090")
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("Metrics server error", "error", err)
+		}
+	}()
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
@@ -724,5 +836,26 @@ func main() {
 
 	slog.Info("Worker process running. Press Ctrl+C to stop.")
 	<-stop
+	metricsServer.Close()
 	worker.Stop()
+}
+
+// triggerLibraryScan triggers a scan on the configured library server.
+// Tries Gonic first; on failure falls back to Navidrome if configured.
+func (w *WorkerOrchestrator) triggerLibraryScan() (bool, error) {
+	if w.gonic != nil {
+		ok, err := w.gonic.TriggerScan()
+		if err == nil {
+			return ok, nil
+		}
+		if w.navidrome != nil {
+			slog.Warn("Gonic scan failed, falling back to Navidrome", "error", err)
+			return w.navidrome.TriggerScan()
+		}
+		return ok, err
+	}
+	if w.navidrome != nil {
+		return w.navidrome.TriggerScan()
+	}
+	return false, fmt.Errorf("no library server configured (set GONIC_URL or NAVIDROME_URL)")
 }

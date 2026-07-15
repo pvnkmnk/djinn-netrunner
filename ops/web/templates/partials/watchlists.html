@@ -1,42 +1,35 @@
 <div class="watchlists-region">
     <div class="section-header">
         <h2>Watchlists</h2>
-        <button class="btn btn-primary" hx-get="/partials/watchlist-form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Add new watchlist">
+        <button class="btn btn-primary" hx-get="/api/watchlists/form" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Add new watchlist">
             Add Watchlist
         </button>
     </div>
-    
+
+    <div class="provider-config" id="spotify-spdc-config">
+        <details>
+            <summary>
+                Spotify Connection
+                {% if spDcLinked %}<span class="badge badge-ok">Connected</span>{% else %}<span class="badge badge-warn">Not linked</span>{% endif %}
+            </summary>
+            <div class="config-body">
+                <p class="text-secondary">
+                    Spotify Liked Songs, private playlists, and Discover require an <code>sp_dc</code> cookie from your browser.
+                    Open <a href="https://open.spotify.com" target="_blank" rel="noopener">open.spotify.com</a>, sign in,
+                    then copy the <code>sp_dc</code> cookie from DevTools (Application &rarr; Cookies).
+                </p>
+                <form id="spdc-form" class="inline-form">
+                    <input type="text" id="spdc_cookie" name="sp_dc" placeholder="sp_dc cookie value" autocomplete="off">
+                    <button type="submit" class="btn btn-sm btn-primary">{% if spDcLinked %}Update{% else %}Link{% endif %}</button>
+                </form>
+                <div id="spdc-status" class="form-status"></div>
+            </div>
+        </details>
+    </div>
+
     <div id="watchlists-list">
     {% for watchlist in watchlists %}
-    <div class="watchlist-card" id="watchlist-{{ watchlist.ID }}">
-        <div class="watchlist-info">
-            <div class="name">{{ watchlist.Name }}</div>
-            <div class="source">{{ watchlist.SourceType }}: {{ watchlist.SourceURI }}</div>
-        </div>
-        <div class="actions">
-            <button class="btn btn-sm" hx-post="/api/watchlists/{{ watchlist.ID }}/sync" hx-target="#console-logs" aria-label="Sync watchlist {{ watchlist.Name }}">
-                Sync
-            </button>
-            <button class="btn btn-sm" hx-get="/api/watchlists/{{ watchlist.ID }}/preview" hx-target="#watchlist-preview-{{ watchlist.ID }}" hx-swap="innerHTML" type="button" aria-label="Preview tracks for {{ watchlist.Name }}">
-                Preview
-            </button>
-            <button class="btn btn-sm" hx-get="/partials/watchlist-form?id={{ watchlist.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit watchlist {{ watchlist.Name }}">
-                Edit
-            </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/watchlists/{{ watchlist.ID }}" hx-target="#watchlist-{{ watchlist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete watchlist {{ watchlist.Name }}?" aria-label="Delete watchlist {{ watchlist.Name }}">
-                Delete
-            </button>
-            <label class="toggle">
-                <input type="checkbox" {% if watchlist.Enabled %}checked{% endif %} 
-                    hx-patch="/api/watchlists/{{ watchlist.ID }}/toggle"
-                    hx-target="#watchlist-{{ watchlist.ID }}"
-                    hx-swap="outerHTML"
-                    aria-label="{% if watchlist.Enabled %}Disable{% else %}Enable{% endif %} monitoring for {{ watchlist.Name }}">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        <div id="watchlist-preview-{{ watchlist.ID }}" class="watchlist-preview"></div>
-    </div>
+    {% include "partials/watchlist-card.html" %}
     {% empty %}
     <p class="empty-state">No watchlists configured</p>
     <p class="text-secondary">Add a watchlist using the button above to start monitoring music sources.</p>
@@ -44,5 +37,3 @@
     </div>
 </div>
 
-<!-- Modal container for forms -->
-<div id="modal-container"></div>

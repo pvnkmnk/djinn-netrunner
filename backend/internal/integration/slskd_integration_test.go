@@ -11,8 +11,10 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
@@ -191,6 +193,29 @@ func cleanupTestData(t *testing.T, db *gorm.DB) {
 	db.Exec("DELETE FROM quality_profiles WHERE name = 'Integration Test Profile'")
 }
 
+// SkipIfSlskdDisconnected skips the test if slskd is not connected to the
+// Soulseek network. Sends a lightweight POST to /api/v0/searches (the same
+// endpoint the tests hit) and checks for 409 Conflict without waiting for
+// results — avoids the 15-second sleep that Search() incurs.
+func (h *IntegrationHarness) SkipIfSlskdDisconnected(t *testing.T) {
+	t.Helper()
+	payload := []byte(`{"searchText":"connectivity-probe","searchTimeout":1000}`)
+	req, err := http.NewRequest("POST", h.Config.SlskdURL+"/api/v0/searches", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("SkipIfSlskdDisconnected: bad request: %v", err)
+	}
+	req.Header.Set("X-API-Key", h.Config.SlskdAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Skipf("Skipping: slskd unreachable: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		t.Skip("Skipping: slskd not connected to Soulseek network (409)")
+	}
+}
+
 // CreateTestJob creates a test acquisition job with items
 func (h *IntegrationHarness) CreateTestJob(t *testing.T, items []TestJobItem) (*database.Job, []database.JobItem) {
 	t.Helper()
@@ -283,8 +308,8 @@ func (h *IntegrationHarness) ValidateDownloadFlow(t *testing.T, username, filena
 	
 	t.Logf("Testing download flow for %s from %s", filename, username)
 	
-	// Enqueue download
-	downloadID, err := h.Slskd.EnqueueDownload(username, filename)
+	// Enqueue download (size 0 is acceptable for integration tests)
+	downloadID, err := h.Slskd.EnqueueDownload(username, filename, 0)
 	if err != nil {
 		t.Fatalf("Failed to enqueue download: %v", err)
 	}
@@ -300,7 +325,7 @@ func (h *IntegrationHarness) ValidateDownloadFlow(t *testing.T, username, filena
 	errChan := make(chan error, 1)
 	
 	go func() {
-		download, err := h.Slskd.WaitForDownload(username, filename, downloadWaitTimeout)
+		download, err := h.Slskd.WaitForDownload(ctx, username, downloadID, downloadWaitTimeout)
 		if err != nil {
 			errChan <- err
 			return
@@ -314,8 +339,8 @@ func (h *IntegrationHarness) ValidateDownloadFlow(t *testing.T, username, filena
 	case err := <-errChan:
 		t.Logf("Download failed: %v (expected if peer unavailable)", err)
 	case download := <-done:
-		if download.State == services.DownloadStateCompleted {
-			t.Logf("Download completed successfully: %s", download.Path)
+		if download.State.IsSucceeded() {
+			t.Logf("Download completed successfully: %s", download.LocalPath)
 		} else {
 			t.Errorf("Download ended with unexpected state: %s", download.State)
 		}

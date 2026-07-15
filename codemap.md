@@ -11,7 +11,7 @@ Console-first operations UI for a music acquisition pipeline. Monitors watchlist
 - `docker-compose.yml` — Docker Compose orchestration (server, worker, PostgreSQL, Caddy)
 
 ## Architecture Constraints
-- **Language**: Go 1.22+
+- **Language**: Go 1.25+
 - **Database**: SQLite (CGO-free via `modernc.org/sqlite`) in WAL mode, or PostgreSQL
 - **Frontend**: HTMX + server-rendered Pongo2 templates + vanilla CSS (no SPA)
 - **Concurrency**: Native goroutines, round-robin job dispatch, advisory locking
@@ -31,6 +31,7 @@ Console-first operations UI for a music acquisition pipeline. Monitors watchlist
 | `backend/internal/config/` | Configuration — env-based loader for all service connections | [View Map](backend/internal/config/codemap.md) |
 | `backend/internal/database/` | Data layer — GORM models, migrations, advisory locks, LiteFS | [View Map](backend/internal/database/codemap.md) |
 | `backend/internal/interfaces/` | Abstractions — SpotifyClientProvider, WatchlistProvider contracts | [View Map](backend/internal/interfaces/codemap.md) |
+| `backend/internal/metrics/` | Prometheus metrics — job counters, histograms, external API tracking | — |
 | `backend/internal/services/` | Core logic — watchlists, jobs, P2P, metadata, artist tracking | [View Map](backend/internal/services/codemap.md) |
 | `ops/caddy/` | Reverse proxy — Caddy config for production HTTPS | [View Map](ops/caddy/codemap.md) |
 | `ops/db/` | Database ops — PostgreSQL init scripts and SQL migrations | [View Map](ops/db/codemap.md) |

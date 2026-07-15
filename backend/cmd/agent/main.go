@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -35,7 +36,7 @@ func main() {
 	// Initialize services
 	spotifyAuth := api.NewSpotifyAuthHandler(db)
 	watchlistService := services.NewWatchlistService(db, spotifyAuth, cfg)
-	gonicClient := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass)
+	gonicClient := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, services.NewProxyAwareHTTPClient(cfg, 30*time.Second))
 
 	// Create a new MCP server
 	s := server.NewMCPServer(

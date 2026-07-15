@@ -21,6 +21,8 @@ music-library/
 
 # Local tool artifacts
 .gitnexus/
+.beads/
+.slim/clonedeps/
 
 # IDE
 .vscode/
@@ -28,6 +30,20 @@ music-library/
 *.swp
 *.swo
 *~
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+dist/
+build/
+backend/server
+backend/worker
+.next/
+target/
 
 # Logs
 *.log
@@ -39,6 +55,7 @@ Thumbs.db
 # Binaries
 *.exe
 *.bin
+*.test
 
 # Worktrees
 .worktrees/
@@ -48,3 +65,8 @@ Thumbs.db
 *.db-shm
 *.db-wal
 
+*.test
+
+# Playwright artifacts
+e2e/playwright-report/
+e2e/test-results/

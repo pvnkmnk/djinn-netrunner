@@ -8,6 +8,8 @@ NetRunner is a modern, Go-native system for automated music discovery, download,
 ![Architecture](https://img.shields.io/badge/architecture-standalone--sqlite-blue)
 ![UI](https://img.shields.io/badge/ui-htmx--cyberpunk-magenta)
 ![Security](https://img.shields.io/badge/security-session--auth-brightgreen)
+[![CI](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/ci.yml/badge.svg)](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/ci.yml)
+[![Integration Tests](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/integration.yml/badge.svg)](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/integration.yml)
 
 ---
 
@@ -35,7 +37,7 @@ NetRunner is a security-hardened, performance-optimized music acquisition pipeli
 - **Glassmorphic Aesthetic**: Deep cyberpunk theme with high-quality typography (Orbitron/Inter).
 
 ### Core Pipeline
-- **Unified Watchlists**: Single paradigm for all monitoring sources (Spotify, RSS, Last.fm, Discogs, local files).
+- **Unified Watchlists**: Single paradigm for all monitoring sources (Spotify playlists/liked/discover, Last.fm loved/top, ListenBrainz, Discogs, Lidarr, RSS, local files).
 - **Artist Tracking**: Monitor specific artists for new releases via MusicBrainz integration.
 - **Scheduled Syncing**: Cron-based scheduling for automated watchlist and artist monitoring.
 - **Intelligent Search**: Multi-variable quality ranking (bitrate, speed, queue depth).
@@ -162,6 +164,28 @@ NetRunner 2.0 uses a unified Go 1.25 backend:
 
 ---
 
+## 💾 Database Support
+
+NetRunner supports both SQLite and PostgreSQL. Choose based on your deployment:
+
+| Use Case | Recommended DB | Notes |
+|---|---|---|
+| Local / single-user dev | SQLite WAL | Zero config, no external deps |
+| Multi-user / homelab production | PostgreSQL 16 | Required for advisory locks, NOTIFY wakeup, concurrent workers |
+| Multi-node / LiteFS cluster | LiteFS + SQLite | Advanced; single primary only for scheduler/poller |
+
+**Key differences:**
+- **Advisory locks**: Postgres uses `pg_try_advisory_lock` for real session-level mutual exclusion; SQLite uses a `TableLockManager` (row-based emulation — **single-worker only**)
+- **Job wakeup**: Postgres supports `LISTEN/NOTIFY` for instant worker notification; SQLite workers poll on interval
+- **Concurrent workers**: Multiple worker instances require Postgres for safe concurrent job claims
+- **`LiteFSGuard`**: Automatically detects LiteFS primary node and adjusts worker behavior
+
+> A startup warning is emitted when SQLite is used with `MaxConcurrentJobs > 1` — switch to Postgres for concurrent workloads.
+
+For operational runbooks (backup, upgrade, migration), see [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+---
+
 ## 🔧 Core Design Decisions
 
 1. **Native Concurrency**: Leverages Go's scheduler for fair, round-robin job processing across multiple sources.
@@ -170,6 +194,68 @@ NetRunner 2.0 uses a unified Go 1.25 backend:
 4. **Agentic Surface**: First-class support for AI agents through a comprehensive CLI and MCP tools.
 
 ---
+
+## 🔒 Privacy & Proxy
+
+All outbound HTTP traffic from provider API clients is routed through a centralized proxy-aware client factory (`NewProxyAwareHTTPClient`). Set the `PROXY_URL` environment variable to route traffic through an HTTP or SOCKS5 proxy.
+
+**Proxied** (when `PROXY_URL` is set):
+- MusicBrainz, AcoustID, Discogs, Last.fm, ListenBrainz, Lidarr, LRCLIB lyrics
+- Gonic/Navidrome/Plex/Jellyfin library server API calls
+- slskd API calls and webhook notifications
+
+**Not proxied by NetRunner** (handle at the network/VPN layer):
+- Spotify OAuth transport (uses `oauth2.Config.Client()` which manages its own HTTP transport)
+- slskd Soulseek P2P traffic (managed by slskd's own network config)
+
+```bash
+# Example: route all provider traffic through a SOCKS5 proxy
+PROXY_URL=socks5://127.0.0.1:1080
+
+# Example: HTTP proxy
+PROXY_URL=http://proxy.example.com:8080
+```
+
+---
+
+## 📊 Observability
+
+NetRunner exposes `/metrics` endpoints in Prometheus exposition format. The server exposes metrics on `:8080/metrics` and the worker on `:9090/metrics`. Scraped metrics include:
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `netrunner_worker_jobs_running` | gauge | — | Active jobs in the worker |
+| `netrunner_worker_jobs_queued` | gauge | — | Jobs waiting to be claimed |
+| `netrunner_worker_jobs_processed_total` | counter | `type`, `outcome` | Jobs completed (succeeded/failed) |
+| `netrunner_worker_job_duration_seconds` | histogram | `type` | Processing time per job |
+| `netrunner_worker_items_processed_total` | counter | `outcome` | Job items processed |
+| `netrunner_worker_zombie_jobs_recovered_total` | counter | — | Stale jobs reset by zombie recovery |
+| `netrunner_external_api_calls_total` | counter | `service`, `status` | External API call counts |
+| `netrunner_external_api_duration_seconds` | histogram | `service` | External API latency |
+| `netrunner_acquisition_dedup_total` | counter | `method` | Deduplication events |
+| `netrunner_acquisition_cover_art_fetch_total` | counter | `source`, `outcome` | Cover art fetch attempts |
+
+### Prometheus Scrape Config
+
+The server exposes `/metrics` on `:8080` and the worker on `:9090`:
+
+```yaml
+scrape_configs:
+  - job_name: "netrunner-server"
+    static_configs:
+      - targets: ["localhost:8080"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+  - job_name: "netrunner-worker"
+    static_configs:
+      - targets: ["localhost:9090"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+```
+
+### Grafana Dashboard
+
+Import `ops/grafana/netrunner-dashboard.json` into Grafana for a pre-built dashboard covering worker throughput, job latency percentiles, external API health, and acquisition pipeline metrics.
 
 ## 🤝 Contributing
 
@@ -182,4 +268,4 @@ We welcome contributions that align with our "Console-First" and "Standalone" de
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
-**Architecture**: Go 1.25, SQLite, Fiber, HTMX
+**Architecture**: Go 1.25+, SQLite/PostgreSQL, Fiber, HTMX

@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -41,9 +43,17 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
 	}
 
+	// Validate and normalize email format using net/mail.ParseAddress (RFC 5322)
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid email format"})
+	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
+
 	// Check if user exists — return identical response to prevent user enumeration
+	// Use case/whitespace-insensitive match for transitional safety with legacy non-normalized data.
 	var existing database.User
-	if err := h.db.Where("email = ?", payload.Email).First(&existing).Error; err == nil {
+	if err := h.db.Where("LOWER(TRIM(email)) = ?", payload.Email).First(&existing).Error; err == nil {
 		slog.Info("Duplicate registration attempt", "email", payload.Email, "ip", c.IP())
 		return c.Status(201).JSON(fiber.Map{"status": "ok"})
 	}
@@ -78,8 +88,16 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
+	// Normalize email before DB lookup
+	addr, err := mail.ParseAddress(payload.Email)
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
+	}
+	payload.Email = strings.ToLower(strings.TrimSpace(addr.Address))
+
 	var user database.User
-	if err := h.db.Where("email = ?", payload.Email).First(&user).Error; err != nil {
+	// Use case/whitespace-insensitive match for transitional safety with legacy non-normalized data.
+	if err := h.db.Where("LOWER(TRIM(email)) = ?", payload.Email).First(&user).Error; err != nil {
 		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
 	}
 
@@ -111,8 +129,8 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	h.db.Model(&user).Update("last_login_at", &now)
 
 	// Set cookie with security best practices
-	// SECURITY: SameSite=Lax prevents CSRF while allowing normal navigation
-	// Secure flag is set based on environment (true in production, false for local HTTP dev)
+	// SECURITY: SameSite=Strict prevents CSRF (no cross-site top-level GET navigations)
+	// Secure flag set dynamically: false for local HTTP dev, true for HTTPS behind Caddy
 	secure := c.Protocol() == "https"
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookie,
@@ -120,10 +138,15 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		Expires:  expiresAt,
 		HTTPOnly: true,
 		Secure:   secure,
-		SameSite: "Lax",
+		SameSite: "Strict",
 		Path:     "/",
 	})
 
+	// Return JSON for API requests, HTML redirect for browser form submissions
+	acceptHeader := c.Get("Accept")
+	if strings.Contains(acceptHeader, "application/json") || strings.Contains(acceptHeader, "application/*+json") {
+		return c.JSON(fiber.Map{"status": "ok"})
+	}
 	return c.Redirect("/", 302)
 }
 
@@ -140,6 +163,25 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 
 func (h *AuthHandler) GetDB() *gorm.DB {
 	return h.db
+}
+
+// OptionalAuthMiddleware loads user context when a valid session exists but
+// does not reject unauthenticated requests. Use on routes that serve both
+// authenticated and guest visitors (e.g. the dashboard landing page).
+func (h *AuthHandler) OptionalAuthMiddleware(c *fiber.Ctx) error {
+	sessionID := c.Cookies(SessionCookie)
+	if sessionID == "" {
+		return c.Next()
+	}
+
+	var user database.User
+	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
+		First(&user).Error
+	if err == nil {
+		c.Locals("user", user)
+	}
+	return c.Next()
 }
 
 // AuthMiddleware protects routes

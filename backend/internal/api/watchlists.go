@@ -1,7 +1,10 @@
 package api
 
 import (
+	"fmt"
+	"html"
 	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -67,7 +70,19 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "failed to create watchlist"})
 	}
 
+	c.Set("HX-Trigger", "closeModal")
+	if isHTMXRequest(c) {
+		return h.RenderWatchlistsPartial(c)
+	}
 	return c.Status(201).JSON(watchlist)
+}
+
+type UpdateWatchlistInput struct {
+	Name             *string    `json:"name"`
+	SourceType       *string    `json:"source_type"`
+	SourceURI        *string    `json:"source_uri"`
+	QualityProfileID *uuid.UUID `json:"quality_profile_id"`
+	Enabled          *bool      `json:"enabled"`
 }
 
 // UpdateWatchlist updates an existing watchlist
@@ -92,8 +107,31 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 	}
 
-	if err := c.BodyParser(watchlist); err != nil {
+	var input UpdateWatchlistInput
+	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if input.Name != nil {
+		if *input.Name == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
+		}
+		watchlist.Name = *input.Name
+	}
+	if input.SourceType != nil {
+		watchlist.SourceType = *input.SourceType
+	}
+	if input.SourceURI != nil {
+		watchlist.SourceURI = *input.SourceURI
+	}
+	if input.QualityProfileID != nil {
+		watchlist.QualityProfileID = *input.QualityProfileID
+	}
+	if input.Enabled != nil {
+		watchlist.Enabled = *input.Enabled
+	} else if c.Is("form") {
+		// ponytail: unchecked checkboxes are omitted in form submissions, treat as false
+		watchlist.Enabled = false
 	}
 
 	// Validate again before saving
@@ -105,6 +143,9 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderWatchlistsPartial(c)
+	}
 	return c.JSON(watchlist)
 }
 
@@ -126,6 +167,9 @@ func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderWatchlistsPartial(c)
+	}
 	return c.Status(204).Send(nil)
 }
 
@@ -138,7 +182,8 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 	}
 
 	var profiles []database.QualityProfile
-	query := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns for the dropdown.
+	query := h.db.Select("id, name").Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -176,14 +221,14 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 		return c.Status(500).SendString("<div class=\"error\">Failed to update watchlist.</div>")
 	}
 
-	return c.Render("partials/watchlists", fiber.Map{"watchlists": []database.Watchlist{wl}})
+	return c.Render("partials/watchlist-card", fiber.Map{"watchlist": wl})
 }
 
 // GetForm returns the watchlist form for add/edit
 func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {
@@ -236,7 +281,7 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !hasAuth {
 		if isHtmx {
@@ -257,7 +302,58 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
 	}
 
+	// Check if user has linked Spotify sp_dc cookie
+	var spDcLinked bool
+	var spotifyToken database.SpotifyToken
+	if err := h.db.Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
+		spDcLinked = spotifyToken.SpDcCookie != ""
+	}
+
 	return c.Render("partials/watchlists", fiber.Map{
-		"watchlists": watchlists,
+		"watchlists":  watchlists,
+		"spDcLinked":  spDcLinked,
 	})
+}
+
+// SyncWatchlist triggers a sync job for a watchlist
+func (h *WatchlistHandler) SyncWatchlist(c *fiber.Ctx) error {
+	user, hasAuth := currentUserFromLocals(c)
+	if !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+	}
+
+	var wl database.Watchlist
+	query := h.db.Where("id = ?", id)
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.First(&wl).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(404).JSON(fiber.Map{"error": "watchlist not found"})
+		}
+		return internalServerError(c, err)
+	}
+
+	// Create sync job
+	job := database.Job{
+		Type:        "watchlist_sync",
+		State:       "queued",
+		ScopeType:   "watchlist",
+		ScopeID:     wl.ID.String(),
+		RequestedAt: time.Now(),
+		CreatedBy:   "ui",
+		OwnerUserID: &user.ID,
+	}
+
+	if err := h.db.Create(&job).Error; err != nil {
+		slog.Error("Failed to create watchlist sync job", "error", err, "watchlistID", wl.ID)
+		return c.Status(500).Type("html").SendString(`<div class="console-entry error">Failed to trigger sync for watchlist ` + html.EscapeString(wl.Name) + `.</div>`)
+	}
+
+	return c.Type("html").SendString(`<div class="console-entry">Sync triggered for watchlist ` + html.EscapeString(wl.Name) + `... (job #` + fmt.Sprintf("%d", job.ID) + `)</div>`)
 }

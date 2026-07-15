@@ -229,6 +229,37 @@ func (m *Track) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// Playlist represents a user-created collection of tracks
+type Playlist struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name        string    `gorm:"not null" json:"name"`
+	Description string    `gorm:"type:text" json:"description"`
+	Public      bool      `gorm:"default:false" json:"public"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	OwnerUserID *uint64   `gorm:"index" json:"owner_user_id"`
+
+	Tracks []Track `gorm:"many2many:playlist_tracks;joinForeignKey:PlaylistID;joinReferences:TrackID" json:"tracks,omitempty"`
+}
+
+func (m *Playlist) BeforeCreate(tx *gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
+}
+
+// PlaylistTrack represents an ordered entry in a playlist (join table with position)
+type PlaylistTrack struct {
+	PlaylistID uuid.UUID `gorm:"type:uuid;primaryKey;not null" json:"playlist_id"`
+	TrackID    uuid.UUID `gorm:"type:uuid;primaryKey;not null" json:"track_id"`
+	Position   int       `gorm:"not null;default:0" json:"position"`
+	CreatedAt  time.Time `json:"created_at"`
+
+	Playlist Playlist `gorm:"foreignKey:PlaylistID" json:"-"`
+	Track    Track    `gorm:"foreignKey:TrackID" json:"track,omitempty"`
+}
+
 // Watchlist represents an automated monitoring source (Spotify playlist/Liked Songs)
 type Watchlist struct {
 	ID               uuid.UUID `gorm:"type:uuid;primaryKey"`
@@ -253,7 +284,9 @@ func (m *Watchlist) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// SpotifyToken stores User OAuth tokens
+// SpotifyToken stores User OAuth tokens and/or sp_dc cookie credentials.
+// Users may authenticate via OAuth (AccessToken/RefreshToken) or via sp_dc
+// cookie (SpDcCookie). Both can coexist for the same user.
 type SpotifyToken struct {
 	ID           uint64 `gorm:"primaryKey;autoIncrement"`
 	UserID       uint64 `gorm:"uniqueIndex;not null"`
@@ -261,6 +294,7 @@ type SpotifyToken struct {
 	RefreshToken string `gorm:"not null"`
 	TokenType    string
 	Expiry       time.Time
+	SpDcCookie   string // sp_dc browser cookie for GraphQL Partner API access
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 
@@ -346,6 +380,7 @@ type JobItem struct {
 	RetryCount      int        `gorm:"default:0"`
 	NextAttemptAt   *time.Time `gorm:"index"`
 	CoverArtURL     string
+	SourceURL       string
 	Sequence        int     `gorm:"not null"`
 	OwnerUserID     *uint64 `gorm:"index"`
 }
@@ -444,6 +479,17 @@ func (p *PeerReputation) IsIgnored() bool {
 	return p.TotalDownloads >= 5 && p.SuccessRate() < 0.2
 }
 
+// AuditLog records administrative actions for auditing
+type AuditLog struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement"`
+	Action     string    `gorm:"not null;index"`
+	ActorID    uint64    `gorm:"not null;index"`
+	TargetType string    `gorm:"not null"`
+	TargetID   string    `gorm:""`
+	Metadata   string    `gorm:"type:text"` // JSON blob
+	CreatedAt  time.Time `gorm:"index"`
+}
+
 // TableName overrides for GORM
 func (Job) TableName() string             { return "jobs" }
 func (JobItem) TableName() string         { return "jobitems" }
@@ -456,3 +502,6 @@ func (TrackedRelease) TableName() string  { return "tracked_releases" }
 func (Lock) TableName() string            { return "locks" }
 func (Setting) TableName() string         { return "settings" }
 func (PeerReputation) TableName() string  { return "peer_reputations" }
+func (AuditLog) TableName() string        { return "audit_logs" }
+func (Playlist) TableName() string      { return "playlists" }
+func (PlaylistTrack) TableName() string { return "playlist_tracks" }

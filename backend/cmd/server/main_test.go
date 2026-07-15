@@ -22,9 +22,15 @@ func TestHealthCheck(t *testing.T) {
 	}
 	healthHandler := api.NewHealthHandler(nil, cfg)
 	app.Get("/api/health", healthHandler.GetHealth)
-	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler)
+	acquireHandler := &api.AcquireHandler{}
+	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{})
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 503, resp.StatusCode)
+}
+
+func TestListenAddressUsesConfiguredPort(t *testing.T) {
+	assert.Equal(t, ":18080", listenAddress(&config.Config{Port: "18080"}))
+	assert.Equal(t, ":8080", listenAddress(&config.Config{}))
 }

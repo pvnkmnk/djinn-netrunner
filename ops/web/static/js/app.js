@@ -11,29 +11,59 @@ function getCookie(name) {
 }
 
 // Modal management
+let lastFocusedElement = null;
+
 function closeModal() {
     const container = document.getElementById('modal-container');
     if (container) {
         container.classList.remove('active');
         container.innerHTML = '';
+        // Restore focus to the element that was focused before modal opened
+        if (lastFocusedElement) {
+            lastFocusedElement.focus();
+            lastFocusedElement = null;
+        }
     }
 }
 
 function openModal(html) {
     const container = document.getElementById('modal-container');
     if (container) {
-        container.innerHTML = html;
+        // Save the currently focused element before opening modal
+        lastFocusedElement = document.activeElement;
+        
+        // NOTE: DOMParser prevents <script> execution but inline handlers
+        // (onerror, onclick, etc.) in the parsed HTML remain active once
+        // inserted. Currently unused — HTML source is server-generated and
+        // trusted. If refactored to accept user-supplied HTML, add a
+        // sanitizer (e.g. DOMPurify) before the replaceChildren call.
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const fragment = document.createDocumentFragment();
+        while (doc.body.firstChild) {
+            fragment.appendChild(doc.body.firstChild);
+        }
+        container.replaceChildren(fragment);
         // Trigger reflow
         container.offsetHeight;
         container.classList.add('active');
+        
+        // Focus the first focusable element inside the modal
+        const focusable = container.querySelectorAll(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length > 0) {
+            focusable[0].focus();
+        }
     }
 }
 
-function openModalFromHTMX(target) {
-    const container = document.getElementById('modal-container');
-    if (container && target) {
-        container.innerHTML = target;
-        container.offsetHeight;
+function openModalFromHTMX() {
+    var container = document.getElementById('modal-container');
+    if (container) {
+        // HTMX already swapped the modal content into #modal-container with
+        // proper bindings. Just show the container — no cloning needed.
+        container.offsetHeight; // force reflow for CSS transition
         container.classList.add('active');
     }
 }
@@ -46,6 +76,16 @@ document.addEventListener('DOMContentLoaded', function() {
             const expanded = navToggle.getAttribute('aria-expanded') === 'true';
             navToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
             primaryNav.classList.toggle('nav-open', !expanded);
+        });
+        
+        // Keyboard support for mobile nav toggle
+        navToggle.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const expanded = navToggle.getAttribute('aria-expanded') === 'true';
+                navToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                primaryNav.classList.toggle('nav-open', !expanded);
+            }
         });
     }
 
@@ -62,15 +102,60 @@ document.addEventListener('DOMContentLoaded', function() {
         const xhr = evt.detail.xhr;
         if (xhr && xhr.getResponseHeader) {
             if (xhr.getResponseHeader('HX-Trigger') === 'openModal') {
-                openModalFromHTMX(evt.detail.target);
+                openModalFromHTMX();
             }
         }
     });
     
-    // Close modal on escape key
+    // Process HTMX attributes in modal content after swap
+    document.body.addEventListener('htmx:afterSettle', function(evt) {
+        const container = document.getElementById('modal-container');
+        if (container && (container === evt.detail.target || container.contains(evt.detail.target))) {
+            htmx.process(container);
+        }
+    });
+    
+    // Listen for HTMX closeModal trigger (fired via HX-Trigger response header)
+    document.body.addEventListener('closeModal', function() {
+        closeModal();
+    });
+
+    // Global keyboard handler: Escape closes modal or mobile nav
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            closeModal();
+            const container = document.getElementById('modal-container');
+            if (container && container.classList.contains('active')) {
+                closeModal();
+                return;
+            }
+            if (primaryNav && primaryNav.classList.contains('nav-open')) {
+                primaryNav.classList.remove('nav-open');
+                if (navToggle) {
+                    navToggle.setAttribute('aria-expanded', 'false');
+                    navToggle.focus();
+                }
+            }
+        }
+        // Trap focus inside modal when open
+        if (e.key === 'Tab') {
+            const container = document.getElementById('modal-container');
+            if (!container || !container.classList.contains('active')) return;
+            const focusable = container.querySelectorAll(
+                'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            );
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (!container.contains(document.activeElement)) {
+                e.preventDefault();
+                if (e.shiftKey) { last.focus(); } else { first.focus(); }
+            } else if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
         }
     });
     
@@ -79,8 +164,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const container = document.getElementById('modal-container');
         if (!container || !container.classList.contains('active')) return;
         
-        // Close on overlay click
-        if (e.target.classList.contains('modal-overlay')) {
+        // Close on overlay click (container is the full viewport overlay)
+        if (e.target === container || e.target.classList.contains('modal-overlay')) {
             closeModal();
         }
         // Close on close button click
@@ -201,6 +286,83 @@ document.addEventListener('DOMContentLoaded', function() {
     applyCoverArt();
     // Re-apply after HTMX swaps in new content
     document.body.addEventListener('htmx:afterSettle', applyCoverArt);
+
+    // Watchlist: sp_dc cookie form handler
+    function initSpdcForm() {
+        var form = document.getElementById('spdc-form');
+        if (!form || form.dataset.bound) return;
+        form.dataset.bound = 'true';
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var input = document.getElementById('spdc_cookie');
+            var status = document.getElementById('spdc-status');
+            if (!input.value.trim()) { status.textContent = 'Cookie value is required'; return; }
+            try {
+                var resp = await fetch('/api/auth/spotify/spdc', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_')},
+                    body: JSON.stringify({sp_dc: input.value.trim()})
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    status.textContent = 'Linked successfully';
+                    status.className = 'form-status status-ok';
+                    input.value = '';
+                } else {
+                    status.textContent = data.error || 'Failed to save';
+                    status.className = 'form-status status-err';
+                }
+            } catch(err) {
+                status.textContent = 'Connection error';
+                status.className = 'form-status status-err';
+            }
+        });
+    }
+    initSpdcForm();
+
+    // Watchlist: dynamic source-type hints
+    function updateSourceHint() {
+        var sel = document.getElementById('source_type');
+        var uri = document.getElementById('source_uri');
+        var hint = document.getElementById('source_hint');
+        if (!sel || !uri || !hint) return;
+        var hints = {
+            'spotify_playlist': ['https://open.spotify.com/playlist/... or spotify:playlist:...', 'Spotify playlist URL or URI'],
+            'spotify_liked': ['liked', 'Enter "liked" \u2014 requires sp_dc cookie'],
+            'spotify_discover': ['Discover Weekly', 'Playlist name, e.g. "Discover Weekly", "Daily Mix 1"'],
+            'lastfm_loved': ['your-username', 'Last.fm username'],
+            'lastfm_top': ['your-username', 'Last.fm username'],
+            'listenbrainz_listens': ['your-username', 'ListenBrainz username'],
+            'discogs_wantlist': ['your-username', 'Discogs username'],
+            'lidarr_wanted': ['wanted', 'Enter "wanted" \u2014 pulls missing albums from Lidarr'],
+            'rss_feed': ['https://example.com/feed.xml', 'RSS/Atom feed URL'],
+            'local_file': ['/path/to/tracks.txt', 'Path to a text file (one "Artist - Title" per line)'],
+            'local_directory': ['/path/to/music/', 'Path to a directory of audio files']
+        };
+        var h = hints[sel.value];
+        if (h) {
+            uri.placeholder = h[0];
+            hint.textContent = h[1];
+        } else {
+            uri.placeholder = '';
+            hint.textContent = '';
+        }
+    }
+
+    function initWatchlistForm() {
+        var sel = document.getElementById('source_type');
+        if (!sel || sel.dataset.bound) return;
+        sel.dataset.bound = 'true';
+        sel.addEventListener('change', updateSourceHint);
+        updateSourceHint();
+    }
+    initWatchlistForm();
+
+    // Re-init watchlist widgets after HTMX swaps in new content
+    document.body.addEventListener('htmx:afterSettle', function() {
+        initSpdcForm();
+        initWatchlistForm();
+    });
 
     // Login/Register form handlers (only on login page)
     var showRegister = document.getElementById('show-register');

@@ -48,7 +48,7 @@ func TestLidarrProvider_FetchTracks(t *testing.T) {
 	defer server.Close()
 
 	// Create provider with mock server URL
-	provider := NewLidarrProvider(server.URL, "test-api-key")
+	provider := NewLidarrProvider(server.URL, "test-api-key", nil)
 
 	// Create test watchlist
 	watchlist := &database.Watchlist{
@@ -89,7 +89,7 @@ func TestLidarrProvider_FetchTracks_Unauthorized(t *testing.T) {
 	defer server.Close()
 
 	// Create provider with wrong API key
-	provider := NewLidarrProvider(server.URL, "wrong-key")
+	provider := NewLidarrProvider(server.URL, "wrong-key", nil)
 
 	// Create test watchlist
 	watchlist := &database.Watchlist{
@@ -107,15 +107,21 @@ func TestLidarrProvider_FetchTracks_Unauthorized(t *testing.T) {
 // TestLidarrProvider_ValidateConfig tests configuration validation
 func TestLidarrProvider_ValidateConfig(t *testing.T) {
 	// Test with empty base URL
-	provider := NewLidarrProvider("", "test-key")
+	provider := NewLidarrProvider("", "test-key", nil)
 	err := provider.ValidateConfig("")
 	if err == nil {
 		t.Error("Expected error for empty base URL")
 	}
 
-	// Test with valid base URL
-	provider = NewLidarrProvider("http://localhost:8686", "test-key")
+	// Test with valid base URL but empty source URI
+	provider = NewLidarrProvider("http://localhost:8686", "test-key", nil)
 	err = provider.ValidateConfig("")
+	if err == nil {
+		t.Error("Expected error for empty source URI")
+	}
+
+	// Test with valid base URL and valid source URI
+	err = provider.ValidateConfig("lidarr://wanted")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}

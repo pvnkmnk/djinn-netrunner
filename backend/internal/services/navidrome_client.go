@@ -17,14 +17,15 @@ type NavidromeClient struct {
 }
 
 // NewNavidromeClient creates a new Navidrome client
-func NewNavidromeClient(baseURL, username, password string) *NavidromeClient {
+func NewNavidromeClient(baseURL, username, password string, httpClient *http.Client) *NavidromeClient {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 60 * time.Second}
+	}
 	return &NavidromeClient{
 		baseURL:  fmt.Sprintf("%s/rest", baseURL),
 		username: username,
 		password: password,
-		client: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+		client:   httpClient,
 	}
 }
 
@@ -162,8 +163,14 @@ func (c *NavidromeClient) doRequest(endpoint string, params url.Values, target i
 		params = url.Values{}
 	}
 
+	// Subsonic token-based auth (keeps password out of URL query params / server logs)
+	s, err := salt()
+	if err != nil {
+		return err
+	}
 	params.Add("u", c.username)
-	params.Add("p", c.password)
+	params.Add("t", tokenFromPassword(c.password, s))
+	params.Add("s", s)
 	params.Add("v", "1.16.1")
 	params.Add("c", "netrunner")
 	params.Add("f", "json")
@@ -212,13 +219,14 @@ type PlexClient struct {
 }
 
 // NewPlexClient creates a new Plex client
-func NewPlexClient(baseURL, token string) *PlexClient {
+func NewPlexClient(baseURL, token string, httpClient *http.Client) *PlexClient {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &PlexClient{
 		baseURL: baseURL,
 		token:   token,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:  httpClient,
 	}
 }
 
@@ -252,13 +260,14 @@ type JellyfinClient struct {
 }
 
 // NewJellyfinClient creates a new Jellyfin client
-func NewJellyfinClient(baseURL, apiKey string) *JellyfinClient {
+func NewJellyfinClient(baseURL, apiKey string, httpClient *http.Client) *JellyfinClient {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &JellyfinClient{
 		baseURL: baseURL,
 		apiKey:  apiKey,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:  httpClient,
 	}
 }
 

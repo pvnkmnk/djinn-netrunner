@@ -1,25 +1,32 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/csrf"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/pvnkmnk/netrunner/backend/internal/agent"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	_ "github.com/pvnkmnk/netrunner/backend/internal/metrics" // register metrics
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"gorm.io/gorm"
 )
@@ -63,13 +70,30 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		Views:       engine,
-		ProxyHeader: fiber.HeaderXForwardedFor,
+		Views:                   engine,
+		ProxyHeader:             fiber.HeaderXForwardedFor,
+		EnableTrustedProxyCheck: true,
+		TrustedProxies: []string{
+			"127.0.0.0/8",    // IPv4 loopback
+			"10.0.0.0/8",     // RFC1918 private
+			"172.16.0.0/12",  // RFC1918 private
+			"192.168.0.0/16", // RFC1918 private
+			"::1/128",        // IPv6 loopback
+			"fc00::/7",       // IPv6 unique local
+		},
 	})
 
 	app.Use(recover.New())
 	app.Use(logger.New())
+
+	// LiteFS write forwarding: replica nodes forward mutating requests to the primary.
+	litefs := database.NewLiteFSGuard(cfg.DatabaseURL)
+	app.Use(api.LiteFSWriteForward(litefs, "http", cfg.Port))
+
 	app.Static("/static", cfg.StaticFilesPath)
+
+	// Prometheus metrics endpoint (no auth, no CSRF — scraped by monitoring)
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	// SECURITY: CSRF protection for state-changing operations
 	// Uses cookie-based storage with HTMX-compatible header matching
@@ -82,12 +106,14 @@ func main() {
 	}))
 
 	// SECURITY: Add security headers to all responses
+	// CSP is set here (not just in Caddy) to protect direct :8080 access
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("X-Content-Type-Options", "nosniff")
 		c.Set("X-Frame-Options", "DENY")
 		c.Set("X-XSS-Protection", "1; mode=block")
 		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: https:; font-src 'self' data:;")
 		return c.Next()
 	})
 
@@ -104,19 +130,48 @@ func main() {
 	wsManager := api.NewWebSocketManager()
 	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
 	schedulesHandler := api.NewSchedulesHandler(db)
+	acquireHandler := api.NewAcquireHandler(db)
+	adminHandler := api.NewAdminHandler(db)
+	playlistHandler := api.NewPlaylistHandler(db)
 
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
 
-	// Start log listener
-	go wsManager.ListenForJobLogs(cfg.DatabaseURL, db)
+	// Start log listener with graceful shutdown and exponential backoff
+	listenerCtx, listenerCancel := context.WithCancel(context.Background())
+	go func() {
+		backoff := 1 * time.Second
+		const maxBackoff = 30 * time.Second
+		for {
+			wsManager.ListenForJobLogs(listenerCtx, cfg.DatabaseURL, db)
+
+			select {
+			case <-listenerCtx.Done():
+				slog.Info("Log listener retry loop stopped")
+				return
+			default:
+			}
+
+			slog.Warn("Log listener exited, restarting", "backoff", backoff)
+			select {
+			case <-time.After(backoff):
+			case <-listenerCtx.Done():
+				slog.Info("Log listener retry loop stopped")
+				return
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}()
 
 	// Routes
-	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler)
+	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler, adminHandler, playlistHandler)
 
 	// Start server
 	go func() {
-		if err := app.Listen(":8080"); err != nil {
+		if err := app.Listen(listenAddress(cfg)); err != nil {
 			slog.Error("Server failed", "error", err)
 		}
 	}()
@@ -127,10 +182,19 @@ func main() {
 	<-stop
 
 	slog.Info("Shutting down server...")
+	listenerCancel()
 	app.Shutdown()
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler) {
+func listenAddress(cfg *config.Config) string {
+	port := "8080"
+	if cfg != nil && cfg.Port != "" {
+		port = cfg.Port
+	}
+	return ":" + port
+}
+
+func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler, adminHandler *api.AdminHandler, playlistHandler *api.PlaylistHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -147,7 +211,24 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return 1 * time.Minute // fallback
 		}(),
 		KeyGenerator: func(c *fiber.Ctx) string {
-			return c.IP()
+			// Get raw TCP connection address — c.IP() may already apply
+			// trusted-proxy logic, making the X-Real-IP trust check circular.
+			rawAddr := c.Context().RemoteAddr().String()
+			remoteAddr := rawAddr
+			if host, _, err := net.SplitHostPort(rawAddr); err == nil {
+				remoteAddr = host
+			}
+			if ip := net.ParseIP(remoteAddr); ip != nil && (ip.IsPrivate() || ip.IsLoopback()) {
+				if forwarded := c.Get("X-Real-IP"); forwarded != "" {
+					// Strip port if present
+					if host, _, err := net.SplitHostPort(forwarded); err == nil {
+						forwarded = host
+					}
+					return strings.TrimSpace(forwarded)
+				}
+			}
+			// Fall back to normalized remoteAddr (already stripped of port)
+			return remoteAddr
 		},
 		LimitReached: func(c *fiber.Ctx) error {
 			return c.Status(429).JSON(fiber.Map{"error": "too many requests, please try again later"})
@@ -162,9 +243,10 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	// Spotify Auth (OAuth Callback is public, but redirected to with user session)
 	authRoutes.Get("/spotify/login", auth.AuthMiddleware, spotifyAuth.Login)
 	authRoutes.Get("/spotify/callback", auth.AuthMiddleware, spotifyAuth.Callback)
+	authRoutes.Post("/spotify/spdc", auth.AuthMiddleware, spotifyAuth.LinkSpDc)
 
 	// UI routes (public - handles both auth and unauth)
-	app.Get("/", dash.RenderIndex)
+	app.Get("/", auth.OptionalAuthMiddleware, dash.RenderIndex)
 
 	// Page routes
 	app.Get("/watchlists", auth.AuthMiddleware, watchlist.WatchlistsPage)
@@ -173,20 +255,41 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/schedules", auth.AuthMiddleware, schedulesHandler.SchedulesPage)
 	app.Get("/artists", auth.AuthMiddleware, artistsHandler.ArtistsPage)
 	app.Get("/jobs", auth.AuthMiddleware, stats.JobsPage)
+	app.Get("/admin", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.AdminPage)
+	app.Get("/playlists", auth.AuthMiddleware, playlistHandler.PlaylistsPage)
+
+	// Console attach (minimal implementation)
+	app.Post("/console/attach", auth.AuthMiddleware, func(c *fiber.Ctx) error {
+		return c.Type("html").SendString(`<div class="console-entry">Select a running job to attach to its console output.</div>`)
+	})
 
 	// Partial routes (all protected)
 	app.Get("/partials/stats", auth.AuthMiddleware, stats.RenderStatsPartial)
 	app.Get("/partials/watchlists", auth.AuthMiddleware, watchlist.RenderWatchlistsPartial)
+	app.Get("/partials/profiles", auth.AuthMiddleware, profile.RenderProfilesPartial)
+	app.Get("/partials/profile-form", auth.AuthMiddleware, profile.GetForm)
 	app.Get("/partials/libraries", auth.AuthMiddleware, library.RenderLibrariesPartial)
 	app.Get("/partials/schedules", auth.AuthMiddleware, schedulesHandler.RenderSchedulesPartial)
 	app.Get("/partials/artists", auth.AuthMiddleware, artistsHandler.RenderPartial)
 	app.Get("/partials/artist-form", auth.AuthMiddleware, artistsHandler.GetForm)
 	app.Get("/partials/jobs", auth.AuthMiddleware, stats.RenderJobsPartial)
+	app.Get("/partials/job-logs", auth.AuthMiddleware, stats.RenderJobLogsPartial)
 	app.Get("/partials/libraries/:id/browse", auth.AuthMiddleware, library.BrowseTracks)
 	app.Get("/partials/tracks/:id", auth.AuthMiddleware, library.TrackDetail)
+	app.Get("/partials/acquire-form", auth.AuthMiddleware, acquireHandler.GetForm)
+	app.Get("/partials/playlists", auth.AuthMiddleware, playlistHandler.RenderPlaylistsPartial)
+
+	// Admin partial routes
+	app.Get("/partials/admin/users", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderUsersPartial)
+	app.Get("/partials/admin/audit", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderAuditPartial)
+	app.Get("/partials/admin/config", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderConfigPartial)
+	app.Get("/partials/admin/config-edit", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.RenderConfigEditPartial)
 
 	// Protected API routes
 	apiProtected := app.Group("/api", auth.AuthMiddleware)
+
+	// Audio streaming (outside group so path is /tracks/:id/stream)
+	app.Get("/tracks/:id/stream", auth.AuthMiddleware, library.StreamTrack)
 
 	// Watchlists
 	watchlistRoutes := apiProtected.Group("/watchlists")
@@ -197,6 +300,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	watchlistRoutes.Get("/profiles", watchlist.ListProfiles)
 	watchlistRoutes.Patch("/:id/toggle", watchlist.ToggleWatchlist)
 	watchlistRoutes.Get("/form", watchlist.GetForm)
+	watchlistRoutes.Post("/:id/sync", watchlist.SyncWatchlist)
 	watchlistPreviewHandler := api.NewWatchlistPreviewHandler(db, watchlistService)
 	watchlistRoutes.Get("/:id/preview", watchlistPreviewHandler.GetPreview)
 
@@ -208,6 +312,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	profileRoutes.Get("/:id", profile.Get)
 	profileRoutes.Patch("/:id", profile.Update)
 	profileRoutes.Delete("/:id", profile.Delete)
+	profileRoutes.Post("/:id/set-default", profile.SetDefault)
 
 	// Artists
 	artistsRoutes := apiProtected.Group("/artists")
@@ -216,6 +321,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	artistsRoutes.Post("/", artistsHandler.Add)
 	artistsRoutes.Delete("/:id", artistsHandler.Delete)
 	artistsRoutes.Patch("/:id", artistsHandler.Update)
+	artistsRoutes.Post("/:id/sync", artistsHandler.Sync)
 
 	// Schedules
 	schedulesRoutes := apiProtected.Group("/schedules")
@@ -239,6 +345,58 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	libraryRoutes.Post("/:id/prune", library.TriggerPrune)
 	libraryRoutes.Get("/:id/tracks", library.ListTracks)
 
+	// Playlists
+	playlistRoutes := apiProtected.Group("/playlists")
+	playlistRoutes.Get("/", playlistHandler.List)
+	playlistRoutes.Post("/", playlistHandler.Create)
+	playlistRoutes.Get("/:id", playlistHandler.Get)
+	playlistRoutes.Patch("/:id", playlistHandler.Update)
+	playlistRoutes.Delete("/:id", playlistHandler.Delete)
+	playlistRoutes.Post("/:id/tracks", playlistHandler.AddTrack)
+	playlistRoutes.Delete("/:id/tracks/:trackId", playlistHandler.RemoveTrack)
+	playlistRoutes.Put("/:id/tracks/order", playlistHandler.Reorder)
+
+	// Test helper: create directory (used by E2E tests to create library paths)
+	// Gate: E2E_ENABLE_TEST_API must be set to true
+	apiProtected.Post("/test/create-dir", func(c *fiber.Ctx) error {
+		if !cfg.E2EEnableTestAPI {
+			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
+		}
+
+		if _, ok := c.Locals("user").(database.User); !ok {
+			return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+		}
+
+		var payload struct {
+			Path string `json:"path"`
+		}
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
+		}
+		if payload.Path == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "path required"})
+		}
+
+		// Path traversal protection: clean path and verify it starts with allowed prefix
+		cleanPath := filepath.Clean(payload.Path)
+		allowedPrefixes := []string{"/tmp/", cfg.MusicLibraryPath}
+		valid := false
+		for _, prefix := range allowedPrefixes {
+			if strings.HasPrefix(cleanPath, prefix) {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid path"})
+		}
+
+		if err := os.MkdirAll(cleanPath, 0755); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to create directory"})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "path": cleanPath})
+	})
+
 	// Stats
 	statsRoutes := apiProtected.Group("/stats")
 	statsRoutes.Get("/jobs", stats.GetJobStats)
@@ -247,6 +405,9 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	statsRoutes.Get("/library", stats.GetLibraryStats)
 	statsRoutes.Get("/activity", stats.GetActivityStats)
 	statsRoutes.Get("/summary", stats.GetSummary)
+
+	// Acquisition
+	apiProtected.Post("/acquire", acquireHandler.Create)
 
 	// Jobs
 	jobRoutes := apiProtected.Group("/jobs")
@@ -326,17 +487,6 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		ws.HandleConsole(c, db)
 	}))
 
-	// Artist Tracking
-	apiProtected.Post("/artists/track", func(c *fiber.Ctx) error {
-		var payload struct {
-			MBID string `json:"mbid"`
-		}
-		if err := c.BodyParser(&payload); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
-		}
-		return c.JSON(fiber.Map{"status": "tracking_started"})
-	})
-
 	apiProtected.Post("/library/scan", func(c *fiber.Ctx) error {
 		var payload struct {
 			LibraryID string `json:"library_id"`
@@ -346,6 +496,41 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		}
 		return c.JSON(fiber.Map{"status": "scan_triggered"})
 	})
+
+	// Admin routes (admin-only)
+	adminRoutes := apiProtected.Group("/admin", adminHandler.AdminOnly)
+	adminRoutes.Get("/users", adminHandler.ListUsers)
+	adminRoutes.Post("/users", adminHandler.CreateUser)
+	adminRoutes.Delete("/users/:id", adminHandler.DeleteUser)
+	adminRoutes.Patch("/users/:id/role", adminHandler.UpdateRole)
+	adminRoutes.Post("/users/:id/reset-password", adminHandler.ResetPassword)
+	adminRoutes.Get("/audit", adminHandler.ListAudit)
+	adminRoutes.Get("/config", adminHandler.ListConfig)
+	adminRoutes.Patch("/config", adminHandler.UpdateConfig)
+
+	// Subsonic API routes (when enabled)
+	if cfg.Subsonic.Enabled {
+		subsonicHandler := api.NewSubsonicHandler(db, cfg)
+		subsonic := app.Group("/rest")
+		subsonic.Get("/ping.view", subsonicHandler.AuthMiddleware, subsonicHandler.Ping)
+		subsonic.Get("/license.view", subsonicHandler.AuthMiddleware, subsonicHandler.License)
+		subsonic.Get("/getIndexes.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetIndexes)
+		subsonic.Get("/getMusicDirectory.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetMusicDirectory)
+		subsonic.Get("/getSong.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetSong)
+		subsonic.Get("/getAlbum.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetAlbum)
+		subsonic.Get("/getArtist.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetArtist)
+		subsonic.Get("/stream.view", subsonicHandler.AuthMiddleware, subsonicHandler.Stream)
+		subsonic.Get("/getCoverArt.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetCoverArt)
+		subsonic.Get("/search3.view", subsonicHandler.AuthMiddleware, subsonicHandler.Search3)
+		subsonic.Get("/getAlbumList2.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetAlbumList2)
+		subsonic.Get("/getRandomSongs.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetRandomSongs)
+		subsonic.Get("/getScanStatus.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetScanStatus)
+		subsonic.Get("/startScan.view", subsonicHandler.AuthMiddleware, subsonicHandler.StartScan)
+		subsonic.Get("/getPlaylists.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetPlaylists)
+		subsonic.Get("/getPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetPlaylist)
+		subsonic.Get("/createPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.CreatePlaylist)
+		subsonic.Get("/deletePlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.DeletePlaylist)
+	}
 }
 
 func parseUint64(s string) (uint64, error) {

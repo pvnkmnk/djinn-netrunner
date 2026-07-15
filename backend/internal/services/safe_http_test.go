@@ -23,6 +23,9 @@ func TestIsPrivateIP(t *testing.T) {
 		{"8.8.8.8", false},
 		{"1.1.1.1", false},
 		{"142.250.80.46", false}, // google.com
+		{"::ffff:127.0.0.1", true},
+		{"::ffff:192.168.1.1", true},
+		{"fe80::1", true},
 	}
 
 	for _, tt := range tests {

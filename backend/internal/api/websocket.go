@@ -1,11 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,7 +71,13 @@ type JobLogEvent struct {
 	LogID uint64 `json:"log_id"`
 }
 
-func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
+func (m *WebSocketManager) ListenForJobLogs(ctx context.Context, dbURL string, db *gorm.DB) {
+	if !database.IsPostgres(dbURL) {
+		slog.Info("Skipping Postgres log listener for non-Postgres database")
+		<-ctx.Done()
+		return
+	}
+
 	reportProblem := func(ev pq.ListenerEventType, err error) {
 		if err != nil {
 			slog.Error("Log listener error", "error", err)
@@ -79,16 +85,20 @@ func (m *WebSocketManager) ListenForJobLogs(dbURL string, db *gorm.DB) {
 	}
 
 	listener := pq.NewListener(dbURL, 10*time.Second, time.Minute, reportProblem)
+	defer listener.Close()
 	err := listener.Listen("opsevents")
 	if err != nil {
 		slog.Error("Failed to listen for logs", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	slog.Info("Listening for opsevents log notifications")
 
 	for {
 		select {
+		case <-ctx.Done():
+			slog.Info("Log listener shutting down")
+			return
 		case n := <-listener.Notify:
 			var event JobLogEvent
 			if err := json.Unmarshal([]byte(n.Extra), &event); err != nil {

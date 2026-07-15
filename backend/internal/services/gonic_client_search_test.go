@@ -33,7 +33,7 @@ func TestGonicClient_Search3(t *testing.T) {
 	defer ts.Close()
 
 	// 2. Initialize Client
-	c := NewGonicClient(ts.URL, "user", "pass")
+	c := NewGonicClient(ts.URL, "user", "pass", nil)
 
 	// 3. Call Search3
 	songs, err := c.Search3("test")
@@ -71,7 +71,7 @@ func TestGonicClient_GetSong(t *testing.T) {
 	defer ts.Close()
 
 	// 2. Initialize Client
-	c := NewGonicClient(ts.URL, "user", "pass")
+	c := NewGonicClient(ts.URL, "user", "pass", nil)
 
 	// 3. Call GetSong
 	song, err := c.GetSong("123")

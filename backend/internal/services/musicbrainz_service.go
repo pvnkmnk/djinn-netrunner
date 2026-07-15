@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 )
 
 // MusicBrainzService handles interaction with the MusicBrainz API
@@ -22,12 +23,9 @@ type MusicBrainzService struct {
 // NewMusicBrainzService creates a new MusicBrainz service
 func NewMusicBrainzService(cfg *config.Config) *MusicBrainzService {
 	return &MusicBrainzService{
-		cfg:     cfg,
-		baseURL: "https://musicbrainz.org",
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		// MusicBrainz allows 1 request per second
+		cfg:         cfg,
+		baseURL:     "https://musicbrainz.org",
+		httpClient:  NewSafeProxyAwareHTTPClient(cfg, 30*time.Second),
 		rateLimiter: time.NewTicker(time.Second),
 	}
 }
@@ -210,11 +208,10 @@ func (s *MusicBrainzService) GetArtistDiscography(artistID string) (map[string]i
 	}
 
 	params := url.Values{}
-	params.Add("artist", artistID)
 	params.Add("inc", "release-groups")
 	params.Add("fmt", "json")
 
-	result, err := s.doRequest("release-group", params)
+	result, err := s.doRequest(fmt.Sprintf("artist/%s", artistID), params)
 	if err != nil {
 		return nil, err
 	}
@@ -230,11 +227,14 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 	// Wait for rate limiter
 	<-s.rateLimiter.C
 
+	start := time.Now()
+
 	baseURL := "https://musicbrainz.org/ws/2/"
 	fullURL := fmt.Sprintf("%s%s?%s", baseURL, endpoint, params.Encode())
 
 	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {
+		metrics.TrackExternalCall("musicbrainz", start, err)
 		return nil, err
 	}
 
@@ -243,6 +243,7 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		metrics.TrackExternalCall("musicbrainz", start, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -253,9 +254,11 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		metrics.TrackExternalCall("musicbrainz", start, err)
 		return nil, err
 	}
 
+	metrics.TrackExternalCall("musicbrainz", start, nil)
 	return result, nil
 }
 
@@ -338,8 +341,11 @@ type mbArtistRef struct {
 
 // GetRelease fetches detailed release information
 func (s *MusicBrainzService) GetRelease(releaseMBID string) (*MusicBrainzRelease, error) {
-	endpoint := fmt.Sprintf("/ws/2/release/%s?fmt=json&inc=artist-credit+genres+tracks+images", releaseMBID)
-	data, err := s.doRequest(endpoint, nil)
+	params := url.Values{}
+	params.Set("fmt", "json")
+	params.Set("inc", "artist-credit+genres+tracks+images")
+
+	data, err := s.doRequest(fmt.Sprintf("release/%s", releaseMBID), params)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +372,7 @@ func (s *MusicBrainzService) GetReleaseByArtistTitle(artist, title string) (*Mus
 	params.Set("query", query)
 	params.Set("limit", "1")
 
-	data, err := s.doRequest("/ws/2/release", params)
+	data, err := s.doRequest("release", params)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,6 @@
 <div class="browse-region">
     <div class="section-header">
-        <h2>Browse: {{ library.Name }}</h2>
+        <h2>Browse: {{ library.Name | escape }}</h2>
         <button class="btn btn-sm" hx-get="/partials/libraries" hx-target="#libraries-region" hx-swap="innerHTML" aria-label="Back to libraries list">
             &larr; Back
         </button>
@@ -8,7 +8,8 @@
 
     <div class="browse-search">
         <input type="text" name="search" class="search-input" placeholder="Search by title, artist, album, or genre..."
-               value="{{ search }}"
+               value="{{ search | escape }}"
+               aria-label="Search tracks"
                hx-get="/partials/libraries/{{ library.ID }}/browse?page=1&amp;sort_by={{ sort_by }}&amp;sort_dir={{ sort_dir }}&amp;page_size={{ page_size }}"
                hx-trigger="keyup changed delay:500ms, search"
                hx-target="#browse-content"
@@ -21,51 +22,63 @@
     {% if tracks %}
     <div class="browse-meta">
         <span class="track-count">{{ total }} track{% if total != 1 %}s{% endif %}</span>
-        {% if search %}<span class="search-info">matching "{{ search }}"</span>{% endif %}
+        {% if search %}        <span class="search-info">matching "{{ search | escape }}"</span>{% endif %}
     </div>
 
     <table class="track-table">
         <thead>
             <tr>
-                <th class="sortable{% if sort_by == 'title' %} sorted-{{ sort_dir }}{% endif %}"
+                <th scope="col" class="sortable{% if sort_by == 'title' %} sorted-{{ sort_dir }}{% endif %}"
+                    aria-sort="{% if sort_by == 'title' %}{% if sort_dir == 'asc' %}ascending{% else %}descending{% endif %}{% else %}none{% endif %}"
                     hx-get="/partials/libraries/{{ library.ID }}/browse?sort_by=title&amp;sort_dir={{ sortToggle.title }}&amp;page=1&amp;page_size={{ page_size }}"
                     hx-include="[name='search']"
                     hx-target="#browse-content">Title{% if sort_by == 'title' %}<span class="sort-indicator">{% if sort_dir == 'asc' %}&#9650;{% else %}&#9660;{% endif %}</span>{% endif %}</th>
-                <th class="sortable{% if sort_by == 'artist' %} sorted-{{ sort_dir }}{% endif %}"
+                <th scope="col" class="sortable{% if sort_by == 'artist' %} sorted-{{ sort_dir }}{% endif %}"
+                    aria-sort="{% if sort_by == 'artist' %}{% if sort_dir == 'asc' %}ascending{% else %}descending{% endif %}{% else %}none{% endif %}"
                     hx-get="/partials/libraries/{{ library.ID }}/browse?sort_by=artist&amp;sort_dir={{ sortToggle.artist }}&amp;page=1&amp;page_size={{ page_size }}"
                     hx-include="[name='search']"
                     hx-target="#browse-content">Artist{% if sort_by == 'artist' %}<span class="sort-indicator">{% if sort_dir == 'asc' %}&#9650;{% else %}&#9660;{% endif %}</span>{% endif %}</th>
-                <th class="sortable{% if sort_by == 'album' %} sorted-{{ sort_dir }}{% endif %}"
+                <th scope="col" class="sortable{% if sort_by == 'album' %} sorted-{{ sort_dir }}{% endif %}"
+                    aria-sort="{% if sort_by == 'album' %}{% if sort_dir == 'asc' %}ascending{% else %}descending{% endif %}{% else %}none{% endif %}"
                     hx-get="/partials/libraries/{{ library.ID }}/browse?sort_by=album&amp;sort_dir={{ sortToggle.album }}&amp;page=1&amp;page_size={{ page_size }}"
                     hx-include="[name='search']"
                     hx-target="#browse-content">Album{% if sort_by == 'album' %}<span class="sort-indicator">{% if sort_dir == 'asc' %}&#9650;{% else %}&#9660;{% endif %}</span>{% endif %}</th>
-                <th class="sortable col-num{% if sort_by == 'track_num' %} sorted-{{ sort_dir }}{% endif %}"
+                <th scope="col" class="sortable col-num{% if sort_by == 'track_num' %} sorted-{{ sort_dir }}{% endif %}"
+                    aria-sort="{% if sort_by == 'track_num' %}{% if sort_dir == 'asc' %}ascending{% else %}descending{% endif %}{% else %}none{% endif %}"
                     hx-get="/partials/libraries/{{ library.ID }}/browse?sort_by=track_num&amp;sort_dir={{ sortToggle.track_num }}&amp;page=1&amp;page_size={{ page_size }}"
                     hx-include="[name='search']"
                     hx-target="#browse-content">#{% if sort_by == 'track_num' %}<span class="sort-indicator">{% if sort_dir == 'asc' %}&#9650;{% else %}&#9660;{% endif %}</span>{% endif %}</th>
-                <th class="sortable col-format{% if sort_by == 'format' %} sorted-{{ sort_dir }}{% endif %}"
+                <th scope="col" class="sortable col-format{% if sort_by == 'format' %} sorted-{{ sort_dir }}{% endif %}"
+                    aria-sort="{% if sort_by == 'format' %}{% if sort_dir == 'asc' %}ascending{% else %}descending{% endif %}{% else %}none{% endif %}"
                     hx-get="/partials/libraries/{{ library.ID }}/browse?sort_by=format&amp;sort_dir={{ sortToggle.format }}&amp;page=1&amp;page_size={{ page_size }}"
                     hx-include="[name='search']"
                     hx-target="#browse-content">Format{% if sort_by == 'format' %}<span class="sort-indicator">{% if sort_dir == 'asc' %}&#9650;{% else %}&#9660;{% endif %}</span>{% endif %}</th>
-                <th class="col-size">Size</th>
-                <th class="col-actions">Actions</th>
+                <th scope="col" class="col-size">Size</th>
+                <th scope="col" class="col-actions">Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for track in tracks %}
             <tr class="track-row">
-                <td class="cell-title">{{ track.Title }}</td>
-                <td class="cell-artist">{{ track.Artist }}</td>
-                <td class="cell-album">{{ track.Album }}</td>
+                <td class="cell-title">{{ track.Title | escape }}</td>
+                <td class="cell-artist">{{ track.Artist | escape }}</td>
+                <td class="cell-album">{{ track.Album | escape }}</td>
                 <td class="cell-num">{% if track.TrackNum %}{{ track.TrackNum }}{% if track.DiscNum %}.{{ track.DiscNum }}{% endif %}{% endif %}</td>
-                <td class="cell-format">{{ track.Format }}</td>
+                <td class="cell-format">{{ track.Format | escape }}</td>
                 <td class="cell-size">{{ track.FileSize / 1048576 }} MB</td>
                 <td class="cell-actions">
+                    <button class="btn btn-sm np-play-btn"
+                            data-track-id="{{ track.ID }}"
+                            data-track-title="{{ track.Title|escape }}"
+                            data-track-artist="{{ track.Artist|escape }}"
+                            aria-label="Play {{ track.Title | escape }}">
+                        ▶
+                    </button>
                     <button class="btn btn-sm"
                             hx-get="/partials/tracks/{{ track.ID }}"
                             hx-target="#modal-container"
                             hx-swap="innerHTML"
-                            aria-label="Details for {{ track.Title }}">
+                            aria-label="Details for {{ track.Title | escape }}">
                         Details
                     </button>
                 </td>
@@ -94,7 +107,7 @@
     {% else %}
     <div class="empty-state">
         {% if search %}
-        <p>No tracks match "{{ search }}"</p>
+        <p>No tracks match "{{ search | escape }}"</p>
         {% else %}
         <p>No tracks in this library yet</p>
         <p class="text-secondary">Run a scan to populate the library.</p>

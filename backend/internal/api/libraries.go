@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +13,18 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
+
+// Column lists for targeted queries.
+// New DB columns will NOT be automatically included — update these constants
+// when the corresponding model structs change.
+
+// trackBrowseColumns are the columns needed for the BrowseTracks list view.
+// Intentionally excludes: EnrichmentProvenance, Fingerprint (large fields unused in browse).
+// Path is included because it is required for media serving logic.
+const trackBrowseColumns = "id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre"
+
+// libraryListColumns are the columns needed for the library list view.
+const libraryListColumns = "id, name, path"
 
 // validateLibraryPath validates that a library path is safe to use.
 // It ensures the path is absolute, resolves any traversal segments via
@@ -52,7 +65,7 @@ func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
 
 	var libraries []database.Library
 	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
-	query := h.db.Select("id, name, path").Order("name")
+	query := h.db.Select(libraryListColumns).Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -129,6 +142,10 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	c.Set("HX-Trigger", "closeModal")
+	if isHTMXRequest(c) {
+		return h.RenderLibrariesPartial(c)
+	}
 	return c.Status(201).JSON(library)
 }
 
@@ -203,6 +220,9 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderLibrariesPartial(c)
+	}
 	return c.JSON(library)
 }
 
@@ -240,6 +260,9 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderLibrariesPartial(c)
+	}
 	return c.SendStatus(204)
 }
 
@@ -282,6 +305,9 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return c.Type("html").SendString("<div class=\"scan-status\">Scan triggered for library " + html.EscapeString(library.Name) + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "scan job queued",
 		"job_id":  job.ID,
@@ -327,6 +353,9 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return c.Type("html").SendString("<div class=\"scan-status\">Enrich triggered for library " + html.EscapeString(library.Name) + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "enrich job queued",
 		"job_id":  job.ID,
@@ -372,6 +401,9 @@ func (h *LibraryHandler) TriggerPrune(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return c.Type("html").SendString("<div class=\"scan-status\">Prune triggered for library " + html.EscapeString(library.Name) + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+	}
 	return c.Status(202).JSON(fiber.Map{
 		"message": "prune job queued",
 		"job_id":  job.ID,
@@ -414,7 +446,7 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 // GetForm returns the library form for add/edit
 func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -441,8 +473,13 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 	}
 
 	c.Set("HX-Trigger", "openModal")
+	// Only pass ID if it's non-zero (prevent zero UUID showing "Edit" instead of "Add")
+	var templateID interface{} = lib.ID.String()
+	if lib.ID == uuid.Nil {
+		templateID = nil
+	}
 	return c.Render("partials/library-form", fiber.Map{
-		"ID":   lib.ID,
+		"ID":   templateID,
 		"Name": lib.Name,
 		"Path": lib.Path,
 	})
@@ -451,7 +488,7 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 // RenderLibrariesPartial returns libraries HTML for HTMX
 func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -461,7 +498,8 @@ func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 	}
 
 	var libraries []database.Library
-	query := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select(libraryListColumns).Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -477,7 +515,7 @@ func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 // BrowseTracks returns HTML partial with searchable, sortable, paginated track listing
 func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
@@ -540,7 +578,8 @@ func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
 	offset := (page - 1) * pageSize
 	order := sortBy + " " + sortDir + ", track_num"
 	var tracks []database.Track
-	if err := tx.Order(order).Offset(offset).Limit(pageSize).Find(&tracks).Error; err != nil {
+	if err := tx.Select(trackBrowseColumns).
+		Order(order).Offset(offset).Limit(pageSize).Find(&tracks).Error; err != nil {
 		return c.SendString("<div class=\"error\">Error loading tracks.</div>")
 	}
 
@@ -580,7 +619,7 @@ func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
 // TrackDetail returns HTML partial with full track metadata (for modal display)
 func (h *LibraryHandler) TrackDetail(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")

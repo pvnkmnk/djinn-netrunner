@@ -13,11 +13,13 @@ package integration
 
 import (
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"gorm.io/gorm"
 )
 
 func skipIfShort(t *testing.T) {
@@ -61,7 +63,7 @@ func TestSmoke_DatabaseMigration(t *testing.T) {
 		t.Fatalf("Config loading failed: %v", err)
 	}
 
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.Connect(cfg)
 	if err != nil {
 		t.Fatalf("Database connection failed: %v", err)
 	}
@@ -97,7 +99,7 @@ func TestSmoke_CRUD(t *testing.T) {
 		t.Fatalf("Config loading failed: %v", err)
 	}
 
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.Connect(cfg)
 	if err != nil {
 		t.Fatalf("Database connection failed: %v", err)
 	}
@@ -114,9 +116,9 @@ func TestSmoke_CRUD(t *testing.T) {
 
 	// Create a user
 	user := database.User{
-		Email:    "smoke-" + time.Now().Format("150405") + "@test.local",
-		Password: "$2a$10$hashedpassword",
-		Role:     "user",
+		Email:        "smoke-" + time.Now().Format("150405") + "@test.local",
+		PasswordHash: "$2a$10$hashedpassword",
+		Role:         "user",
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("Create user failed: %v", err)
@@ -128,7 +130,7 @@ func TestSmoke_CRUD(t *testing.T) {
 		Name:           "smoke-test-profile",
 		PreferLossless: true,
 		MinBitrate:     320,
-		OwnerUserID:    user.ID,
+		OwnerUserID:    &user.ID,
 	}
 	if err := db.Create(&profile).Error; err != nil {
 		t.Fatalf("Create profile failed: %v", err)
@@ -139,7 +141,7 @@ func TestSmoke_CRUD(t *testing.T) {
 	lib := database.Library{
 		Name:        "smoke-test-library",
 		Path:        "/tmp/smoke-music",
-		OwnerUserID: user.ID,
+		OwnerUserID: &user.ID,
 	}
 	if err := db.Create(&lib).Error; err != nil {
 		t.Fatalf("Create library failed: %v", err)
@@ -177,4 +179,91 @@ func TestSmoke_CRUD(t *testing.T) {
 	db.Delete(&user)
 
 	t.Log("CRUD smoke test completed successfully")
+}
+
+// TestSmoke_PostgresConcurrentLocks validates that Postgres advisory locks
+// provide real mutual exclusion across concurrent goroutines.
+func TestSmoke_PostgresConcurrentLocks(t *testing.T) {
+	skipIfShort(t)
+	SkipIfNoDocker(t)
+
+	t.Setenv("DATABASE_URL", GetEnvOrDefault("INTEGRATION_DATABASE_URL", defaultDBURL))
+	t.Setenv("JWT_SECRET", "smoke-test-secret")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Config loading failed: %v", err)
+	}
+
+	const workers = 10
+
+	type connResult struct {
+		db       *gorm.DB
+		lm       database.LockManager
+		acquired bool
+	}
+
+	var (
+		mu      sync.Mutex
+		results []connResult
+	)
+
+	// All goroutines must attempt before any connection is closed, so
+	// advisory locks remain held during the race.
+	attempted := make(chan struct{}, workers)
+	gate := make(chan struct{})
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			db, err := database.Connect(cfg)
+			if err != nil {
+				mu.Lock()
+				results = append(results, connResult{})
+				mu.Unlock()
+				attempted <- struct{}{}
+				<-gate
+				return
+			}
+			lm := database.NewLockManager(db)
+			key, _ := lm.GetScopeLockKey(nil, "watchlist", "concurrent-pg-test")
+			acquired, _ := lm.AcquireTryLock(nil, key)
+
+			mu.Lock()
+			results = append(results, connResult{db: db, lm: lm, acquired: acquired})
+			mu.Unlock()
+
+			// Signal attempt complete, then hold connection open
+			attempted <- struct{}{}
+			<-gate
+		}()
+	}
+
+	// Wait for all goroutines to finish acquiring
+	for i := 0; i < workers; i++ {
+		<-attempted
+	}
+	// Release the gate so goroutines can exit and connections close
+	close(gate)
+
+	wins := 0
+	for _, r := range results {
+		if r.acquired {
+			wins++
+		}
+	}
+
+	// Cleanup: close all connections
+	for _, r := range results {
+		if r.db != nil {
+			sqlDB, _ := r.db.DB()
+			if sqlDB != nil {
+				sqlDB.Close()
+			}
+		}
+	}
+
+	t.Logf("Postgres concurrent lock: %d/%d goroutines acquired", wins, workers)
+	if wins != 1 {
+		t.Errorf("expected exactly 1 lock winner, got %d", wins)
+	}
 }

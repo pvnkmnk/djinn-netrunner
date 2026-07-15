@@ -1,0 +1,109 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Jobs Running",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "netrunner_worker_jobs_running", "legendFormat": "running" }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [
+        { "color": "green", "value": null },
+        { "color": "yellow", "value": 3 },
+        { "color": "red", "value": 5 }
+      ]}}}
+    },
+    {
+      "title": "Jobs Queued",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "netrunner_worker_jobs_queued", "legendFormat": "queued" }
+      ]
+    },
+    {
+      "title": "Zombie Jobs Recovered",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "netrunner_worker_zombie_jobs_recovered_total", "legendFormat": "zombies" }
+      ]
+    },
+    {
+      "title": "Items Processed (rate)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(netrunner_worker_items_processed_total[5m]))", "legendFormat": "items/s" }
+      ]
+    },
+    {
+      "title": "Jobs Processed (by type & outcome)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "sum by (type, outcome) (rate(netrunner_worker_jobs_processed_total[5m]))", "legendFormat": "{{type}} — {{outcome}}" }
+      ]
+    },
+    {
+      "title": "Job Duration (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, type) (rate(netrunner_worker_job_duration_seconds_bucket[5m])))", "legendFormat": "p50 {{type}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, type) (rate(netrunner_worker_job_duration_seconds_bucket[5m])))", "legendFormat": "p95 {{type}}" },
+        { "expr": "histogram_quantile(0.99, sum by (le, type) (rate(netrunner_worker_job_duration_seconds_bucket[5m])))", "legendFormat": "p99 {{type}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "External API Calls (rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "sum by (service, status) (rate(netrunner_external_api_calls_total[5m]))", "legendFormat": "{{service}} — {{status}}" }
+      ]
+    },
+    {
+      "title": "External API Latency (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, service) (rate(netrunner_external_api_duration_seconds_bucket[5m])))", "legendFormat": "p95 {{service}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "Deduplication Events",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "sum by (method) (rate(netrunner_acquisition_dedup_total[5m]))", "legendFormat": "{{method}}" }
+      ]
+    },
+    {
+      "title": "Cover Art Fetches",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "expr": "sum by (source, outcome) (rate(netrunner_acquisition_cover_art_fetch_total[5m]))", "legendFormat": "{{source}} — {{outcome}}" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["netrunner", "music", "acquisition"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "NetRunner — Worker & Acquisition",
+  "uid": "netrunner-worker",
+  "version": 1
+}

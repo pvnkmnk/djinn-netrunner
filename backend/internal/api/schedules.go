@@ -95,6 +95,10 @@ func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	c.Set("HX-Trigger", "closeModal")
+	if isHTMXRequest(c) {
+		return h.RenderSchedulesPartial(c)
+	}
 	return c.Status(201).JSON(schedule)
 }
 
@@ -126,6 +130,9 @@ func (h *SchedulesHandler) Delete(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderSchedulesPartial(c)
+	}
 	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
@@ -181,6 +188,9 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderSchedulesPartial(c)
+	}
 	return c.JSON(fiber.Map{"status": "updated"})
 }
 
@@ -222,7 +232,7 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 // GetForm returns the schedule form for add/edit
 func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -236,7 +246,8 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 	var sched database.Schedule
 	var watchlists []database.Watchlist
 
-	wQuery := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns for the dropdown.
+	wQuery := h.db.Select("id, name").Order("name")
 	if user.Role != "admin" {
 		wQuery = wQuery.Where("owner_user_id = ?", user.ID)
 	}
@@ -268,7 +279,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 // RenderSchedulesPartial returns schedules HTML for HTMX
 func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -278,12 +289,9 @@ func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
 	}
 
 	var schedules []database.Schedule
-	// Bolt Optimization: Select only necessary columns and optimize preload with targeted columns.
-	query := h.db.Select("schedules.id, schedules.watchlist_id, schedules.cron_expr, schedules.next_run_at, schedules.enabled").
-		Preload("Watchlist", func(db *gorm.DB) *gorm.DB {
-			return db.Select("id, name")
-		}).
-		Order("schedules.created_at desc")
+	query := h.db.Preload("Watchlist", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id, name")
+	}).Order("schedules.created_at desc")
 	if user.Role != "admin" {
 		query = query.Joins("JOIN watchlists ON watchlists.id = schedules.watchlist_id").Where("watchlists.owner_user_id = ?", user.ID)
 	}

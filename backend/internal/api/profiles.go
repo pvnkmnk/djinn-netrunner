@@ -7,6 +7,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// profileListColumns are the columns needed for the profiles list view.
+// Update this when the QualityProfile struct changes.
+const profileListColumns = "id, name, is_default, description, prefer_lossless, allowed_formats, min_bitrate, cover_art_sources, owner_user_id"
+
 type ProfileHandler struct {
 	db *gorm.DB
 }
@@ -134,6 +138,10 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		if err != nil {
 			return internalServerError(c, err)
 		}
+		c.Set("HX-Trigger", "closeModal")
+		if isHTMXRequest(c) {
+			return h.RenderProfilesPartial(c)
+		}
 		return c.Status(201).JSON(profile)
 	}
 
@@ -156,6 +164,10 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	c.Set("HX-Trigger", "closeModal")
+	if isHTMXRequest(c) {
+		return h.RenderProfilesPartial(c)
+	}
 	return c.Status(201).JSON(profile)
 }
 
@@ -218,6 +230,9 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		}); err != nil {
 			return internalServerError(c, err)
 		}
+		if isHTMXRequest(c) {
+			return h.RenderProfilesPartial(c)
+		}
 		return c.JSON(profile)
 	}
 
@@ -265,6 +280,9 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderProfilesPartial(c)
+	}
 	return c.JSON(profile)
 }
 
@@ -312,13 +330,16 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	if isHTMXRequest(c) {
+		return h.RenderProfilesPartial(c)
+	}
 	return c.SendStatus(204)
 }
 
 // GetForm returns the profile form for add/edit
 func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
-	isHtmx := c.Get("Htmx-Request") == "true"
+	isHtmx := isHTMXRequest(c)
 
 	if !ok {
 		if isHtmx {
@@ -344,6 +365,9 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		}
 	}
 
+	c.Set("HX-Trigger", "openModal")
+
+	isNew := id == ""
 	return c.Render("partials/profile-form", fiber.Map{
 		"ID":                  profile.ID,
 		"Name":                profile.Name,
@@ -351,8 +375,85 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		"PreferLossless":      profile.PreferLossless,
 		"AllowedFormats":      profile.AllowedFormats,
 		"MinBitrate":          profile.MinBitrate,
+		"PreferBitrate":       profile.PreferBitrate,
 		"PreferSceneReleases": profile.PreferSceneReleases,
 		"PreferWebReleases":   profile.PreferWebReleases,
 		"CoverArtSources":     profile.CoverArtSources,
+		"IsDefault":           profile.IsDefault,
+		"IsNew":               isNew,
+	})
+}
+
+// RenderProfilesPartial returns profiles HTML for HTMX
+func (h *ProfileHandler) RenderProfilesPartial(c *fiber.Ctx) error {
+	user, ok, err := requirePartialUser(c)
+	if !ok {
+		return err
+	}
+
+	var profiles []database.QualityProfile
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select(profileListColumns).Order("name")
+	if user.Role != "admin" {
+		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+
+	if err := query.Find(&profiles).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading profiles.</div>")
+	}
+
+	return c.Render("partials/profiles", fiber.Map{
+		"profiles": profiles,
+	})
+}
+
+// SetDefault sets a profile as the default (admin only — default profiles are system-wide)
+func (h *ProfileHandler) SetDefault(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	// Default profiles are global — only admins can change the system default
+	if user.Role != "admin" {
+		return c.Status(403).JSON(fiber.Map{"error": "admin only"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid profile ID"})
+	}
+
+	var profile database.QualityProfile
+	if err := h.db.Where("id = ?", id).First(&profile).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(404).JSON(fiber.Map{"error": "profile not found"})
+		}
+		return internalServerError(c, err)
+	}
+
+	// Clear is_default on all profiles and set it on the target
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&database.QualityProfile{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
+			return err
+		}
+		profile.IsDefault = true
+		return tx.Save(&profile).Error
+	}); err != nil {
+		return internalServerError(c, err)
+	}
+
+	// Re-render the profiles list
+	var profiles []database.QualityProfile
+	listQuery := h.db.Select(profileListColumns).Order("name")
+	if user.Role != "admin" {
+		listQuery = listQuery.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
+	}
+	if err := listQuery.Find(&profiles).Error; err != nil {
+		return c.SendString("<div class=\"error\">Error loading profiles.</div>")
+	}
+
+	return c.Render("partials/profiles", fiber.Map{
+		"profiles": profiles,
 	})
 }

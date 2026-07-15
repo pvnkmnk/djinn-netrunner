@@ -29,7 +29,7 @@ Operate and verify the end-to-end acquisition pipeline from queued job item to i
 ## Code Patterns
 Acquisition handler initialization:
 ```go
-acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic, discogs, cache)
+acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonic, navidrome, discogs, cache, lyrics, transcoder, ytdlp)
 ```
 
 ## Validation

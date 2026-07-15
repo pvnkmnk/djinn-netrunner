@@ -95,13 +95,16 @@ textarea:focus-visible,
 }
 .skip-link {
     position: absolute;
-    top: 0.25rem;
-    left: 0.25rem;
-    z-index: 2000;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--accent-cyan);
+    top: -40px;
+    left: 0;
+    background: var(--accent, #0066cc);
+    color: white;
+    padding: 8px;
+    z-index: 100;
+    transition: top 0.1s;
+}
+.skip-link:focus {
+    top: 0;
 }
 .sr-only-focusable {
     clip: rect(0, 0, 0, 0);
@@ -113,6 +116,16 @@ textarea:focus-visible,
     margin: 0;
     white-space: normal;
 }
+
+/* Focus ring styles */
+:focus-visible {
+    outline: 2px solid var(--accent, #0066cc);
+    outline-offset: 2px;
+}
+/* Remove focus outline for mouse users */
+:focus:not(:focus-visible) {
+    outline: none;
+}
 .nav-toggle {
     display: none;
     background: transparent;
@@ -122,6 +135,16 @@ textarea:focus-visible,
     text-transform: uppercase;
     letter-spacing: 1px;
     font-size: 0.72rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+.nav-toggle:hover {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+}
+.nav-toggle[aria-expanded="true"] {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
 }
 .primary-nav {
     display: flex;
@@ -148,6 +171,21 @@ textarea:focus-visible,
     gap: 1rem;
     margin-bottom: 2rem;
 }
+.stats-scope-label {
+    grid-column: 1 / -1;
+    color: var(--accent-cyan);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border-color);
+}
+.jobs-scope-label {
+    display: inline;
+    font-size: 0.6rem;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
 
 .stat-card, .watchlist-card, .library-card, .profile-card, 
 .schedule-card, .artist-card, .job-card {
@@ -159,7 +197,7 @@ textarea:focus-visible,
     display: flex;
     justify-content: space-between;
     align-items: center;
-    transition: all 0.2s;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
     position: relative;
 }
 
@@ -338,7 +376,8 @@ textarea:focus-visible,
     .btn,
     .btn::before,
     .modal-overlay,
-    .modal {
+    .modal,
+    .watchlist-preview {
         animation: none;
         transition: none;
     }
@@ -401,12 +440,14 @@ textarea:focus-visible,
     text-transform: capitalize;
 }
 .badge-source.badge-spotify_playlist,
-.badge-source.badge-spotify_liked  { background: #1DB954; color: white; }
+.badge-source.badge-spotify_liked,
+.badge-source.badge-spotify_discover { background: #1DB954; color: white; }
 .badge-source.badge-lastfm_loved,
 .badge-source.badge-lastfm_top     { background: #d51007; color: white; }
 .badge-source.badge-rss_feed        { background: #f26522; color: white; }
 .badge-source.badge-discogs_wantlist { background: #1A1A1A; color: white; }
 .badge-source.badge-listenbrainz_listens { background: #6d4c7d; color: white; }
+.badge-source.badge-lidarr_wanted   { background: #5d9cec; color: white; }
 .badge-source.badge-local_file,
 .badge-source.badge-local_directory { background: #555; color: white; }
 .track { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; }
@@ -482,7 +523,8 @@ textarea:focus-visible,
     color: var(--accent-primary, #58a6ff);
     cursor: pointer;
 }
-.error-message {
+.error-message,
+.form-error {
     color: #f85149;
     text-align: center;
     margin-top: 0.5rem;
@@ -490,6 +532,7 @@ textarea:focus-visible,
     background: rgba(248,81,73,0.1);
     border-radius: 4px;
 }
+.form-error { margin-bottom: 0.75rem; }
 
 /* Profiles partial (profiles.html) */
 .profile-card {
@@ -588,12 +631,20 @@ textarea:focus-visible,
 }
 .watchlist-preview {
     margin-top: 0.5rem;
-    padding: 0.5rem;
+    padding: 0;
     background: var(--bg-secondary);
     border-radius: 4px;
     font-size: 0.8rem;
-    max-height: 200px;
+    max-height: 0;
     overflow-y: auto;
+    flex-wrap: wrap;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0;
+}
+.watchlist-preview:not(:empty) {
+    padding: 0.5rem;
+    max-height: 300px;
+    opacity: 1;
 }
 .watchlist-preview .track {
     display: flex;
@@ -792,7 +843,9 @@ textarea:focus-visible,
         padding: 1rem;
     }
     .nav-toggle {
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
     }
     .primary-nav {
         width: 100%;
@@ -815,4 +868,54 @@ textarea:focus-visible,
         flex-direction: column;
     }
 }
+
+/* Job logs panel */
+.job-logs {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+.job-logs h4 { margin: 0 0 0.75rem; font-size: 0.95rem; }
+.log-entries {
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.log-entry {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+}
+.log-entry:hover { background: rgba(255,255,255,0.03); }
+.log-time { color: var(--text-secondary); white-space: nowrap; }
+.log-level { font-weight: 600; min-width: 3.5rem; }
+.log-info .log-level { color: var(--accent-primary); }
+.log-err .log-level, .log-error .log-level { color: var(--accent-danger, #f85149); }
+.log-warn .log-level { color: var(--accent-warning, #d29922); }
+.log-message { color: var(--text-primary); }
+
+/* Provider config (sp_dc, etc.) */
+.provider-config { margin-bottom: 1rem; }
+.provider-config summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.provider-config .config-body { padding: 0.5rem 0; }
+.badge-ok { background: var(--accent-success); color: white; }
+.badge-warn { background: var(--accent-warning, #d29922); color: white; }
+.inline-form { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+.inline-form input[type="text"] { flex: 1; }
+.form-status { font-size: 0.875rem; margin-top: 0.25rem; }
+.status-ok { color: var(--accent-success); }
+.status-err { color: var(--accent-danger, #f85149); }
+.form-hint { color: var(--text-secondary); font-size: 0.8rem; display: block; margin-top: 0.25rem; }
 

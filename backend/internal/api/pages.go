@@ -1,10 +1,7 @@
 package api
 
 import (
-	"log/slog"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 // PageData contains common page data
@@ -25,134 +22,69 @@ func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) erro
 	return c.Render(template, base)
 }
 
-// WatchlistsPage renders the watchlists page
+// WatchlistsPage renders the watchlists page shell
 func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
-	lists, err := h.service.GetWatchlists(user.ID, user.Role)
-	if err != nil {
-		slog.Error("Error getting watchlists", "error", err)
-		lists = []database.Watchlist{}
-	}
-	var profiles []database.QualityProfile
-	profileQuery := h.db.Order("name")
-	if user.Role != "admin" {
-		profileQuery = profileQuery.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
-	}
-	if err := profileQuery.Find(&profiles).Error; err != nil {
-		slog.Error("Error getting profiles", "error", err)
-	}
-	return RenderPage(c, "watchlists", "pages/watchlists", fiber.Map{
-		"watchlists": lists,
-		"profiles":   profiles,
-	})
+	// Bolt Optimization: Removed redundant database queries for watchlists and profiles.
+	// Data is now fetched asynchronously via HTMX partials.
+	return RenderPage(c, "watchlists", "pages/watchlists", fiber.Map{})
 }
 
-// LibrariesPage renders the libraries page
+// LibrariesPage renders the libraries page shell
 func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
-	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
-	var libs []database.Library
-	query := h.db.Order("name")
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
-	}
-	if err := query.Find(&libs).Error; err != nil {
-		slog.Error("Error getting libraries", "error", err)
-	}
-	return RenderPage(c, "libraries", "pages/libraries", fiber.Map{"libraries": libs})
+	// Bolt Optimization: Removed redundant database query for libraries.
+	// Data is now fetched asynchronously via HTMX partials.
+	return RenderPage(c, "libraries", "pages/libraries", fiber.Map{})
 }
 
-// ProfilesPage renders the profiles page
+// ProfilesPage renders the profiles page shell
 func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
-	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
-	var profiles []database.QualityProfile
-	query := h.db.Order("name")
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ? OR is_default = ?", user.ID, true)
-	}
-	if err := query.Find(&profiles).Error; err != nil {
-		slog.Error("Error getting profiles", "error", err)
-	}
-	return RenderPage(c, "profiles", "pages/profiles", fiber.Map{"profiles": profiles})
+	// Bolt Optimization: Removed redundant database query for profiles.
+	// Data is now fetched asynchronously via HTMX partials.
+	return RenderPage(c, "profiles", "pages/profiles", fiber.Map{})
 }
 
-// SchedulesPage renders the schedules page
+// SchedulesPage renders the schedules page shell
 func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
-	var scheds []database.Schedule
-	query := h.db.Preload("Watchlist").Order("schedules.created_at desc")
-	if user.Role != "admin" {
-		query = query.Joins("JOIN watchlists ON watchlists.id = schedules.watchlist_id").Where("watchlists.owner_user_id = ?", user.ID)
-	}
-	if err := query.Find(&scheds).Error; err != nil {
-		slog.Error("Error getting schedules", "error", err)
-	}
-
-	var watchlists []database.Watchlist
-	wQuery := h.db.Order("name")
-	if user.Role != "admin" {
-		wQuery = wQuery.Where("owner_user_id = ?", user.ID)
-	}
-	if err := wQuery.Find(&watchlists).Error; err != nil {
-		slog.Error("Error getting watchlists", "error", err)
-	}
-	return RenderPage(c, "schedules", "pages/schedules", fiber.Map{
-		"schedules":  scheds,
-		"watchlists": watchlists,
-	})
+	// Bolt Optimization: Removed redundant database queries for schedules and watchlists.
+	// Data is now fetched asynchronously via HTMX partials.
+	return RenderPage(c, "schedules", "pages/schedules", fiber.Map{})
 }
 
-// ArtistsPage renders the artists page
+// ArtistsPage renders the artists page shell
 func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
-	// Bolt Optimization: Use AuthMiddleware context instead of manual session lookup
-	user, ok := c.Locals("user").(database.User)
-	if !ok {
-		return c.Redirect("/", 302)
+	if _, ok, err := requirePageUser(c); !ok {
+		return err
 	}
 
-	var artists []database.MonitoredArtist
-	query := h.db.Order("name")
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
-	}
-
-	if err := query.Find(&artists).Error; err != nil {
-		slog.Error("Error getting artists", "error", err)
-	}
-	return RenderPage(c, "artists", "pages/artists", fiber.Map{"artists": artists})
+	// Bolt Optimization: Removed redundant database query for artists.
+	// Data is now fetched asynchronously via HTMX partials.
+	return RenderPage(c, "artists", "pages/artists", fiber.Map{})
 }
 
-// JobsPage renders the jobs page
+// JobsPage renders the jobs page shell
 func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
-	user, ok := c.Locals("user").(database.User)
+	user, ok, err := requirePageUser(c)
 	if !ok {
-		return c.Redirect("/", 302)
+		return err
 	}
 
-	var jobs []database.Job
-	query := h.db.Order("requested_at DESC").Limit(50)
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
-	}
-	if err := query.Find(&jobs).Error; err != nil {
-		slog.Error("Error getting jobs", "error", err)
-	}
-	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"jobs": jobs})
+	// Bolt Optimization: Removed redundant database query for jobs.
+	// Data is now fetched asynchronously via HTMX partials.
+	return RenderPage(c, "jobs", "pages/jobs", fiber.Map{"IsAdmin": user.Role == "admin"})
 }

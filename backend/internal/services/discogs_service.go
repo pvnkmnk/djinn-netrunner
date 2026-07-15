@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 )
 
 // DiscogsService handles interaction with the Discogs API for metadata enrichment
@@ -74,7 +75,15 @@ type DiscogsSearchItem struct {
 
 // NewDiscogsService creates a new Discogs service.
 // If baseURL is non-empty it will be used instead of the default Discogs API URL.
+// If httpClient is provided it will be used instead of creating one (useful for tests).
 func NewDiscogsService(cfg *config.Config, baseURLs ...string) *DiscogsService {
+	return NewDiscogsServiceWithClient(cfg, nil, baseURLs...)
+}
+
+// NewDiscogsServiceWithClient creates a new Discogs service with an optional
+// pre-configured HTTP client. If httpClient is nil, a safe SSRF-protected
+// client is created automatically.
+func NewDiscogsServiceWithClient(cfg *config.Config, httpClient *http.Client, baseURLs ...string) *DiscogsService {
 	token := ""
 	if cfg != nil {
 		token = cfg.DiscogsToken
@@ -84,14 +93,19 @@ func NewDiscogsService(cfg *config.Config, baseURLs ...string) *DiscogsService {
 		baseURL = baseURLs[0]
 	}
 
+	if httpClient == nil {
+		if cfg != nil {
+			httpClient = NewSafeProxyAwareHTTPClient(cfg, 30*time.Second)
+		} else {
+			httpClient = NewSafeHTTPClient(30 * time.Second)
+		}
+	}
+
 	return &DiscogsService{
-		cfg:     cfg,
-		token:   token,
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		// Discogs allows 60 requests per minute for authenticated users
+		cfg:         cfg,
+		token:       token,
+		baseURL:     baseURL,
+		httpClient:  httpClient,
 		rateLimiter: time.NewTicker(time.Second),
 	}
 }
@@ -101,6 +115,7 @@ func (s *DiscogsService) SearchRelease(artist, title string) (*DiscogsSearchResu
 	// Wait for rate limiter
 	<-s.rateLimiter.C
 
+	start := time.Now()
 	query := fmt.Sprintf("artist:%s release:%s", artist, title)
 	params := url.Values{}
 	params.Set("q", query)
@@ -119,19 +134,24 @@ func (s *DiscogsService) SearchRelease(artist, title string) (*DiscogsSearchResu
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		metrics.TrackExternalCall("discogs", start, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("discogs API error: %d", resp.StatusCode)
+		apiErr := fmt.Errorf("discogs API error: %d", resp.StatusCode)
+		metrics.TrackExternalCall("discogs", start, apiErr)
+		return nil, apiErr
 	}
 
 	var result DiscogsSearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		metrics.TrackExternalCall("discogs", start, err)
 		return nil, err
 	}
 
+	metrics.TrackExternalCall("discogs", start, nil)
 	return &result, nil
 }
 

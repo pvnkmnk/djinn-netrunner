@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-05-24T00:00:00.000Z",
+  "dependencies": [
+    {
+      "name": "github.com/gofiber/fiber/v2",
+      "resolvedVersion": "v2.52.13",
+      "repoUrl": "https://github.com/gofiber/fiber.git",
+      "ref": "v2.52.13",
+      "path": ".slim/clonedeps/repos/gofiber__fiber",
+      "reason": "HTTP framework — middleware chain, context methods, error handling, route matching used in all API handlers"
+    },
+    {
+      "name": "gorm.io/gorm",
+      "resolvedVersion": "v1.31.1",
+      "repoUrl": "https://github.com/go-gorm/gorm.git",
+      "ref": "v1.31.1",
+      "path": ".slim/clonedeps/repos/go-gorm__gorm",
+      "reason": "ORM — query building, preloading, transactions, migration patterns (injected *gorm.DB everywhere)"
+    },
+    {
+      "name": "github.com/mark3labs/mcp-go",
+      "resolvedVersion": "v0.45.0",
+      "repoUrl": "https://github.com/mark3labs/mcp-go.git",
+      "ref": "v0.45.0",
+      "path": ".slim/clonedeps/repos/mark3labs__mcp-go",
+      "reason": "MCP protocol Go SDK — tool definitions, protocol messages, transport for agent server"
+    }
+  ]
+}

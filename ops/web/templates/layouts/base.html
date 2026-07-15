@@ -7,13 +7,14 @@
     <link rel="stylesheet" href="/static/css/styles.css">
     <script src="/static/js/htmx.min.js"></script>
     <script src="/static/js/app.js" defer></script>
+    <script src="/static/js/player.js" defer></script>
 </head>
 <body>
-    <a class="sr-only sr-only-focusable skip-link" href="#main-content">Skip to main content</a>
+    <a href="#main-content" class="skip-link">Skip to content</a>
     <header class="app-header" role="banner">
         <h1>NETRUNNER</h1>
         <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav" aria-label="Toggle navigation">
-            Menu
+            <span aria-hidden="true">&#9776;</span> Menu
         </button>
         <nav id="primary-nav" class="primary-nav" aria-label="Primary">
             <a href="/" {% if Page == "dashboard" %}class="active" aria-current="page"{% endif %}>Dashboard</a>
@@ -22,14 +23,37 @@
             <a href="/profiles" {% if Page == "profiles" %}class="active" aria-current="page"{% endif %}>Profiles</a>
             <a href="/schedules" {% if Page == "schedules" %}class="active" aria-current="page"{% endif %}>Schedules</a>
             <a href="/artists" {% if Page == "artists" %}class="active" aria-current="page"{% endif %}>Artists</a>
+            <a href="/playlists" {% if Page == "playlists" %}class="active" aria-current="page"{% endif %}>Playlists</a>
             <a href="/jobs" {% if Page == "jobs" %}class="active" aria-current="page"{% endif %}>Jobs</a>
+            <a href="/admin" {% if Page == "admin" %}class="active" aria-current="page"{% endif %}>Admin</a>
         </nav>
     </header>
     <main id="main-content" class="app-main" role="main" tabindex="-1">
         {% block content %}{% endblock %}
     </main>
+    <div id="modal-container"></div>
     <footer class="app-footer">
         NetRunner v1.0.0 | Music Acquisition Pipeline
     </footer>
+    <audio id="master-player" preload="metadata" style="display:none"></audio>
+<script>
+// Global HTMX error handling for async partials
+document.body.addEventListener("htmx:responseError", function(evt) {
+    var target = evt.detail.target;
+    if (target && target.hasAttribute("hx-get")) {
+        target.innerHTML = '<div class="error-banner">Failed to load content. <button onclick="location.reload()">Retry</button></div>';
+    }
+});
+
+// Automatically include CSRF token on all HTMX requests
+document.body.addEventListener("htmx:configRequest", function(evt) {
+    var csrfCookie = document.cookie.split('; ').find(function(row) { return row.startsWith('csrf_='); });
+    if (csrfCookie) {
+        var token = csrfCookie.split('=')[1];
+        evt.detail.headers['X-CSRF-Token'] = token;
+    }
+});
+</script>
+
 </body>
 </html>
