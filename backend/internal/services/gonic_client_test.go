@@ -15,7 +15,7 @@ import (
 
 // mockGonicHandler creates an httptest.Server that simulates Gonic/Subsonic responses.
 // The server validates token-based auth parameters and returns the provided response data.
-func mockGonicHandler(t *testing.T, responseData interface{}) *httptest.Server {
+func mockGonicHandler(responseData interface{}) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check for required Subsonic auth parameters
 		query := r.URL.Query()
@@ -44,7 +44,7 @@ func mockGonicHandler(t *testing.T, responseData interface{}) *httptest.Server {
 // TestGonicClient_TriggerScan tests the TriggerScan method.
 func TestGonicClient_TriggerScan(t *testing.T) {
 	t.Run("success returns true", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 			},
@@ -59,7 +59,7 @@ func TestGonicClient_TriggerScan(t *testing.T) {
 	})
 
 	t.Run("server error returns false", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
@@ -103,7 +103,7 @@ func TestGonicClient_TriggerScan(t *testing.T) {
 // TestGonicClient_GetScanStatus tests the GetScanStatus method.
 func TestGonicClient_GetScanStatus(t *testing.T) {
 	t.Run("success with scanning true", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"scanStatus": map[string]interface{}{
@@ -124,7 +124,7 @@ func TestGonicClient_GetScanStatus(t *testing.T) {
 	})
 
 	t.Run("success with scanning false", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"scanStatus": map[string]interface{}{
@@ -161,7 +161,7 @@ func TestGonicClient_GetScanStatus(t *testing.T) {
 // TestGonicClient_GetLibraryStats tests the GetLibraryStats method.
 func TestGonicClient_GetLibraryStats(t *testing.T) {
 	t.Run("success with artists", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"artists": map[string]interface{}{
@@ -193,7 +193,7 @@ func TestGonicClient_GetLibraryStats(t *testing.T) {
 	})
 
 	t.Run("empty library", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"artists": map[string]interface{}{
@@ -229,7 +229,7 @@ func TestGonicClient_GetLibraryStats(t *testing.T) {
 // TestGonicClient_Search3 tests the Search3 method.
 func TestGonicClient_Search3_Success(t *testing.T) {
 	t.Run("success returns songs", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"searchResult3": map[string]interface{}{
@@ -255,7 +255,7 @@ func TestGonicClient_Search3_Success(t *testing.T) {
 	})
 
 	t.Run("empty results", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status":        "ok",
 				"searchResult3": map[string]interface{}{},
@@ -300,7 +300,7 @@ func TestGonicClient_Search3_Success(t *testing.T) {
 // TestGonicClient_GetSong tests the GetSong method.
 func TestGonicClient_GetSong_Success(t *testing.T) {
 	t.Run("success returns song", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"song": map[string]interface{}{
@@ -323,7 +323,7 @@ func TestGonicClient_GetSong_Success(t *testing.T) {
 	})
 
 	t.Run("error status from server", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
@@ -367,7 +367,7 @@ func TestGonicClient_GetSong_Success(t *testing.T) {
 // TestGonicClient_HealthCheck tests the HealthCheck method.
 func TestGonicClient_HealthCheck(t *testing.T) {
 	t.Run("success returns true", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 			},
@@ -380,7 +380,7 @@ func TestGonicClient_HealthCheck(t *testing.T) {
 	})
 
 	t.Run("failed status returns false", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
@@ -476,31 +476,26 @@ func TestGonicClient_doRequest_authParams(t *testing.T) {
 
 // TestGonicClient_authFailure tests behavior when auth fails.
 func TestGonicClient_doRequest_authFailure(t *testing.T) {
-	t.Run("missing credentials", func(t *testing.T) {
+	t.Run("server returns unauthorized", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Return error if username is missing
-			if r.URL.Query().Get("u") == "" {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"subsonic-response": map[string]interface{}{
-					"status": "ok",
-				},
-			})
+			// Always return unauthorized to simulate auth failure
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		}))
 		defer server.Close()
 
-		// Note: NewGonicClient always sets username, so we test via empty URL scenario
-		// This test validates the server's auth check
+		client := NewGonicClient(server.URL, "testuser", "testpass", nil)
+
+		_, err := client.TriggerScan()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Unauthorized")
 	})
 
-	t.Run("invalid token", func(t *testing.T) {
+	t.Run("server returns unauthorized for invalid token", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			query := r.URL.Query()
-			// Check if token is valid (should be md5(password+salt))
-			if query.Get("t") == "invalid" {
+			// Return unauthorized if token doesn't match expected pattern
+			token := query.Get("t")
+			if token == "" || len(token) != 32 {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -513,14 +508,17 @@ func TestGonicClient_doRequest_authFailure(t *testing.T) {
 		}))
 		defer server.Close()
 
-		// The client generates its own token, so this tests the server's rejection
+		client := NewGonicClient(server.URL, "testuser", "testpass", nil)
+
+		_, err := client.TriggerScan()
+		require.NoError(t, err, "client should handle valid auth")
 	})
 }
 
 // TestGonicClient_responseFormat tests various response formats.
 func TestGonicClient_responseFormat(t *testing.T) {
 	t.Run("missing optional fields", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"scanStatus": map[string]interface{}{
@@ -540,7 +538,7 @@ func TestGonicClient_responseFormat(t *testing.T) {
 	})
 
 	t.Run("song with missing optional fields", func(t *testing.T) {
-		server := mockGonicHandler(t, map[string]interface{}{
+		server := mockGonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"song": map[string]interface{}{
@@ -640,7 +638,7 @@ func TestGonicClient_salt(t *testing.T) {
 
 // Test that empty password doesn't panic
 func TestGonicClient_emptyPassword(t *testing.T) {
-	server := mockGonicHandler(t, map[string]interface{}{
+	server := mockGonicHandler(map[string]interface{}{
 		"subsonic-response": map[string]interface{}{
 			"status": "ok",
 		},
@@ -657,7 +655,7 @@ func TestGonicClient_emptyPassword(t *testing.T) {
 
 // Test library stats with deeply nested structure
 func TestGonicClient_GetLibraryStats_deepNesting(t *testing.T) {
-	server := mockGonicHandler(t, map[string]interface{}{
+	server := mockGonicHandler(map[string]interface{}{
 		"subsonic-response": map[string]interface{}{
 			"status": "ok",
 			"artists": map[string]interface{}{
@@ -703,10 +701,16 @@ func TestGonicClient_HTTP503(t *testing.T) {
 
 // Test connection refused
 func TestGonicClient_ConnectionRefused(t *testing.T) {
-	client := NewGonicClient("http://localhost:9999", "testuser", "testpass", nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Close immediately
+	}))
+	serverURL := server.URL
+	server.Close()
+
+	client := NewGonicClient(serverURL, "testuser", "testpass", nil)
 
 	_, err := client.TriggerScan()
 	require.Error(t, err)
-	// Connection refused error
-	assert.True(t, strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "ConnectException") || err != nil)
+	// Connection refused or similar network error
+	assert.True(t, strings.Contains(err.Error(), "refused") || strings.Contains(err.Error(), "ConnectException"))
 }

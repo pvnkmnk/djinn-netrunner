@@ -7,6 +7,7 @@ import (
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -65,10 +66,12 @@ func TestFailItem(t *testing.T) {
 	setupDB := func(t *testing.T) *gorm.DB {
 		t.Helper()
 		db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-		if err != nil {
-			t.Fatalf("failed to connect to db: %v", err)
-		}
-		database.Migrate(db)
+		require.NoError(t, err, "failed to connect to db")
+		err = database.Migrate(db)
+		require.NoError(t, err, "failed to migrate db")
+		sqlDB, err := db.DB()
+		require.NoError(t, err, "failed to get underlying sql.DB")
+		t.Cleanup(func() { sqlDB.Close() })
 		return db
 	}
 
@@ -76,22 +79,16 @@ func TestFailItem(t *testing.T) {
 		db := setupDB(t)
 
 		job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
-		if err := db.Create(&job).Error; err != nil {
-			t.Fatalf("failed to create job: %v", err)
-		}
+		require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 		item := database.JobItem{JobID: job.ID, Status: "queued", RetryCount: 0}
-		if err := db.Create(&item).Error; err != nil {
-			t.Fatalf("failed to create item: %v", err)
-		}
+		require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		h.failItem(job.ID, item.ID, "download failed")
 
 		var updated database.JobItem
-		if err := db.First(&updated, item.ID).Error; err != nil {
-			t.Fatalf("failed to fetch updated item: %v", err)
-		}
+		require.NoError(t, db.First(&updated, item.ID).Error, "failed to fetch updated item")
 
 		if updated.Status != "failed" {
 			t.Errorf("status = %q, want %q", updated.Status, "failed")
@@ -119,22 +116,16 @@ func TestFailItem(t *testing.T) {
 		db := setupDB(t)
 
 		job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 1}
-		if err := db.Create(&job).Error; err != nil {
-			t.Fatalf("failed to create job: %v", err)
-		}
+		require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 		item := database.JobItem{JobID: job.ID, Status: "queued", RetryCount: 0}
-		if err := db.Create(&item).Error; err != nil {
-			t.Fatalf("failed to create item: %v", err)
-		}
+		require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		h.failItem(job.ID, item.ID, "permanent failure")
 
 		var updated database.JobItem
-		if err := db.First(&updated, item.ID).Error; err != nil {
-			t.Fatalf("failed to fetch updated item: %v", err)
-		}
+		require.NoError(t, db.First(&updated, item.ID).Error, "failed to fetch updated item")
 
 		if updated.Status != "abandoned" {
 			t.Errorf("status = %q, want %q", updated.Status, "abandoned")
@@ -148,22 +139,16 @@ func TestFailItem(t *testing.T) {
 		db := setupDB(t)
 
 		job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 0}
-		if err := db.Create(&job).Error; err != nil {
-			t.Fatalf("failed to create job: %v", err)
-		}
+		require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 		item := database.JobItem{JobID: job.ID, Status: "queued", RetryCount: 0}
-		if err := db.Create(&item).Error; err != nil {
-			t.Fatalf("failed to create item: %v", err)
-		}
+		require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		h.failItem(job.ID, item.ID, "failure with zero max")
 
 		var updated database.JobItem
-		if err := db.First(&updated, item.ID).Error; err != nil {
-			t.Fatalf("failed to fetch updated item: %v", err)
-		}
+		require.NoError(t, db.First(&updated, item.ID).Error, "failed to fetch updated item")
 
 		// With safety default of 3, retry_count 0 + 1 = 1 < 3, so not abandoned
 		if updated.Status != "failed" {

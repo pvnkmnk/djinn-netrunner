@@ -5,7 +5,22 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+// saveRestoreEnv saves the process environment and returns a cleanup function.
+func saveRestoreEnv() func() {
+	savedEnv := os.Environ()
+	return func() {
+		os.Clearenv()
+		for _, e := range savedEnv {
+			if k, v, ok := strings.Cut(e, "="); ok {
+				os.Setenv(k, v)
+			}
+		}
+	}
+}
 
 // =============================================================================
 // Helper function tests: getEnv, getEnvBool, getEnvAsInt, getEnvAsInt64
@@ -13,6 +28,9 @@ import (
 
 func TestGetEnv(t *testing.T) {
 	// Do not run in parallel — this test modifies global environment variables
+	t.Helper()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
 
 	tests := []struct {
 		name        string
@@ -67,6 +85,10 @@ func TestGetEnv(t *testing.T) {
 
 func TestGetEnvBool(t *testing.T) {
 	// Do not run in parallel — this test modifies global environment variables
+	t.Helper()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	tests := []struct {
 		name       string
 		key        string
@@ -141,6 +163,10 @@ func TestGetEnvBool(t *testing.T) {
 
 func TestGetEnvAsInt(t *testing.T) {
 	// Do not run in parallel — this test modifies global environment variables
+	t.Helper()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	tests := []struct {
 		name       string
 		key        string
@@ -215,6 +241,10 @@ func TestGetEnvAsInt(t *testing.T) {
 
 func TestGetEnvAsInt64(t *testing.T) {
 	// Do not run in parallel — this test modifies global environment variables
+	t.Helper()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	tests := []struct {
 		name       string
 		key        string
@@ -393,26 +423,32 @@ func TestApplyOverlay(t *testing.T) {
 			expectLibPath:  "",
 		},
 		{
-			name: "empty string values don't overwrite",
+			name: "empty string values don't overwrite non-zero baseline",
 			overlay: map[string]interface{}{
 				"environment": "",
 				"port":        "",
 				"domain":      "",
 			},
-			expectEnv:      "",
-			expectPort:     "",
-			expectDomain:   "",
-			expectRateMax:  0,
-			expectNotif:    false,
-			expectSubsonic: false,
-			expectLibPath:  "",
+			expectEnv:      "seeded-env",
+			expectPort:     "9999",
+			expectDomain:   "seeded.example.com",
+			expectRateMax:  99,
+			expectNotif:    true,
+			expectSubsonic: true,
+			expectLibPath:  "/seeded/music",
 		},
 		{
-			name: "zero int values don't overwrite rate limit",
+			name: "zero int values don't overwrite non-zero baseline",
 			overlay: map[string]interface{}{
 				"auth_rate_limit_max": 0,
 			},
-			expectRateMax: 0,
+			expectEnv:      "seeded-env",
+			expectPort:     "9999",
+			expectDomain:   "seeded.example.com",
+			expectRateMax:  99,
+			expectNotif:    true,
+			expectSubsonic: true,
+			expectLibPath:  "/seeded/music",
 		},
 		{
 			name: "apply subsonic password",
@@ -425,7 +461,20 @@ func TestApplyOverlay(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			// Start with empty cfg for most cases
 			cfg := &Config{}
+
+			// For non-zero baseline tests, seed with non-zero values
+			if strings.Contains(tc.name, "non-zero baseline") {
+				cfg.Environment = "seeded-env"
+				cfg.Port = "9999"
+				cfg.Domain = "seeded.example.com"
+				cfg.AuthRateLimitMax = 99
+				cfg.NotificationEnabled = true
+				cfg.Subsonic.Enabled = true
+				cfg.MusicLibraryPath = "/seeded/music"
+			}
+
 			applyOverlay(cfg, tc.overlay)
 
 			if cfg.Environment != tc.expectEnv {
@@ -478,9 +527,15 @@ func TestLoadYAMLOverrides(t *testing.T) {
 	})
 
 	t.Run("invalid YAML warns and continues", func(t *testing.T) {
-		// loadYAMLOverrides should not panic on invalid YAML
+		// Create a temp file with malformed YAML
+		tmpDir := t.TempDir()
+		malformedPath := filepath.Join(tmpDir, "config.test-env.yaml")
+		err := os.WriteFile(malformedPath, []byte("key: [invalid"), 0644)
+		require.NoError(t, err)
+
 		cfg := &Config{}
-		loadYAMLOverrides(cfg, "nonexistent-env")
+		// Should not panic, should warn and continue
+		loadYAMLOverrides(cfg, "test-env")
 	})
 }
 
@@ -489,18 +544,12 @@ func TestLoadYAMLOverrides(t *testing.T) {
 // =============================================================================
 
 func TestLoad_ProductionRequiresGonicCredentials(t *testing.T) {
-	// Clear all env vars first
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
 
 	// Set required vars but not Gonic credentials
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("ENVIRONMENT", "production")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("ENVIRONMENT")
-		os.Unsetenv("GONIC_USER")
-		os.Unsetenv("GONIC_PASS")
-	}()
 
 	_, err := Load(".non-existent-env")
 	if err == nil {
@@ -512,17 +561,13 @@ func TestLoad_ProductionRequiresGonicCredentials(t *testing.T) {
 }
 
 func TestLoad_ProductionWithGonicCredentials(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("ENVIRONMENT", "production")
 	os.Setenv("GONIC_USER", "gonicuser")
 	os.Setenv("GONIC_PASS", "gonicpass")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("ENVIRONMENT")
-		os.Unsetenv("GONIC_USER")
-		os.Unsetenv("GONIC_PASS")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -540,9 +585,10 @@ func TestLoad_ProductionWithGonicCredentials(t *testing.T) {
 }
 
 func TestLoad_ProxyURLValidation(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
-	defer os.Unsetenv("DATABASE_URL")
 
 	tests := []struct {
 		name      string
@@ -607,14 +653,11 @@ func TestLoad_ProxyURLValidation(t *testing.T) {
 }
 
 func TestLoad_ConfigEnvDefaultsToEnvironment(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("ENVIRONMENT", "testenv")
-	// CONFIG_ENV is not set, should default to ENVIRONMENT
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("ENVIRONMENT")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -626,14 +669,11 @@ func TestLoad_ConfigEnvDefaultsToEnvironment(t *testing.T) {
 }
 
 func TestLoad_JWTSecretAutoGenerated(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
-	// Ensure JWT_SECRET is not set
 	os.Unsetenv("JWT_SECRET")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("JWT_SECRET")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -646,13 +686,11 @@ func TestLoad_JWTSecretAutoGenerated(t *testing.T) {
 }
 
 func TestLoad_JWTSecretFromEnv(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("JWT_SECRET", "my-secret-key")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("JWT_SECRET")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -664,13 +702,11 @@ func TestLoad_JWTSecretFromEnv(t *testing.T) {
 }
 
 func TestLoad_E2EFlags(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("E2E_ENABLE_TEST_API", "true")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("E2E_ENABLE_TEST_API")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -682,7 +718,9 @@ func TestLoad_E2EFlags(t *testing.T) {
 }
 
 func TestLoad_SMTPConfig(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("SMTP_HOST", "smtp.example.com")
 	os.Setenv("SMTP_PORT", "587")
@@ -690,15 +728,6 @@ func TestLoad_SMTPConfig(t *testing.T) {
 	os.Setenv("SMTP_PASS", "pass")
 	os.Setenv("SMTP_FROM", "noreply@example.com")
 	os.Setenv("SMTP_ENABLED", "true")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("SMTP_HOST")
-		os.Unsetenv("SMTP_PORT")
-		os.Unsetenv("SMTP_USER")
-		os.Unsetenv("SMTP_PASS")
-		os.Unsetenv("SMTP_FROM")
-		os.Unsetenv("SMTP_ENABLED")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -725,15 +754,12 @@ func TestLoad_SMTPConfig(t *testing.T) {
 }
 
 func TestLoad_SubsonicConfig(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("SUBSONIC_ENABLED", "true")
 	os.Setenv("SUBSONIC_PASSWORD", "secret123")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("SUBSONIC_ENABLED")
-		os.Unsetenv("SUBSONIC_PASSWORD")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -748,21 +774,15 @@ func TestLoad_SubsonicConfig(t *testing.T) {
 }
 
 func TestLoad_TranscodeConfig(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("TRANSCODE_ENABLED", "true")
 	os.Setenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
 	os.Setenv("TRANSCODE_CACHE_DIR", "/var/cache/transcode")
 	os.Setenv("TRANSCODE_MAX_BITRATE", "640")
 	os.Setenv("TRANSCODE_MAX_CACHE_MB", "1024")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("TRANSCODE_ENABLED")
-		os.Unsetenv("FFMPEG_PATH")
-		os.Unsetenv("TRANSCODE_CACHE_DIR")
-		os.Unsetenv("TRANSCODE_MAX_BITRATE")
-		os.Unsetenv("TRANSCODE_MAX_CACHE_MB")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -786,7 +806,9 @@ func TestLoad_TranscodeConfig(t *testing.T) {
 }
 
 func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("ENVIRONMENT", "custom-env")
 	os.Setenv("PORT", "9999")
@@ -794,15 +816,6 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 	os.Setenv("AUTH_RATE_LIMIT_MAX", "50")
 	os.Setenv("NOTIFICATION_ENABLED", "true")
 	os.Setenv("MUSIC_LIBRARY", "/custom/music")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-		os.Unsetenv("ENVIRONMENT")
-		os.Unsetenv("PORT")
-		os.Unsetenv("DOMAIN")
-		os.Unsetenv("AUTH_RATE_LIMIT_MAX")
-		os.Unsetenv("NOTIFICATION_ENABLED")
-		os.Unsetenv("MUSIC_LIBRARY")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {
@@ -831,11 +844,10 @@ func TestLoad_EnvVarsOverrideDefaults(t *testing.T) {
 }
 
 func TestLoad_Defaults(t *testing.T) {
-	os.Clearenv()
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
-	defer func() {
-		os.Unsetenv("DATABASE_URL")
-	}()
 
 	cfg, err := Load(".non-existent-env")
 	if err != nil {

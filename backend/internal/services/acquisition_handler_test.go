@@ -8,31 +8,41 @@ import (
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func setupHandlerTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
+	require.NoError(t, err, "failed to connect to db")
+	err = database.Migrate(db)
+	require.NoError(t, err, "failed to migrate db")
+	sqlDB, err := db.DB()
+	require.NoError(t, err, "failed to get underlying sql.DB")
+	t.Cleanup(func() { sqlDB.Close() })
+	return db
+}
 
 func TestAcquisitionHandler_FailItem(t *testing.T) {
 	// 1. Setup DB
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// 2. Create job and item
 	job := database.Job{Type: "acquisition"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	// 3. Fail item (1st time)
 	handler.failItem(job.ID, item.ID, "test failure")
 
 	// 4. Verify
 	var updatedItem database.JobItem
-	db.First(&updatedItem, item.ID)
+	require.NoError(t, db.First(&updatedItem, item.ID).Error, "failed to fetch updated item")
 
 	if updatedItem.Status != "failed" {
 		t.Errorf("expected status 'failed', got %s", updatedItem.Status)
@@ -52,7 +62,7 @@ func TestAcquisitionHandler_FailItem(t *testing.T) {
 
 	// 5. Fail item again (2nd time)
 	handler.failItem(job.ID, item.ID, "test failure 2")
-	db.First(&updatedItem, item.ID)
+	require.NoError(t, db.First(&updatedItem, item.ID).Error, "failed to fetch updated item")
 
 	if updatedItem.RetryCount != 2 {
 		t.Errorf("expected RetryCount 2, got %d", updatedItem.RetryCount)
@@ -70,28 +80,22 @@ func TestAcquisitionHandler_FailItem(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_StageLoadItemContext_BasicLoad(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job and item
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	// Call stageLoadItemContext
 	p := &acquisitionPipeline{}
 	skip, err := handler.stageLoadItemContext(p, item.ID)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false")
 	}
@@ -113,28 +117,18 @@ func TestAcquisitionHandler_StageLoadItemContext_BasicLoad(t *testing.T) {
 }
 
 func TestAcquisitionHandler_StageLoadItemContext_ItemNotFound(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	p := &acquisitionPipeline{}
-	_, err = handler.stageLoadItemContext(p, 99999)
+	_, err := handler.stageLoadItemContext(p, 99999)
 
-	if err == nil {
-		t.Error("expected error for non-existent item")
-	}
+	require.Error(t, err, "expected error for non-existent item")
 }
 
 func TestAcquisitionHandler_StageLoadItemContext_WithQualityProfile(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -144,7 +138,7 @@ func TestAcquisitionHandler_StageLoadItemContext_WithQualityProfile(t *testing.T
 		AllowedFormats: "flac,mp3",
 		PreferLossless: true,
 	}
-	db.Create(&profile)
+	require.NoError(t, db.Create(&profile).Error, "failed to create profile")
 
 	// Create job with quality_profile_id in params
 	params := struct {
@@ -157,24 +151,20 @@ func TestAcquisitionHandler_StageLoadItemContext_WithQualityProfile(t *testing.T
 		State:  "running",
 		Params: paramsJSON,
 	}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	// Call stageLoadItemContext
 	p := &acquisitionPipeline{}
 	skip, err := handler.stageLoadItemContext(p, item.ID)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false")
 	}
-	if p.profile == nil {
-		t.Fatal("expected p.profile to be set")
-	}
+	require.NotNil(t, p.profile, "expected p.profile to be set")
 	if p.profile.ID != profile.ID {
 		t.Errorf("expected p.profile.ID=%s, got %s", profile.ID, p.profile.ID)
 	}
@@ -184,11 +174,7 @@ func TestAcquisitionHandler_StageLoadItemContext_WithQualityProfile(t *testing.T
 }
 
 func TestAcquisitionHandler_StageLoadItemContext_WithInvalidParamsJSON(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -198,18 +184,16 @@ func TestAcquisitionHandler_StageLoadItemContext_WithInvalidParamsJSON(t *testin
 		State:  "running",
 		Params: []byte("{bad json}"),
 	}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	// Call stageLoadItemContext - should not error even with bad JSON
 	p := &acquisitionPipeline{}
 	skip, err := handler.stageLoadItemContext(p, item.ID)
 
-	if err != nil {
-		t.Fatalf("unexpected error with bad JSON: %v", err)
-	}
+	require.NoError(t, err, "unexpected error with bad JSON")
 	if skip {
 		t.Error("expected skip=false")
 	}
@@ -219,11 +203,7 @@ func TestAcquisitionHandler_StageLoadItemContext_WithInvalidParamsJSON(t *testin
 }
 
 func TestAcquisitionHandler_StageLoadItemContext_WithNoParams(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -233,18 +213,16 @@ func TestAcquisitionHandler_StageLoadItemContext_WithNoParams(t *testing.T) {
 		State:  "running",
 		Params: nil,
 	}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	// Call stageLoadItemContext
 	p := &acquisitionPipeline{}
 	skip, err := handler.stageLoadItemContext(p, item.ID)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false")
 	}
@@ -258,27 +236,21 @@ func TestAcquisitionHandler_StageLoadItemContext_WithNoParams(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_Execute_EmptyJob(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job with 0 items - with 0 items, loop exits immediately
 	// because completed+failed (0) >= total (0)
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
-	err = handler.Execute(context.Background(), job.ID, job)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	err := handler.Execute(context.Background(), job.ID, job)
+	require.NoError(t, err, "unexpected error")
 
 	// Verify job state is "failed" (since failed (0) == total (0))
 	var updatedJob database.Job
-	db.First(&updatedJob, job.ID)
+	require.NoError(t, db.First(&updatedJob, job.ID).Error, "failed to fetch updated job")
 	if updatedJob.State != "failed" {
 		t.Errorf("expected state 'failed', got %s", updatedJob.State)
 	}
@@ -293,55 +265,45 @@ func TestAcquisitionHandler_Execute_EmptyJob(t *testing.T) {
 }
 
 func TestAcquisitionHandler_Execute_CancelledContext(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job with 1 item
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	// Create cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = handler.Execute(ctx, job.ID, job)
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled, got %v", err)
-	}
+	err := handler.Execute(ctx, job.ID, job)
+	require.Error(t, err, "expected error")
+	require.Equal(t, context.Canceled, err, "expected Canceled")
 }
 
 func TestAcquisitionHandler_Execute_Timeout(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job with 1 queued item
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	// Use a short timeout - the 5s tick never fires, so select picks ctx.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	err = handler.Execute(ctx, job.ID, job)
-	if err != context.DeadlineExceeded {
-		t.Errorf("expected context.DeadlineExceeded, got %v", err)
-	}
+	err := handler.Execute(ctx, job.ID, job)
+	require.Error(t, err, "expected error")
+	require.Equal(t, context.DeadlineExceeded, err, "expected DeadlineExceeded")
 }
 
 // ---------------------------------------------------------------------------
@@ -349,22 +311,16 @@ func TestAcquisitionHandler_Execute_Timeout(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_ExecuteItem_ItemNotFound(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupHandlerTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job (needed for ExecuteItem signature)
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	// Call ExecuteItem with non-existent itemID - goes through stageLoadItemContext
-	err = handler.ExecuteItem(context.Background(), job.ID, 99999)
+	err := handler.ExecuteItem(context.Background(), job.ID, 99999)
 
-	if err == nil {
-		t.Error("expected error for non-existent item")
-	}
+	require.Error(t, err, "expected error for non-existent item")
 }

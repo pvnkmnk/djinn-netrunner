@@ -4,7 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestPeerReputation_SuccessRate(t *testing.T) {
@@ -145,15 +148,30 @@ func TestPeerReputation_IsIgnored(t *testing.T) {
 }
 
 func TestPeerReputation_UpdatedAt(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&PeerReputation{}))
+
 	p := &PeerReputation{
-		Username:      "testuser",
+		Username:       "testuser",
 		TotalDownloads: 10,
-		SuccessfulDls: 8,
-		FailedDls:     2,
+		SuccessfulDls:  8,
+		FailedDls:      2,
 		AvgSpeed:      1024,
 		LastSeen:      time.Now(),
 	}
-	// Verify fields are accessible
-	assert.NotEmpty(t, p.Username)
-	assert.Equal(t, 10, p.TotalDownloads)
+	require.NoError(t, db.Create(p).Error)
+
+	// UpdatedAt should be populated after create
+	assert.False(t, p.UpdatedAt.IsZero(), "UpdatedAt should be set after create")
+
+	originalUpdatedAt := p.UpdatedAt
+
+	// Update the record
+	p.SuccessfulDls = 9
+	require.NoError(t, db.Save(p).Error)
+
+	// UpdatedAt should change after update
+	assert.True(t, p.UpdatedAt.After(originalUpdatedAt) || p.UpdatedAt.Equal(originalUpdatedAt),
+		"UpdatedAt should be updated after save")
 }

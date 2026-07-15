@@ -78,14 +78,23 @@ func TestLiteFSGuard_GetPrimaryHostname(t *testing.T) {
 }
 
 func TestLiteFSGuard_IsPrimary_FileReadError(t *testing.T) {
-	// Test with a path that will fail on ReadFile (permission denied simulation
-	// by using an invalid path - but since we can't easily mock os.ReadFile,
-	// we test the case where dbPath leads to a non-existent parent)
+	// Test that IsPrimary returns true when ReadFile fails on .primary.
+	// Create the .primary path as a directory so os.ReadFile gets "is a directory" error.
 
 	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "nonexistent", "subdir", "netrunner.db")
+	dbPath := filepath.Join(tmpDir, "subdir", "netrunner.db")
+
+	// Ensure subdir exists
+	err := os.MkdirAll(filepath.Dir(dbPath), 0755)
+	require.NoError(t, err)
+
+	// Create .primary as a directory (not a file) to force os.ReadFile error
+	mountDir := filepath.Dir(dbPath)
+	primaryPath := filepath.Join(mountDir, ".primary")
+	err = os.MkdirAll(primaryPath, 0755)
+	require.NoError(t, err)
 
 	guard := NewLiteFSGuard(dbPath)
-	// Parent directory doesn't exist, so ReadFile will fail -> returns true (primary)
+	// ReadFile on a directory returns an error -> IsPrimary returns true (fallback)
 	assert.True(t, guard.IsPrimary())
 }

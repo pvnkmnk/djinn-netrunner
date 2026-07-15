@@ -193,7 +193,7 @@ func TestJobItemProcessor_ClaimNextItem_SequenceOrder(t *testing.T) {
 	jobID := job.ID
 
 	// Create items out of order
-	createJobItem(t, db, jobID, "queued", 10)
+	item1 := createJobItem(t, db, jobID, "queued", 10)
 	item2 := createJobItem(t, db, jobID, "queued", 2)
 	item3 := createJobItem(t, db, jobID, "queued", 7)
 
@@ -202,22 +202,22 @@ func TestJobItemProcessor_ClaimNextItem_SequenceOrder(t *testing.T) {
 	// First claim should get sequence 2 (lowest)
 	claimed1, err := processor.ClaimNextItem(jobID)
 	require.NoError(t, err)
-	assert.Equal(t, item2.ID, claimed1)
+	assert.Equal(t, item2.ID, claimed1, "first claim should get sequence 2")
 
 	// Second claim should get sequence 7
 	claimed2, err := processor.ClaimNextItem(jobID)
 	require.NoError(t, err)
-	assert.Equal(t, item3.ID, claimed2)
+	assert.Equal(t, item3.ID, claimed2, "second claim should get sequence 7")
 
 	// Third claim should get sequence 10
 	claimed3, err := processor.ClaimNextItem(jobID)
 	require.NoError(t, err)
+	assert.Equal(t, item1.ID, claimed3, "third claim should get sequence 10")
 
 	// Fourth claim should return 0 (no more items)
 	claimed4, err := processor.ClaimNextItem(jobID)
 	require.NoError(t, err)
-	assert.Equal(t, uint64(0), claimed4)
-	_ = claimed3 // avoid unused variable
+	assert.Equal(t, uint64(0), claimed4, "fourth claim should return 0 (no more items)")
 }
 
 func TestRunSafely(t *testing.T) {

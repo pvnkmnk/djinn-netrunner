@@ -110,7 +110,7 @@ func (m *QualityProfile) BeforeCreate(tx *gorm.DB) error {
 // MonitoredArtist represents an artist being tracked
 type MonitoredArtist struct {
 	ID             uuid.UUID `gorm:"type:uuid;primaryKey"`
-	MusicBrainzID  string    `gorm:"uniqueIndex;not null"`
+	MusicBrainzID  string    `gorm:"not null"`
 	Name           string    `gorm:"not null"`
 	SortName       string
 	Disambiguation string

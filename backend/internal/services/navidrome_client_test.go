@@ -14,7 +14,7 @@ import (
 )
 
 // mockNavidromeHandler creates an httptest.Server that simulates Navidrome/Subsonic responses.
-func mockNavidromeHandler(t *testing.T, responseData interface{}) *httptest.Server {
+func mockNavidromeHandler(responseData interface{}) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check for required Subsonic auth parameters
 		query := r.URL.Query()
@@ -43,7 +43,7 @@ func mockNavidromeHandler(t *testing.T, responseData interface{}) *httptest.Serv
 // TestNavidromeClient_TriggerScan tests the TriggerScan method.
 func TestNavidromeClient_TriggerScan(t *testing.T) {
 	t.Run("success returns true", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 			},
@@ -58,7 +58,7 @@ func TestNavidromeClient_TriggerScan(t *testing.T) {
 	})
 
 	t.Run("server returns failed status", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
@@ -102,7 +102,7 @@ func TestNavidromeClient_TriggerScan(t *testing.T) {
 // TestNavidromeClient_GetScanStatus tests the GetScanStatus method.
 func TestNavidromeClient_GetScanStatus(t *testing.T) {
 	t.Run("success with scanning true", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"scanStatus": map[string]interface{}{
@@ -123,7 +123,7 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 	})
 
 	t.Run("success with scanning false", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"scanStatus": map[string]interface{}{
@@ -144,7 +144,7 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 	})
 
 	t.Run("missing optional fields", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status":     "ok",
 				"scanStatus": map[string]interface{}{},
@@ -178,7 +178,7 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 // TestNavidromeClient_GetLibraryStats tests the GetLibraryStats method.
 func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 	t.Run("success with artists", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"artists": map[string]interface{}{
@@ -210,7 +210,7 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 	})
 
 	t.Run("empty library", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"artists": map[string]interface{}{
@@ -230,7 +230,7 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 	})
 
 	t.Run("single artist", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"artists": map[string]interface{}{
@@ -271,7 +271,7 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 // TestNavidromeClient_Search3 tests the Search3 method.
 func TestNavidromeClient_Search3(t *testing.T) {
 	t.Run("success returns songs", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"searchResult3": map[string]interface{}{
@@ -297,7 +297,7 @@ func TestNavidromeClient_Search3(t *testing.T) {
 	})
 
 	t.Run("empty results", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status":        "ok",
 				"searchResult3": map[string]interface{}{},
@@ -355,7 +355,7 @@ func TestNavidromeClient_Search3(t *testing.T) {
 // TestNavidromeClient_GetSong tests the GetSong method.
 func TestNavidromeClient_GetSong(t *testing.T) {
 	t.Run("success returns song", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"song": map[string]interface{}{
@@ -378,7 +378,7 @@ func TestNavidromeClient_GetSong(t *testing.T) {
 	})
 
 	t.Run("error status from server", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
@@ -422,7 +422,7 @@ func TestNavidromeClient_GetSong(t *testing.T) {
 // TestNavidromeClient_HealthCheck tests the HealthCheck method.
 func TestNavidromeClient_HealthCheck(t *testing.T) {
 	t.Run("success returns true", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 			},
@@ -435,7 +435,7 @@ func TestNavidromeClient_HealthCheck(t *testing.T) {
 	})
 
 	t.Run("failed status returns false", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
@@ -580,7 +580,7 @@ func TestNavidromeClient_getSong_idParam(t *testing.T) {
 // TestNavidromeClient_songMissingFields tests handling of songs with missing optional fields.
 func TestNavidromeClient_songMissingFields(t *testing.T) {
 	t.Run("song with missing optional fields", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"song": map[string]interface{}{
@@ -600,7 +600,7 @@ func TestNavidromeClient_songMissingFields(t *testing.T) {
 	})
 
 	t.Run("search with missing song array", func(t *testing.T) {
-		server := mockNavidromeHandler(t, map[string]interface{}{
+		server := mockNavidromeHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status":        "ok",
 				"searchResult3": map[string]interface{}{}, // missing song
@@ -618,7 +618,7 @@ func TestNavidromeClient_songMissingFields(t *testing.T) {
 
 // TestNavidromeClient_libraryStatsDeepNesting tests deeply nested artist structures.
 func TestNavidromeClient_libraryStatsDeepNesting(t *testing.T) {
-	server := mockNavidromeHandler(t, map[string]interface{}{
+	server := mockNavidromeHandler(map[string]interface{}{
 		"subsonic-response": map[string]interface{}{
 			"status": "ok",
 			"artists": map[string]interface{}{
@@ -650,7 +650,7 @@ func TestNavidromeClient_libraryStatsDeepNesting(t *testing.T) {
 
 // Test that empty password doesn't panic
 func TestNavidromeClient_emptyPassword(t *testing.T) {
-	server := mockNavidromeHandler(t, map[string]interface{}{
+	server := mockNavidromeHandler(map[string]interface{}{
 		"subsonic-response": map[string]interface{}{
 			"status": "ok",
 		},
@@ -681,12 +681,18 @@ func TestNavidromeClient_HTTP503(t *testing.T) {
 
 // Test connection refused
 func TestNavidromeClient_ConnectionRefused(t *testing.T) {
-	client := NewNavidromeClient("http://localhost:9999", "testuser", "testpass", nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Close immediately
+	}))
+	serverURL := server.URL
+	server.Close()
+
+	client := NewNavidromeClient(serverURL, "testuser", "testpass", nil)
 
 	_, err := client.TriggerScan()
 	require.Error(t, err)
 	// Connection refused error
-	assert.True(t, strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "ConnectException") || err != nil)
+	assert.True(t, strings.Contains(err.Error(), "refused") || strings.Contains(err.Error(), "ConnectException"))
 }
 
 // =============================================================================

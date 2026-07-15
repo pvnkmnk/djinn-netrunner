@@ -88,7 +88,7 @@ func TestPostgresLockManager_AcquireTryLock(t *testing.T) {
 	cfg := &config.Config{DatabaseURL: dbURL}
 	db, err := Connect(cfg)
 	if err != nil {
-		t.Skipf("Failed to connect to database: %v", err)
+		t.Fatalf("Failed to connect to configured Postgres database: %v", err)
 	}
 
 	lm := &PostgresLockManager{db: db}
@@ -121,7 +121,7 @@ func TestPostgresLockManager_ReleaseLock(t *testing.T) {
 	cfg := &config.Config{DatabaseURL: dbURL}
 	db, err := Connect(cfg)
 	if err != nil {
-		t.Skipf("Failed to connect to database: %v", err)
+		t.Fatalf("Failed to connect to configured Postgres database: %v", err)
 	}
 
 	lm := &PostgresLockManager{db: db}
@@ -166,7 +166,7 @@ func TestPostgresLockManager_AcquireTryLock_Duplicate(t *testing.T) {
 	cfg := &config.Config{DatabaseURL: dbURL}
 	db, err := Connect(cfg)
 	if err != nil {
-		t.Skipf("Failed to connect to database: %v", err)
+		t.Fatalf("Failed to connect to configured Postgres database: %v", err)
 	}
 
 	lm := &PostgresLockManager{db: db}
@@ -219,7 +219,7 @@ func TestNewLockManager_Postgres(t *testing.T) {
 	cfg := &config.Config{DatabaseURL: dbURL}
 	db, err := Connect(cfg)
 	if err != nil {
-		t.Skipf("Failed to connect to database: %v", err)
+		t.Fatalf("Failed to connect to configured Postgres database: %v", err)
 	}
 
 	lm := NewLockManager(db)

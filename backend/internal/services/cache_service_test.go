@@ -77,7 +77,7 @@ func TestCacheService_Set_WithTTL(t *testing.T) {
 	db := setupCacheTestDB(t)
 	svc := NewCacheService(db)
 
-	// Set with very short TTL
+	// Set with very short TTL - uses explicit future time
 	err := svc.Set("testsource", "ttl-key", "short-lived", 50*time.Millisecond)
 	require.NoError(t, err)
 
@@ -458,15 +458,26 @@ func TestCacheService_DeleteAllInSource(t *testing.T) {
 	require.NoError(t, err)
 
 	// Delete all in "todelete" source (must delete individually)
-	svc.Delete("todelete", "key1")
-	svc.Delete("todelete", "key2")
-	svc.Delete("todelete", "key3")
+	err = svc.Delete("todelete", "key1")
+	require.NoError(t, err, "Delete key1 should not error")
+	err = svc.Delete("todelete", "key2")
+	require.NoError(t, err, "Delete key2 should not error")
+	err = svc.Delete("todelete", "key3")
+	require.NoError(t, err, "Delete key3 should not error")
 
 	// All "todelete" keys should be gone
 	var result string
 	found, err := svc.Get("todelete", "key1", &result)
 	require.NoError(t, err)
-	assert.False(t, found)
+	assert.False(t, found, "key1 should be deleted")
+
+	found, err = svc.Get("todelete", "key2", &result)
+	require.NoError(t, err)
+	assert.False(t, found, "key2 should be deleted")
+
+	found, err = svc.Get("todelete", "key3", &result)
+	require.NoError(t, err)
+	assert.False(t, found, "key3 should be deleted")
 
 	// "keep" source should be unaffected
 	found, err = svc.Get("keep", "key1", &result)

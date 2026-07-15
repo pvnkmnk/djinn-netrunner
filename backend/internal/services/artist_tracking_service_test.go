@@ -73,6 +73,42 @@ func TestAddMonitoredArtist_DuplicateMBID_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "already monitored")
 }
 
+func TestAddMonitoredArtist_MultiOwnerSameMBID(t *testing.T) {
+	db, cleanup := setupArtistTrackingDB(t)
+	defer cleanup()
+	svc := NewArtistTrackingService(db, nil)
+
+	user1 := database.User{Email: "user1@test.local", PasswordHash: "hash", Role: "user"}
+	user2 := database.User{Email: "user2@test.local", PasswordHash: "hash", Role: "user"}
+	require.NoError(t, db.Create(&user1).Error)
+	require.NoError(t, db.Create(&user2).Error)
+
+	profile1 := database.QualityProfile{Name: "Test Profile 1", OwnerUserID: &user1.ID}
+	profile2 := database.QualityProfile{Name: "Test Profile 2", OwnerUserID: &user2.ID}
+	require.NoError(t, db.Create(&profile1).Error)
+	require.NoError(t, db.Create(&profile2).Error)
+
+	sharedMBID := "shared-artist-mbid"
+
+	// Owner1 adds artist with shared MBID
+	artist1, err := svc.AddMonitoredArtist(sharedMBID, profile1.ID, "Artist from Owner 1", "", &user1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, &user1.ID, artist1.OwnerUserID)
+	assert.Equal(t, "shared-artist-mbid", artist1.MusicBrainzID)
+
+	// Owner2 adds artist with same MBID - should succeed (different owner)
+	artist2, err := svc.AddMonitoredArtist(sharedMBID, profile2.ID, "Artist from Owner 2", "", &user2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, &user2.ID, artist2.OwnerUserID)
+	assert.Equal(t, "shared-artist-mbid", artist2.MusicBrainzID)
+	assert.NotEqual(t, artist1.ID, artist2.ID)
+
+	// Verify both exist in database
+	var count int64
+	require.NoError(t, db.Model(&database.MonitoredArtist{}).Where("music_brainz_id = ?", sharedMBID).Count(&count).Error)
+	assert.Equal(t, int64(2), count)
+}
+
 func TestAddMonitoredArtist_WithOwnerUserID(t *testing.T) {
 	db, cleanup := setupArtistTrackingDB(t)
 	defer cleanup()

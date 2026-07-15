@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_quality_profiles_name ON quality_profiles(name);
 -- Create monitored_artists table
 CREATE TABLE IF NOT EXISTS monitored_artists (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    musicbrainz_id TEXT UNIQUE NOT NULL,
+    musicbrainz_id TEXT NOT NULL,
     name TEXT NOT NULL,
     sort_name TEXT,
     disambiguation TEXT,

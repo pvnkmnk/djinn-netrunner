@@ -84,8 +84,9 @@ func TestConnect_InvalidPostgres(t *testing.T) {
 
 func TestNewLockManager_ReturnType(t *testing.T) {
 	// Test that NewLockManager returns correct types
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Lock{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Lock{}))
 
 	// SQLite should return TableLockManager
 	lm := NewLockManager(db)
@@ -93,11 +94,12 @@ func TestNewLockManager_ReturnType(t *testing.T) {
 }
 
 func TestTableLockManager_Close(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Lock{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Lock{}))
 
 	lm := &TableLockManager{db: db}
-	err := lm.Close()
+	err = lm.Close()
 	assert.NoError(t, err)
 }
 
@@ -111,35 +113,44 @@ func TestPostgresLockManager_GetScopeLockKey_Consistency(t *testing.T) {
 	lm := &PostgresLockManager{}
 
 	// Same inputs should produce same output
-	key1, _ := lm.GetScopeLockKey(nil, "library", "uuid-abc")
-	key2, _ := lm.GetScopeLockKey(nil, "library", "uuid-abc")
+	key1, err := lm.GetScopeLockKey(nil, "library", "uuid-abc")
+	require.NoError(t, err)
+	key2, err := lm.GetScopeLockKey(nil, "library", "uuid-abc")
+	require.NoError(t, err)
 	assert.Equal(t, key1, key2)
 
 	// Different scope type should produce different key
-	key3, _ := lm.GetScopeLockKey(nil, "watchlist", "uuid-abc")
+	key3, err := lm.GetScopeLockKey(nil, "watchlist", "uuid-abc")
+	require.NoError(t, err)
 	assert.NotEqual(t, key1, key3)
 
 	// Different scope ID should produce different key
-	key4, _ := lm.GetScopeLockKey(nil, "library", "uuid-xyz")
+	key4, err := lm.GetScopeLockKey(nil, "library", "uuid-xyz")
+	require.NoError(t, err)
 	assert.NotEqual(t, key1, key4)
 
 	// Empty strings should still produce valid key
-	key5, _ := lm.GetScopeLockKey(nil, "", "")
+	key5, err := lm.GetScopeLockKey(nil, "", "")
+	require.NoError(t, err)
 	assert.NotZero(t, key5)
 }
 
 func TestTableLockManager_GetScopeLockKey_Consistency(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Lock{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Lock{}))
 
 	lm := &TableLockManager{db: db}
 
 	// Same inputs should produce same output
-	key1, _ := lm.GetScopeLockKey(nil, "artist", "mbid-123")
-	key2, _ := lm.GetScopeLockKey(nil, "artist", "mbid-123")
+	key1, err := lm.GetScopeLockKey(nil, "artist", "mbid-123")
+	require.NoError(t, err)
+	key2, err := lm.GetScopeLockKey(nil, "artist", "mbid-123")
+	require.NoError(t, err)
 	assert.Equal(t, key1, key2)
 
 	// Different scope type should produce different key
-	key3, _ := lm.GetScopeLockKey(nil, "album", "mbid-123")
+	key3, err := lm.GetScopeLockKey(nil, "album", "mbid-123")
+	require.NoError(t, err)
 	assert.NotEqual(t, key1, key3)
 }

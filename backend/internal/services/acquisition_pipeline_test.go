@@ -8,7 +8,25 @@ import (
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+func setupPipelineTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
+	require.NoError(t, err, "failed to connect to db")
+	err = database.Migrate(db)
+	require.NoError(t, err, "failed to migrate db")
+	sqlDB, err := db.DB()
+	require.NoError(t, err, "failed to get underlying sql.DB")
+	t.Cleanup(func() { sqlDB.Close() })
+	return db
+}
 
 // ---------------------------------------------------------------------------
 // Mock implementations for testing
@@ -111,11 +129,7 @@ func (m *mockYtdlp) IsYtdlpAvailable() bool {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_StageSelectBestResult_NoProfile(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -129,9 +143,7 @@ func TestAcquisitionHandler_StageSelectBestResult_NoProfile(t *testing.T) {
 	}
 
 	skip, err := handler.stageSelectBestResult(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false (always continues)")
 	}
@@ -144,11 +156,7 @@ func TestAcquisitionHandler_StageSelectBestResult_NoProfile(t *testing.T) {
 }
 
 func TestAcquisitionHandler_StageSelectBestResult_WithProfile_Matching(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -169,9 +177,7 @@ func TestAcquisitionHandler_StageSelectBestResult_WithProfile_Matching(t *testin
 	}
 
 	skip, err := handler.stageSelectBestResult(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false")
 	}
@@ -182,11 +188,7 @@ func TestAcquisitionHandler_StageSelectBestResult_WithProfile_Matching(t *testin
 }
 
 func TestAcquisitionHandler_StageSelectBestResult_WithProfile_NonMatching(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -206,9 +208,7 @@ func TestAcquisitionHandler_StageSelectBestResult_WithProfile_NonMatching(t *tes
 
 	// Should NOT return error or skip - it logs a warning but continues
 	skip, err := handler.stageSelectBestResult(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false (continues even when profile doesn't match)")
 	}
@@ -222,11 +222,7 @@ func TestAcquisitionHandler_StageSelectBestResult_NoResults(t *testing.T) {
 	// The caller (stageSearchSoulseek) fails the item if no results are found,
 	// so this case is tested via stageSearchSoulseek tests instead.
 	// We verify here that the assumption holds: calling with empty results panics.
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -250,14 +246,11 @@ func TestAcquisitionHandler_StageSelectBestResult_NoResults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_StageSearchSoulseek_Success(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	slskdMock := &mockSlskd{
 		SearchFunc: func(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
+			require.Equal(t, "test track", query, "search should be called with expected query")
 			return []SearchResult{
 				{Filename: "track1.mp3", Score: 50.0},
 				{Filename: "track2.flac", Score: 40.0},
@@ -268,15 +261,13 @@ func TestAcquisitionHandler_StageSearchSoulseek_Success(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
-	p := &acquisitionPipeline{}
+	p := &acquisitionPipeline{item: item, job: job}
 	skip, err := handler.stageSearchSoulseek(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false (results found)")
 	}
@@ -289,11 +280,7 @@ func TestAcquisitionHandler_StageSearchSoulseek_Success(t *testing.T) {
 }
 
 func TestAcquisitionHandler_StageSearchSoulseek_NoResults(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	slskdMock := &mockSlskd{
 		SearchFunc: func(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
@@ -304,15 +291,13 @@ func TestAcquisitionHandler_StageSearchSoulseek_NoResults(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item, job: job}
 	skip, err := handler.stageSearchSoulseek(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if !skip {
 		t.Error("expected skip=true (no results)")
 	}
@@ -322,18 +307,14 @@ func TestAcquisitionHandler_StageSearchSoulseek_NoResults(t *testing.T) {
 
 	// Verify item was failed
 	var updatedItem database.JobItem
-	db.First(&updatedItem, item.ID)
+	require.NoError(t, db.First(&updatedItem, item.ID).Error, "failed to fetch updated item")
 	if updatedItem.Status != "failed" {
 		t.Errorf("expected status 'failed', got %s", updatedItem.Status)
 	}
 }
 
 func TestAcquisitionHandler_StageSearchSoulseek_Error(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	slskdMock := &mockSlskd{
 		SearchFunc: func(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
@@ -344,15 +325,13 @@ func TestAcquisitionHandler_StageSearchSoulseek_Error(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item, job: job}
 	skip, err := handler.stageSearchSoulseek(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if !skip {
 		t.Error("expected skip=true (error)")
 	}
@@ -363,11 +342,7 @@ func TestAcquisitionHandler_StageSearchSoulseek_Error(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_StageCheckGonicIndex_GonicMatch(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	gonicMock := &mockGonic{
 		Search3Func: func(query string) ([]GonicSong, error) {
@@ -380,33 +355,27 @@ func TestAcquisitionHandler_StageCheckGonicIndex_GonicMatch(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonicMock, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test track", Artist: "Test Artist", TrackTitle: "Test Track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 	skip, err := handler.stageCheckGonicIndex(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if !skip {
 		t.Error("expected skip=true (found in Gonic)")
 	}
 
 	// Verify item was marked as completed
 	var updatedItem database.JobItem
-	db.First(&updatedItem, item.ID)
+	require.NoError(t, db.First(&updatedItem, item.ID).Error, "failed to fetch updated item")
 	if updatedItem.Status != "completed (already indexed)" {
 		t.Errorf("expected status 'completed (already indexed)', got %s", updatedItem.Status)
 	}
 }
 
 func TestAcquisitionHandler_StageCheckGonicIndex_GonicNoMatch_NavidromeMatch(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	gonicMock := &mockGonic{
 		Search3Func: func(query string) ([]GonicSong, error) {
@@ -425,56 +394,44 @@ func TestAcquisitionHandler_StageCheckGonicIndex_GonicNoMatch_NavidromeMatch(t *
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonicMock, navidromeMock, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test track", Artist: "Test Artist", TrackTitle: "Test Track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 	skip, err := handler.stageCheckGonicIndex(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if !skip {
 		t.Error("expected skip=true (found in Navidrome)")
 	}
 
 	var updatedItem database.JobItem
-	db.First(&updatedItem, item.ID)
+	require.NoError(t, db.First(&updatedItem, item.ID).Error, "failed to fetch updated item")
 	if updatedItem.Status != "completed (already indexed)" {
 		t.Errorf("expected status 'completed (already indexed)', got %s", updatedItem.Status)
 	}
 }
 
 func TestAcquisitionHandler_StageCheckGonicIndex_BothClientsNil(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 	skip, err := handler.stageCheckGonicIndex(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false (both clients nil, should continue)")
 	}
 }
 
 func TestAcquisitionHandler_StageCheckGonicIndex_NoMatch(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	gonicMock := &mockGonic{
 		Search3Func: func(query string) ([]GonicSong, error) {
@@ -491,15 +448,13 @@ func TestAcquisitionHandler_StageCheckGonicIndex_NoMatch(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonicMock, navidromeMock, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test track", Artist: "Test Artist", TrackTitle: "Test Track", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 	skip, err := handler.stageCheckGonicIndex(p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false (not found in any index)")
 	}
@@ -510,11 +465,7 @@ func TestAcquisitionHandler_StageCheckGonicIndex_NoMatch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_StageYtdlpFallback_Success(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
@@ -530,9 +481,9 @@ func TestAcquisitionHandler_StageYtdlpFallback_Success(t *testing.T) {
 	handler := NewAcquisitionHandler(db, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "failed", SourceURL: "https://youtube.com/watch?v=test", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 
@@ -546,18 +497,14 @@ func TestAcquisitionHandler_StageYtdlpFallback_Success(t *testing.T) {
 
 	// Verify item status was reset
 	var updatedItem database.JobItem
-	db.First(&updatedItem, item.ID)
+	require.NoError(t, db.First(&updatedItem, item.ID).Error, "failed to fetch updated item")
 	if updatedItem.Status != "downloading" {
 		t.Errorf("expected status 'downloading', got %s", updatedItem.Status)
 	}
 }
 
 func TestAcquisitionHandler_StageYtdlpFallback_NoSourceURL(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
@@ -570,9 +517,9 @@ func TestAcquisitionHandler_StageYtdlpFallback_NoSourceURL(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "failed", SourceURL: "", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 
@@ -586,11 +533,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_NoSourceURL(t *testing.T) {
 }
 
 func TestAcquisitionHandler_StageYtdlpFallback_YtdlpUnavailable(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return false },
@@ -603,9 +546,9 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpUnavailable(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "failed", SourceURL: "https://youtube.com/watch?v=test", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 
@@ -616,11 +559,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpUnavailable(t *testing.T) {
 }
 
 func TestAcquisitionHandler_StageYtdlpFallback_DownloadError(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
@@ -633,9 +572,9 @@ func TestAcquisitionHandler_StageYtdlpFallback_DownloadError(t *testing.T) {
 	handler := NewAcquisitionHandler(db, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "failed", SourceURL: "https://youtube.com/watch?v=test", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 
@@ -646,18 +585,14 @@ func TestAcquisitionHandler_StageYtdlpFallback_DownloadError(t *testing.T) {
 }
 
 func TestAcquisitionHandler_StageYtdlpFallback_YtdlpNil(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "failed", SourceURL: "https://youtube.com/watch?v=test", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
 
@@ -674,29 +609,24 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpNil(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_Execute_ContextCancelledWhilePolling(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	// Create item that's "in progress" (not completed/failed)
 	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	// Use a timeout context - will cancel after a brief wait
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	err = handler.Execute(ctx, job.ID, job)
-	if err != context.DeadlineExceeded {
-		t.Errorf("expected DeadlineExceeded, got %v", err)
-	}
+	err := handler.Execute(ctx, job.ID, job)
+	require.Error(t, err, "expected error")
+	require.Equal(t, context.DeadlineExceeded, err, "expected DeadlineExceeded")
 }
 
 // ---------------------------------------------------------------------------
@@ -704,11 +634,7 @@ func TestAcquisitionHandler_Execute_ContextCancelledWhilePolling(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcquisitionHandler_StageAlbumBrowse_SingleTrack(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	slskdMock := &mockSlskd{
 		BrowseFunc: func(username string) ([]PeerFile, error) {
@@ -721,9 +647,9 @@ func TestAcquisitionHandler_StageAlbumBrowse_SingleTrack(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "track1", Artist: "Test Artist", Album: "Test Album", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	bitrate := 1000
 	p := &acquisitionPipeline{
@@ -735,18 +661,14 @@ func TestAcquisitionHandler_StageAlbumBrowse_SingleTrack(t *testing.T) {
 
 	// Single track - no additional items created
 	var newItems []database.JobItem
-	db.Where("job_id = ? AND id != ?", job.ID, item.ID).Find(&newItems)
+	require.NoError(t, db.Where("job_id = ? AND id != ?", job.ID, item.ID).Find(&newItems).Error, "failed to find new items")
 	if len(newItems) != 0 {
 		t.Errorf("expected 0 new items, got %d", len(newItems))
 	}
 }
 
 func TestAcquisitionHandler_StageAlbumBrowse_MultipleTracks_CreatesJobItems(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	slskdMock := &mockSlskd{
 		BrowseFunc: func(username string) ([]PeerFile, error) {
@@ -762,9 +684,9 @@ func TestAcquisitionHandler_StageAlbumBrowse_MultipleTracks_CreatesJobItems(t *t
 	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "track1", Artist: "Test Artist", Album: "Test Album", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	bitrate := 1000
 	p := &acquisitionPipeline{
@@ -776,7 +698,7 @@ func TestAcquisitionHandler_StageAlbumBrowse_MultipleTracks_CreatesJobItems(t *t
 
 	// Should create 2 new items (track2 and track3, track1 is already in existingQueries)
 	var newItems []database.JobItem
-	db.Where("job_id = ? AND id != ?", job.ID, item.ID).Find(&newItems)
+	require.NoError(t, db.Where("job_id = ? AND id != ?", job.ID, item.ID).Find(&newItems).Error, "failed to find new items")
 	if len(newItems) != 2 {
 		t.Errorf("expected 2 new items, got %d", len(newItems))
 	}
@@ -788,11 +710,7 @@ func TestAcquisitionHandler_StageAlbumBrowse_MultipleTracks_CreatesJobItems(t *t
 }
 
 func TestAcquisitionHandler_StageAlbumBrowse_DeduplicatesAgainstExisting(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	slskdMock := &mockSlskd{
 		BrowseFunc: func(username string) ([]PeerFile, error) {
@@ -807,14 +725,14 @@ func TestAcquisitionHandler_StageAlbumBrowse_DeduplicatesAgainstExisting(t *test
 	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
 	// Create existing item for track2 (dedup should prevent duplicate)
 	existingItem := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "track2", Artist: "Test Artist", Album: "Test Album", Sequence: 1}
-	db.Create(&existingItem)
+	require.NoError(t, db.Create(&existingItem).Error, "failed to create existing item")
 
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "track1", Artist: "Test Artist", Album: "Test Album", Sequence: 2}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	bitrate := 1000
 	p := &acquisitionPipeline{
@@ -826,18 +744,14 @@ func TestAcquisitionHandler_StageAlbumBrowse_DeduplicatesAgainstExisting(t *test
 
 	// Should only create 1 new item (track3, since track1 and track2 are in existing queries)
 	var newItems []database.JobItem
-	db.Where("job_id = ? AND id NOT IN (?, ?)", job.ID, item.ID, existingItem.ID).Find(&newItems)
+	require.NoError(t, db.Where("job_id = ? AND id NOT IN (?, ?)", job.ID, item.ID, existingItem.ID).Find(&newItems).Error, "failed to find new items")
 	if len(newItems) != 1 {
 		t.Errorf("expected 1 new item (track3), got %d", len(newItems))
 	}
 }
 
 func TestAcquisitionHandler_StageAlbumBrowse_BrowseError(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	slskdMock := &mockSlskd{
 		BrowseFunc: func(username string) ([]PeerFile, error) {
@@ -848,9 +762,9 @@ func TestAcquisitionHandler_StageAlbumBrowse_BrowseError(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "track1", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	bitrate := 1000
 	p := &acquisitionPipeline{
@@ -867,11 +781,7 @@ func TestAcquisitionHandler_StageAlbumBrowse_BrowseError(t *testing.T) {
 }
 
 func TestAcquisitionHandler_StageAlbumBrowse_NoAudioFiles(t *testing.T) {
-	db, err := database.Connect(&config.Config{DatabaseURL: ":memory:"})
-	if err != nil {
-		t.Fatalf("failed to connect to db: %v", err)
-	}
-	database.Migrate(db)
+	db := setupPipelineTestDB(t)
 
 	slskdMock := &mockSlskd{
 		BrowseFunc: func(username string) ([]PeerFile, error) {
@@ -885,9 +795,9 @@ func TestAcquisitionHandler_StageAlbumBrowse_NoAudioFiles(t *testing.T) {
 	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
-	db.Create(&job)
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
 	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "track1", Sequence: 1}
-	db.Create(&item)
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	bitrate := 1000
 	p := &acquisitionPipeline{

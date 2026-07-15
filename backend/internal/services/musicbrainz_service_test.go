@@ -24,7 +24,7 @@ func (f mbRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // newTestMusicBrainzService creates a MusicBrainzService with a custom transport
 // and a fast rate limiter for testing.
-func newTestMusicBrainzService(t *testing.T, transport http.RoundTripper) *MusicBrainzService {
+func newTestMusicBrainzService(transport http.RoundTripper) *MusicBrainzService {
 	cfg := &config.Config{
 		MusicBrainzUserAgent: "NetRunnerTest/1.0.0",
 	}
@@ -37,7 +37,7 @@ func newTestMusicBrainzService(t *testing.T, transport http.RoundTripper) *Music
 }
 
 // mockMusicBrainzHandler creates an httptest.Server handler that simulates MusicBrainz API responses.
-func mockMusicBrainzHandler(t *testing.T, handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
+func mockMusicBrainzHandler(handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check for required headers
 		if r.Header.Get("User-Agent") == "" {
@@ -55,7 +55,7 @@ func mockMusicBrainzHandler(t *testing.T, handler func(w http.ResponseWriter, r 
 // TestMusicBrainzService_SearchArtist tests the SearchArtist method with httptest.
 func TestMusicBrainzService_SearchArtist(t *testing.T) {
 	t.Run("success returns artists", func(t *testing.T) {
-		server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 			if !strings.Contains(r.URL.Path, "/ws/2/artist") {
 				t.Errorf("expected /ws/2/artist path, got %s", r.URL.Path)
 			}
@@ -87,7 +87,7 @@ func TestMusicBrainzService_SearchArtist(t *testing.T) {
 	})
 
 	t.Run("success with empty results", func(t *testing.T) {
-		server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 			resp := map[string]interface{}{
 				"artists": []interface{}{},
 			}
@@ -110,7 +110,7 @@ func TestMusicBrainzService_SearchArtist(t *testing.T) {
 	})
 
 	t.Run("HTTP error returns error", func(t *testing.T) {
-		server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"error": "rate limit exceeded"})
@@ -131,7 +131,7 @@ func TestMusicBrainzService_SearchArtist(t *testing.T) {
 	})
 
 	t.Run("malformed JSON returns error", func(t *testing.T) {
-		server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{invalid json`))
 		})
@@ -150,7 +150,7 @@ func TestMusicBrainzService_SearchArtist(t *testing.T) {
 	})
 
 	t.Run("rate limit headers are handled", func(t *testing.T) {
-		server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Retry-After", "1")
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{"artists": []interface{}{}})
@@ -194,7 +194,7 @@ func TestMusicBrainzService_SearchArtist(t *testing.T) {
 // TestMusicBrainzService_SearchRecording tests the SearchRecording method.
 func TestMusicBrainzService_SearchRecording(t *testing.T) {
 	t.Run("success returns recordings", func(t *testing.T) {
-		server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 			if !strings.Contains(r.URL.Path, "/ws/2/recording") {
 				t.Errorf("expected /ws/2/recording path, got %s", r.URL.Path)
 			}
@@ -232,7 +232,7 @@ func TestMusicBrainzService_SearchRecording(t *testing.T) {
 	})
 
 	t.Run("empty results", func(t *testing.T) {
-		server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 			resp := map[string]interface{}{
 				"recordings": []interface{}{},
 			}
@@ -255,7 +255,7 @@ func TestMusicBrainzService_SearchRecording(t *testing.T) {
 	})
 
 	t.Run("HTTP error", func(t *testing.T) {
-		server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		})
 		defer server.Close()
@@ -299,7 +299,7 @@ func TestMusicBrainzService_GetArtistDiscography(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		result, err := svc.GetArtistDiscography("artist-mbid")
@@ -322,7 +322,7 @@ func TestMusicBrainzService_GetArtistDiscography(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		_, err := svc.GetArtistDiscography("nonexistent")
@@ -363,7 +363,7 @@ func TestMusicBrainzService_GetRelease(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		release, err := svc.GetRelease("release-mbid")
@@ -386,7 +386,7 @@ func TestMusicBrainzService_GetRelease(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		_, err := svc.GetRelease("release-mbid")
@@ -425,7 +425,7 @@ func TestMusicBrainzService_GetReleaseByArtistTitle(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		release, err := svc.GetReleaseByArtistTitle("Radiohead", "OK Computer")
@@ -447,7 +447,7 @@ func TestMusicBrainzService_GetReleaseByArtistTitle(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		_, err := svc.GetReleaseByArtistTitle("Unknown", "Unknown")
@@ -487,7 +487,7 @@ func TestMusicBrainzService_GetCoverArt(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		coverURL, err := svc.GetCoverArt("release-mbid")
@@ -510,7 +510,7 @@ func TestMusicBrainzService_GetCoverArt(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		coverURL, err := svc.GetCoverArt("release-mbid")
@@ -532,7 +532,7 @@ func TestMusicBrainzService_GetCoverArt(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		_, err := svc.GetCoverArt("release-mbid")
@@ -549,7 +549,7 @@ func TestMusicBrainzService_GetCoverArt(t *testing.T) {
 			}, nil
 		})
 
-		svc := newTestMusicBrainzService(t, transport)
+		svc := newTestMusicBrainzService(transport)
 		defer svc.Close()
 
 		_, err := svc.GetCoverArt("nonexistent")
@@ -598,7 +598,7 @@ func TestMusicBrainzService_GetRelease_MalformedJSON(t *testing.T) {
 		}, nil
 	})
 
-	svc := newTestMusicBrainzService(t, transport)
+	svc := newTestMusicBrainzService(transport)
 	defer svc.Close()
 
 	_, err := svc.GetRelease("release-mbid")
@@ -618,7 +618,7 @@ func TestMusicBrainzService_SearchRecording_HTTPError(t *testing.T) {
 		}, nil
 	})
 
-	svc := newTestMusicBrainzService(t, transport)
+	svc := newTestMusicBrainzService(transport)
 	defer svc.Close()
 
 	_, err := svc.SearchRecording("test")
@@ -629,7 +629,7 @@ func TestMusicBrainzService_SearchRecording_HTTPError(t *testing.T) {
 // Test with custom User-Agent from config
 func TestMusicBrainzService_CustomUserAgent(t *testing.T) {
 	var receivedUserAgent string
-	server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 		receivedUserAgent = r.Header.Get("User-Agent")
 		resp := map[string]interface{}{"artists": []interface{}{}}
 		w.Header().Set("Content-Type", "application/json")
@@ -662,7 +662,7 @@ func TestMusicBrainzService_doRequest_Headers(t *testing.T) {
 		}, nil
 	})
 
-	svc := newTestMusicBrainzService(t, transport)
+	svc := newTestMusicBrainzService(transport)
 	defer svc.Close()
 
 	// Access doRequest indirectly through GetArtistDiscography
@@ -682,7 +682,7 @@ func TestMusicBrainzService_Close(t *testing.T) {
 
 // Test parsing response with missing optional fields
 func TestMusicBrainzService_SearchArtist_MissingFields(t *testing.T) {
-	server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 		// Response with missing optional fields
 		resp := map[string]interface{}{
 			"artists": []map[string]interface{}{
@@ -717,7 +717,7 @@ func TestMusicBrainzService_GetArtistDiscography_NetworkError(t *testing.T) {
 		return nil, errors.New("network error")
 	})
 
-	svc := newTestMusicBrainzService(t, transport)
+	svc := newTestMusicBrainzService(transport)
 	defer svc.Close()
 
 	_, err := svc.GetArtistDiscography("test")
@@ -727,9 +727,15 @@ func TestMusicBrainzService_GetArtistDiscography_NetworkError(t *testing.T) {
 
 // Test connection error propagation
 func TestMusicBrainzService_SearchArtist_ConnectionError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Close immediately
+	}))
+	serverURL := server.URL
+	server.Close()
+
 	svc := &MusicBrainzService{
 		cfg:        &config.Config{MusicBrainzUserAgent: "NetRunnerTest/1.0.0"},
-		baseURL:    "http://localhost:9999", // No server listening
+		baseURL:    serverURL,
 		httpClient: &http.Client{Timeout: 100 * time.Millisecond},
 		rateLimiter: time.NewTicker(time.Nanosecond),
 	}
@@ -755,7 +761,7 @@ func TestMusicBrainzService_GetReleaseByArtistTitle_InvalidMBID(t *testing.T) {
 		}, nil
 	})
 
-	svc := newTestMusicBrainzService(t, transport)
+	svc := newTestMusicBrainzService(transport)
 	defer svc.Close()
 
 	_, err := svc.GetReleaseByArtistTitle("test", "test")
@@ -765,7 +771,7 @@ func TestMusicBrainzService_GetReleaseByArtistTitle_InvalidMBID(t *testing.T) {
 
 // Test recording search with no releases attached
 func TestMusicBrainzService_SearchRecording_NoReleases(t *testing.T) {
-	server := mockMusicBrainzHandler(t, func(w http.ResponseWriter, r *http.Request) {
+	server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]interface{}{
 			"recordings": []map[string]interface{}{
 				{"id": "rec1", "title": "Test Song", "releases": []interface{}{}}, // no releases

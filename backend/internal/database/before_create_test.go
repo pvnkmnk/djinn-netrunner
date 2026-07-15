@@ -10,9 +10,25 @@ import (
 	"gorm.io/gorm"
 )
 
+// setupSQLiteTestDB creates an in-memory SQLite database for testing.
+// It opens a connection, runs AutoMigrate on the provided models, and
+// creates any prerequisite records passed as deps.
+// Returns the *gorm.DB and fails the test if any setup step errors.
+func setupSQLiteTestDB(t *testing.T, models []interface{}, deps ...interface{}) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err, "failed to open in-memory SQLite")
+	for _, model := range models {
+		require.NoError(t, db.AutoMigrate(model), "failed to AutoMigrate %T", model)
+	}
+	for _, dep := range deps {
+		require.NoError(t, db.Create(dep).Error, "failed to create prerequisite %T", dep)
+	}
+	return db
+}
+
 func TestQualityProfile_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&QualityProfile{})
+	db := setupSQLiteTestDB(t, []interface{}{&QualityProfile{}})
 
 	profile := QualityProfile{
 		Name:      "Test Profile",
@@ -29,12 +45,11 @@ func TestQualityProfile_BeforeCreate(t *testing.T) {
 }
 
 func TestMonitoredArtist_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&MonitoredArtist{}, &QualityProfile{})
+	db := setupSQLiteTestDB(t, []interface{}{&MonitoredArtist{}, &QualityProfile{}})
 
 	// Create a quality profile first
 	profile := QualityProfile{Name: "Test"}
-	db.Create(&profile)
+	require.NoError(t, db.Create(&profile).Error)
 
 	artist := MonitoredArtist{
 		MusicBrainzID:    "mbid-123",
@@ -52,8 +67,7 @@ func TestMonitoredArtist_BeforeCreate(t *testing.T) {
 }
 
 func TestTrackedRelease_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&TrackedRelease{})
+	db := setupSQLiteTestDB(t, []interface{}{&TrackedRelease{}})
 
 	release := TrackedRelease{
 		ArtistID:      uuid.New(),
@@ -72,8 +86,7 @@ func TestTrackedRelease_BeforeCreate(t *testing.T) {
 }
 
 func TestLibrary_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Library{})
+	db := setupSQLiteTestDB(t, []interface{}{&Library{}})
 
 	library := Library{
 		Name: "My Library",
@@ -90,12 +103,8 @@ func TestLibrary_BeforeCreate(t *testing.T) {
 }
 
 func TestTrack_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Track{}, &Library{})
-
-	// Create a library first
 	library := Library{Name: "Test Lib", Path: "/test"}
-	db.Create(&library)
+	db := setupSQLiteTestDB(t, []interface{}{&Track{}, &Library{}}, &library)
 
 	track := Track{
 		LibraryID: library.ID,
@@ -114,8 +123,7 @@ func TestTrack_BeforeCreate(t *testing.T) {
 }
 
 func TestPlaylist_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Playlist{})
+	db := setupSQLiteTestDB(t, []interface{}{&Playlist{}})
 
 	playlist := Playlist{
 		Name:        "My Playlist",
@@ -132,12 +140,8 @@ func TestPlaylist_BeforeCreate(t *testing.T) {
 }
 
 func TestWatchlist_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Watchlist{}, &QualityProfile{})
-
-	// Create a quality profile first
 	profile := QualityProfile{Name: "Test"}
-	db.Create(&profile)
+	db := setupSQLiteTestDB(t, []interface{}{&Watchlist{}, &QualityProfile{}}, &profile)
 
 	watchlist := Watchlist{
 		Name:             "Test Watchlist",
@@ -156,8 +160,7 @@ func TestWatchlist_BeforeCreate(t *testing.T) {
 }
 
 func TestJob_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Job{})
+	db := setupSQLiteTestDB(t, []interface{}{&Job{}})
 
 	job := Job{
 		Type:      "sync",
@@ -176,8 +179,7 @@ func TestJob_BeforeCreate(t *testing.T) {
 }
 
 func TestJobLog_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&JobLog{})
+	db := setupSQLiteTestDB(t, []interface{}{&JobLog{}})
 
 	log := JobLog{
 		JobID:   1,
@@ -195,8 +197,7 @@ func TestJobLog_BeforeCreate(t *testing.T) {
 }
 
 func TestAcquisition_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&Acquisition{})
+	db := setupSQLiteTestDB(t, []interface{}{&Acquisition{}})
 
 	acq := Acquisition{
 		JobID:      1,
@@ -217,8 +218,7 @@ func TestAcquisition_BeforeCreate(t *testing.T) {
 }
 
 func TestMetadataCache_BeforeCreate(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&MetadataCache{})
+	db := setupSQLiteTestDB(t, []interface{}{&MetadataCache{}})
 
 	cache := MetadataCache{
 		Source: "musicbrainz",
