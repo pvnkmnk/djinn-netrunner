@@ -12,7 +12,7 @@ import (
 // =============================================================================
 
 func TestGetEnv(t *testing.T) {
-	t.Parallel()
+	// Do not run in parallel — this test modifies global environment variables
 
 	tests := []struct {
 		name        string
@@ -66,8 +66,7 @@ func TestGetEnv(t *testing.T) {
 }
 
 func TestGetEnvBool(t *testing.T) {
-	t.Parallel()
-
+	// Do not run in parallel — this test modifies global environment variables
 	tests := []struct {
 		name       string
 		key        string
@@ -141,8 +140,7 @@ func TestGetEnvBool(t *testing.T) {
 }
 
 func TestGetEnvAsInt(t *testing.T) {
-	t.Parallel()
-
+	// Do not run in parallel — this test modifies global environment variables
 	tests := []struct {
 		name       string
 		key        string
@@ -216,8 +214,7 @@ func TestGetEnvAsInt(t *testing.T) {
 }
 
 func TestGetEnvAsInt64(t *testing.T) {
-	t.Parallel()
-
+	// Do not run in parallel — this test modifies global environment variables
 	tests := []struct {
 		name       string
 		key        string

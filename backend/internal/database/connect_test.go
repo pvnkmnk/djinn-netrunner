@@ -36,7 +36,7 @@ func TestConnect_SQLiteMemory(t *testing.T) {
 
 func TestConnect_SQLiteFile(t *testing.T) {
 	cfg := &config.Config{
-		DatabaseURL: "test_connect.db",
+		DatabaseURL: t.TempDir() + "/test_connect.db",
 	}
 
 	db, err := Connect(cfg)
@@ -56,7 +56,7 @@ func TestConnect_SQLiteFile(t *testing.T) {
 
 func TestConnect_SQLiteFileWithoutDbSuffix(t *testing.T) {
 	cfg := &config.Config{
-		DatabaseURL: "test_no_suffix",
+		DatabaseURL: t.TempDir() + "/test_no_suffix",
 	}
 
 	db, err := Connect(cfg)

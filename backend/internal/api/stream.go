@@ -159,10 +159,13 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 	c.Status(fiber.StatusPartialContent)
 
 	// Serve only the requested byte range
-	// Note: Fiber's SendStream with SectionReader reads from the underlying file
-	// and may not fully release the handle until after the request completes.
-	// We don't explicitly close here to avoid "file already closed" errors.
-	return c.SendStream(io.NewSectionReader(f, start, contentLength), int(contentLength))
+	// Wrap SectionReader with the file as io.Closer so Fiber closes the handle
+	// after the stream is consumed. io.SectionReader does not implement io.Closer
+	// on its own, so we embed it alongside the file's Close method.
+	return c.SendStream(struct {
+		io.Reader
+		io.Closer
+	}{io.NewSectionReader(f, start, contentLength), f}, int(contentLength))
 }
 
 // detectAudioContentType returns the MIME type for an audio file based on
