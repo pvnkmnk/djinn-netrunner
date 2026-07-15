@@ -63,6 +63,95 @@ func TestQualityProfile_IsMatch(t *testing.T) {
 			bitrate:        0,
 			expectedResult: true,
 		},
+		{
+			name: "WAV lossless format",
+			profile: QualityProfile{
+				PreferLossless: true,
+				AllowedFormats: "",
+			},
+			format:         "wav",
+			bitrate:        0,
+			expectedResult: true,
+		},
+		{
+			name: "AIFF lossless format",
+			profile: QualityProfile{
+				PreferLossless: true,
+				AllowedFormats: "",
+			},
+			format:         "aiff",
+			bitrate:        0,
+			expectedResult: true,
+		},
+		{
+			name: "ALAC lossless format",
+			profile: QualityProfile{
+				PreferLossless: true,
+				AllowedFormats: "",
+			},
+			format:         "alac",
+			bitrate:        0,
+			expectedResult: true,
+		},
+		{
+			name: "No allowed formats - any format matches",
+			profile: QualityProfile{
+				AllowedFormats: "",
+				MinBitrate:     0,
+			},
+			format:         "mp3",
+			bitrate:        128,
+			expectedResult: true,
+		},
+		{
+			name: "Prefer lossless false - lossy format above min bitrate",
+			profile: QualityProfile{
+				PreferLossless: false,
+				AllowedFormats: "",
+				MinBitrate:     192,
+			},
+			format:         "mp3",
+			bitrate:        256,
+			expectedResult: true,
+		},
+		{
+			name: "Prefer lossless false - lossy format below min bitrate",
+			profile: QualityProfile{
+				PreferLossless: false,
+				AllowedFormats: "",
+				MinBitrate:     256,
+			},
+			format:         "mp3",
+			bitrate:        192,
+			expectedResult: false,
+		},
+		{
+			name: "FLAC with dot prefix",
+			profile: QualityProfile{
+				AllowedFormats: "",
+			},
+			format:         ".flac",
+			bitrate:        0,
+			expectedResult: true,
+		},
+		{
+			name: "Ogg vorbis format",
+			profile: QualityProfile{
+				AllowedFormats: "flac,ogg",
+			},
+			format:         "ogg",
+			bitrate:        192,
+			expectedResult: true,
+		},
+		{
+			name: "Ogg format not in allowed list",
+			profile: QualityProfile{
+				AllowedFormats: "flac,mp3",
+			},
+			format:         "ogg",
+			bitrate:        192,
+			expectedResult: false,
+		},
 	}
 
 	for _, tt := range tests {

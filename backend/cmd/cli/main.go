@@ -627,10 +627,15 @@ func profileCmd() *cobra.Command {
 	return cmd
 }
 
+var osExit = os.Exit // Make replaceable in tests
+
 func handleError(err error) {
-	if jsonOutput {
-		printJSON(map[string]string{"error": err.Error()})
-	} else {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	if err != nil {
+		if jsonOutput {
+			printJSON(map[string]string{"error": err.Error()})
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
+		osExit(1)
 	}
 }

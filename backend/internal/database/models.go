@@ -83,7 +83,7 @@ type QualityProfile struct {
 	MinBitrate          int    `gorm:"default:320"`
 	PreferBitrate       *int
 	PreferSceneReleases bool   `gorm:"default:false"`
-	PreferWebReleases   bool   `gorm:"default:true"`
+	PreferWebReleases   bool
 	CoverArtSources     string `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
 	IsDefault           bool   `gorm:"default:false"`
 	OwnerUserID         *uint64 `gorm:"index"`
@@ -110,7 +110,7 @@ func (m *QualityProfile) BeforeCreate(tx *gorm.DB) error {
 // MonitoredArtist represents an artist being tracked
 type MonitoredArtist struct {
 	ID             uuid.UUID `gorm:"type:uuid;primaryKey"`
-	MusicBrainzID  string    `gorm:"uniqueIndex;not null"`
+	MusicBrainzID  string    `gorm:"not null"`
 	Name           string    `gorm:"not null"`
 	SortName       string
 	Disambiguation string

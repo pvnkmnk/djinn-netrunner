@@ -81,10 +81,10 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 			"error": "file not found",
 		})
 	}
-	defer f.Close()
 
 	stat, err := f.Stat()
 	if err != nil {
+		f.Close()
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "internal error",
 		})
@@ -111,6 +111,7 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 
 	// Parse Range header: "bytes=start-end"
 	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		f.Close()
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
@@ -118,12 +119,14 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 	rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
 	parts := strings.SplitN(rangeSpec, "-", 2)
 	if len(parts) != 2 {
+		f.Close()
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
 
 	start, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
+		f.Close()
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
@@ -135,6 +138,7 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 	} else {
 		end, err = strconv.ParseInt(parts[1], 10, 64)
 		if err != nil {
+			f.Close()
 			c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 			return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 		}
@@ -142,6 +146,7 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 
 	// Validate range
 	if start < 0 || end >= fileSize || start > end {
+		f.Close()
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
@@ -154,7 +159,13 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 	c.Status(fiber.StatusPartialContent)
 
 	// Serve only the requested byte range
-	return c.SendStream(io.NewSectionReader(f, start, contentLength), int(contentLength))
+	// Wrap SectionReader with the file as io.Closer so Fiber closes the handle
+	// after the stream is consumed. io.SectionReader does not implement io.Closer
+	// on its own, so we embed it alongside the file's Close method.
+	return c.SendStream(struct {
+		io.Reader
+		io.Closer
+	}{io.NewSectionReader(f, start, contentLength), f}, int(contentLength))
 }
 
 // detectAudioContentType returns the MIME type for an audio file based on

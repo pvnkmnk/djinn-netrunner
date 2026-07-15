@@ -255,20 +255,25 @@ func (h *AcquisitionHandler) moveFile(src, dst string) (cleanupErr error, copyEr
 	if err != nil {
 		return nil, err
 	}
-	defer in.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
+		in.Close()
 		return nil, err
 	}
-	defer out.Close()
 
 	if _, err = io.Copy(out, in); err != nil {
+		out.Close()
+		in.Close()
 		return nil, err
 	}
 
 	// Best-effort staging cleanup; may fail when slskd writes as a
 	// different UID than the worker.
+	// Explicitly close handles before removal - defers run on function
+	// return which is too late for os.Remove on Windows.
+	out.Close()
+	in.Close()
 	return os.Remove(src), nil
 }
 

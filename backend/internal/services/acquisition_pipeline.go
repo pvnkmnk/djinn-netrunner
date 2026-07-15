@@ -17,20 +17,20 @@ import (
 type AcquisitionHandler struct {
 	BaseHandler
 	cfg        *config.Config
-	slskd      *SlskdService
+	slskd      SlskdClient
 	mb         *MusicBrainzService
 	aid        *AcoustIDService
 	ext        *MetadataExtractor
-	gonic      *GonicClient
-	navidrome  *NavidromeClient
+	gonic      GonicClientInterface
+	navidrome  NavidromeClientInterface
 	discogs    *DiscogsService
 	cache      *CacheService
 	lyrics     *LyricsService
 	transcoder *TranscoderService
-	ytdlp      *YtdlpService
+	ytdlp      YtdlpClientInterface
 }
 
-func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd *SlskdService, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic *GonicClient, navidrome *NavidromeClient, discogs *DiscogsService, cache *CacheService, lyrics *LyricsService, transcoder *TranscoderService, ytdlp *YtdlpService) *AcquisitionHandler {
+func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd SlskdClient, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic GonicClientInterface, navidrome NavidromeClientInterface, discogs *DiscogsService, cache *CacheService, lyrics *LyricsService, transcoder *TranscoderService, ytdlp YtdlpClientInterface) *AcquisitionHandler {
 	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, navidrome: navidrome, discogs: discogs, cache: cache, lyrics: lyrics, transcoder: transcoder, ytdlp: ytdlp}
 }
 
