@@ -226,8 +226,8 @@ func CancelJob(db *gorm.DB, jobID uint64) error {
 	}
 	// Also cancel any pending job items
 	db.Model(&database.JobItem{}).
-		Where("job_id = ? AND state IN ?", jobID, []string{"queued", "running"}).
-		Update("state", "cancelled")
+		Where("job_id = ? AND status IN ?", jobID, []string{"queued", "running"}).
+		Update("status", "cancelled")
 	return nil
 }
 
@@ -242,8 +242,8 @@ func RetryJob(db *gorm.DB, jobID uint64) error {
 	}
 	// Reset failed items to queued
 	db.Model(&database.JobItem{}).
-		Where("job_id = ? AND state IN ?", jobID, []string{"failed", "completed (duplicate hash)", "completed (already indexed)"}).
-		Update("state", "queued")
+		Where("job_id = ? AND status IN ?", jobID, []string{"failed", "completed (duplicate hash)", "completed (already indexed)"}).
+		Update("status", "queued")
 	// Reset job to queued
 	return db.Model(&job).Update("state", "queued").Error
 }
@@ -433,10 +433,10 @@ func GetJobStats(db *gorm.DB) (*JobStats, error) {
 	var stats JobStats
 	err := db.Model(&database.Job{}).Where("requested_at > ?", since).
 		Select("COUNT(*) as total, " +
-			"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
-			"COUNT(*) FILTER (WHERE state = 'running') as running, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
+			"SUM(CASE WHEN state = 'queued' THEN 1 ELSE 0 END) as queued, " +
+			"SUM(CASE WHEN state = 'running' THEN 1 ELSE 0 END) as running, " +
+			"SUM(CASE WHEN state = 'succeeded' THEN 1 ELSE 0 END) as succeeded, " +
+			"SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END) as failed").
 		Scan(&stats).Error
 
 	if err != nil {
@@ -483,10 +483,10 @@ func GetStatsSummary(db *gorm.DB) (*SummaryStats, error) {
 	since := time.Now().Add(-24 * time.Hour)
 	err := db.Model(&database.Job{}).Where("requested_at > ?", since).
 		Select("COUNT(*) as total, " +
-			"COUNT(*) FILTER (WHERE state = 'queued') as queued, " +
-			"COUNT(*) FILTER (WHERE state = 'running') as running, " +
-			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded, " +
-			"COUNT(*) FILTER (WHERE state = 'failed') as failed").
+			"SUM(CASE WHEN state = 'queued' THEN 1 ELSE 0 END) as queued, " +
+			"SUM(CASE WHEN state = 'running' THEN 1 ELSE 0 END) as running, " +
+			"SUM(CASE WHEN state = 'succeeded' THEN 1 ELSE 0 END) as succeeded, " +
+			"SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END) as failed").
 		Scan(&summary.Jobs).Error
 	if err != nil {
 		return nil, err

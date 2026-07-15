@@ -81,10 +81,10 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 			"error": "file not found",
 		})
 	}
-	defer f.Close()
 
 	stat, err := f.Stat()
 	if err != nil {
+		f.Close()
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "internal error",
 		})
@@ -111,6 +111,7 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 
 	// Parse Range header: "bytes=start-end"
 	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		f.Close()
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
@@ -118,12 +119,14 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 	rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
 	parts := strings.SplitN(rangeSpec, "-", 2)
 	if len(parts) != 2 {
+		f.Close()
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
 
 	start, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
+		f.Close()
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
@@ -135,6 +138,7 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 	} else {
 		end, err = strconv.ParseInt(parts[1], 10, 64)
 		if err != nil {
+			f.Close()
 			c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 			return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 		}
@@ -142,6 +146,7 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 
 	// Validate range
 	if start < 0 || end >= fileSize || start > end {
+		f.Close()
 		c.Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).Send(nil)
 	}
@@ -154,6 +159,9 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 	c.Status(fiber.StatusPartialContent)
 
 	// Serve only the requested byte range
+	// Note: Fiber's SendStream with SectionReader reads from the underlying file
+	// and may not fully release the handle until after the request completes.
+	// We don't explicitly close here to avoid "file already closed" errors.
 	return c.SendStream(io.NewSectionReader(f, start, contentLength), int(contentLength))
 }
 

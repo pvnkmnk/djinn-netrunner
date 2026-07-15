@@ -83,7 +83,7 @@ type QualityProfile struct {
 	MinBitrate          int    `gorm:"default:320"`
 	PreferBitrate       *int
 	PreferSceneReleases bool   `gorm:"default:false"`
-	PreferWebReleases   bool   `gorm:"default:true"`
+	PreferWebReleases   bool
 	CoverArtSources     string `gorm:"default:'source,musicbrainz,discogs'"` // comma-separated priority list
 	IsDefault           bool   `gorm:"default:false"`
 	OwnerUserID         *uint64 `gorm:"index"`

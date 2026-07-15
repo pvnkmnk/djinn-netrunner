@@ -24,6 +24,15 @@ music-library/
 .beads/
 .slim/clonedeps/
 
+# Go coverage artifacts
+*.out
+coverage
+coverage.html
+coverage_tmp
+funcs.txt
+*_coverage
+*_cov.out
+
 # IDE
 .vscode/
 .idea/
