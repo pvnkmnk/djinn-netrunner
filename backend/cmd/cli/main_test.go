@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -1726,4 +1727,551 @@ func TestProfileCmd_Rm_Run_NotFound(t *testing.T) {
 	var count int64
 	db.Model(&database.QualityProfile{}).Count(&count)
 	assert.Equal(t, int64(0), count)
+}
+
+// ---------------------------------------------------------------------------
+// JSON Output Tests - Status, Config, Stats, Library
+// ---------------------------------------------------------------------------
+
+func TestStatusCmd_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := statusCmd()
+	cmd.SetArgs([]string{})
+	err := cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "statusCmd should not error with jsonOutput")
+	// SystemStatus fields are: database_connected, slskd_connected, gonic_connected, message
+	assert.Contains(t, output, `"database_connected"`)
+	assert.Contains(t, output, `"slskd_connected"`)
+	assert.Contains(t, output, `"gonic_connected"`)
+}
+
+func TestConfigCmd_List_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := configCmd()
+	cmd.SetArgs([]string{"list"})
+	err := cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "config list should not error with jsonOutput")
+	// ReadConfig returns map[string]string which serializes as a JSON object
+	assert.Contains(t, output, "{")
+	assert.Contains(t, output, "}")
+}
+
+func TestStatsCmd_Jobs_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := statsCmd()
+	cmd.SetArgs([]string{"jobs"})
+	err := cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "stats jobs should not error with jsonOutput")
+	// JobStats has fields: total, queued, running, succeeded, failed, success_rate
+	assert.Contains(t, output, `"total"`)
+	assert.Contains(t, output, `"queued"`)
+}
+
+func TestStatsCmd_Library_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := statsCmd()
+	cmd.SetArgs([]string{"library"})
+	err := cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "stats library should not error with jsonOutput")
+	// LibraryStats has fields: total_tracks, total_size, total_size_mb, format_breakdown
+	assert.Contains(t, output, `"total_tracks"`)
+	assert.Contains(t, output, `"total_size_mb"`)
+}
+
+func TestLibraryCmd_Add_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := libraryCmd()
+	cmd.SetArgs([]string{"add", "Test JSON", "/music/json"})
+	err := cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "library add should not error with jsonOutput")
+	// Library has json fields: id, name, path
+	assert.Contains(t, output, `"name"`)
+	assert.Contains(t, output, `"path"`)
+}
+
+func TestLibraryCmd_Scan_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	// Create a library first
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: "Test Library for Scan",
+		Path: "/music/testscan",
+	}
+	err := testDB.Create(&library).Error
+	require.NoError(t, err, "should create library")
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := libraryCmd()
+	cmd.SetArgs([]string{"scan", library.ID.String()})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "library scan should not error with jsonOutput")
+	// Job struct has no JSON tags, so fields serialize as PascalCase
+	assert.Contains(t, output, `"ID"`)
+	assert.Contains(t, output, `"Type"`)
+	assert.Contains(t, output, `"State"`)
+}
+
+func TestLibraryCmd_Prune_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	// Create a library first
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: "Test Library for Prune",
+		Path: "/music/testprune",
+	}
+	err := testDB.Create(&library).Error
+	require.NoError(t, err, "should create library")
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := libraryCmd()
+	cmd.SetArgs([]string{"prune", library.ID.String()})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "library prune should not error with jsonOutput")
+	// Job struct has no JSON tags, so fields serialize as PascalCase
+	assert.Contains(t, output, `"ID"`)
+	assert.Contains(t, output, `"Type"`)
+	assert.Contains(t, output, `"State"`)
+}
+
+func TestLibraryCmd_Rm_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	// Create a library first
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: "Test Library for Rm",
+		Path: "/music/testrm",
+	}
+	err := testDB.Create(&library).Error
+	require.NoError(t, err, "should create library")
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := libraryCmd()
+	cmd.SetArgs([]string{"rm", library.ID.String()})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "library rm should not error with jsonOutput")
+	// DeleteLibrary returns map[string]string{"status": "deleted"}
+	assert.Contains(t, output, `"status"`)
+	assert.Contains(t, output, `"deleted"`)
+}
+
+func TestLibraryCmd_Duplicates_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := libraryCmd()
+	cmd.SetArgs([]string{"duplicates"})
+	err := cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "library duplicates should not error with jsonOutput")
+	// ListDuplicates returns []DuplicateGroup which serializes as JSON array,
+	// or null when no duplicates found
+	assert.True(t, strings.Contains(output, "[") || strings.Contains(output, "null"),
+		"output should be valid JSON (array or null), got: %s", output)
+}
+
+func TestLibraryCmd_List_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	// Create a library
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: "JSON Library",
+		Path: "/music/json-test",
+	}
+	err := db.Create(&library).Error
+	require.NoError(t, err, "should create library")
+
+	getOutput, _ := captureStdout(t)
+	cmd := libraryCmd()
+	cmd.SetArgs([]string{"list"})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "library list should not error with jsonOutput")
+	assert.Contains(t, output, "JSON Library")
+	assert.Contains(t, output, `/music/json-test`)
+}
+
+func TestWatchlistCmd_Add_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	// Create a quality profile first
+	profile := database.QualityProfile{
+		ID:              uuid.New(),
+		Name:            "Test Profile",
+		IsDefault:       true,
+		PreferLossless:  true,
+		AllowedFormats:  "FLAC",
+	}
+	err := db.Create(&profile).Error
+	require.NoError(t, err, "should create profile")
+
+	getOutput, _ := captureStdout(t)
+	cmd := watchlistCmd()
+	cmd.SetArgs([]string{"add", "JSON Watchlist", "rss_feed", "https://example.com/json-feed.xml"})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "watchlist add should not error with jsonOutput")
+	assert.Contains(t, output, "JSON Watchlist")
+}
+
+func TestProfileCmd_List_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	// Create a profile
+	profile := database.QualityProfile{
+		ID:              uuid.New(),
+		Name:            "JSON Profile",
+		IsDefault:       true,
+		PreferLossless:  true,
+		AllowedFormats:  "FLAC",
+	}
+	err := db.Create(&profile).Error
+	require.NoError(t, err, "should create profile")
+
+	getOutput, _ := captureStdout(t)
+	cmd := profileCmd()
+	cmd.SetArgs([]string{"list"})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "profile list should not error with jsonOutput")
+	assert.Contains(t, output, "JSON Profile")
+}
+
+func TestProfileCmd_Add_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	getOutput, _ := captureStdout(t)
+	cmd := profileCmd()
+	cmd.SetArgs([]string{"add", "JSON Profile"})
+	err := cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "profile add should not error with jsonOutput")
+	assert.Contains(t, output, "JSON Profile")
+}
+
+func TestProfileCmd_Rm_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	// Create a profile to delete
+	profile := database.QualityProfile{
+		ID:              uuid.New(),
+		Name:            "To Delete JSON",
+		IsDefault:       false,
+		PreferLossless:  true,
+		AllowedFormats:  "FLAC",
+	}
+	err := db.Create(&profile).Error
+	require.NoError(t, err, "should create profile")
+
+	getOutput, _ := captureStdout(t)
+	cmd := profileCmd()
+	cmd.SetArgs([]string{"rm", profile.ID.String()})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "profile rm should not error with jsonOutput")
+	assert.Contains(t, output, `"status"`)
+}
+
+func TestStatsCmd_Summary_Run_WithData(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+
+	// Create a library so activity data is non-zero
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: "Test Lib",
+		Path: "/music/test",
+	}
+	err := db.Create(&library).Error
+	require.NoError(t, err, "should create library")
+
+	getOutput, _ := captureStdout(t)
+	cmd := statsCmd()
+	cmd.SetArgs([]string{"summary"})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "stats summary should not error with data")
+	assert.Contains(t, output, "Jobs (24h):")
+	assert.Contains(t, output, "Library:")
+	assert.Contains(t, output, "Activity:")
+	assert.Contains(t, output, "Libraries: 1")
+}
+
+func TestStatsCmd_Library_Run_WithData(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+
+	// Create a library and a track to get format breakdown
+	library := database.Library{
+		ID:   uuid.New(),
+		Name: "Test Lib",
+		Path: "/music/test",
+	}
+	err := db.Create(&library).Error
+	require.NoError(t, err, "should create library")
+
+	track := database.Track{
+		ID:        uuid.New(),
+		LibraryID: library.ID,
+		Title:     "Test Track",
+		Artist:    "Test Artist",
+		Path:      "/music/test/test.flac",
+		Format:    "FLAC",
+		FileSize:  1024 * 1024,
+	}
+	err = db.Create(&track).Error
+	require.NoError(t, err, "should create track")
+
+	getOutput, _ := captureStdout(t)
+	cmd := statsCmd()
+	cmd.SetArgs([]string{"library"})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "stats library should not error with data")
+	assert.Contains(t, output, "Library Statistics:")
+	assert.Contains(t, output, "Total Tracks: 1")
+	assert.Contains(t, output, "Format Breakdown:")
+	assert.Contains(t, output, "FLAC")
+}
+
+func TestProfileCmd_SetDefault_Run_JSONOutput(t *testing.T) {
+	testDB := setupTestDBWithMigrate(t)
+
+	oldDB := db
+	oldCfg := cfg
+	oldJsonOutput := jsonOutput
+	oldExit := osExit
+	osExit = func(code int) {}
+	defer func() { db = oldDB; cfg = oldCfg; jsonOutput = oldJsonOutput; osExit = oldExit }()
+
+	db = testDB
+	cfg = &config.Config{DatabaseURL: ":memory:"}
+	jsonOutput = true
+
+	// Create a profile to set as default
+	profile := database.QualityProfile{
+		ID:              uuid.New(),
+		Name:            "New Default",
+		IsDefault:       false,
+		PreferLossless:  true,
+		AllowedFormats:  "FLAC",
+	}
+	err := db.Create(&profile).Error
+	require.NoError(t, err, "should create profile")
+
+	getOutput, _ := captureStdout(t)
+	cmd := profileCmd()
+	cmd.SetArgs([]string{"set-default", profile.ID.String()})
+	err = cmd.Execute()
+	output := getOutput()
+
+	require.NoError(t, err, "profile set-default should not error with jsonOutput")
+	assert.Contains(t, output, `"status"`)
 }
