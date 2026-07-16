@@ -67,8 +67,9 @@ func (h *PlaylistHandler) Get(c *fiber.Ctx) error {
 	// Load tracks ordered by position
 	var playlistTracks []database.PlaylistTrack
 	// Bolt Optimization: Select only necessary columns for the preloaded Track to reduce database I/O.
+	// We use the trackBrowseColumns constant to ensure consistency across the UI.
 	if err := h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track", func(db *gorm.DB) *gorm.DB {
-		return db.Select("id, title, artist, album, track_num, format, path")
+		return db.Select(trackBrowseColumns)
 	}).Find(&playlistTracks).Error; err != nil {
 		return internalServerError(c, err)
 	}
