@@ -51,7 +51,8 @@ func (h *PlaylistHandler) Get(c *fiber.Ctx) error {
 	}
 
 	var playlist database.Playlist
-	query := h.db.Where("id = ?", id)
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select(playlistListColumns).Where("id = ?", id)
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -65,7 +66,11 @@ func (h *PlaylistHandler) Get(c *fiber.Ctx) error {
 
 	// Load tracks ordered by position
 	var playlistTracks []database.PlaylistTrack
-	if err := h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track").Find(&playlistTracks).Error; err != nil {
+	// Bolt Optimization: Select only necessary columns for the preloaded Track to reduce database I/O.
+	// We use the trackBrowseColumns constant to ensure consistency across the UI.
+	if err := h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track", func(db *gorm.DB) *gorm.DB {
+		return db.Select(trackBrowseColumns)
+	}).Find(&playlistTracks).Error; err != nil {
 		return internalServerError(c, err)
 	}
 
@@ -241,7 +246,8 @@ func (h *PlaylistHandler) AddTrack(c *fiber.Ctx) error {
 	}
 
 	var playlist database.Playlist
-	query := h.db.Where("id = ?", playlistID)
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select("id, owner_user_id").Where("id = ?", playlistID)
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -272,7 +278,8 @@ func (h *PlaylistHandler) AddTrack(c *fiber.Ctx) error {
 
 	// Check if track exists
 	var track database.Track
-	if err := h.db.First(&track, "id = ?", trackID).Error; err != nil {
+	// Bolt Optimization: Select only necessary columns to reduce database I/O.
+	if err := h.db.Select("id").First(&track, "id = ?", trackID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "track not found"})
 		}
@@ -314,7 +321,8 @@ func (h *PlaylistHandler) RemoveTrack(c *fiber.Ctx) error {
 	}
 
 	var playlist database.Playlist
-	query := h.db.Where("id = ?", playlistID)
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select("id, owner_user_id").Where("id = ?", playlistID)
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -350,7 +358,8 @@ func (h *PlaylistHandler) Reorder(c *fiber.Ctx) error {
 	}
 
 	var playlist database.Playlist
-	query := h.db.Where("id = ?", playlistID)
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
+	query := h.db.Select("id, owner_user_id").Where("id = ?", playlistID)
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -405,14 +414,14 @@ func (h *PlaylistHandler) PlaylistsPage(c *fiber.Ctx) error {
 
 // RenderPlaylistsPartial renders the playlists partial for HTMX
 func (h *PlaylistHandler) RenderPlaylistsPartial(c *fiber.Ctx) error {
-	_, ok, err := requirePartialUser(c)
+	user, ok, err := requirePartialUser(c)
 	if !ok {
 		return err
 	}
 
 	var playlists []database.Playlist
+	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
 	query := h.db.Select(playlistListColumns).Order("created_at DESC")
-	user, _ := currentUserFromLocals(c)
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
