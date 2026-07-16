@@ -32,7 +32,9 @@ func Migrate(db *gorm.DB) error {
 
 		// Remove the DEFAULT true on prefer_web_releases that was removed from the model.
 		// AutoMigrate is additive and won't drop column defaults.
-		db.Exec("ALTER TABLE quality_profiles ALTER COLUMN prefer_web_releases DROP DEFAULT")
+		if db.Migrator().HasTable("quality_profiles") {
+			db.Exec("ALTER TABLE quality_profiles ALTER COLUMN prefer_web_releases DROP DEFAULT")
+		}
 
 		// Convert legacy ENUM columns to text so GORM AutoMigrate can manage them.
 		// These fixup steps only run if the tables already exist (legacy migration scenario).
