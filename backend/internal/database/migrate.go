@@ -28,7 +28,9 @@ func Migrate(db *gorm.DB) error {
 
 		// Drop the global unique index on music_brainz_id that was replaced by
 		// a composite (owner_user_id, musicbrainz_id) index — AutoMigrate won't drop it.
-		db.Exec("DROP INDEX IF EXISTS idx_monitored_artists_musicbrainz_id")
+		if db.Migrator().HasTable("monitored_artists") {
+			db.Exec("DROP INDEX IF EXISTS idx_monitored_artists_musicbrainz_id")
+		}
 
 		// Remove the DEFAULT true on prefer_web_releases that was removed from the model.
 		// AutoMigrate is additive and won't drop column defaults.
