@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -960,8 +961,8 @@ func (h *SubsonicHandler) GetCoverArt(c *fiber.Ctx) error {
 
 	// Try to get cover art from track
 	if track.CoverURL != "" {
-		// If it's a URL, fetch it
-		resp, err := http.Get(track.CoverURL)
+		// ✅ SECURITY: Use SafeGet to prevent SSRF
+		resp, err := services.SafeGet(track.CoverURL)
 		if err == nil {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
