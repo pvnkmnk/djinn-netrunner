@@ -32,7 +32,7 @@ jobs:
       - name: Wait for Postgres
         run: |
           for i in $(seq 1 30); do
-            if docker compose -f docker-compose.integration.yml -p netrunner-integration exec -T integration-db pg_isready -U testuser > /dev/null 2>&1; then
+            if docker compose -f docker-compose.integration.yml -p netrunner-integration exec -T integration-db pg_isready -U testuser -d netrunner_integration > /dev/null 2>&1; then
               echo "Postgres is ready"
               exit 0
             fi
