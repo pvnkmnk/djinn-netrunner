@@ -96,7 +96,7 @@ start_services() {
     # Wait for database
     attempts=0
     while [ $attempts -lt $max_attempts ]; do
-        if docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" exec -T integration-db pg_isready -U testuser > /dev/null 2>&1; then
+        if docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" exec -T integration-db pg_isready -U testuser -d netrunner_integration > /dev/null 2>&1; then
             echo -e "${GREEN}Database is ready!${NC}"
             break
         fi
@@ -143,7 +143,7 @@ check_status() {
     
     echo ""
     echo -e "${YELLOW}Checking database...${NC}"
-    if docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" exec -T integration-db pg_isready -U testuser > /dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" exec -T integration-db pg_isready -U testuser -d netrunner_integration > /dev/null 2>&1; then
         echo -e "${GREEN}Database is ready${NC}"
     else
         echo -e "${RED}Database is not ready${NC}"
