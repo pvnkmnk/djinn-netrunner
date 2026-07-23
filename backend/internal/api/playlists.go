@@ -65,7 +65,10 @@ func (h *PlaylistHandler) Get(c *fiber.Ctx) error {
 
 	// Load tracks ordered by position
 	var playlistTracks []database.PlaylistTrack
-	if err := h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track").Find(&playlistTracks).Error; err != nil {
+	// Bolt Optimization: Preload track with trackBrowseColumns to avoid loading massive unused fields.
+	if err := h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track", func(db *gorm.DB) *gorm.DB {
+		return db.Select(trackBrowseColumns)
+	}).Find(&playlistTracks).Error; err != nil {
 		return internalServerError(c, err)
 	}
 
@@ -272,7 +275,8 @@ func (h *PlaylistHandler) AddTrack(c *fiber.Ctx) error {
 
 	// Check if track exists
 	var track database.Track
-	if err := h.db.First(&track, "id = ?", trackID).Error; err != nil {
+	// Bolt Optimization: Select only id column when validating track existence to minimize DB payload.
+	if err := h.db.Select("id").First(&track, "id = ?", trackID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "track not found"})
 		}
