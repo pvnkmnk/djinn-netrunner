@@ -39,3 +39,8 @@
 **Vulnerability:** Naive SSRF filters can be bypassed using IPv4-mapped IPv6 addresses (e.g., ::ffff:127.0.0.1) or redirected to internal services.
 **Learning:** Go's net.IP.To4() should be used to normalize addresses before CIDR checks. Additionally, if an outbound proxy is used, SSRF protection must be delegated to the proxy to avoid blocking legitimate internal proxy connections while still protecting direct dials.
 **Prevention:** Use a centralized safe HTTP client factory that normalizes IPs and provides architectural separation between internal-only and external-facing requests.
+
+## 2026-08-06 - [SSRF in Subsonic Cover Art Fetching]
+**Vulnerability:** Subsonic API's `GetCoverArt` fetched track cover URLs directly using Go's `http.Get()`. This bypassed the centralized Server-Side Request Forgery (SSRF) protections in the `services` package, exposing internal and loopback IP addresses to unauthorized outbound queries.
+**Learning:** Naive use of standard library HTTP clients inside API endpoints can lead to isolated SSRF vectors, even when external data providers have been secured.
+**Prevention:** Always route user-supplied or external URLs through the centralized `services.SafeGet()` helper to ensure consistent SSRF protection.

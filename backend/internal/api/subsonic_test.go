@@ -920,6 +920,109 @@ func TestSubsonic_GetSong_MissingID(t *testing.T) {
 }
 
 // =============================================================================
+// DB Handler Tests - GetCoverArt
+// =============================================================================
+
+func TestSubsonic_GetCoverArt_SSRFBlocked(t *testing.T) {
+	db, handler := setupSubsonicDBHandlerTest(t)
+
+	// Create a track with a private loopback CoverURL
+	var library database.Library
+	err := db.First(&library).Error
+	require.NoError(t, err)
+
+	track := database.Track{
+		ID:        uuid.New(),
+		Title:     "SSRF Test Song",
+		Artist:    "Test Artist",
+		Album:     "Test Album",
+		Path:      "/tmp/test-library/ssrf.mp3",
+		LibraryID: library.ID,
+		Format:    "MP3",
+		FileSize:  1024000,
+		Genre:     "Rock",
+		CoverURL:  "http://127.0.0.1:9999/secret_metadata.jpg", // Loopback IP (SSRF)
+	}
+	err = db.Create(&track).Error
+	require.NoError(t, err)
+
+	app := fiber.New()
+	app.Get("/getCoverArt", handler.AuthMiddleware, handler.GetCoverArt)
+
+	password := "testpass123"
+	req := httptest.NewRequest("GET", "/getCoverArt?id="+track.ID.String()+"&u=test@example.com&p="+password, nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	// Since 127.0.0.1 is blocked by SafeGet, it falls through to findCoverArtInDirectory
+	// and eventually responds with Code 0 "Cover art not available".
+	assert.Equal(t, 200, resp.StatusCode)
+	body := subsonicGetRespBody(resp)
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `status="failed"`)
+	assert.Contains(t, bodyStr, `code="0"`)
+	assert.Contains(t, bodyStr, "Cover art not available")
+}
+
+func TestSubsonic_GetCoverArt_MissingID(t *testing.T) {
+	_, handler := setupSubsonicDBHandlerTest(t)
+
+	app := fiber.New()
+	app.Get("/getCoverArt", handler.AuthMiddleware, handler.GetCoverArt)
+
+	password := "testpass123"
+	req := httptest.NewRequest("GET", "/getCoverArt?u=test@example.com&p="+password, nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, 200, resp.StatusCode)
+	body := subsonicGetRespBody(resp)
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `status="failed"`)
+	assert.Contains(t, bodyStr, `code="10"`)
+	assert.Contains(t, bodyStr, "Missing parameter: id")
+}
+
+func TestSubsonic_GetCoverArt_InvalidID(t *testing.T) {
+	_, handler := setupSubsonicDBHandlerTest(t)
+
+	app := fiber.New()
+	app.Get("/getCoverArt", handler.AuthMiddleware, handler.GetCoverArt)
+
+	password := "testpass123"
+	req := httptest.NewRequest("GET", "/getCoverArt?id=not-a-uuid&u=test@example.com&p="+password, nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, 200, resp.StatusCode)
+	body := subsonicGetRespBody(resp)
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `status="failed"`)
+	assert.Contains(t, bodyStr, `code="10"`)
+	assert.Contains(t, bodyStr, "Invalid track ID")
+}
+
+func TestSubsonic_GetCoverArt_NotFound(t *testing.T) {
+	_, handler := setupSubsonicDBHandlerTest(t)
+
+	app := fiber.New()
+	app.Get("/getCoverArt", handler.AuthMiddleware, handler.GetCoverArt)
+
+	password := "testpass123"
+	randomID := uuid.New()
+	req := httptest.NewRequest("GET", "/getCoverArt?id="+randomID.String()+"&u=test@example.com&p="+password, nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, 200, resp.StatusCode)
+	body := subsonicGetRespBody(resp)
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `status="failed"`)
+	assert.Contains(t, bodyStr, `code="70"`)
+	assert.Contains(t, bodyStr, "Track not found")
+}
+
+// =============================================================================
 // DB Handler Tests - GetAlbum
 // =============================================================================
 
