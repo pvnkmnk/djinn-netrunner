@@ -21,7 +21,7 @@ import (
 // trackBrowseColumns are the columns needed for the BrowseTracks list view.
 // Intentionally excludes: EnrichmentProvenance, Fingerprint (large fields unused in browse).
 // Path is included because it is required for media serving logic.
-const trackBrowseColumns = "id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre"
+const trackBrowseColumns = "id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre, library_id"
 
 // libraryListColumns are the columns needed for the library list view.
 const libraryListColumns = "id, name, path"

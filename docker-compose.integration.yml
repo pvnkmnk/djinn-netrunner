@@ -54,7 +54,7 @@ services:
     networks:
       - netrunner-integration
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U testuser"]
+      test: ["CMD-SHELL", "pg_isready -U testuser -d netrunner_integration"]
       interval: 5s
       timeout: 5s
       retries: 5
