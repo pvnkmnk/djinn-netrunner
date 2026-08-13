@@ -15,6 +15,7 @@ import (
 func TestSmoke_Webhook_Delivery(t *testing.T) {
     skipIfShort(t)
     baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
+    skipIfServerDown(t, baseURL)
     
     // Start a local HTTP server to receive webhook
     webhookURL, listener := startWebhookListener(t)
