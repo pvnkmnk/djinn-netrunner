@@ -167,6 +167,7 @@ func (s *WatchlistService) DeleteWatchlist(id uuid.UUID) error {
 // Bolt Optimization: Replace fmt.Sprintf (reflection-heavy) with simple string concatenation
 // to eliminate extra memory allocations and speed up lookup key generation.
 func makeTrackKey(artist, title string) string {
+
 	return strings.ToLower(artist + "-" + title)
 }
 
