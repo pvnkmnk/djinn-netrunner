@@ -13,3 +13,7 @@
 ## 2026-06-11 - [Accessibility: Sortable Table Headers]
 **Learning:** Sortable data tables must use `scope="col"` on headers and the `aria-sort` attribute (ascending/descending/none) to explicitly communicate the table structure and current sort state to assistive technologies. Visually indicating sort with icons is insufficient for screen reader users.
 **Action:** Always include `scope="col"` and `aria-sort` on table headers in sortable interfaces to maintain accessibility.
+
+## 2026-07-23 - [Accessibility: Interactive Media Player Sync & Seek]
+**Learning:** In interactive media player elements, toggling text labels (e.g., from 'Play' to 'Pause') visually is not enough if the screen reader focuses on static `aria-label` tags. Both text labels and `aria-label` attributes must be synchronized dynamically. Additionally, elements with `role="slider"` (like progress seek bars) require dynamic `aria-valuenow` and `aria-valuetext` updates to be accessible, as well as a full range of standard keyboard bindings (ArrowUp/Down, Home/End, PageUp/Down) for robust keyboard navigation.
+**Action:** Always synchronize state text and ARIA attributes (such as `aria-label`, `aria-valuenow`, `aria-valuetext`) during real-time state changes and implement ARIA-compliant key handlers for slider/seek components.

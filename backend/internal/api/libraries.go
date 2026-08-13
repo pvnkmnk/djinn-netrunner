@@ -21,7 +21,7 @@ import (
 // trackBrowseColumns are the columns needed for the BrowseTracks list view.
 // Intentionally excludes: EnrichmentProvenance, Fingerprint (large fields unused in browse).
 // Path is included because it is required for media serving logic.
-const trackBrowseColumns = "id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre, library_id"
+const trackBrowseColumns = "id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre"
 
 // libraryListColumns are the columns needed for the library list view.
 const libraryListColumns = "id, name, path"
@@ -436,8 +436,7 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 	}
 
 	var tracks []database.Track
-	// Bolt Optimization: Select only necessary columns using trackBrowseColumns to reduce DB payload and memory usage.
-	if err := h.db.Select(trackBrowseColumns).Where("library_id = ?", libraryID).Order("artist, album, track_num").Find(&tracks).Error; err != nil {
+	if err := h.db.Where("library_id = ?", libraryID).Order("artist, album, track_num").Find(&tracks).Error; err != nil {
 		return internalServerError(c, err)
 	}
 

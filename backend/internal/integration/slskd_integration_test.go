@@ -118,10 +118,6 @@ func SetupIntegrationHarness(t *testing.T) *IntegrationHarness {
 func (h *IntegrationHarness) Teardown(t *testing.T) {
 	t.Helper()
 
-	if h.Slskd != nil {
-		h.Slskd.Stop()
-	}
-
 	if h.DB != nil {
 		cleanupTestData(t, h.DB)
 		
