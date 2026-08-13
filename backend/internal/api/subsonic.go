@@ -288,24 +288,27 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 		return h.respondError(c, 40, "Authentication required")
 	}
 
-	// Query distinct artists for the user's libraries
-	var artists []struct{ Name string }
-	h.db.Table("tracks").
+	// Bolt Optimization: Pluck single column "artist" into a string slice to fix GORM Scan error
+	// and avoid unnecessary struct overhead.
+	var artistNames []string
+	if err := h.db.Table("tracks").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
 		Where("libraries.owner_user_id = ?", user.ID).
-		Select("DISTINCT artist").
 		Order("artist").
-		Find(&artists)
+		Group("artist").
+		Pluck("artist", &artistNames).Error; err != nil {
+		return h.respondError(c, 50, "Internal server error")
+	}
 
 	// Group by first letter
 	indexes := make([]subsonicIndex, 0)
 	lastModified := time.Now().UnixMilli()
 
-	for _, artist := range artists {
-		if artist.Name == "" {
+	for _, artistName := range artistNames {
+		if artistName == "" {
 			continue
 		}
-		firstChar := string(artist.Name[0])
+		firstChar := string(artistName[0])
 		if !strings.ContainsAny(firstChar, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
 			firstChar = "#"
 		}
@@ -314,7 +317,7 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 		found := false
 		for i, idx := range indexes {
 			if idx.Name == firstChar {
-				indexes[i].Artist = append(indexes[i].Artist, subsonicArtist{ID: "", Name: artist.Name, AlbumCount: 0})
+				indexes[i].Artist = append(indexes[i].Artist, subsonicArtist{ID: "", Name: artistName, AlbumCount: 0})
 				found = true
 				break
 			}
@@ -322,20 +325,35 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 
 		if !found {
 			index := subsonicIndex{Name: firstChar}
-			index.Artist = append(index.Artist, subsonicArtist{ID: "", Name: artist.Name, AlbumCount: 0})
+			index.Artist = append(index.Artist, subsonicArtist{ID: "", Name: artistName, AlbumCount: 0})
 			indexes = append(indexes, index)
 		}
 	}
 
-	// Get album counts for each artist
+	// Bolt Optimization: Consolidate track count queries for each artist.
+	// Instead of executing one COUNT query per artist (O(N)), we perform a single GROUP BY
+	// query and map the counts in memory, reducing database roundtrips from N+1 to 2.
+	var artistCounts []struct {
+		Artist string `gorm:"column:artist"`
+		Count  int64  `gorm:"column:count"`
+	}
+	if len(artistNames) > 0 {
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ?", user.ID).
+			Select("artist, COUNT(*) as count").
+			Group("artist").
+			Find(&artistCounts)
+	}
+
+	countMap := make(map[string]int64, len(artistCounts))
+	for _, ac := range artistCounts {
+		countMap[ac.Artist] = ac.Count
+	}
+
 	for i := range indexes {
 		for j := range indexes[i].Artist {
-			var count int64
-			h.db.Table("tracks").
-				Joins("JOIN libraries ON libraries.id = tracks.library_id").
-				Where("libraries.owner_user_id = ? AND artist = ?", user.ID, indexes[i].Artist[j].Name).
-				Count(&count)
-			indexes[i].Artist[j].AlbumCount = int(count)
+			indexes[i].Artist[j].AlbumCount = int(countMap[indexes[i].Artist[j].Name])
 		}
 	}
 
