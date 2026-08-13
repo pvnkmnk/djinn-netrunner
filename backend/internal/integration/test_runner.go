@@ -6,7 +6,6 @@ package integration
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -165,16 +164,4 @@ func PrintIntegrationTestBanner() {
 	fmt.Println("NetRunner Integration Tests")
 	fmt.Println("Testing with dockerized slskd and real Soulseek protocol")
 	fmt.Println(strings.Repeat("=", 60))
-}
-
-// skipIfServerDown skips the test if the NetRunner server is not running
-func skipIfServerDown(t *testing.T, baseURL string) {
-	t.Helper()
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(baseURL + "/api/health")
-	if err != nil {
-		t.Skipf("Skipping smoke test: NetRunner server is not running at %s: %v", baseURL, err)
-		return
-	}
-	resp.Body.Close()
 }

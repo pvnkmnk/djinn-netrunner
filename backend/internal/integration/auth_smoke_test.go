@@ -14,7 +14,6 @@ import (
 func TestSmoke_Auth_RegisterLoginLogout(t *testing.T) {
 	skipIfShort(t)
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
-	skipIfServerDown(t, baseURL)
 
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
@@ -67,7 +66,6 @@ func TestSmoke_Auth_RegisterLoginLogout(t *testing.T) {
 func TestSmoke_Auth_RateLimit(t *testing.T) {
 	skipIfShort(t)
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
-	skipIfServerDown(t, baseURL)
 
 	client := &http.Client{}
 

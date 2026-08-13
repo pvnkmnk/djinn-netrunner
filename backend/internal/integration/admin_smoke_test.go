@@ -13,7 +13,6 @@ import (
 func TestSmoke_Admin_Panel(t *testing.T) {
 	skipIfShort(t)
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
-	skipIfServerDown(t, baseURL)
 	
 	// Step 1: Register a user (creates regular user with role "user")
 	email := "smoke-admin-" + t.Name() + "@test.com"

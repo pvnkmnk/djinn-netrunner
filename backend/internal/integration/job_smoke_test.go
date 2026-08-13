@@ -10,7 +10,6 @@ import (
 func TestSmoke_Jobs_List(t *testing.T) {
 	skipIfShort(t)
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
-	skipIfServerDown(t, baseURL)
 	client := integrationAuthClient(t, baseURL)
 
 	// List jobs
