@@ -163,9 +163,11 @@ func (s *WatchlistService) DeleteWatchlist(id uuid.UUID) error {
 	return s.db.Delete(&database.Watchlist{}, "id = ?", id).Error
 }
 
-// makeTrackKey creates a unique key for track identification
+// makeTrackKey creates a unique key for track identification.
+// Bolt Optimization: Replace fmt.Sprintf (reflection-heavy) with simple string concatenation
+// to eliminate extra memory allocations and speed up lookup key generation.
 func makeTrackKey(artist, title string) string {
-	return strings.ToLower(fmt.Sprintf("%s-%s", artist, title))
+	return strings.ToLower(artist + "-" + title)
 }
 
 // collectUniqueArtists extracts unique artist names from tracks
