@@ -100,11 +100,24 @@
     var bar = evt.target.closest('.np-progress-bar');
     if (!bar || !master || !master.duration) return;
     var step = 5; // seconds
-    if (evt.key === 'ArrowRight') {
+    var pageStep = 30; // seconds
+    if (evt.key === 'ArrowRight' || evt.key === 'ArrowUp') {
       master.currentTime = Math.min(master.duration, master.currentTime + step);
       evt.preventDefault();
-    } else if (evt.key === 'ArrowLeft') {
+    } else if (evt.key === 'ArrowLeft' || evt.key === 'ArrowDown') {
       master.currentTime = Math.max(0, master.currentTime - step);
+      evt.preventDefault();
+    } else if (evt.key === 'PageUp') {
+      master.currentTime = Math.min(master.duration, master.currentTime + pageStep);
+      evt.preventDefault();
+    } else if (evt.key === 'PageDown') {
+      master.currentTime = Math.max(0, master.currentTime - pageStep);
+      evt.preventDefault();
+    } else if (evt.key === 'Home') {
+      master.currentTime = 0;
+      evt.preventDefault();
+    } else if (evt.key === 'End') {
+      master.currentTime = master.duration;
       evt.preventDefault();
     }
   });
@@ -120,6 +133,10 @@
 
     document.querySelectorAll('.np-progress-fill').forEach(function (el) {
       el.style.width = pct + '%';
+    });
+    document.querySelectorAll('.np-progress-bar').forEach(function (el) {
+      el.setAttribute('aria-valuenow', Math.round(pct));
+      el.setAttribute('aria-valuetext', cur + ' of ' + tot);
     });
     document.querySelectorAll('.np-current').forEach(function (el) {
       el.textContent = cur;
@@ -147,11 +164,15 @@
     var playBtn = controls.querySelector('.np-play-btn');
     if (!playBtn) return;
 
+    var title = playBtn.getAttribute('data-track-title') || currentTitle;
+
     // Update button label based on whether this track is playing
     if (modalTrackId === currentTrackId && !master.paused) {
       playBtn.textContent = '⏸ Pause';
+      playBtn.setAttribute('aria-label', 'Pause ' + title);
     } else {
       playBtn.textContent = '▶ Play';
+      playBtn.setAttribute('aria-label', 'Play ' + title);
     }
   });
 
@@ -160,14 +181,26 @@
     document.querySelectorAll('.np-play-btn').forEach(function (btn) {
       var ctrl = btn.closest('[data-track-id]');
       if (ctrl && ctrl.getAttribute('data-track-id') === currentTrackId) {
-        btn.textContent = '⏸ Pause';
+        var title = btn.getAttribute('data-track-title') || currentTitle;
+        btn.setAttribute('aria-label', 'Pause ' + title);
+        if (btn.classList.contains('btn-sm')) {
+          btn.textContent = '⏸';
+        } else {
+          btn.textContent = '⏸ Pause';
+        }
       }
     });
   });
 
   master.addEventListener('pause', function () {
     document.querySelectorAll('.np-play-btn').forEach(function (btn) {
-      btn.textContent = '▶ Play';
+      var title = btn.getAttribute('data-track-title') || currentTitle;
+      btn.setAttribute('aria-label', 'Play ' + title);
+      if (btn.classList.contains('btn-sm')) {
+        btn.textContent = '▶';
+      } else {
+        btn.textContent = '▶ Play';
+      }
     });
   });
 
