@@ -41,3 +41,7 @@
 ## 2026-06-11 - Targeted Column Selection in Track Browsing
 **Learning:** The `BrowseTracks` endpoint, which handles paginated track listings for libraries, was performing a full `SELECT *` on the `tracks` table. This table contains several large fields (e.g., `enrichment_provenance`, `fingerprint`) that are not displayed in the browse table.
 **Action:** Implemented targeted column selection in `BrowseTracks` (`id, title, artist, album, track_num, disc_num, format, file_size, path, year, genre`). This significantly reduces memory allocation and database I/O when browsing large music libraries.
+
+## 2026-07-30 - Plucking & N+1 consolidation in Subsonic GetIndexes
+**Learning:** Identified a classic N+1 query pattern and GORM model-scanning bug in `SubsonicHandler.GetIndexes`. GORM was unable to map `DISTINCT artist` to a custom struct field `Name` without explicit tags, throwing scan errors and resulting in empty index lists. Furthermore, a loop was executing individual `Count` queries for every artist to fetch their track/album counts.
+**Action:** Replaced GORM struct scanning with `.Pluck("artist", &artistNames)` to query primitive strings cleanly without errors or reflection overhead. Consolidated loop-based counts into a single aggregated `GROUP BY` database query, building an in-memory map to resolve counts. This optimization reduced database roundtrips from O(N) to O(1) and fixed a silent bug.
