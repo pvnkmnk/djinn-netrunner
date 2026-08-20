@@ -7,8 +7,8 @@ on:
     branches: [master, main]
 
 env:
-  SLSKD_TEST_USERNAME: testuser
-  SLSKD_TEST_PASSWORD: testpass
+  SLSKD_TEST_USERNAME: ""
+  SLSKD_TEST_PASSWORD: ""
   SLSKD_TEST_API_KEY: test-api-key-for-integration
   INTEGRATION_DB_PASSWORD: testpass
   INTEGRATION_SLSKD_URL: http://localhost:15030
