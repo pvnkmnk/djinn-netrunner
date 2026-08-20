@@ -10,6 +10,7 @@ services:
       # For CI/testing, use placeholder or test account
       SLSKD_SLSK_USERNAME: ${SLSKD_TEST_USERNAME:-testuser}
       SLSKD_SLSK_PASSWORD: ${SLSKD_TEST_PASSWORD:-testpass}
+      SLSKD_SLSK_CONNECT: "false"
       SLSKD_REMOTE_CONFIGURATION: "true"
       SLSKD_HTTP_PORT: 5030
       SLSKD_SLSK_PORT: 2234
