@@ -270,9 +270,15 @@ func (h *PlaylistHandler) AddTrack(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid track ID"})
 	}
 
-	// Check if track exists
+	// Check if track exists and user has authorization to access it
+	trackQuery := h.db.Model(&database.Track{}).Where("tracks.id = ?", trackID)
+	if user.Role != "admin" {
+		trackQuery = trackQuery.
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ?", user.ID)
+	}
 	var track database.Track
-	if err := h.db.First(&track, "id = ?", trackID).Error; err != nil {
+	if err := trackQuery.First(&track).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(404).JSON(fiber.Map{"error": "track not found"})
 		}

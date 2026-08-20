@@ -369,6 +369,44 @@ func TestPlaylistHandler_Get_NotFound(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
+func TestPlaylistHandler_AddTrack_OtherUserTrack(t *testing.T) {
+	db := setupPlaylistTestDB(t)
+	user1 := createTestUser(t, db, "user1@example.com", "user")
+	user2 := createTestUser(t, db, "user2@example.com", "user")
+	admin := createTestUser(t, db, "admin@example.com", "admin")
+
+	playlist1 := createTestPlaylist(t, db, user1.ID, "User1 Playlist")
+	_, track2 := createTestLibraryAndTrack(t, db, user2.ID)
+
+	app := fiber.New()
+	handler := NewPlaylistHandler(db)
+
+	// Non-admin user1 attempts to add user2's track -> should return 404
+	app.Post("/api/playlists/:id/tracks/user1", func(c *fiber.Ctx) error {
+		c.Params("id", playlist1.ID.String())
+		withAuthUser(c, user1)
+		return handler.AddTrack(c)
+	})
+
+	body, _ := json.Marshal(map[string]string{"track_id": track2.ID.String()})
+	req := httptest.NewRequest("POST", "/api/playlists/"+playlist1.ID.String()+"/tracks/user1", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+	assert.Equal(t, 404, resp.StatusCode)
+
+	// Admin user attempts to add user2's track to playlist1 -> should succeed (201)
+	app.Post("/api/playlists/:id/tracks/admin", func(c *fiber.Ctx) error {
+		c.Params("id", playlist1.ID.String())
+		withAuthUser(c, admin)
+		return handler.AddTrack(c)
+	})
+
+	reqAdmin := httptest.NewRequest("POST", "/api/playlists/"+playlist1.ID.String()+"/tracks/admin", bytes.NewBuffer(body))
+	reqAdmin.Header.Set("Content-Type", "application/json")
+	respAdmin, _ := app.Test(reqAdmin)
+	assert.Equal(t, 201, respAdmin.StatusCode)
+}
+
 func TestPlaylistHandler_Update_Success(t *testing.T) {
 	db := setupPlaylistTestDB(t)
 	user := createTestUser(t, db, "test@example.com", "user")
