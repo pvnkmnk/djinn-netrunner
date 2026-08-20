@@ -45,3 +45,7 @@
 ## 2026-07-30 - Plucking & N+1 consolidation in Subsonic GetIndexes
 **Learning:** Identified a classic N+1 query pattern and GORM model-scanning bug in `SubsonicHandler.GetIndexes`. GORM was unable to map `DISTINCT artist` to a custom struct field `Name` without explicit tags, throwing scan errors and resulting in empty index lists. Furthermore, a loop was executing individual `Count` queries for every artist to fetch their track/album counts.
 **Action:** Replaced GORM struct scanning with `.Pluck("artist", &artistNames)` to query primitive strings cleanly without errors or reflection overhead. Consolidated loop-based counts into a single aggregated `GROUP BY` database query, building an in-memory map to resolve counts. This optimization reduced database roundtrips from O(N) to O(1) and fixed a silent bug.
+
+## 2026-08-20 - Batching JobItem Creation in Album Mode Acquisition
+**Learning:** In `AcquisitionHandler.stageAlbumBrowse`, album discovery on Soulseek identified tracks and created job items inside a `for` loop using individual `db.Create` calls. For typical 10–30 track albums, this produced 10–30 database roundtrips sequentially during background acquisition.
+**Action:** Replaced individual `db.Create` calls in the loop with slice accumulation and `h.db.CreateInBatches(newItems, 100)`. This reduces database roundtrips from O(N) to 1 query.

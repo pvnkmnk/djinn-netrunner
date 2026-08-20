@@ -369,7 +369,7 @@ func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
 	var maxSeq int
 	h.db.Model(&database.JobItem{}).Where("job_id = ?", p.item.JobID).Select("COALESCE(MAX(sequence), 0)").Scan(&maxSeq)
 
-	created := 0
+	var newItems []database.JobItem
 	for _, track := range albumTracks {
 		base := filepath.Base(track.Filename)
 		name := strings.TrimSuffix(base, filepath.Ext(base))
@@ -388,15 +388,16 @@ func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
 			Sequence:        maxSeq,
 			OwnerUserID:     p.item.OwnerUserID,
 		}
-		if err := h.db.Create(&newItem).Error; err != nil {
-			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Failed to create album item: %v", err), &p.item.ID)
-			continue
-		}
-		created++
+		newItems = append(newItems, newItem)
 	}
 
-	if created > 0 {
-		h.Log(p.item.JobID, "OK", fmt.Sprintf("Album mode: queued %d additional tracks", created), &p.item.ID)
+	// Bolt Optimization: Batch create album job items to reduce database roundtrips from O(N) to 1.
+	if len(newItems) > 0 {
+		if err := h.db.CreateInBatches(newItems, 100).Error; err != nil {
+			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Failed to batch create album items: %v", err), &p.item.ID)
+		} else {
+			h.Log(p.item.JobID, "OK", fmt.Sprintf("Album mode: queued %d additional tracks", len(newItems)), &p.item.ID)
+		}
 	}
 }
 
