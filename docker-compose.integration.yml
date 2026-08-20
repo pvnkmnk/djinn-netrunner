@@ -17,6 +17,7 @@ services:
       SLSKD_DEBUG: "true"
       # Generate predictable API key for testing
       SLSKD_API_KEY: ${SLSKD_TEST_API_KEY:-test-api-key-for-integration}
+      SLSKD_SLSK_API_KEY: ${SLSKD_TEST_API_KEY:-test-api-key-for-integration}
       # Configure download paths for testing
       SLSKD_DOWNLOADS_DIR: /downloads
     volumes:

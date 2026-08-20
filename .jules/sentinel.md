@@ -44,3 +44,8 @@
 **Vulnerability:** Subsonic API's `GetCoverArt` fetched track cover URLs directly using Go's `http.Get()`. This bypassed the centralized Server-Side Request Forgery (SSRF) protections in the `services` package, exposing internal and loopback IP addresses to unauthorized outbound queries.
 **Learning:** Naive use of standard library HTTP clients inside API endpoints can lead to isolated SSRF vectors, even when external data providers have been secured.
 **Prevention:** Always route user-supplied or external URLs through the centralized `services.SafeGet()` helper to ensure consistent SSRF protection.
+
+## 2026-08-20 - [BOLA in Playlist Track Addition]
+**Vulnerability:** Non-admin users could add tracks belonging to other users' private libraries into their own playlists, leaking track metadata on subsequent playlist retrieval.
+**Learning:** Checking resource existence before establishing relationships (such as adding a track to a playlist) must enforce authorization via joining parent ownership models (e.g., `JOIN libraries ON libraries.id = tracks.library_id WHERE libraries.owner_user_id = ?`).
+**Prevention:** Always scope resource queries by ownership when linking sub-resources, returning `404 Not Found` if the requester does not own the parent resource.
