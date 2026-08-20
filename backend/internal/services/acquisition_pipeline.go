@@ -393,7 +393,7 @@ func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
 
 	// Bolt Optimization: Batch create album job items to reduce database roundtrips from O(N) to 1.
 	if len(newItems) > 0 {
-		if err := h.db.CreateInBatches(newItems, 100).Error; err != nil {
+		if err := h.db.CreateInBatches(&newItems, 100).Error; err != nil {
 			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Failed to batch create album items: %v", err), &p.item.ID)
 		} else {
 			h.Log(p.item.JobID, "OK", fmt.Sprintf("Album mode: queued %d additional tracks", len(newItems)), &p.item.ID)
