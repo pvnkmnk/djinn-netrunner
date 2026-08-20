@@ -2,9 +2,9 @@
 <table class="admin-table">
     <thead>
         <tr>
-            <th>Key</th>
-            <th>Value</th>
-            <th>Actions</th>
+            <th scope="col">Key</th>
+            <th scope="col">Value</th>
+            <th scope="col">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -16,7 +16,8 @@
                 <button class="btn btn-sm btn-outline"
                         hx-get="/partials/admin/config-edit?key={{ setting.Key|escape }}"
                         hx-target="closest tr"
-                        hx-swap="outerHTML">Edit</button>
+                        hx-swap="outerHTML"
+                        aria-label="Edit configuration setting {{ setting.Key|escape }}">Edit</button>
             </td>
         </tr>
         {% endfor %}
