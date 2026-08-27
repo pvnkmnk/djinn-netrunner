@@ -2,12 +2,12 @@
 <table class="admin-table">
     <thead>
         <tr>
-            <th>ID</th>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Created</th>
-            <th>Last Login</th>
-            <th>Actions</th>
+            <th scope="col">ID</th>
+            <th scope="col">Email</th>
+            <th scope="col">Role</th>
+            <th scope="col">Created</th>
+            <th scope="col">Last Login</th>
+            <th scope="col">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -25,11 +25,13 @@
                         hx-patch="/api/admin/users/{{ user.ID }}/role"
                         hx-vals='{"role": "{% if user.Role == "admin" %}user{% else %}admin{% endif %}"}'
                         hx-swap="none"
-                        hx-confirm="Toggle role for {{ user.Email|escape }}?">Toggle Role</button>
+                        hx-confirm="Toggle role for {{ user.Email|escape }}?"
+                        aria-label="Toggle role for {{ user.Email|escape }}">Toggle Role</button>
                 <button class="btn btn-sm btn-danger"
                         hx-delete="/api/admin/users/{{ user.ID }}"
                         hx-swap="none"
-                        hx-confirm="Delete user {{ user.Email|escape }}?">Delete</button>
+                        hx-confirm="Delete user {{ user.Email|escape }}?"
+                        aria-label="Delete user {{ user.Email|escape }}">Delete</button>
             </td>
         </tr>
         {% endfor %}
