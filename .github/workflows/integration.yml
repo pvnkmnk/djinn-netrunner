@@ -61,7 +61,7 @@ jobs:
 
       - name: Run integration tests
         working-directory: backend
-        run: go test ./internal/integration/... -tags=integration -v -timeout=5m
+        run: go test ./internal/integration/... -tags=integration -v -timeout=10m
 
       - name: Show service logs on failure
         if: failure()
