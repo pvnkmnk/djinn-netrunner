@@ -372,18 +372,20 @@ func (h *AdminHandler) RenderConfigEditPartial(c *fiber.Ctx) error {
 	jsonKey := string(jsonKeyBytes)
 	return c.Type("html").SendString(fmt.Sprintf(`<tr>
 		<td><code>%s</code></td>
-		<td><input type="text" name="value" value="%s" id="config-value-%s" /></td>
+		<td><input type="text" name="value" value="%s" id="config-value-%s" aria-label="Value for %s" /></td>
 		<td>
 			<button class="btn btn-sm btn-primary"
 					hx-patch="/api/admin/config"
 					hx-include="#config-value-%s"
 					hx-vals='{"key": %s}'
 					hx-target="closest tr"
-					hx-swap="outerHTML">Save</button>
+					hx-swap="outerHTML"
+					aria-label="Save setting %s">Save</button>
 			<button class="btn btn-sm"
 					hx-get="/partials/admin/config"
 					hx-target="#admin-content"
-					hx-swap="innerHTML">Cancel</button>
+					hx-swap="innerHTML"
+					aria-label="Cancel editing %s">Cancel</button>
 		</td>
-	</tr>`, escapedKey, escapedValue, safeID, safeID, jsonKey))
+	</tr>`, escapedKey, escapedValue, safeID, escapedKey, safeID, jsonKey, escapedKey, escapedKey))
 }
