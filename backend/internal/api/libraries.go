@@ -436,7 +436,8 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 	}
 
 	var tracks []database.Track
-	if err := h.db.Where("library_id = ?", libraryID).Order("artist, album, track_num").Find(&tracks).Error; err != nil {
+	// Bolt Optimization: Select targeted columns to minimize DB I/O and memory overhead.
+	if err := h.db.Select(trackBrowseColumns).Where("library_id = ?", libraryID).Order("artist, album, track_num").Find(&tracks).Error; err != nil {
 		return internalServerError(c, err)
 	}
 

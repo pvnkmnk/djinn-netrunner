@@ -175,6 +175,8 @@ func TestSlskdDownloadLifecycle(t *testing.T) {
 func TestSlskdErrorHandling(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
+
+	harness.SkipIfSlskdDisconnected(t)
 	
 	t.Run("invalid search query", func(t *testing.T) {
 		// Test with empty query

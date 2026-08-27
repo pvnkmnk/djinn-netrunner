@@ -256,7 +256,8 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 	}
 
 	var profiles []database.QualityProfile
-	query := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns for the dropdown options.
+	query := h.db.Select("id, name").Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
