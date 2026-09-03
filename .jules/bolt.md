@@ -45,3 +45,7 @@
 ## 2026-07-30 - Plucking & N+1 consolidation in Subsonic GetIndexes
 **Learning:** Identified a classic N+1 query pattern and GORM model-scanning bug in `SubsonicHandler.GetIndexes`. GORM was unable to map `DISTINCT artist` to a custom struct field `Name` without explicit tags, throwing scan errors and resulting in empty index lists. Furthermore, a loop was executing individual `Count` queries for every artist to fetch their track/album counts.
 **Action:** Replaced GORM struct scanning with `.Pluck("artist", &artistNames)` to query primitive strings cleanly without errors or reflection overhead. Consolidated loop-based counts into a single aggregated `GROUP BY` database query, building an in-memory map to resolve counts. This optimization reduced database roundtrips from O(N) to O(1) and fixed a silent bug.
+
+## 2026-08-01 - Consolidate N+1 queries in Subsonic GetAlbumList2
+**Learning:** `SubsonicHandler.GetAlbumList2` was querying tracks per album in a loop (performing both a `COUNT(*)` and full `Find(&tracks)` query for every album in the returned page). For a page size of 50 albums, this resulted in 101 database queries per request.
+**Action:** Incorporated `COUNT(*) as song_count` and `MAX(cover_url) as cover_art` directly into the initial aggregated GORM query (`GROUP BY album, artist`), eliminating loop-based queries and reducing DB roundtrips from 2N+1 to 1.
