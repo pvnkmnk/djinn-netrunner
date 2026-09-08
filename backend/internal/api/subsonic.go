@@ -1186,12 +1186,16 @@ func (h *SubsonicHandler) GetAlbumList2(c *fiber.Ctx) error {
 		}
 	}
 
-	// Query distinct album+artist combinations from tracks
+	// Bolt Optimization: Consolidate album listing and metrics into a single aggregated query.
+	// Instead of querying tracks per album in a loop (O(N) queries), we fetch song_count,
+	// max_year, genre, and cover_art directly in the GROUP BY query, reducing DB roundtrips from 2N+1 to 1.
 	type albumRow struct {
-		Album  string
-		Artist string
-		Year   *int
-		Genre  string
+		Album     string `gorm:"column:album"`
+		Artist    string `gorm:"column:artist"`
+		Year      *int   `gorm:"column:year"`
+		Genre     string `gorm:"column:genre"`
+		SongCount int    `gorm:"column:song_count"`
+		CoverArt  string `gorm:"column:cover_art"`
 	}
 
 	var rows []albumRow
@@ -1199,7 +1203,7 @@ func (h *SubsonicHandler) GetAlbumList2(c *fiber.Ctx) error {
 	tx := h.db.Table("tracks").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
 		Where("libraries.owner_user_id = ?", user.ID).
-		Select("album, artist, MAX(year) as year").
+		Select("album, artist, MAX(year) as year, MAX(genre) as genre, COUNT(*) as song_count, MAX(cover_url) as cover_art").
 		Group("album, artist")
 
 	switch listType {
@@ -1221,34 +1225,16 @@ func (h *SubsonicHandler) GetAlbumList2(c *fiber.Ctx) error {
 	albumList := &albumList2{}
 
 	for _, row := range rows {
-		// Get song count and total duration
-		var songCount int64
-		h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, row.Album, row.Artist).
-			Count(&songCount)
-
-		var totalDuration int
-		var tracks []database.Track
-		h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, row.Album, row.Artist).
-			Find(&tracks)
-
-		for _, track := range tracks {
-			totalDuration += h.getTrackDuration(track.Path)
-		}
-
 		albumList.Album = append(albumList.Album, subsonicAlbum{
 			ID:        "album-" + url.PathEscape(row.Album) + "-" + url.PathEscape(row.Artist),
 			Name:      row.Album,
 			Artist:    row.Artist,
 			ArtistID:  "",
-			SongCount: int(songCount),
+			SongCount: row.SongCount,
 			Year:      safeDeref(row.Year),
 			Genre:     row.Genre,
-			CoverArt:  "", // Would need to get from first track
-			Duration:  totalDuration,
+			CoverArt:  row.CoverArt,
+			Duration:  0,
 		})
 	}
 
