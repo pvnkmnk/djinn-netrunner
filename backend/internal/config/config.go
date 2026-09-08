@@ -88,6 +88,14 @@ type Config struct {
 	// Proxy
 	ProxyURL string
 
+	// SSRF: allow outbound calls to private/loopback targets (docker-internal
+	// services, integration tests). Defaults to false in production-safe mode.
+	AllowPrivateTargets bool
+
+	// CSRF: enable the global CSRF middleware. Defaults to true; disable only
+	// for non-browser API clients (e.g. integration test harnesses).
+	CSRFEnabled bool
+
 	// Notifications
 	NotificationWebhookURL string
 	NotificationEnabled    bool
@@ -287,6 +295,9 @@ func Load(filenames ...string) (*Config, error) {
 
 		ProxyURL: getEnv("PROXY_URL", ""),
 
+		AllowPrivateTargets: getEnvBool("ALLOW_PRIVATE_TARGETS", false),
+		CSRFEnabled:         getEnvBool("CSRF_ENABLED", true),
+
 		NotificationWebhookURL: getEnv("NOTIFICATION_WEBHOOK_URL", ""),
 		NotificationEnabled:    getEnvBool("NOTIFICATION_ENABLED", false),
 
@@ -333,6 +344,8 @@ func Load(filenames ...string) (*Config, error) {
 	cfg.AuthRateLimitExpiration = getEnv("AUTH_RATE_LIMIT_EXPIRATION", cfg.AuthRateLimitExpiration)
 	cfg.NotificationEnabled = getEnvBool("NOTIFICATION_ENABLED", cfg.NotificationEnabled)
 	cfg.NotificationWebhookURL = getEnv("NOTIFICATION_WEBHOOK_URL", cfg.NotificationWebhookURL)
+	cfg.AllowPrivateTargets = getEnvBool("ALLOW_PRIVATE_TARGETS", cfg.AllowPrivateTargets)
+	cfg.CSRFEnabled = getEnvBool("CSRF_ENABLED", cfg.CSRFEnabled)
 	cfg.MusicLibraryPath = getEnv("MUSIC_LIBRARY", cfg.MusicLibraryPath)
 	cfg.DownloadStagingPath = getEnv("DOWNLOAD_STAGING", cfg.DownloadStagingPath)
 

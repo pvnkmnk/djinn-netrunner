@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"testing"
+
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 func TestSmoke_Watchlist_CRUD(t *testing.T) {
@@ -15,8 +18,15 @@ func TestSmoke_Watchlist_CRUD(t *testing.T) {
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
 	client := integrationAuthClient(t, baseURL)
 
-	// Create watchlist
-	body := `{"name":"smoke-test-wl","source_type":"local","source_uri":"/tmp/smoke-music","quality_profile_id":"00000000-0000-0000-0000-000000000001"}`
+	// Create watchlist. Resolve the seeded default quality profile dynamically
+	// instead of hardcoding a UUID that doesn't exist in a fresh database.
+	// Source type must be one the app registers ("local_file", not "local") and
+	// the URI must exist inside the app container (the provider stats it).
+	profileID := resolveDefaultQualityProfileID(t)
+	sourceURI := "/app/music"
+	cleanupWatchlistsAtURI(t, sourceURI)
+	t.Cleanup(func() { cleanupWatchlistsAtURI(t, sourceURI) })
+	body := `{"name":"smoke-test-wl","source_type":"local_file","source_uri":"` + sourceURI + `","quality_profile_id":"` + profileID + `"}`
 	resp, err := client.Post(baseURL+"/api/watchlists/", "application/json", bytes.NewReader([]byte(body)))
 	if err != nil {
 		t.Fatalf("Create watchlist failed: %v", err)
@@ -40,8 +50,12 @@ func TestSmoke_Watchlist_CRUD(t *testing.T) {
 		t.Fatalf("List watchlists expected 200, got %d", resp.StatusCode)
 	}
 
-	// Delete watchlist
+	// Delete watchlist. The Watchlist model has no json tags, so Go marshals
+	// the ID field as "ID" (capitalized); accept both spellings.
 	id, ok := created["id"].(string)
+	if !ok || id == "" {
+		id, ok = created["ID"].(string)
+	}
 	if !ok || id == "" {
 		t.Fatal("Watchlist creation did not return a valid ID")
 	}
@@ -60,6 +74,24 @@ func integrationAuthClient(t *testing.T, baseURL string) *http.Client {
 	return authClientForTest(t, baseURL, "smoke-"+t.Name())
 }
 
+// integrationAdminClient returns an authenticated admin session client by
+// registering a fresh user and promoting them in the database.
+func integrationAdminClient(t *testing.T, baseURL string) *http.Client {
+	t.Helper()
+	email := "smoke-admin-" + t.Name() + "@test.com"
+	client := authClientForTest(t, baseURL, "smoke-admin-"+t.Name())
+	dbCfg := &config.Config{DatabaseURL: databaseURL, AllowPrivateTargets: true}
+	db, err := database.Connect(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to connect to integration database: %v", err)
+	}
+	promoteUserToAdmin(t, db, email)
+	if sql, err := db.DB(); err == nil && sql != nil {
+		sql.Close()
+	}
+	return client
+}
+
 func authClientForTest(t *testing.T, baseURL, emailPrefix string) *http.Client {
 	t.Helper()
 	jar, _ := cookiejar.New(nil)
@@ -72,11 +104,17 @@ func authClientForTest(t *testing.T, baseURL, emailPrefix string) *http.Client {
 	if err != nil {
 		t.Fatalf("Auth setup register failed: %v", err)
 	}
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		t.Fatalf("Auth setup register expected 200/201, got %d", resp.StatusCode)
+	}
 	resp.Body.Close()
 
 	resp, err = client.Post(baseURL+"/api/auth/login", "application/json", bytes.NewReader([]byte(body)))
 	if err != nil {
 		t.Fatalf("Auth setup login failed: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("Auth setup login expected 200, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 

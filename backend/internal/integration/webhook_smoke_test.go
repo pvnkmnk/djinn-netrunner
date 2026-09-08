@@ -20,7 +20,7 @@ func TestSmoke_Webhook_Delivery(t *testing.T) {
     webhookURL, listener := startWebhookListener(t)
     defer listener.Close()
     
-    client := integrationAuthClient(t, baseURL)
+    client := integrationAdminClient(t, baseURL)
     
     // Register webhook URL via config Setting
     payload := map[string]string{"key": "notification_webhook_url", "value": webhookURL}

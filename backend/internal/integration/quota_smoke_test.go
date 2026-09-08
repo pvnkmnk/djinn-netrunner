@@ -4,24 +4,22 @@ package integration
 
 import (
     "bytes"
-    "os"
-    "path/filepath"
     "testing"
+    "time"
 )
 
 func TestSmoke_Quota_Warning(t *testing.T) {
     skipIfShort(t)
     baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
     client := integrationAuthClient(t, baseURL)
-    
-    tmpDir, err := os.MkdirTemp("", "smoke-quota-*")
-    if err != nil {
-        t.Fatalf("Failed to create temp dir: %v", err)
-    }
-    defer os.RemoveAll(tmpDir)
-    
-    // Create library
-    body := `{"name":"smoke-quota-lib","path":"` + filepath.ToSlash(tmpDir) + `"}`
+
+    // Library path must exist inside the app container; /app/music always does.
+    // Library.Path is unique-indexed, so pre-clean residue and clean up after
+    // ourselves to stay rerunnable against a persistent integration DB.
+    cleanupLibrariesAtPath(t, "/app/music")
+    t.Cleanup(func() { cleanupLibrariesAtPath(t, "/app/music") })
+    libName := "smoke-quota-lib-" + time.Now().Format("150405")
+    body := `{"name":"` + libName + `","path":"/app/music"}`
     resp, err := client.Post(baseURL+"/api/libraries/", "application/json", bytes.NewReader([]byte(body)))
     if err != nil {
         t.Fatalf("Create library failed: %v", err)
