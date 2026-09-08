@@ -143,17 +143,41 @@ func NewProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Cl
 	return &http.Client{Transport: transport, Timeout: timeout}
 }
 
-// NewSafeProxyAwareHTTPClient creates an *http.Client that routes traffic
-// through the configured PROXY_URL when set, with SSRF protection applied
-// in all cases.
+// NewSafeProxyAwareHTTPClient creates an *http.Client for calling configured
+// backend services (slskd, gonic, …).
 //
-// Without a proxy: uses safeTransport which validates all outbound connections
-// against private IP ranges at dial time (same as NewSafeHTTPClient).
+// Default (cfg.AllowPrivateTargets == false): SSRF protection is applied in
+// all cases.
+//   - Without a proxy: uses safeTransport, which validates all outbound
+//     connections against private IP ranges at dial time (same as
+//     NewSafeHTTPClient).
+//   - With a proxy: validates that the target URL resolves to a public IP
+//     before sending the request through the proxy. The proxy server itself
+//     can be on a private network (common for corporate forward proxies).
 //
-// With a proxy: validates that the target URL resolves to a public IP before
-// sending the request through the proxy. The proxy server itself can be on a
-// private network (common for corporate forward proxies).
+// When cfg.AllowPrivateTargets is true (env ALLOW_PRIVATE_TARGETS=true), the
+// private-range checks are skipped for this client. This is an explicit opt-in
+// for trusted internal service meshes — docker-network peers (e.g.
+// SLSKD_URL=http://netrunner-slskd:5030) and integration-test harnesses —
+// where the configured target hostname is operator-controlled, not
+// user-supplied. Helpers that handle user-influenced URLs (e.g. SafeGet for
+// cover art) intentionally ignore this switch and remain guarded.
 func NewSafeProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Client {
+	if cfg != nil && cfg.AllowPrivateTargets {
+		// Trusted internal mode: dial directly (optionally via proxy), no
+		// private-range validation.
+		if cfg.ProxyURL != "" {
+			transport := http.DefaultTransport.(*http.Transport).Clone()
+			if proxyURL, err := url.Parse(cfg.ProxyURL); err == nil {
+				transport.Proxy = http.ProxyURL(proxyURL)
+			} else {
+				slog.Warn("Invalid PROXY_URL, running without proxy", "error", err)
+			}
+			return &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), Timeout: timeout}
+		}
+		return &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), Timeout: timeout}
+	}
+
 	if cfg != nil && cfg.ProxyURL != "" {
 		proxyURL, err := url.Parse(cfg.ProxyURL)
 		if err != nil {

@@ -8,12 +8,21 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"testing"
+
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 )
 
 func TestSmoke_Admin_Panel(t *testing.T) {
 	skipIfShort(t)
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
-	
+
+	// Step 0: Clear residue from earlier runs (emails are unique-indexed and the
+	// integration DB volume persists between runs).
+	deleteUserByEmail(t, "smoke-admin-"+t.Name()+"@test.com")
+	deleteUserByEmail(t, "admin-smoke-"+t.Name()+"@test.com")
+	deleteUserByEmail(t, "regular-smoke-"+t.Name()+"@test.com")
+
 	// Step 1: Register a user (creates regular user with role "user")
 	email := "smoke-admin-" + t.Name() + "@test.com"
 	body := `{"email":"` + email + `","password":"TestPass123!"}`
@@ -38,14 +47,22 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	}
 	resp.Body.Close()
 	
-	// Step 3: Promote the user to admin via DB (since registration creates regular users)
-	// We need to directly update the user's role in the database
-	// For this test, we'll use the database connection from the test runner
-	// Since we don't have direct DB access in the integration test, we'll use the admin routes
-	// to verify the current state and then create a new admin user
-	
+	// Step 3: Promote the logged-in user to admin directly in the database.
+	// Registration always creates regular users and there is no bootstrap
+	// admin endpoint, so DB promotion is the only path to an admin session.
+	dbCfg := &config.Config{DatabaseURL: databaseURL, AllowPrivateTargets: true}
+	db, err := database.Connect(dbCfg)
+	if err != nil {
+		t.Fatalf("Failed to connect to integration database: %v", err)
+	}
+	promoteUserToAdmin(t, db, email)
+	if sql, err := db.DB(); err == nil && sql != nil {
+		sql.Close()
+	}
+
 	// Step 4: Create a new admin user via POST /api/admin/users
-	adminCreateBody := `{"email":"admin-smoke-" + t.Name() + "@test.com","password":"AdminPass123!","role":"admin"}`
+	adminEmail := "admin-smoke-" + t.Name() + "@test.com"
+	adminCreateBody := `{"email":"` + adminEmail + `","password":"AdminPass123!","role":"admin"}`
 	resp, err = client.Post(baseURL+"/api/admin/users", "application/json", bytes.NewReader([]byte(adminCreateBody)))
 	if err != nil {
 		t.Fatalf("Create admin user request failed: %v", err)
@@ -53,13 +70,13 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	if resp.StatusCode != 201 && resp.StatusCode != 200 {
 		t.Fatalf("Create admin user expected 201/200, got %d", resp.StatusCode)
 	}
+	t.Cleanup(func() { deleteUserByEmail(t, adminEmail) })
 	var createdAdmin map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&createdAdmin)
 	resp.Body.Close()
 	// adminID := createdAdmin["id"] // Not used in this test
 	
 	// Step 5: Login as the newly created admin user
-	adminEmail := "admin-smoke-" + t.Name() + "@test.com"
 	adminLoginBody := `{"email":"` + adminEmail + `","password":"AdminPass123!"}`
 	resp, err = client.Post(baseURL+"/api/auth/login", "application/json", bytes.NewReader([]byte(adminLoginBody)))
 	if err != nil {
@@ -97,7 +114,8 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	t.Logf("Found %d config settings via admin endpoint", len(settings))
 	
 	// Step 8: Create another user via POST /api/admin/users
-	regularBody := `{"email":"regular-smoke-" + t.Name() + "@test.com","password":"RegularPass123!","role":"user"}`
+	regularEmail := "regular-smoke-" + t.Name() + "@test.com"
+	regularBody := `{"email":"` + regularEmail + `","password":"RegularPass123!","role":"user"}`
 	resp, err = client.Post(baseURL+"/api/admin/users", "application/json", bytes.NewReader([]byte(regularBody)))
 	if err != nil {
 		t.Fatalf("Create regular user request failed: %v", err)
@@ -110,6 +128,7 @@ func TestSmoke_Admin_Panel(t *testing.T) {
 	resp.Body.Close()
 	regularID := createdRegular["id"]
 	t.Logf("Created regular user with ID: %v", regularID)
+	t.Cleanup(func() { deleteUserByEmail(t, regularEmail) })
 	
 	// Step 9: Verify the audit log entry via GET /api/admin/audit
 	resp, err = client.Get(baseURL + "/api/admin/audit?page=1&limit=10")

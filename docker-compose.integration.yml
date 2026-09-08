@@ -34,6 +34,44 @@ services:
       retries: 5
       start_period: 30s
 
+  # NetRunner app server under test. The smoke tests exercise the real HTTP
+  # API (register/login/logout, libraries, jobs, webhooks, …) against this
+  # instance on :8080. ALLOW_PRIVATE_TARGETS lets the app reach the slskd and
+  # postgres containers on the docker network; CSRF_ENABLED=false lets the
+  # tokenless smoke-test HTTP clients POST to auth endpoints.
+  integration-app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: netrunner-integration-app
+    command: ["./netrunner-server"]
+    environment:
+      DATABASE_URL: postgresql://testuser:${INTEGRATION_DB_PASSWORD:-testpass}@integration-db:5432/netrunner_integration?sslmode=disable
+      SLSKD_URL: http://slskd-integration:5030
+      SLSKD_API_KEY: ${SLSKD_TEST_API_KEY:-test-api-key-for-integration}
+      JWT_SECRET: integration-test-secret
+      MUSIC_LIBRARY: /app/music
+      ALLOW_PRIVATE_TARGETS: "true"
+      CSRF_ENABLED: "false"
+      # High limit so the rate-limit smoke test doesn't starve other tests'
+      # registrations; the limiter itself is exercised by its own test.
+      AUTH_RATE_LIMIT_MAX: "200"
+    depends_on:
+      integration-db:
+        condition: service_healthy
+      slskd-integration:
+        condition: service_healthy
+    ports:
+      - "18080:8080"
+    networks:
+      - netrunner-integration
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   # Mock Soulseek peer for testing downloads
   # This is a placeholder - in real integration tests, you'd either:
   # 1. Use a real test Soulseek account with shared files

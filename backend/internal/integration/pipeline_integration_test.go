@@ -254,6 +254,7 @@ func TestPipelineFullPipelineWithMockSlskd(t *testing.T) {
 	pipelineCfg := &config.Config{
 		DatabaseURL: harness.Config.DatabaseURL, SlskdURL: mockServer.URL,
 		SlskdAPIKey: "test-key", MusicLibraryPath: libRoot,
+		AllowPrivateTargets: true, // mock slskd serves from loopback httptest
 	}
 
 	mockProvider := &testutil.MockProvider{
@@ -327,6 +328,7 @@ func TestPipelineDownloadFailure(t *testing.T) {
 	pipelineCfg := &config.Config{
 		DatabaseURL: harness.Config.DatabaseURL, SlskdURL: mockServer.URL,
 		SlskdAPIKey: "test-key", MusicLibraryPath: filepath.Join(t.TempDir(), "music_lib"),
+		AllowPrivateTargets: true, // mock slskd serves from loopback httptest
 	}
 
 	mockSlskd := services.NewSlskdService(pipelineCfg, harness.DB)
@@ -395,6 +397,7 @@ func TestPipelineMetadataFallback(t *testing.T) {
 	pipelineCfg := &config.Config{
 		DatabaseURL: harness.Config.DatabaseURL, SlskdURL: mockServer.URL,
 		SlskdAPIKey: "test-key", MusicLibraryPath: libRoot,
+		AllowPrivateTargets: true, // mock slskd serves from loopback httptest
 	}
 
 	mockSlskd := services.NewSlskdService(pipelineCfg, harness.DB)

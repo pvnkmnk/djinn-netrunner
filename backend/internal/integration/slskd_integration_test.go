@@ -79,11 +79,14 @@ func SetupIntegrationHarness(t *testing.T) *IntegrationHarness {
 	
 	harness := &IntegrationHarness{}
 	
-	// Initialize database
+	// Initialize database. ALLOW_PRIVATE_TARGETS is required here: the
+	// dockerized slskd and postgres live on loopback/docker-network addresses,
+	// which the SSRF-safe HTTP client refuses by default.
 	cfg := &config.Config{
-		DatabaseURL: databaseURL,
-		SlskdURL:    slskdURL,
-		SlskdAPIKey: slskdAPIKey,
+		DatabaseURL:         databaseURL,
+		SlskdURL:            slskdURL,
+		SlskdAPIKey:         slskdAPIKey,
+		AllowPrivateTargets: true,
 	}
 	
 	db, err := database.Connect(cfg)
@@ -191,6 +194,113 @@ func cleanupTestData(t *testing.T, db *gorm.DB) {
 	db.Exec("DELETE FROM jobitems WHERE job_id IN (SELECT id FROM jobs WHERE created_by = 'integration_test')")
 	db.Exec("DELETE FROM jobs WHERE created_by = 'integration_test'")
 	db.Exec("DELETE FROM quality_profiles WHERE name = 'Integration Test Profile'")
+}
+
+// promoteUserToAdmin promotes an existing user to the admin role directly in
+// the database. Smoke tests use this because registration always creates
+// regular users and there is no bootstrap admin endpoint.
+func promoteUserToAdmin(t *testing.T, db *gorm.DB, email string) {
+	t.Helper()
+	// The app lowercases emails on registration, so match case-insensitively;
+	// a case-mismatched WHERE would update zero rows and silently leave the
+	// user at role "user", surfacing later as a 403.
+	res := db.Model(&database.User{}).Where("LOWER(email) = LOWER(?)", email).Update("role", "admin")
+	if res.Error != nil {
+		t.Fatalf("Failed to promote %s to admin: %v", email, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		t.Fatalf("Failed to promote %s to admin: user not found (was registration lowercased?)", email)
+	}
+}
+
+// deleteUserByEmail removes a user row directly from the database, used to
+// clear unique-email residue from earlier runs before re-creating a user.
+func deleteUserByEmail(t *testing.T, email string) {
+	t.Helper()
+	db, err := database.Connect(&config.Config{DatabaseURL: databaseURL, AllowPrivateTargets: true})
+	if err != nil {
+		t.Fatalf("Failed to connect to integration database: %v", err)
+	}
+	defer func() {
+		if sql, err := db.DB(); err == nil && sql != nil {
+			sql.Close()
+		}
+	}()
+	// Children of users: sessions and spotify_tokens. Clear them first or the
+	// FK constraint (fk_users_sessions / fk_spotify_tokens_user) blocks the delete.
+	if err := db.Where("user_id IN (SELECT id FROM users WHERE LOWER(email) = LOWER(?))", email).Delete(&database.Session{}).Error; err != nil {
+		t.Fatalf("Failed to delete sessions of user %s: %v", email, err)
+	}
+	if err := db.Where("user_id IN (SELECT id FROM users WHERE LOWER(email) = LOWER(?))", email).Delete(&database.SpotifyToken{}).Error; err != nil {
+		t.Fatalf("Failed to delete spotify tokens of user %s: %v", email, err)
+	}
+	if err := db.Where("LOWER(email) = LOWER(?)", email).Delete(&database.User{}).Error; err != nil {
+		t.Fatalf("Failed to delete user %s: %v", email, err)
+	}
+}
+
+// cleanupLibrariesAtPath removes library rows for the given path directly from
+// the database. Library.Path is unique-indexed, so smoke tests that create
+// libraries must clean up after themselves to stay rerunnable against a
+// persistent integration DB (and to tolerate residue from a crashed run).
+func cleanupLibrariesAtPath(t *testing.T, path string) {
+	t.Helper()
+	db, err := database.Connect(&config.Config{DatabaseURL: databaseURL, AllowPrivateTargets: true})
+	if err != nil {
+		t.Fatalf("Failed to connect to integration database: %v", err)
+	}
+	defer func() {
+		if sql, err := db.DB(); err == nil && sql != nil {
+			sql.Close()
+		}
+	}()
+	if err := db.Where("path = ?", path).Delete(&database.Library{}).Error; err != nil {
+		t.Fatalf("Failed to clean up library at %s: %v", path, err)
+	}
+}
+
+// cleanupWatchlistsAtURI removes watchlist rows for the given source URI
+// directly from the database — CreateWatchlist rejects duplicate URIs, so
+// residue from a crashed run would otherwise make reruns fail.
+func cleanupWatchlistsAtURI(t *testing.T, uri string) {
+	t.Helper()
+	db, err := database.Connect(&config.Config{DatabaseURL: databaseURL, AllowPrivateTargets: true})
+	if err != nil {
+		t.Fatalf("Failed to connect to integration database: %v", err)
+	}
+	defer func() {
+		if sql, err := db.DB(); err == nil && sql != nil {
+			sql.Close()
+		}
+	}()
+	if err := db.Where("source_uri = ?", uri).Delete(&database.Watchlist{}).Error; err != nil {
+		t.Fatalf("Failed to clean up watchlist at %s: %v", uri, err)
+	}
+}
+
+// resolveDefaultQualityProfileID returns the ID of the seeded default quality
+// profile, resolved from the database so tests don't hardcode UUIDs that only
+// exist in stale DBs.
+func resolveDefaultQualityProfileID(t *testing.T) string {
+	t.Helper()
+	db, err := database.Connect(&config.Config{DatabaseURL: databaseURL, AllowPrivateTargets: true})
+	if err != nil {
+		t.Fatalf("Failed to connect to integration database: %v", err)
+	}
+	var p database.QualityProfile
+	err = db.Where("is_default = ?", true).First(&p).Error
+	if err != nil {
+		// Fall back to the first profile by name (the app seeds a default on startup).
+		err = db.Order("name").First(&p).Error
+		if err != nil {
+			t.Fatalf("No quality profiles found: %v", err)
+		}
+	}
+	id := p.ID.String()
+	if sql, err := db.DB(); err == nil && sql != nil {
+		sql.Close()
+	}
+	return id
 }
 
 // SkipIfSlskdDisconnected skips the test if slskd is not connected to the

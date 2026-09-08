@@ -5,9 +5,8 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSmoke_Library_CRUD(t *testing.T) {
@@ -15,14 +14,17 @@ func TestSmoke_Library_CRUD(t *testing.T) {
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
 	client := integrationAuthClient(t, baseURL)
 
-	tmpDir, err := os.MkdirTemp("", "smoke-library-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	// The library path must exist inside the app container (validateLibraryPath
+	// stats it there). /app/music is created by the image entrypoint, so it is
+	// always valid. Library.Path is unique-indexed, so pre-clean any residue
+	// from a previous crashed run and delete our row again at test end.
+	libPath := "/app/music"
+	cleanupLibrariesAtPath(t, libPath)
+	t.Cleanup(func() { cleanupLibrariesAtPath(t, libPath) })
+	libName := "smoke-test-lib-" + time.Now().Format("150405")
 
 	// Create library
-	body := `{"name":"smoke-test-lib","path":"` + filepath.ToSlash(tmpDir) + `"}`
+	body := `{"name":"` + libName + `","path":"` + libPath + `"}`
 	resp, err := client.Post(baseURL+"/api/libraries/", "application/json", bytes.NewReader([]byte(body)))
 	if err != nil {
 		t.Fatalf("Create library failed: %v", err)

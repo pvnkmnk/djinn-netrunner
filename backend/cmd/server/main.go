@@ -96,14 +96,19 @@ func main() {
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	// SECURITY: CSRF protection for state-changing operations
-	// Uses cookie-based storage with HTMX-compatible header matching
-	app.Use(csrf.New(csrf.Config{
-		KeyLookup:      "header:X-CSRF-Token",
-		CookieName:     "csrf_",
-		CookieSameSite: "Lax",
-		Expiration:     24 * time.Hour,
-		ContextKey:     "csrf",
-	}))
+	// Uses cookie-based storage with HTMX-compatible header matching.
+	// Enabled by default; can be disabled with CSRF_ENABLED=false for
+	// non-browser API clients (e.g. integration test harnesses). The browser
+	// UI must always run with CSRF enabled.
+	if cfg.CSRFEnabled {
+		app.Use(csrf.New(csrf.Config{
+			KeyLookup:      "header:X-CSRF-Token",
+			CookieName:     "csrf_",
+			CookieSameSite: "Lax",
+			Expiration:     24 * time.Hour,
+			ContextKey:     "csrf",
+		}))
+	}
 
 	// SECURITY: Add security headers to all responses
 	// CSP is set here (not just in Caddy) to protect direct :8080 access
