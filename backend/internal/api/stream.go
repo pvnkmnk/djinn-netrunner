@@ -38,11 +38,16 @@ func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
 		Path   string
 		Format string
 	}
-	err = h.db.Table("tracks").
+	query := h.db.Table("tracks").
 		Select("tracks.path, tracks.format").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
-		Where("tracks.id = ? AND libraries.owner_user_id = ?", trackID, user.ID).
-		Take(&track).Error
+		Where("tracks.id = ?", trackID)
+
+	if user.Role != "admin" {
+		query = query.Where("libraries.owner_user_id = ?", user.ID)
+	}
+
+	err = query.Take(&track).Error
 	if err != nil {
 		// 404 for both "not found" and "not your track" — no enumeration
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{

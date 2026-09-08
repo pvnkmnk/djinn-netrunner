@@ -70,6 +70,53 @@ func TestDetectAudioContentType(t *testing.T) {
 	}
 }
 
+func TestStreamTrack_BOLAAndAdminAccess(t *testing.T) {
+	db := setupStreamTestDB(t)
+	h := NewLibraryHandler(db)
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test.mp3")
+	require.NoError(t, os.WriteFile(tmpFile, []byte("audio data"), 0644))
+
+	ownerUserID := uint64(100)
+	lib := database.Library{
+		ID:          uuid.New(),
+		Name:        "Owner Library",
+		Path:        tmpDir,
+		OwnerUserID: &ownerUserID,
+	}
+	require.NoError(t, db.Create(&lib).Error)
+
+	track := database.Track{
+		ID:        uuid.New(),
+		LibraryID: lib.ID,
+		Title:     "Owner Track",
+		Path:      tmpFile,
+		Format:    "mp3",
+	}
+	require.NoError(t, db.Create(&track).Error)
+
+	// 1. Non-owner (User 200) gets 404 (BOLA protection)
+	appUser := fiber.New()
+	appUser.Use(injectAuthMiddlewareWithRole(200, "user"))
+	appUser.Get("/tracks/:id", h.StreamTrack)
+
+	reqUser := httptest.NewRequest("GET", "/tracks/"+track.ID.String(), nil)
+	respUser, err := appUser.Test(reqUser)
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusNotFound, respUser.StatusCode)
+
+	// 2. Admin (User 300) gets 200 OK (admin access to any track)
+	appAdmin := fiber.New()
+	appAdmin.Use(injectAuthMiddlewareWithRole(300, "admin"))
+	appAdmin.Get("/tracks/:id", h.StreamTrack)
+
+	reqAdmin := httptest.NewRequest("GET", "/tracks/"+track.ID.String(), nil)
+	respAdmin, err := appAdmin.Test(reqAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, respAdmin.StatusCode)
+}
+
 func setupStreamTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -79,8 +126,12 @@ func setupStreamTestDB(t *testing.T) *gorm.DB {
 }
 
 func injectAuthMiddleware(userID uint64) fiber.Handler {
+	return injectAuthMiddlewareWithRole(userID, "user")
+}
+
+func injectAuthMiddlewareWithRole(userID uint64, role string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		c.Locals("user", database.User{ID: userID, Role: "user"})
+		c.Locals("user", database.User{ID: userID, Role: role})
 		return c.Next()
 	}
 }
