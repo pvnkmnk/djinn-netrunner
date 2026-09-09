@@ -21,8 +21,7 @@ type AcquisitionHandler struct {
 	mb         *MusicBrainzService
 	aid        *AcoustIDService
 	ext        *MetadataExtractor
-	gonic      GonicClientInterface
-	navidrome  NavidromeClientInterface
+	library    SubsonicClientInterface
 	discogs    *DiscogsService
 	cache      *CacheService
 	lyrics     *LyricsService
@@ -30,8 +29,8 @@ type AcquisitionHandler struct {
 	ytdlp      YtdlpClientInterface
 }
 
-func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd SlskdClient, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, gonic GonicClientInterface, navidrome NavidromeClientInterface, discogs *DiscogsService, cache *CacheService, lyrics *LyricsService, transcoder *TranscoderService, ytdlp YtdlpClientInterface) *AcquisitionHandler {
-	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, gonic: gonic, navidrome: navidrome, discogs: discogs, cache: cache, lyrics: lyrics, transcoder: transcoder, ytdlp: ytdlp}
+func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd SlskdClient, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, library SubsonicClientInterface, discogs *DiscogsService, cache *CacheService, lyrics *LyricsService, transcoder *TranscoderService, ytdlp YtdlpClientInterface) *AcquisitionHandler {
+	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, library: library, discogs: discogs, cache: cache, lyrics: lyrics, transcoder: transcoder, ytdlp: ytdlp}
 }
 
 func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
@@ -70,27 +69,13 @@ func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job data
 				}
 				h.db.Model(&database.Job{}).Where("id = ?", jobID).Update("state", finalState)
 
-				// 2.3 Library Sync Hook (Gonic with Navidrome fallback)
-				scanDone := false
-				if h.gonic != nil {
-					h.Log(jobID, "INFO", "Triggering Gonic scan...", nil)
-					if ok, err := h.gonic.TriggerScan(); err != nil || !ok {
-						h.Log(jobID, "WARN", fmt.Sprintf("Gonic scan trigger failed: %v", err), nil)
+				// 2.3 Library Sync Hook (Subsonic-compatible library server)
+				if h.library != nil {
+					h.Log(jobID, "INFO", "Triggering library server scan...", nil)
+					if ok, err := h.library.TriggerScan(); err != nil || !ok {
+						h.Log(jobID, "WARN", fmt.Sprintf("Library scan trigger failed: %v", err), nil)
 					} else {
-						h.Log(jobID, "OK", "Gonic scan triggered", nil)
-						scanDone = true
-					}
-				}
-				if !scanDone && h.navidrome != nil {
-					if h.gonic != nil {
-						h.Log(jobID, "INFO", "Falling back to Navidrome scan...", nil)
-					} else {
-						h.Log(jobID, "INFO", "Triggering Navidrome scan...", nil)
-					}
-					if ok, err := h.navidrome.TriggerScan(); err != nil || !ok {
-						h.Log(jobID, "WARN", fmt.Sprintf("Navidrome scan trigger failed: %v", err), nil)
-					} else {
-						h.Log(jobID, "OK", "Navidrome scan triggered", nil)
+						h.Log(jobID, "OK", "Library scan triggered", nil)
 					}
 				}
 				return nil
@@ -130,7 +115,7 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 
 	h.Log(jobID, "INFO", fmt.Sprintf("Processing: %s", p.item.NormalizedQuery), &itemID)
 
-	if skip, err := h.stageCheckGonicIndex(p); err != nil {
+	if skip, err := h.stageCheckLibraryIndex(p); err != nil {
 		return err
 	} else if skip {
 		return nil
@@ -190,47 +175,26 @@ func (h *AcquisitionHandler) stageLoadItemContext(p *acquisitionPipeline, itemID
 	return false, nil
 }
 
-// stageCheckGonicIndex checks if the track is already in the library server
-// (Gonic or Navidrome). Returns skip=true if found (item already indexed).
-func (h *AcquisitionHandler) stageCheckGonicIndex(p *acquisitionPipeline) (skip bool, err error) {
-	if h.gonic == nil && h.navidrome == nil {
+// stageCheckLibraryIndex checks if the track is already in the library server
+// (Subsonic-compatible: Navidrome, Gonic, …). Returns skip=true if found.
+func (h *AcquisitionHandler) stageCheckLibraryIndex(p *acquisitionPipeline) (skip bool, err error) {
+	if h.library == nil {
 		return false, nil
 	}
 
 	h.Log(p.item.JobID, "INFO", "Checking library index...", &p.item.ID)
 
-	// Try Gonic first
-	if h.gonic != nil {
-		songs, err := h.gonic.Search3(p.item.NormalizedQuery)
-		if err == nil {
-			for _, s := range songs {
-				if (strings.EqualFold(s.Artist, p.item.Artist) || p.item.Artist == "") &&
-					strings.EqualFold(s.Title, p.item.TrackTitle) {
-					h.Log(p.item.JobID, "OK", fmt.Sprintf("Found in Gonic (ID: %s). Skipping.", s.ID), &p.item.ID)
-					h.db.Model(&p.item).Updates(map[string]interface{}{
-						"status":      "completed (already indexed)",
-						"finished_at": time.Now(),
-					})
-					return true, nil
-				}
-			}
-		}
-	}
-
-	// Fallback to Navidrome
-	if h.navidrome != nil {
-		songs, err := h.navidrome.Search3(p.item.NormalizedQuery)
-		if err == nil {
-			for _, s := range songs {
-				if (strings.EqualFold(s.Artist, p.item.Artist) || p.item.Artist == "") &&
-					strings.EqualFold(s.Title, p.item.TrackTitle) {
-					h.Log(p.item.JobID, "OK", fmt.Sprintf("Found in Navidrome (ID: %s). Skipping.", s.ID), &p.item.ID)
-					h.db.Model(&p.item).Updates(map[string]interface{}{
-						"status":      "completed (already indexed)",
-						"finished_at": time.Now(),
-					})
-					return true, nil
-				}
+	songs, err := h.library.Search3(p.item.NormalizedQuery)
+	if err == nil {
+		for _, s := range songs {
+			if (strings.EqualFold(s.Artist, p.item.Artist) || p.item.Artist == "") &&
+				strings.EqualFold(s.Title, p.item.TrackTitle) {
+				h.Log(p.item.JobID, "OK", fmt.Sprintf("Found in library (ID: %s). Skipping.", s.ID), &p.item.ID)
+				h.db.Model(&p.item).Updates(map[string]interface{}{
+					"status":      "completed (already indexed)",
+					"finished_at": time.Now(),
+				})
+				return true, nil
 			}
 		}
 	}

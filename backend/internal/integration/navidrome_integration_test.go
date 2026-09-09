@@ -15,7 +15,7 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 )
 
-func navidromeTestClient(t *testing.T) *services.NavidromeClient {
+func subsonicTestClient(t *testing.T) *services.SubsonicClient {
 	t.Helper()
 
 	baseURL := GetEnvOrDefault("INTEGRATION_NAVIDROME_URL", "http://localhost:14533")
@@ -28,13 +28,13 @@ func navidromeTestClient(t *testing.T) *services.NavidromeClient {
 
 	// Plain HTTP client: the compose network is trusted test infrastructure.
 	// The production path wires NewProxyAwareHTTPClient(cfg, ...) instead.
-	return services.NewNavidromeClient(baseURL, username, password, nil)
+	return services.NewSubsonicClient(baseURL, username, password, nil)
 }
 
 // TestNavidromeHealthCheck verifies the Subsonic endpoint answers authenticated
 // requests — the same request shape stageCheckGonicIndex and the scan trigger use.
 func TestNavidromeHealthCheck(t *testing.T) {
-	client := navidromeTestClient(t)
+	client := subsonicTestClient(t)
 
 	if !client.HealthCheck() {
 		t.Fatal("Navidrome health check failed: server unreachable or auth rejected")
@@ -44,7 +44,7 @@ func TestNavidromeHealthCheck(t *testing.T) {
 // TestNavidromeTriggerScan verifies the app's post-download scan trigger works
 // against a real Navidrome and that the scan status endpoint reports on it.
 func TestNavidromeTriggerScan(t *testing.T) {
-	client := navidromeTestClient(t)
+	client := subsonicTestClient(t)
 
 	ok, err := client.TriggerScan()
 	if err != nil {
@@ -75,7 +75,7 @@ func TestNavidromeTriggerScan(t *testing.T) {
 // Navidrome scans the seeded fixture folder, Search3 must find the seeded track
 // by artist — exactly the check stageCheckGonicIndex performs before downloading.
 func TestNavidromeSearch3SeededLibrary(t *testing.T) {
-	client := navidromeTestClient(t)
+	client := subsonicTestClient(t)
 
 	// Trigger a scan and wait for it to settle so the seed fixtures are indexed.
 	if _, err := client.TriggerScan(); err != nil {

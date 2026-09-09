@@ -84,7 +84,7 @@ func TestFailItem(t *testing.T) {
 		item := database.JobItem{JobID: job.ID, Status: "queued", RetryCount: 0}
 		require.NoError(t, db.Create(&item).Error, "failed to create item")
 
-		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		h.failItem(job.ID, item.ID, "download failed")
 
 		var updated database.JobItem
@@ -107,7 +107,7 @@ func TestFailItem(t *testing.T) {
 	t.Run("item not found", func(t *testing.T) {
 		db := setupDB(t)
 
-		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		// Should not panic
 		h.failItem(1, 999, "something went wrong")
 	})
@@ -121,7 +121,7 @@ func TestFailItem(t *testing.T) {
 		item := database.JobItem{JobID: job.ID, Status: "queued", RetryCount: 0}
 		require.NoError(t, db.Create(&item).Error, "failed to create item")
 
-		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		h.failItem(job.ID, item.ID, "permanent failure")
 
 		var updated database.JobItem
@@ -144,7 +144,7 @@ func TestFailItem(t *testing.T) {
 		item := database.JobItem{JobID: job.ID, Status: "queued", RetryCount: 0}
 		require.NoError(t, db.Create(&item).Error, "failed to create item")
 
-		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		h := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		h.failItem(job.ID, item.ID, "failure with zero max")
 
 		var updated database.JobItem

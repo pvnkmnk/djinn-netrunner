@@ -24,8 +24,8 @@ func TestProbeSystem(t *testing.T) {
 	status, err := ProbeSystem(db, cfg)
 	assert.NoError(t, err)
 	assert.True(t, status.DatabaseConnected)
-	// We expect Gonic to fail in this test environment
-	assert.False(t, status.GonicConnected)
+	// We expect no library server in this test environment
+	assert.False(t, status.LibraryConnected)
 }
 
 func TestConfigTools(t *testing.T) {
@@ -182,7 +182,7 @@ func TestSearchLibrary(t *testing.T) {
 	})
 
 	// Test SearchLibrary (Local only for now)
-	results, err := SearchLibrary(db, nil, nil, "Local")
+	results, err := SearchLibrary(db, nil, "Local")
 	assert.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, "Local Artist", results[0]["artist"])

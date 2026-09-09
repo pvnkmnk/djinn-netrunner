@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockNavidromeHandler creates an httptest.Server that simulates Navidrome/Subsonic responses.
-func mockNavidromeHandler(responseData interface{}) *httptest.Server {
+// mockSubsonicHandler creates an httptest.Server that simulates a Subsonic-compatible server response.
+func mockSubsonicHandler(responseData interface{}) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check for required Subsonic auth parameters
 		query := r.URL.Query()
@@ -40,17 +40,17 @@ func mockNavidromeHandler(responseData interface{}) *httptest.Server {
 	}))
 }
 
-// TestNavidromeClient_TriggerScan tests the TriggerScan method.
-func TestNavidromeClient_TriggerScan(t *testing.T) {
+// TestSubsonicClient_TriggerScan tests the TriggerScan method.
+func TestSubsonicClient_TriggerScan(t *testing.T) {
 	t.Run("success returns true", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 			},
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		success, err := client.TriggerScan()
 		require.NoError(t, err)
@@ -58,14 +58,14 @@ func TestNavidromeClient_TriggerScan(t *testing.T) {
 	})
 
 	t.Run("server returns failed status", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		success, err := client.TriggerScan()
 		require.NoError(t, err)
@@ -78,11 +78,11 @@ func TestNavidromeClient_TriggerScan(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		_, err := client.TriggerScan()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "navidrome api error")
+		assert.Contains(t, err.Error(), "subsonic api error")
 	})
 
 	t.Run("network error", func(t *testing.T) {
@@ -92,17 +92,17 @@ func TestNavidromeClient_TriggerScan(t *testing.T) {
 		serverURL := server.URL
 		server.Close()
 
-		client := NewNavidromeClient(serverURL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(serverURL, "testuser", "testpass", nil)
 
 		_, err := client.TriggerScan()
 		require.Error(t, err)
 	})
 }
 
-// TestNavidromeClient_GetScanStatus tests the GetScanStatus method.
-func TestNavidromeClient_GetScanStatus(t *testing.T) {
+// TestSubsonicClient_GetScanStatus tests the GetScanStatus method.
+func TestSubsonicClient_GetScanStatus(t *testing.T) {
 	t.Run("success with scanning true", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"scanStatus": map[string]interface{}{
@@ -113,7 +113,7 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		status, err := client.GetScanStatus()
 		require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 	})
 
 	t.Run("success with scanning false", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"scanStatus": map[string]interface{}{
@@ -134,7 +134,7 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		status, err := client.GetScanStatus()
 		require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 	})
 
 	t.Run("missing optional fields", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status":     "ok",
 				"scanStatus": map[string]interface{}{},
@@ -152,7 +152,7 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		status, err := client.GetScanStatus()
 		require.NoError(t, err)
@@ -167,18 +167,18 @@ func TestNavidromeClient_GetScanStatus(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		_, err := client.GetScanStatus()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "navidrome api error")
+		assert.Contains(t, err.Error(), "subsonic api error")
 	})
 }
 
-// TestNavidromeClient_GetLibraryStats tests the GetLibraryStats method.
-func TestNavidromeClient_GetLibraryStats(t *testing.T) {
+// TestSubsonicClient_GetLibraryStats tests the GetLibraryStats method.
+func TestSubsonicClient_GetLibraryStats(t *testing.T) {
 	t.Run("success with artists", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"artists": map[string]interface{}{
@@ -200,7 +200,7 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		stats, err := client.GetLibraryStats()
 		require.NoError(t, err)
@@ -210,7 +210,7 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 	})
 
 	t.Run("empty library", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"artists": map[string]interface{}{
@@ -220,7 +220,7 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		stats, err := client.GetLibraryStats()
 		require.NoError(t, err)
@@ -230,7 +230,7 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 	})
 
 	t.Run("single artist", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"artists": map[string]interface{}{
@@ -246,7 +246,7 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		stats, err := client.GetLibraryStats()
 		require.NoError(t, err)
@@ -260,18 +260,18 @@ func TestNavidromeClient_GetLibraryStats(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		_, err := client.GetLibraryStats()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "navidrome api error")
+		assert.Contains(t, err.Error(), "subsonic api error")
 	})
 }
 
-// TestNavidromeClient_Search3 tests the Search3 method.
-func TestNavidromeClient_Search3(t *testing.T) {
+// TestSubsonicClient_Search3 tests the Search3 method.
+func TestSubsonicClient_Search3(t *testing.T) {
 	t.Run("success returns songs", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"searchResult3": map[string]interface{}{
@@ -284,7 +284,7 @@ func TestNavidromeClient_Search3(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		songs, err := client.Search3("Killer Joe")
 		require.NoError(t, err)
@@ -297,7 +297,7 @@ func TestNavidromeClient_Search3(t *testing.T) {
 	})
 
 	t.Run("empty results", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status":        "ok",
 				"searchResult3": map[string]interface{}{},
@@ -305,7 +305,7 @@ func TestNavidromeClient_Search3(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		songs, err := client.Search3("nonexistent")
 		require.NoError(t, err)
@@ -318,11 +318,11 @@ func TestNavidromeClient_Search3(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		_, err := client.Search3("test")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "navidrome api error")
+		assert.Contains(t, err.Error(), "subsonic api error")
 	})
 
 	t.Run("malformed JSON", func(t *testing.T) {
@@ -332,7 +332,7 @@ func TestNavidromeClient_Search3(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		_, err := client.Search3("test")
 		require.Error(t, err)
@@ -345,17 +345,17 @@ func TestNavidromeClient_Search3(t *testing.T) {
 		serverURL := server.URL
 		server.Close()
 
-		client := NewNavidromeClient(serverURL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(serverURL, "testuser", "testpass", nil)
 
 		_, err := client.Search3("test")
 		require.Error(t, err)
 	})
 }
 
-// TestNavidromeClient_GetSong tests the GetSong method.
-func TestNavidromeClient_GetSong(t *testing.T) {
+// TestSubsonicClient_GetSong tests the GetSong method.
+func TestSubsonicClient_GetSong(t *testing.T) {
 	t.Run("success returns song", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"song": map[string]interface{}{
@@ -365,7 +365,7 @@ func TestNavidromeClient_GetSong(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		song, err := client.GetSong("song-123")
 		require.NoError(t, err)
@@ -378,14 +378,14 @@ func TestNavidromeClient_GetSong(t *testing.T) {
 	})
 
 	t.Run("error status from server", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		_, err := client.GetSong("song-123")
 		require.Error(t, err)
@@ -398,11 +398,11 @@ func TestNavidromeClient_GetSong(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		_, err := client.GetSong("song-123")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "navidrome api error")
+		assert.Contains(t, err.Error(), "subsonic api error")
 	})
 
 	t.Run("network error", func(t *testing.T) {
@@ -412,37 +412,37 @@ func TestNavidromeClient_GetSong(t *testing.T) {
 		serverURL := server.URL
 		server.Close()
 
-		client := NewNavidromeClient(serverURL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(serverURL, "testuser", "testpass", nil)
 
 		_, err := client.GetSong("song-123")
 		require.Error(t, err)
 	})
 }
 
-// TestNavidromeClient_HealthCheck tests the HealthCheck method.
-func TestNavidromeClient_HealthCheck(t *testing.T) {
+// TestSubsonicClient_HealthCheck tests the HealthCheck method.
+func TestSubsonicClient_HealthCheck(t *testing.T) {
 	t.Run("success returns true", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 			},
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		assert.True(t, client.HealthCheck())
 	})
 
 	t.Run("failed status returns false", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "failed",
 			},
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		assert.False(t, client.HealthCheck())
 	})
@@ -453,7 +453,7 @@ func TestNavidromeClient_HealthCheck(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		assert.False(t, client.HealthCheck())
 	})
@@ -465,16 +465,16 @@ func TestNavidromeClient_HealthCheck(t *testing.T) {
 		serverURL := server.URL
 		server.Close()
 
-		client := NewNavidromeClient(serverURL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(serverURL, "testuser", "testpass", nil)
 
 		assert.False(t, client.HealthCheck())
 	})
 }
 
-// TestNavidromeClient_NewNavidromeClient tests the constructor.
-func TestNavidromeClient_NewNavidromeClient(t *testing.T) {
+// TestSubsonicClient_NewSubsonicClient tests the constructor.
+func TestSubsonicClient_NewSubsonicClient(t *testing.T) {
 	t.Run("with default HTTP client", func(t *testing.T) {
-		client := NewNavidromeClient("http://localhost:4533", "admin", "admin", nil)
+		client := NewSubsonicClient("http://localhost:4533", "admin", "admin", nil)
 		require.NotNil(t, client)
 		assert.Equal(t, "http://localhost:4533/rest", client.baseURL)
 		assert.Equal(t, "admin", client.username)
@@ -484,24 +484,24 @@ func TestNavidromeClient_NewNavidromeClient(t *testing.T) {
 
 	t.Run("with custom HTTP client", func(t *testing.T) {
 		customClient := &http.Client{Timeout: 30 * time.Second}
-		client := NewNavidromeClient("http://localhost:4533", "admin", "admin", customClient)
+		client := NewSubsonicClient("http://localhost:4533", "admin", "admin", customClient)
 		require.NotNil(t, client)
 		assert.Equal(t, customClient, client.client)
 	})
 
 	t.Run("URL formatting", func(t *testing.T) {
-		client := NewNavidromeClient("http://localhost:4533", "user", "pass", nil)
+		client := NewSubsonicClient("http://localhost:4533", "user", "pass", nil)
 		assert.Equal(t, "http://localhost:4533/rest", client.baseURL)
 	})
 
 	t.Run("with https URL", func(t *testing.T) {
-		client := NewNavidromeClient("https://navidrome.example.com", "user", "pass", nil)
-		assert.Equal(t, "https://navidrome.example.com/rest", client.baseURL)
+		client := NewSubsonicClient("https://subsonic.example.com", "user", "pass", nil)
+		assert.Equal(t, "https://subsonic.example.com/rest", client.baseURL)
 	})
 }
 
-// TestNavidromeClient_doRequest_authParams tests that auth parameters are correctly sent.
-func TestNavidromeClient_doRequest_authParams(t *testing.T) {
+// TestSubsonicClient_doRequest_authParams tests that auth parameters are correctly sent.
+func TestSubsonicClient_doRequest_authParams(t *testing.T) {
 	var receivedQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.Query()
@@ -514,7 +514,7 @@ func TestNavidromeClient_doRequest_authParams(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+	client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 	// TriggerScan calls doRequest internally
 	_, _ = client.TriggerScan()
@@ -528,8 +528,8 @@ func TestNavidromeClient_doRequest_authParams(t *testing.T) {
 	assert.Equal(t, "json", receivedQuery.Get("f"))
 }
 
-// TestNavidromeClient_search3_queryParam tests that query param is sent correctly.
-func TestNavidromeClient_search3_queryParam(t *testing.T) {
+// TestSubsonicClient_search3_queryParam tests that query param is sent correctly.
+func TestSubsonicClient_search3_queryParam(t *testing.T) {
 	var receivedQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.Query()
@@ -545,7 +545,7 @@ func TestNavidromeClient_search3_queryParam(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+	client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 	_, _ = client.Search3("Radiohead")
 
@@ -554,8 +554,8 @@ func TestNavidromeClient_search3_queryParam(t *testing.T) {
 	assert.Equal(t, "20", receivedQuery.Get("songCount"))
 }
 
-// TestNavidromeClient_getSong_idParam tests that id param is sent correctly.
-func TestNavidromeClient_getSong_idParam(t *testing.T) {
+// TestSubsonicClient_getSong_idParam tests that id param is sent correctly.
+func TestSubsonicClient_getSong_idParam(t *testing.T) {
 	var receivedQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.Query()
@@ -569,7 +569,7 @@ func TestNavidromeClient_getSong_idParam(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+	client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 	_, _ = client.GetSong("song-456")
 
@@ -577,10 +577,10 @@ func TestNavidromeClient_getSong_idParam(t *testing.T) {
 	assert.Equal(t, "song-456", receivedQuery.Get("id"))
 }
 
-// TestNavidromeClient_songMissingFields tests handling of songs with missing optional fields.
-func TestNavidromeClient_songMissingFields(t *testing.T) {
+// TestSubsonicClient_songMissingFields tests handling of songs with missing optional fields.
+func TestSubsonicClient_songMissingFields(t *testing.T) {
 	t.Run("song with missing optional fields", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status": "ok",
 				"song": map[string]interface{}{
@@ -591,7 +591,7 @@ func TestNavidromeClient_songMissingFields(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		song, err := client.GetSong("song-1")
 		require.NoError(t, err)
@@ -600,7 +600,7 @@ func TestNavidromeClient_songMissingFields(t *testing.T) {
 	})
 
 	t.Run("search with missing song array", func(t *testing.T) {
-		server := mockNavidromeHandler(map[string]interface{}{
+		server := mockSubsonicHandler(map[string]interface{}{
 			"subsonic-response": map[string]interface{}{
 				"status":        "ok",
 				"searchResult3": map[string]interface{}{}, // missing song
@@ -608,7 +608,7 @@ func TestNavidromeClient_songMissingFields(t *testing.T) {
 		})
 		defer server.Close()
 
-		client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 		songs, err := client.Search3("test")
 		require.NoError(t, err)
@@ -616,9 +616,9 @@ func TestNavidromeClient_songMissingFields(t *testing.T) {
 	})
 }
 
-// TestNavidromeClient_libraryStatsDeepNesting tests deeply nested artist structures.
-func TestNavidromeClient_libraryStatsDeepNesting(t *testing.T) {
-	server := mockNavidromeHandler(map[string]interface{}{
+// TestSubsonicClient_libraryStatsDeepNesting tests deeply nested artist structures.
+func TestSubsonicClient_libraryStatsDeepNesting(t *testing.T) {
+	server := mockSubsonicHandler(map[string]interface{}{
 		"subsonic-response": map[string]interface{}{
 			"status": "ok",
 			"artists": map[string]interface{}{
@@ -640,7 +640,7 @@ func TestNavidromeClient_libraryStatsDeepNesting(t *testing.T) {
 	})
 	defer server.Close()
 
-	client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+	client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 	stats, err := client.GetLibraryStats()
 	require.NoError(t, err)
@@ -649,15 +649,15 @@ func TestNavidromeClient_libraryStatsDeepNesting(t *testing.T) {
 }
 
 // Test that empty password doesn't panic
-func TestNavidromeClient_emptyPassword(t *testing.T) {
-	server := mockNavidromeHandler(map[string]interface{}{
+func TestSubsonicClient_emptyPassword(t *testing.T) {
+	server := mockSubsonicHandler(map[string]interface{}{
 		"subsonic-response": map[string]interface{}{
 			"status": "ok",
 		},
 	})
 	defer server.Close()
 
-	client := NewNavidromeClient(server.URL, "testuser", "", nil)
+	client := NewSubsonicClient(server.URL, "testuser", "", nil)
 
 	// Should not panic
 	success, err := client.TriggerScan()
@@ -666,28 +666,28 @@ func TestNavidromeClient_emptyPassword(t *testing.T) {
 }
 
 // Test HTTP 503 Service Unavailable
-func TestNavidromeClient_HTTP503(t *testing.T) {
+func TestSubsonicClient_HTTP503(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
 
-	client := NewNavidromeClient(server.URL, "testuser", "testpass", nil)
+	client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
 
 	_, err := client.TriggerScan()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "navidrome api error")
+	assert.Contains(t, err.Error(), "subsonic api error")
 }
 
 // Test connection refused
-func TestNavidromeClient_ConnectionRefused(t *testing.T) {
+func TestSubsonicClient_ConnectionRefused(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Close immediately
 	}))
 	serverURL := server.URL
 	server.Close()
 
-	client := NewNavidromeClient(serverURL, "testuser", "testpass", nil)
+	client := NewSubsonicClient(serverURL, "testuser", "testpass", nil)
 
 	_, err := client.TriggerScan()
 	require.Error(t, err)
@@ -916,4 +916,113 @@ func TestJellyfinClient_different_error_codes(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "jellyfin api error")
 	})
+}
+
+// --- Tests grafted from the former gonic_client_test.go during the
+// SubsonicClient unification (unique coverage not present above). ---
+
+// TestSubsonicClient_doRequest_authFailure tests behavior when auth fails.
+func TestSubsonicClient_doRequest_authFailure(t *testing.T) {
+	t.Run("server returns unauthorized", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		}))
+		defer server.Close()
+
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
+
+		_, err := client.TriggerScan()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Unauthorized")
+	})
+
+	t.Run("server returns unauthorized for invalid token", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			query := r.URL.Query()
+			token := query.Get("t")
+			if token == "" || len(token) != 32 {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"subsonic-response": map[string]interface{}{
+					"status": "ok",
+				},
+			})
+		}))
+		defer server.Close()
+
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
+
+		_, err := client.TriggerScan()
+		require.NoError(t, err, "client should handle valid auth")
+	})
+}
+
+// TestSubsonicClient_responseFormat tests optional-field defaults.
+func TestSubsonicClient_responseFormat(t *testing.T) {
+	t.Run("scanStatus missing optional fields", func(t *testing.T) {
+		server := mockSubsonicHandler(map[string]interface{}{
+			"subsonic-response": map[string]interface{}{
+				"status": "ok",
+				"scanStatus": map[string]interface{}{
+					// missing scanning and count
+				},
+			},
+		})
+		defer server.Close()
+
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
+
+		status, err := client.GetScanStatus()
+		require.NoError(t, err)
+		assert.Equal(t, false, status["scanning"])
+		assert.Equal(t, 0, status["count"])
+	})
+
+	t.Run("song with missing optional fields", func(t *testing.T) {
+		server := mockSubsonicHandler(map[string]interface{}{
+			"subsonic-response": map[string]interface{}{
+				"status": "ok",
+				"song": map[string]interface{}{
+					"id": "song-1",
+					// missing title, artist, album, path
+				},
+			},
+		})
+		defer server.Close()
+
+		client := NewSubsonicClient(server.URL, "testuser", "testpass", nil)
+
+		song, err := client.GetSong("song-1")
+		require.NoError(t, err)
+		require.NotNil(t, song)
+		assert.Equal(t, "song-1", song.ID)
+	})
+}
+
+// TestSubsonicClient_tokenFromPassword verifies deterministic token generation.
+func TestSubsonicClient_tokenFromPassword(t *testing.T) {
+	token1 := tokenFromPassword("test", "abcd")
+	assert.Len(t, token1, 32) // MD5 produces 32 hex chars
+
+	token2 := tokenFromPassword("test", "abcd")
+	assert.Equal(t, token1, token2) // Same input = same output
+
+	token3 := tokenFromPassword("test", "xxxx")
+	assert.NotEqual(t, token1, token3) // Different salt = different token
+}
+
+// TestSubsonicClient_salt verifies random salt generation.
+func TestSubsonicClient_salt(t *testing.T) {
+	s1, err := salt()
+	require.NoError(t, err)
+	assert.Len(t, s1, 8) // 4 bytes = 8 hex chars
+
+	s2, err := salt()
+	require.NoError(t, err)
+	assert.Len(t, s2, 8)
+
+	assert.NotEqual(t, s1, s2) // Each salt should be unique (statistically)
 }

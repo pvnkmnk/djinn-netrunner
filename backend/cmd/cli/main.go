@@ -72,8 +72,8 @@ func statusCmd() *cobra.Command {
 			if jsonOutput {
 				printJSON(status)
 			} else {
-				fmt.Printf("Database: %v\nGonic: %v\nSlskd: %v\nMessage: %s\n",
-					status.DatabaseConnected, status.GonicConnected, status.SlskdConnected, status.Message)
+				fmt.Printf("Database: %v\nLibrary: %v\nSlskd: %v\nMessage: %s\n",
+					status.DatabaseConnected, status.LibraryConnected, status.SlskdConnected, status.Message)
 			}
 		},
 	}

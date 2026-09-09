@@ -12,7 +12,7 @@ import (
 )
 
 func TestAcquisitionHandler_SmartSkip(t *testing.T) {
-	// 1. Setup Mock Gonic Server
+	// 1. Setup mock library server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -41,8 +41,8 @@ func TestAcquisitionHandler_SmartSkip(t *testing.T) {
 	}
 	database.Migrate(db)
 
-	gonic := NewGonicClient(ts.URL, "user", "pass", nil)
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonic, nil, nil, nil, nil, nil, nil)
+	library := NewSubsonicClient(ts.URL, "user", "pass", nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, library, nil, nil, nil, nil, nil)
 
 	// 3. Create job and item
 	job := database.Job{Type: "acquisition"}

@@ -391,7 +391,7 @@ func TestStatusCmd_Run(t *testing.T) {
 	io.Copy(&buf, r)
 	output := buf.String()
 	assert.Contains(t, output, "Database:")
-	assert.Contains(t, output, "Gonic:")
+	assert.Contains(t, output, "Library:")
 	assert.Contains(t, output, "Slskd:")
 }
 
@@ -1754,10 +1754,10 @@ func TestStatusCmd_Run_JSONOutput(t *testing.T) {
 	output := getOutput()
 
 	require.NoError(t, err, "statusCmd should not error with jsonOutput")
-	// SystemStatus fields are: database_connected, slskd_connected, gonic_connected, message
+	// SystemStatus fields are: database_connected, slskd_connected, library_connected, message
 	assert.Contains(t, output, `"database_connected"`)
 	assert.Contains(t, output, `"slskd_connected"`)
-	assert.Contains(t, output, `"gonic_connected"`)
+	assert.Contains(t, output, `"library_connected"`)
 }
 
 func TestConfigCmd_List_Run_JSONOutput(t *testing.T) {

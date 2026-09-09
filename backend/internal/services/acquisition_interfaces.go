@@ -15,17 +15,13 @@ type SlskdClient interface {
 	WaitForDownload(ctx context.Context, username, downloadID string, timeout time.Duration) (*Download, error)
 }
 
-// GonicClientInterface defines the interface for Gonic/Subsonic library index operations.
-type GonicClientInterface interface {
-	Search3(query string) ([]GonicSong, error)
+// SubsonicClientInterface defines the interface for Subsonic-compatible library
+// index operations (Navidrome, Gonic, Airsonic, …).
+type SubsonicClientInterface interface {
+	Search3(query string) ([]SubsonicSong, error)
 	TriggerScan() (bool, error)
 }
 
-// NavidromeClientInterface defines the interface for Navidrome/Subsonic library index operations.
-type NavidromeClientInterface interface {
-	Search3(query string) ([]NavidromeSong, error)
-	TriggerScan() (bool, error)
-}
 
 // YtdlpClientInterface defines the interface for yt-dlp audio extraction operations.
 type YtdlpClientInterface interface {

@@ -44,8 +44,7 @@ type WorkerOrchestrator struct {
 	litefs              *database.LiteFSGuard
 	notificationService *services.NotificationService
 	diskQuotaService    *services.DiskQuotaService
-	gonic               *services.GonicClient
-	navidrome           *services.NavidromeClient
+	library             *services.SubsonicClient
 
 	// Handlers
 	syncHandler *services.SyncHandler
@@ -90,12 +89,16 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	aid := services.NewAcoustIDService(cfg)
 	aid.SetCache(cache)
 	proxyClient := services.NewProxyAwareHTTPClient(cfg, 30*time.Second)
-	// Only construct the Gonic client when GONIC_URL is set; a nil client keeps
-	// every pipeline stage nil-safe and lets Navidrome serve as the sole
-	// Subsonic-compatible library server (see NewAcquisitionHandler).
-	var gonicClient *services.GonicClient
-	if cfg.GonicURL != "" {
-		gonicClient = services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, proxyClient)
+	// Subsonic-compatible library server (Navidrome preferred, Gonic legacy;
+	// see NewAcquisitionHandler). Exactly one is expected to be configured.
+	var libraryClient *services.SubsonicClient
+	switch {
+	case cfg.NavidromeURL != "":
+		libraryClient = services.NewSubsonicClient(cfg.NavidromeURL, cfg.NavidromeUser, cfg.NavidromePass, proxyClient)
+		slog.Info("Library server configured (Navidrome)", "url", cfg.NavidromeURL)
+	case cfg.GonicURL != "":
+		libraryClient = services.NewSubsonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, proxyClient)
+		slog.Info("Library server configured (Gonic)", "url", cfg.GonicURL)
 	}
 	discogs := services.NewDiscogsService(cfg)
 
@@ -108,13 +111,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	transcoder := services.NewTranscoderService()
 	ytdlp := services.NewYtdlpService()
 
-	var navidromeClient *services.NavidromeClient
-	if cfg.NavidromeURL != "" {
-		navidromeClient = services.NewNavidromeClient(cfg.NavidromeURL, cfg.NavidromeUser, cfg.NavidromePass, proxyClient)
-		slog.Info("Navidrome client configured", "url", cfg.NavidromeURL)
-	}
-
-	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, gonicClient, navidromeClient, discogs, cache, lyrics, transcoder, ytdlp)
+	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, libraryClient, discogs, cache, lyrics, transcoder, ytdlp)
 
 	return &WorkerOrchestrator{
 		workerID:            fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
@@ -140,8 +137,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 			ns.ConfigureSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom, cfg.SMTPEnabled)
 			return ns
 		}(),
-		gonic:               gonicClient,
-		navidrome:           navidromeClient,
+		library:             libraryClient,
 		diskQuotaService:    services.NewDiskQuotaService(sqlDB),
 		activeJobs:          make(map[uint64]*jobContext),
 		wakeupChan:          make(chan bool, 1),
@@ -654,7 +650,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		} else if !ok {
 			err = fmt.Errorf("library scan trigger returned non-ok status")
 		} else {
-			slog.Info("Gonic index refresh triggered", "worker_id", w.workerID, "job_id", jc.job.ID)
+			slog.Info("Library index refresh triggered", "worker_id", w.workerID, "job_id", jc.job.ID)
 		}
 	case "scan":
 		libraryID, err := uuid.Parse(jc.job.ScopeID)
@@ -847,21 +843,9 @@ func main() {
 }
 
 // triggerLibraryScan triggers a scan on the configured library server.
-// Tries Gonic first; on failure falls back to Navidrome if configured.
 func (w *WorkerOrchestrator) triggerLibraryScan() (bool, error) {
-	if w.gonic != nil {
-		ok, err := w.gonic.TriggerScan()
-		if err == nil {
-			return ok, nil
-		}
-		if w.navidrome != nil {
-			slog.Warn("Gonic scan failed, falling back to Navidrome", "error", err)
-			return w.navidrome.TriggerScan()
-		}
-		return ok, err
+	if w.library != nil {
+		return w.library.TriggerScan()
 	}
-	if w.navidrome != nil {
-		return w.navidrome.TriggerScan()
-	}
-	return false, fmt.Errorf("no library server configured (set GONIC_URL or NAVIDROME_URL)")
+	return false, fmt.Errorf("no library server configured (set NAVIDROME_URL or GONIC_URL)")
 }

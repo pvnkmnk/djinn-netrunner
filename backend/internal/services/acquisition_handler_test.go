@@ -28,7 +28,7 @@ func TestAcquisitionHandler_FailItem(t *testing.T) {
 	// 1. Setup DB
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// 2. Create job and item
 	job := database.Job{Type: "acquisition"}
@@ -82,7 +82,7 @@ func TestAcquisitionHandler_FailItem(t *testing.T) {
 func TestAcquisitionHandler_StageLoadItemContext_BasicLoad(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job and item
 	job := database.Job{Type: "acquisition", State: "running"}
@@ -119,7 +119,7 @@ func TestAcquisitionHandler_StageLoadItemContext_BasicLoad(t *testing.T) {
 func TestAcquisitionHandler_StageLoadItemContext_ItemNotFound(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	p := &acquisitionPipeline{}
 	_, err := handler.stageLoadItemContext(p, 99999)
@@ -130,7 +130,7 @@ func TestAcquisitionHandler_StageLoadItemContext_ItemNotFound(t *testing.T) {
 func TestAcquisitionHandler_StageLoadItemContext_WithQualityProfile(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create quality profile
 	profile := database.QualityProfile{
@@ -176,7 +176,7 @@ func TestAcquisitionHandler_StageLoadItemContext_WithQualityProfile(t *testing.T
 func TestAcquisitionHandler_StageLoadItemContext_WithInvalidParamsJSON(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job with invalid JSON in params
 	job := database.Job{
@@ -205,7 +205,7 @@ func TestAcquisitionHandler_StageLoadItemContext_WithInvalidParamsJSON(t *testin
 func TestAcquisitionHandler_StageLoadItemContext_WithNoParams(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job with nil params
 	job := database.Job{
@@ -238,7 +238,7 @@ func TestAcquisitionHandler_StageLoadItemContext_WithNoParams(t *testing.T) {
 func TestAcquisitionHandler_Execute_EmptyJob(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job with 0 items - with 0 items, loop exits immediately
 	// because completed+failed (0) >= total (0)
@@ -267,7 +267,7 @@ func TestAcquisitionHandler_Execute_EmptyJob(t *testing.T) {
 func TestAcquisitionHandler_Execute_CancelledContext(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job with 1 item
 	job := database.Job{Type: "acquisition", State: "running"}
@@ -288,7 +288,7 @@ func TestAcquisitionHandler_Execute_CancelledContext(t *testing.T) {
 func TestAcquisitionHandler_Execute_Timeout(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job with 1 queued item
 	job := database.Job{Type: "acquisition", State: "running"}
@@ -313,7 +313,7 @@ func TestAcquisitionHandler_Execute_Timeout(t *testing.T) {
 func TestAcquisitionHandler_ExecuteItem_ItemNotFound(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Create job (needed for ExecuteItem signature)
 	job := database.Job{Type: "acquisition", State: "running"}
