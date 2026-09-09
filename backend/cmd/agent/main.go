@@ -36,7 +36,15 @@ func main() {
 	// Initialize services
 	spotifyAuth := api.NewSpotifyAuthHandler(db)
 	watchlistService := services.NewWatchlistService(db, spotifyAuth, cfg)
-	gonicClient := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, services.NewProxyAwareHTTPClient(cfg, 30*time.Second))
+	agentProxyClient := services.NewProxyAwareHTTPClient(cfg, 30*time.Second)
+	var gonicClient *services.GonicClient
+	if cfg.GonicURL != "" {
+		gonicClient = services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, agentProxyClient)
+	}
+	var navidromeClient *services.NavidromeClient
+	if cfg.NavidromeURL != "" {
+		navidromeClient = services.NewNavidromeClient(cfg.NavidromeURL, cfg.NavidromeUser, cfg.NavidromePass, agentProxyClient)
+	}
 
 	// Create a new MCP server
 	s := server.NewMCPServer(
@@ -250,7 +258,7 @@ func main() {
 
 	// Register search_library tool
 	s.AddTool(mcp.NewTool("search_library",
-		mcp.WithDescription("Search the local acquisition index and Gonic server for tracks"),
+		mcp.WithDescription("Search the local acquisition index and Subsonic-compatible library server (Gonic/Navidrome) for tracks"),
 		mcp.WithString("query", mcp.Description("The search query (artist, title, or album)"), mcp.Required()),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := mcp.ParseString(request, "query", "")
@@ -258,7 +266,7 @@ func main() {
 			return mcp.NewToolResultError("Missing required 'query' argument"), nil
 		}
 
-		results, err := agent.SearchLibrary(db, gonicClient, query)
+		results, err := agent.SearchLibrary(db, gonicClient, navidromeClient, query)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 		}

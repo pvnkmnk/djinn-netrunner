@@ -58,6 +58,11 @@ func (h *HealthHandler) GetHealth(c *fiber.Ctx) error {
 		checks["gonic"] = h.checkHTTP(h.cfg.GonicURL+"/ping", 5*time.Second)
 	}
 
+	// Navidrome (optional, Subsonic-compatible library server)
+	if h.cfg.NavidromeURL != "" {
+		checks["navidrome"] = h.checkHTTP(h.cfg.NavidromeURL+"/ping", 5*time.Second)
+	}
+
 	// Disk (optional, reported only when path exists)
 	if info, err := os.Stat(h.cfg.MusicLibraryPath); err == nil && info.IsDir() {
 		checks["disk"] = h.checkDisk(h.cfg.MusicLibraryPath)

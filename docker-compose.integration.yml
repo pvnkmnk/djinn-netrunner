@@ -49,6 +49,9 @@ services:
       DATABASE_URL: postgresql://testuser:${INTEGRATION_DB_PASSWORD:-testpass}@integration-db:5432/netrunner_integration?sslmode=disable
       SLSKD_URL: http://slskd-integration:5030
       SLSKD_API_KEY: ${SLSKD_TEST_API_KEY:-test-api-key-for-integration}
+      NAVIDROME_URL: http://navidrome-integration:4533
+      NAVIDROME_USER: admin
+      NAVIDROME_PASS: ${NAVIDROME_TEST_PASSWORD:-integration-test-pass}
       JWT_SECRET: integration-test-secret
       MUSIC_LIBRARY: /app/music
       ALLOW_PRIVATE_TARGETS: "true"
@@ -61,12 +64,42 @@ services:
         condition: service_healthy
       slskd-integration:
         condition: service_healthy
+      navidrome-integration:
+        condition: service_healthy
     ports:
       - "18080:8080"
     networks:
       - netrunner-integration
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Media-library server under test (Subsonic-compatible, same family the
+  # production stack runs). Seeded read-only with tiny committed fixtures so
+  # dedup/search/scan integration tests exercise the real scan pipeline.
+  # ND_DEVAUTOCREATEADMINPASSWORD creates the 'admin' user on first boot;
+  # the credentials must match the app's NAVIDROME_* env below.
+  navidrome-integration:
+    image: deluan/navidrome:latest
+    container_name: netrunner-navidrome-integration
+    environment:
+      ND_MUSICFOLDER: /music
+      ND_DATAFOLDER: /data
+      ND_DEVAUTOCREATEADMINPASSWORD: ${NAVIDROME_TEST_PASSWORD:-integration-test-pass}
+      ND_ENABLEINSIGHTSCOLLECTOR: "false"
+      ND_LOGLEVEL: "info"
+    volumes:
+      - ./backend/internal/integration/testdata/navidrome-seed:/music:ro
+      - navidrome-integration-data:/data
+    ports:
+      - "14533:4533"
+    networks:
+      - netrunner-integration
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:4533/ping || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -101,6 +134,7 @@ volumes:
   slskd-integration-data:
   slskd-integration-downloads:
   integration-db-data:
+  navidrome-integration-data:
 
 networks:
   netrunner-integration:

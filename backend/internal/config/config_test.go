@@ -547,16 +547,41 @@ func TestLoad_ProductionRequiresGonicCredentials(t *testing.T) {
 	cleanup := saveRestoreEnv()
 	defer cleanup()
 
-	// Set required vars but not Gonic credentials
+	// Set required vars and a Gonic URL, but not Gonic credentials.
+	// (No GONIC_URL means no Gonic server is configured — no error expected.)
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("ENVIRONMENT", "production")
+	os.Setenv("GONIC_URL", "http://gonic:4747")
 
 	_, err := Load(".non-existent-env")
 	if err == nil {
 		t.Fatal("Expected error for production missing Gonic credentials, got nil")
 	}
-	if err.Error() != "GONIC_USER and GONIC_PASS are required in production" {
+	if err.Error() != "GONIC_USER and GONIC_PASS are required in production when GONIC_URL is set" {
 		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+func TestLoad_ProductionNavidromeOnlySucceedsWithoutGonicCredentials(t *testing.T) {
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
+	// Navidrome-only production deployment: no GONIC_URL, so missing Gonic
+	// credentials must NOT be fatal. Navidrome credentials, however, are
+	// required whenever NAVIDROME_URL is set (fail closed).
+	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	os.Setenv("ENVIRONMENT", "production")
+	os.Setenv("NAVIDROME_URL", "http://navidrome:4533")
+	os.Setenv("NAVIDROME_USER", "admin")
+	os.Setenv("NAVIDROME_PASS", "navpass")
+
+	if _, err := Load(".non-existent-env"); err != nil {
+		t.Fatalf("Navidrome-only production should not require Gonic credentials, got: %v", err)
+	}
+
+	os.Unsetenv("NAVIDROME_PASS")
+	if _, err := Load(".non-existent-env"); err == nil {
+		t.Fatal("Expected error for production missing Navidrome credentials, got nil")
 	}
 }
 

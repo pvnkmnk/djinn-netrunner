@@ -228,15 +228,23 @@ func Load(filenames ...string) (*Config, error) {
 		slog.Warn("JWT_SECRET not set — generated random secret. Set JWT_SECRET in .env for persistence across restarts.")
 	}
 
-	// SECURITY: Gonic credentials must be explicitly set. Never use hardcoded defaults.
+	// SECURITY: library-server credentials must be explicitly set. Never use hardcoded defaults.
+	// Both checks only apply when the corresponding server is actually configured (URL set):
+	// a Navidrome-only production deployment must not be forced to provide Gonic credentials.
 	gonicUser := os.Getenv("GONIC_USER")
 	gonicPass := os.Getenv("GONIC_PASS")
 	env := getEnv("ENVIRONMENT", "development")
-	if gonicUser == "" || gonicPass == "" {
+	if getEnv("GONIC_URL", "") != "" && (gonicUser == "" || gonicPass == "") {
 		if env == "production" {
-			return nil, fmt.Errorf("GONIC_USER and GONIC_PASS are required in production")
+			return nil, fmt.Errorf("GONIC_USER and GONIC_PASS are required in production when GONIC_URL is set")
 		}
 		slog.Warn("GONIC_USER or GONIC_PASS not set — Gonic integration will fail until credentials are configured.")
+	}
+	if getEnv("NAVIDROME_URL", "") != "" && (os.Getenv("NAVIDROME_USER") == "" || os.Getenv("NAVIDROME_PASS") == "") {
+		if env == "production" {
+			return nil, fmt.Errorf("NAVIDROME_USER and NAVIDROME_PASS are required in production when NAVIDROME_URL is set")
+		}
+		slog.Warn("NAVIDROME_USER or NAVIDROME_PASS not set — Navidrome integration will fail until credentials are configured.")
 	}
 
 	// Determine config environment (defaults to ENVIRONMENT if CONFIG_ENV not set)
@@ -265,7 +273,10 @@ func Load(filenames ...string) (*Config, error) {
 		SlskdURL:    getEnv("SLSKD_URL", "http://localhost:5030"),
 		SlskdAPIKey: getEnv("SLSKD_API_KEY", ""),
 
-		GonicURL:  getEnv("GONIC_URL", "http://localhost:4747"),
+		// Empty default: an unset GONIC_URL means no Gonic server is configured
+		// (Navidrome-only deployments). The old http://localhost:4747 default
+		// made the app permanently report "gonic: unreachable" out of the box.
+		GonicURL:  getEnv("GONIC_URL", ""),
 		GonicUser: gonicUser,
 		GonicPass: gonicPass,
 

@@ -90,7 +90,13 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	aid := services.NewAcoustIDService(cfg)
 	aid.SetCache(cache)
 	proxyClient := services.NewProxyAwareHTTPClient(cfg, 30*time.Second)
-	gonicClient := services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, proxyClient)
+	// Only construct the Gonic client when GONIC_URL is set; a nil client keeps
+	// every pipeline stage nil-safe and lets Navidrome serve as the sole
+	// Subsonic-compatible library server (see NewAcquisitionHandler).
+	var gonicClient *services.GonicClient
+	if cfg.GonicURL != "" {
+		gonicClient = services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, proxyClient)
+	}
 	discogs := services.NewDiscogsService(cfg)
 
 	// DJI-357: Initialize ctx in constructor to prevent nil panic if methods

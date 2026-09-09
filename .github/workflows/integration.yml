@@ -15,6 +15,10 @@ env:
   INTEGRATION_SLSKD_API_KEY: test-api-key-for-integration
   INTEGRATION_DATABASE_URL: postgresql://testuser:testpass@localhost:15432/netrunner_integration?sslmode=disable
   INTEGRATION_BASE_URL: http://localhost:18080
+  NAVIDROME_TEST_PASSWORD: integration-test-pass
+  INTEGRATION_NAVIDROME_URL: http://localhost:14533
+  INTEGRATION_NAVIDROME_USER: admin
+  INTEGRATION_NAVIDROME_PASS: integration-test-pass
 
 jobs:
   integration:
@@ -70,6 +74,20 @@ jobs:
           docker compose -f docker-compose.integration.yml -p netrunner-integration logs integration-app
           exit 1
 
+      - name: Wait for Navidrome
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:14533/ping > /dev/null 2>&1; then
+              echo "Navidrome is ready"
+              exit 0
+            fi
+            echo "Waiting for Navidrome... ($i/60)"
+            sleep 2
+          done
+          echo "Timed out waiting for Navidrome"
+          docker compose -f docker-compose.integration.yml -p netrunner-integration logs navidrome-integration
+          exit 1
+
       - name: Download dependencies
         working-directory: backend
         run: go mod download
@@ -85,6 +103,8 @@ jobs:
           docker compose -f docker-compose.integration.yml -p netrunner-integration logs integration-app
           echo "=== slskd logs ==="
           docker compose -f docker-compose.integration.yml -p netrunner-integration logs slskd-integration
+          echo "=== navidrome logs ==="
+          docker compose -f docker-compose.integration.yml -p netrunner-integration logs navidrome-integration
           echo "=== postgres logs ==="
           docker compose -f docker-compose.integration.yml -p netrunner-integration logs integration-db
 
