@@ -16,7 +16,8 @@ import (
 type SystemStatus struct {
 	DatabaseConnected bool   `json:"database_connected"`
 	SlskdConnected    bool   `json:"slskd_connected"`
-	GonicConnected    bool   `json:"gonic_connected"`
+	LibraryConnected  bool   `json:"library_connected"`
+	LibraryServer     string `json:"library_server,omitempty"`
 	Message           string `json:"message"`
 }
 
@@ -33,12 +34,19 @@ func ProbeSystem(db *gorm.DB, cfg *config.Config) (*SystemStatus, error) {
 		}
 	}
 
-	// 2. Check Gonic (if configured)
-	if cfg.GonicURL != "" {
+	// 2. Check Subsonic-compatible library server (Gonic or Navidrome, if configured)
+	libraryURL := cfg.NavidromeURL
+	libraryServer := "navidrome"
+	if libraryURL == "" {
+		libraryURL = cfg.GonicURL
+		libraryServer = "gonic"
+	}
+	if libraryURL != "" {
 		client := &http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(cfg.GonicURL + "/ping")
+		resp, err := client.Get(libraryURL + "/ping")
 		if err == nil && resp.StatusCode == http.StatusOK {
-			status.GonicConnected = true
+			status.LibraryConnected = true
+			status.LibraryServer = libraryServer
 		}
 		if resp != nil {
 			resp.Body.Close()
@@ -55,7 +63,7 @@ func ProbeSystem(db *gorm.DB, cfg *config.Config) (*SystemStatus, error) {
 
 	if status.DatabaseConnected {
 		status.Message = "System partially operational."
-		if status.GonicConnected {
+		if status.LibraryConnected {
 			status.Message = "System fully operational."
 		}
 	} else {
@@ -319,10 +327,10 @@ func Bootstrap(db *gorm.DB, cfg *config.Config) (map[string]string, error) {
 		results["DATABASE_CONN"] = "FAILED"
 	}
 
-	if status.GonicConnected {
-		results["GONIC_CONN"] = "OK"
+	if status.LibraryConnected {
+		results["LIBRARY_CONN"] = "OK (" + status.LibraryServer + ")"
 	} else {
-		results["GONIC_CONN"] = "FAILED"
+		results["LIBRARY_CONN"] = "FAILED"
 	}
 
 	// 3. Ensure tables exist (Migration check)
@@ -351,8 +359,8 @@ func RegisterWebhook(db *gorm.DB, url string) error {
 }
 
 // SearchLibrary queries the local DB and the configured Subsonic-compatible
-// library server (Gonic and/or Navidrome) for tracks matching the query.
-func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, navidrome *services.NavidromeClient, query string) ([]map[string]string, error) {
+// library server for tracks matching the query.
+func SearchLibrary(db *gorm.DB, library *services.SubsonicClient, query string) ([]map[string]string, error) {
 	var results []map[string]string
 
 	// 1. Search local acquisitions
@@ -373,32 +381,16 @@ func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, navidrome *services
 		}
 	}
 
-	// 2. Search Gonic
-	if gonic != nil {
-		gonicTracks, err := gonic.Search3(query)
+	// 2. Search the library server
+	if library != nil {
+		tracks, err := library.Search3(query)
 		if err == nil {
-			for _, t := range gonicTracks {
+			for _, t := range tracks {
 				results = append(results, map[string]string{
 					"artist": t.Artist,
 					"title":  t.Title,
 					"album":  t.Album,
-					"source": "gonic",
-					"id":     t.ID,
-				})
-			}
-		}
-	}
-
-	// 3. Search Navidrome
-	if navidrome != nil {
-		navidromeTracks, err := navidrome.Search3(query)
-		if err == nil {
-			for _, t := range navidromeTracks {
-				results = append(results, map[string]string{
-					"artist": t.Artist,
-					"title":  t.Title,
-					"album":  t.Album,
-					"source": "navidrome",
+					"source": "library",
 					"id":     t.ID,
 				})
 			}

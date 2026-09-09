@@ -67,38 +67,19 @@ func (m *mockSlskd) WaitForDownload(ctx context.Context, username, downloadID st
 	return nil, nil
 }
 
-type mockGonic struct {
-	Search3Func    func(query string) ([]GonicSong, error)
+type mockLibrary struct {
+	Search3Func     func(query string) ([]SubsonicSong, error)
 	TriggerScanFunc func() (bool, error)
 }
 
-func (m *mockGonic) Search3(query string) ([]GonicSong, error) {
+func (m *mockLibrary) Search3(query string) ([]SubsonicSong, error) {
 	if m.Search3Func != nil {
 		return m.Search3Func(query)
 	}
 	return nil, nil
 }
 
-func (m *mockGonic) TriggerScan() (bool, error) {
-	if m.TriggerScanFunc != nil {
-		return m.TriggerScanFunc()
-	}
-	return false, nil
-}
-
-type mockNavidrome struct {
-	Search3Func    func(query string) ([]NavidromeSong, error)
-	TriggerScanFunc func() (bool, error)
-}
-
-func (m *mockNavidrome) Search3(query string) ([]NavidromeSong, error) {
-	if m.Search3Func != nil {
-		return m.Search3Func(query)
-	}
-	return nil, nil
-}
-
-func (m *mockNavidrome) TriggerScan() (bool, error) {
+func (m *mockLibrary) TriggerScan() (bool, error) {
 	if m.TriggerScanFunc != nil {
 		return m.TriggerScanFunc()
 	}
@@ -131,7 +112,7 @@ func (m *mockYtdlp) IsYtdlpAvailable() bool {
 func TestAcquisitionHandler_StageSelectBestResult_NoProfile(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	bitrate := 320
 	p := &acquisitionPipeline{
@@ -158,7 +139,7 @@ func TestAcquisitionHandler_StageSelectBestResult_NoProfile(t *testing.T) {
 func TestAcquisitionHandler_StageSelectBestResult_WithProfile_Matching(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	profile := &database.QualityProfile{
 		AllowedFormats: "flac",
@@ -190,7 +171,7 @@ func TestAcquisitionHandler_StageSelectBestResult_WithProfile_Matching(t *testin
 func TestAcquisitionHandler_StageSelectBestResult_WithProfile_NonMatching(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	profile := &database.QualityProfile{
 		AllowedFormats: "flac",
@@ -224,7 +205,7 @@ func TestAcquisitionHandler_StageSelectBestResult_NoResults(t *testing.T) {
 	// We verify here that the assumption holds: calling with empty results panics.
 	db := setupPipelineTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	p := &acquisitionPipeline{
 		item:    database.JobItem{JobID: 1, ID: 1},
@@ -258,7 +239,7 @@ func TestAcquisitionHandler_StageSearchSoulseek_Success(t *testing.T) {
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -288,7 +269,7 @@ func TestAcquisitionHandler_StageSearchSoulseek_NoResults(t *testing.T) {
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -322,7 +303,7 @@ func TestAcquisitionHandler_StageSearchSoulseek_Error(t *testing.T) {
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -338,21 +319,21 @@ func TestAcquisitionHandler_StageSearchSoulseek_Error(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// stageCheckGonicIndex tests
+// stageCheckLibraryIndex tests
 // ---------------------------------------------------------------------------
 
-func TestAcquisitionHandler_StageCheckGonicIndex_GonicMatch(t *testing.T) {
+func TestAcquisitionHandler_StageCheckLibraryIndex_LibraryMatch(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	gonicMock := &mockGonic{
-		Search3Func: func(query string) ([]GonicSong, error) {
-			return []GonicSong{
+	libraryMock := &mockLibrary{
+		Search3Func: func(query string) ([]SubsonicSong, error) {
+			return []SubsonicSong{
 				{ID: "123", Title: "Test Track", Artist: "Test Artist"},
 			}, nil
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonicMock, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, libraryMock, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -360,10 +341,10 @@ func TestAcquisitionHandler_StageCheckGonicIndex_GonicMatch(t *testing.T) {
 	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
-	skip, err := handler.stageCheckGonicIndex(p)
+	skip, err := handler.stageCheckLibraryIndex(p)
 	require.NoError(t, err, "unexpected error")
 	if !skip {
-		t.Error("expected skip=true (found in Gonic)")
+		t.Error("expected skip=true (found in library)")
 	}
 
 	// Verify item was marked as completed
@@ -374,24 +355,18 @@ func TestAcquisitionHandler_StageCheckGonicIndex_GonicMatch(t *testing.T) {
 	}
 }
 
-func TestAcquisitionHandler_StageCheckGonicIndex_GonicNoMatch_NavidromeMatch(t *testing.T) {
+func TestAcquisitionHandler_StageCheckLibraryIndex_CaseInsensitiveMatch(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	gonicMock := &mockGonic{
-		Search3Func: func(query string) ([]GonicSong, error) {
-			return []GonicSong{}, nil // no match
-		},
-	}
-
-	navidromeMock := &mockNavidrome{
-		Search3Func: func(query string) ([]NavidromeSong, error) {
-			return []NavidromeSong{
-				{ID: "456", Title: "Test Track", Artist: "Test Artist"},
+	libraryMock := &mockLibrary{
+		Search3Func: func(query string) ([]SubsonicSong, error) {
+			return []SubsonicSong{
+				{ID: "456", Title: "test track", Artist: "test artist"},
 			}, nil
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonicMock, navidromeMock, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, libraryMock, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -399,10 +374,10 @@ func TestAcquisitionHandler_StageCheckGonicIndex_GonicNoMatch_NavidromeMatch(t *
 	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
-	skip, err := handler.stageCheckGonicIndex(p)
+	skip, err := handler.stageCheckLibraryIndex(p)
 	require.NoError(t, err, "unexpected error")
 	if !skip {
-		t.Error("expected skip=true (found in Navidrome)")
+		t.Error("expected skip=true (case-insensitive match found in library)")
 	}
 
 	var updatedItem database.JobItem
@@ -412,10 +387,10 @@ func TestAcquisitionHandler_StageCheckGonicIndex_GonicNoMatch_NavidromeMatch(t *
 	}
 }
 
-func TestAcquisitionHandler_StageCheckGonicIndex_BothClientsNil(t *testing.T) {
+func TestAcquisitionHandler_StageCheckLibraryIndex_NoLibraryConfigured(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -423,29 +398,23 @@ func TestAcquisitionHandler_StageCheckGonicIndex_BothClientsNil(t *testing.T) {
 	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
-	skip, err := handler.stageCheckGonicIndex(p)
+	skip, err := handler.stageCheckLibraryIndex(p)
 	require.NoError(t, err, "unexpected error")
 	if skip {
-		t.Error("expected skip=false (both clients nil, should continue)")
+		t.Error("expected skip=false (no library configured, should continue)")
 	}
 }
 
-func TestAcquisitionHandler_StageCheckGonicIndex_NoMatch(t *testing.T) {
+func TestAcquisitionHandler_StageCheckLibraryIndex_NoMatch(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	gonicMock := &mockGonic{
-		Search3Func: func(query string) ([]GonicSong, error) {
-			return []GonicSong{}, nil
+	libraryMock := &mockLibrary{
+		Search3Func: func(query string) ([]SubsonicSong, error) {
+			return []SubsonicSong{}, nil
 		},
 	}
 
-	navidromeMock := &mockNavidrome{
-		Search3Func: func(query string) ([]NavidromeSong, error) {
-			return []NavidromeSong{}, nil
-		},
-	}
-
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, gonicMock, navidromeMock, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, libraryMock, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -453,7 +422,7 @@ func TestAcquisitionHandler_StageCheckGonicIndex_NoMatch(t *testing.T) {
 	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
 	p := &acquisitionPipeline{item: item}
-	skip, err := handler.stageCheckGonicIndex(p)
+	skip, err := handler.stageCheckLibraryIndex(p)
 	require.NoError(t, err, "unexpected error")
 	if skip {
 		t.Error("expected skip=false (not found in any index)")
@@ -478,7 +447,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_Success(t *testing.T) {
 	}
 
 	cfg := &config.Config{DownloadStagingPath: "/downloads"}
-	handler := NewAcquisitionHandler(db, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
+	handler := NewAcquisitionHandler(db, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -514,7 +483,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_NoSourceURL(t *testing.T) {
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -543,7 +512,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpUnavailable(t *testing.T) {
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -569,7 +538,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_DownloadError(t *testing.T) {
 	}
 
 	cfg := &config.Config{DownloadStagingPath: "/downloads"}
-	handler := NewAcquisitionHandler(db, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
+	handler := NewAcquisitionHandler(db, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -587,7 +556,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_DownloadError(t *testing.T) {
 func TestAcquisitionHandler_StageYtdlpFallback_YtdlpNil(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -611,7 +580,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpNil(t *testing.T) {
 func TestAcquisitionHandler_Execute_ContextCancelledWhilePolling(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -644,7 +613,7 @@ func TestAcquisitionHandler_StageAlbumBrowse_SingleTrack(t *testing.T) {
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -681,7 +650,7 @@ func TestAcquisitionHandler_StageAlbumBrowse_MultipleTracks_CreatesJobItems(t *t
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -722,7 +691,7 @@ func TestAcquisitionHandler_StageAlbumBrowse_DeduplicatesAgainstExisting(t *test
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -759,7 +728,7 @@ func TestAcquisitionHandler_StageAlbumBrowse_BrowseError(t *testing.T) {
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
@@ -792,7 +761,7 @@ func TestAcquisitionHandler_StageAlbumBrowse_NoAudioFiles(t *testing.T) {
 		},
 	}
 
-	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAcquisitionHandler(db, nil, slskdMock, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")

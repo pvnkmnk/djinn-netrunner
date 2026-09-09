@@ -37,13 +37,13 @@ func main() {
 	spotifyAuth := api.NewSpotifyAuthHandler(db)
 	watchlistService := services.NewWatchlistService(db, spotifyAuth, cfg)
 	agentProxyClient := services.NewProxyAwareHTTPClient(cfg, 30*time.Second)
-	var gonicClient *services.GonicClient
-	if cfg.GonicURL != "" {
-		gonicClient = services.NewGonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, agentProxyClient)
-	}
-	var navidromeClient *services.NavidromeClient
-	if cfg.NavidromeURL != "" {
-		navidromeClient = services.NewNavidromeClient(cfg.NavidromeURL, cfg.NavidromeUser, cfg.NavidromePass, agentProxyClient)
+	// Subsonic-compatible library server (Navidrome preferred, Gonic legacy)
+	var libraryClient *services.SubsonicClient
+	switch {
+	case cfg.NavidromeURL != "":
+		libraryClient = services.NewSubsonicClient(cfg.NavidromeURL, cfg.NavidromeUser, cfg.NavidromePass, agentProxyClient)
+	case cfg.GonicURL != "":
+		libraryClient = services.NewSubsonicClient(cfg.GonicURL, cfg.GonicUser, cfg.GonicPass, agentProxyClient)
 	}
 
 	// Create a new MCP server
@@ -64,7 +64,7 @@ func main() {
 		return mcp.NewToolResultText(fmt.Sprintf(
 			"Database: %v\nGonic: %v\nSlskd: %v\n\n%s",
 			status.DatabaseConnected,
-			status.GonicConnected,
+			status.LibraryConnected,
 			status.SlskdConnected,
 			status.Message,
 		)), nil
@@ -266,7 +266,7 @@ func main() {
 			return mcp.NewToolResultError("Missing required 'query' argument"), nil
 		}
 
-		results, err := agent.SearchLibrary(db, gonicClient, navidromeClient, query)
+		results, err := agent.SearchLibrary(db, libraryClient, query)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 		}

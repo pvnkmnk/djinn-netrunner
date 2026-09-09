@@ -78,14 +78,13 @@ func TestUpdateHeartbeats_EmptyMap(t *testing.T) {
 }
 
 // TestTriggerLibraryScan_NoClients tests that triggerLibraryScan returns an
-// error when neither gonic nor navidrome clients are configured.
+// error when no library client is configured.
 func TestTriggerLibraryScan_NoClients(t *testing.T) {
 	w := setupWorkerTestDB(t)
 
 	// Force nil clients by overwriting the fields after construction
-	// (NewWorkerOrchestrator always creates a gonic client if GonicURL is set)
-	w.gonic = nil
-	w.navidrome = nil
+	// (NewWorkerOrchestrator creates the library client when a URL is configured)
+	w.library = nil
 
 	ok, err := w.triggerLibraryScan()
 
@@ -266,10 +265,9 @@ func TestFinishJob_AcquisitionTriggersLibraryScan(t *testing.T) {
 	}
 	w.jobMutex.Unlock()
 
-	// Ensure gonic and navidrome are nil so triggerLibraryScan returns an error
+	// Ensure no library client is set so triggerLibraryScan returns an error
 	// (we just want to verify it was called; the error is expected)
-	w.gonic = nil
-	w.navidrome = nil
+	w.library = nil
 
 	// Call finishJob with no error (success)
 	// The goroutine for library scan may or may not complete before we check,

@@ -11,20 +11,26 @@ import (
 	"time"
 )
 
-// GonicClient handles interaction with the Gonic Subsonic-compatible server
-type GonicClient struct {
+// SubsonicClient handles interaction with any Subsonic-compatible library
+// server (Navidrome, Gonic, Airsonic, …). It is the single implementation used
+// by the acquisition pipeline for dedup checks, library scans, and agent
+// search — previously this logic was duplicated verbatim across GonicClient
+// and NavidromeClient.
+type SubsonicClient struct {
 	baseURL  string
 	username string
 	password string
 	client   *http.Client
 }
 
-// NewGonicClient creates a new Gonic client
-func NewGonicClient(baseURL, username, password string, httpClient *http.Client) *GonicClient {
+// NewSubsonicClient creates a new Subsonic-compatible client.
+// baseURL is the server root (e.g. http://navidrome:4533); the /rest API
+// prefix is appended automatically.
+func NewSubsonicClient(baseURL, username, password string, httpClient *http.Client) *SubsonicClient {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 60 * time.Second}
 	}
-	return &GonicClient{
+	return &SubsonicClient{
 		baseURL:  fmt.Sprintf("%s/rest", baseURL),
 		username: username,
 		password: password,
@@ -32,8 +38,8 @@ func NewGonicClient(baseURL, username, password string, httpClient *http.Client)
 	}
 }
 
-// TriggerScan triggers a full library scan in Gonic
-func (c *GonicClient) TriggerScan() (bool, error) {
+// TriggerScan triggers a full library scan on the server
+func (c *SubsonicClient) TriggerScan() (bool, error) {
 	var resp struct {
 		SubsonicResponse struct {
 			Status string `json:"status"`
@@ -49,7 +55,7 @@ func (c *GonicClient) TriggerScan() (bool, error) {
 }
 
 // GetScanStatus retrieves the current scan status
-func (c *GonicClient) GetScanStatus() (map[string]interface{}, error) {
+func (c *SubsonicClient) GetScanStatus() (map[string]interface{}, error) {
 	var resp struct {
 		SubsonicResponse struct {
 			Status     string `json:"status"`
@@ -71,8 +77,8 @@ func (c *GonicClient) GetScanStatus() (map[string]interface{}, error) {
 	}, nil
 }
 
-// GetLibraryStats retrieves library statistics from Gonic
-func (c *GonicClient) GetLibraryStats() (map[string]int, error) {
+// GetLibraryStats retrieves library statistics from the server
+func (c *SubsonicClient) GetLibraryStats() (map[string]int, error) {
 	var resp struct {
 		SubsonicResponse struct {
 			Artists struct {
@@ -105,8 +111,8 @@ func (c *GonicClient) GetLibraryStats() (map[string]int, error) {
 	}, nil
 }
 
-// GonicSong represents a track in Gonic
-type GonicSong struct {
+// SubsonicSong represents a track in a Subsonic-compatible server
+type SubsonicSong struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`
 	Artist string `json:"artist"`
@@ -115,7 +121,7 @@ type GonicSong struct {
 }
 
 // Search3 searches for tracks, albums or artists
-func (c *GonicClient) Search3(query string) ([]GonicSong, error) {
+func (c *SubsonicClient) Search3(query string) ([]SubsonicSong, error) {
 	params := url.Values{}
 	params.Add("query", query)
 	params.Add("songCount", "20")
@@ -124,7 +130,7 @@ func (c *GonicClient) Search3(query string) ([]GonicSong, error) {
 		SubsonicResponse struct {
 			Status        string `json:"status"`
 			SearchResult3 struct {
-				Song []GonicSong `json:"song"`
+				Song []SubsonicSong `json:"song"`
 			} `json:"searchResult3"`
 		} `json:"subsonic-response"`
 	}
@@ -138,14 +144,14 @@ func (c *GonicClient) Search3(query string) ([]GonicSong, error) {
 }
 
 // GetSong retrieves details for a specific song
-func (c *GonicClient) GetSong(id string) (*GonicSong, error) {
+func (c *SubsonicClient) GetSong(id string) (*SubsonicSong, error) {
 	params := url.Values{}
 	params.Add("id", id)
 
 	var resp struct {
 		SubsonicResponse struct {
-			Status string    `json:"status"`
-			Song   GonicSong `json:"song"`
+			Status string       `json:"status"`
+			Song   SubsonicSong `json:"song"`
 		} `json:"subsonic-response"`
 	}
 
@@ -161,7 +167,7 @@ func (c *GonicClient) GetSong(id string) (*GonicSong, error) {
 	return &resp.SubsonicResponse.Song, nil
 }
 
-func (c *GonicClient) doRequest(endpoint string, params url.Values, target interface{}) error {
+func (c *SubsonicClient) doRequest(endpoint string, params url.Values, target interface{}) error {
 	if params == nil {
 		params = url.Values{}
 	}
@@ -192,13 +198,14 @@ func (c *GonicClient) doRequest(endpoint string, params url.Values, target inter
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("gonic api error: %s", resp.Status)
+		return fmt.Errorf("subsonic api error: %s", resp.Status)
 	}
 
 	return json.NewDecoder(resp.Body).Decode(target)
 }
 
-func (c *GonicClient) HealthCheck() bool {
+// HealthCheck checks if the Subsonic-compatible server is accessible
+func (c *SubsonicClient) HealthCheck() bool {
 	var resp struct {
 		SubsonicResponse struct {
 			Status string `json:"status"`
