@@ -350,8 +350,9 @@ func RegisterWebhook(db *gorm.DB, url string) error {
 	return UpdateConfig(db, "agent_notification_webhook", url)
 }
 
-// SearchLibrary queries the local DB and Gonic for tracks matching the query
-func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, query string) ([]map[string]string, error) {
+// SearchLibrary queries the local DB and the configured Subsonic-compatible
+// library server (Gonic and/or Navidrome) for tracks matching the query.
+func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, navidrome *services.NavidromeClient, query string) ([]map[string]string, error) {
 	var results []map[string]string
 
 	// 1. Search local acquisitions
@@ -382,6 +383,22 @@ func SearchLibrary(db *gorm.DB, gonic *services.GonicClient, query string) ([]ma
 					"title":  t.Title,
 					"album":  t.Album,
 					"source": "gonic",
+					"id":     t.ID,
+				})
+			}
+		}
+	}
+
+	// 3. Search Navidrome
+	if navidrome != nil {
+		navidromeTracks, err := navidrome.Search3(query)
+		if err == nil {
+			for _, t := range navidromeTracks {
+				results = append(results, map[string]string{
+					"artist": t.Artist,
+					"title":  t.Title,
+					"album":  t.Album,
+					"source": "navidrome",
 					"id":     t.ID,
 				})
 			}
