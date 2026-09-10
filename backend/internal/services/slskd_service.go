@@ -524,27 +524,68 @@ func (s *SlskdService) EnqueueDownload(username, filename string, size int64) (s
 }
 
 // parseEnqueueFailure extracts a human-readable message from slskd's `failed`
-// field, which has shipped as either an array of strings or a map of
-// filename -> error message. Returns "" when there is no failure.
+// field. Observed live shapes: `["msg"]` (string array), `{"file":"msg"}`
+// (filename -> error map), and `[{}]` (per-file object with NO message — e.g.
+// a duplicate enqueue). Returns "" when there is no failure, and synthesizes a
+// generic message when a failure is present but slskd supplies no detail.
 func parseEnqueueFailure(raw json.RawMessage) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
 	}
+	const noDetail = "slskd rejected the file without detail (likely already queued or in library)"
+
+	collect := func(values []string) string {
+		for _, v := range values {
+			if v != "" {
+				return v
+			}
+		}
+		return noDetail
+	}
+
 	var asList []string
 	if err := json.Unmarshal(raw, &asList); err == nil {
 		if len(asList) > 0 {
-			return asList[0]
+			return collect(asList)
 		}
 		return ""
 	}
-	var asMap map[string]string
-	if err := json.Unmarshal(raw, &asMap); err == nil {
-		for _, msg := range asMap {
-			if msg != "" {
-				return msg
+	// []map[string]string: per-file error objects, possibly empty ({}). Keys
+	// are unordered, so prefer well-known error keys over map iteration —
+	// otherwise the filename value may beat the actual error message.
+	var asObjList []map[string]string
+	if err := json.Unmarshal(raw, &asObjList); err == nil {
+		if len(asObjList) == 0 {
+			return ""
+		}
+		for _, m := range asObjList {
+			for _, key := range []string{"error", "message", "reason", "detail"} {
+				if v := m[key]; v != "" {
+					return v
+				}
+			}
+			// Unknown single-value object: best-effort use of that value.
+			if len(m) == 1 {
+				for _, v := range m {
+					if v != "" {
+						return v
+					}
+				}
 			}
 		}
-		return ""
+		return noDetail
+	}
+	// map[string]string: filename -> error.
+	var asMap map[string]string
+	if err := json.Unmarshal(raw, &asMap); err == nil {
+		if len(asMap) == 0 {
+			return ""
+		}
+		values := make([]string, 0, len(asMap))
+		for _, v := range asMap {
+			values = append(values, v)
+		}
+		return collect(values)
 	}
 	// Unknown shape — surface the raw payload rather than swallow it.
 	return string(raw)

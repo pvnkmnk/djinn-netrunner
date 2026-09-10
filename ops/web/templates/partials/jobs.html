@@ -28,10 +28,10 @@
         <div class="job-meta">
             <span>{{ job.RequestedAt | date:"Jan 02 15:04" }}</span>
             <span>By: {{ job.CreatedBy | escape }}</span>
-            {% if job.Attempt > 0 and job.MaxAttempts > 0 %}
-            <span class="job-attempt">Attempt: {{ job.Attempt }}/{{ job.MaxAttempts }}</span>
-            {% endif %}
         </div>
+        {% if job.Summary %}
+        <div class="job-summary">{{ job.Summary | escape }}</div>
+        {% endif %}
         {% if job.State == "failed" and job.ErrorDetail %}
         <div class="job-error-detail" title="{{ job.ErrorDetail | escape }}">
             {{ job.ErrorDetail | escape }}

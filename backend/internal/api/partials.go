@@ -103,7 +103,9 @@ func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
 
 	var jobs []database.Job
 	// Bolt Optimization: Select only necessary columns to reduce memory allocation and database I/O.
-	query := h.db.Select("id, job_type, state, requested_at, created_by, error_detail, attempt, max_attempts").Order("requested_at DESC").Limit(50)
+	// summary carries the human-readable outcome ("Acquired 21/25 items…") and
+	// live progress ("Waiting for retry: …") for acquisition jobs.
+	query := h.db.Select("id, job_type, state, requested_at, created_by, error_detail, summary").Order("requested_at DESC").Limit(50)
 
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
