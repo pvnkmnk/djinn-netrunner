@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 
 type AudioMetadata struct {
 	Artist      string
+	AlbumArtist string
 	Album       string
 	Title       string
 	TrackNumber int
@@ -77,8 +79,16 @@ func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error
 	}
 }
 
-// embedGeneric uses audiometa to embed cover art into M4A/OGG files
-func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) error {
+// embedGeneric uses audiometa to embed cover art into M4A/OGG files.
+// Same audiometa covr panic risk as NormalizeAlbumTags — guard it too.
+func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("audiometa panicked while embedding cover art; skipping embed",
+				"path", filePath, "panic", r)
+			err = nil
+		}
+	}()
 	t, err := audiometa.OpenTag(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file for tagging: %w", err)
@@ -92,6 +102,53 @@ func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) error 
 		return fmt.Errorf("failed to save tags: %w", err)
 	}
 	return nil
+}
+
+// NormalizeAlbumTags stamps a canonical ALBUMARTIST onto a downloaded file so
+// media servers group a multi-credit album under one artist instead of
+// fragmenting it per-track (observed live: "Every Time I Die & Daryl Palumbo"
+// folders splitting one album three ways). The monitored artist is the
+// canonical album artist because acquisition items are keyed on it. When the
+// file already carries an ALBUMARTIST tag it is left untouched.
+// Best-effort: tagging errors are logged, never fail the import.
+func (e *MetadataExtractor) NormalizeAlbumTags(filePath, albumArtist string) (err error) {
+	if albumArtist == "" {
+		return nil
+	}
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".m4a", ".ogg":
+		// audiometa's MP4 picture() does an unchecked type assertion on the
+		// covr atom; real-world files (e.g. HEIC/WebP covers, or covers whose
+		// image data fails to decode) leave the covr value nil and the lib
+		// panics. A stamp is cosmetic — convert any panic into an error and
+		// let the caller's best-effort WARN handle it.
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Warn("audiometa panicked while stamping albumartist; skipping stamp",
+					"path", filePath, "panic", r)
+				err = nil
+			}
+		}()
+		t, err := audiometa.OpenTag(filePath)
+		if err != nil {
+			return fmt.Errorf("open for albumartist stamp: %w", err)
+		}
+		if cur := t.AlbumArtist(); cur != "" {
+			return nil
+		}
+		t.SetAlbumArtist(albumArtist)
+		if err := t.Save(); err != nil {
+			return fmt.Errorf("save albumartist stamp: %w", err)
+		}
+		return nil
+	default:
+		// MP3/FLAC: the underlying libs here do not expose ALBUMARTIST
+		// writing cleanly; the canonical folder layout below still groups
+		// the album for media servers.
+		slog.Debug("albumartist stamp not supported for format", "ext", ext)
+		return nil
+	}
 }
 
 func (e *MetadataExtractor) embedMP3(filePath string, artData []byte) error {
@@ -153,10 +210,11 @@ func (e *MetadataExtractor) Extract(path string) (*AudioMetadata, error) {
 	}
 
 	metadata := &AudioMetadata{
-		Artist: m.Artist(),
-		Album:  m.Album(),
-		Title:  m.Title(),
-		Format: string(m.FileType()),
+		Artist:      m.Artist(),
+		AlbumArtist: m.AlbumArtist(),
+		Album:       m.Album(),
+		Title:       m.Title(),
+		Format:      string(m.FileType()),
 	}
 
 	track, _ := m.Track()
@@ -210,8 +268,16 @@ func (e *MetadataExtractor) SanitizeFilename(text string) string {
 	return strings.TrimSpace(text)
 }
 
+// GenerateLibraryPath builds the library path for an imported file. When
+// metadata carries an AlbumArtist (canonical grouping artist) it is used for
+// the folder so multi-credit tracks ("X & Y", guest features) all land in one
+// album folder instead of fragmenting the album per track credit.
 func (e *MetadataExtractor) GenerateLibraryPath(metadata *AudioMetadata, libraryRoot string) string {
-	artist := e.SanitizeFilename(metadata.Artist)
+	artist := metadata.AlbumArtist
+	if artist == "" {
+		artist = metadata.Artist
+	}
+	artist = e.SanitizeFilename(artist)
 	album := e.SanitizeFilename(metadata.Album)
 	if album == "" {
 		album = "Unknown Album"
