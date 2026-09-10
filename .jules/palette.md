@@ -17,3 +17,7 @@
 ## 2026-07-23 - [Accessibility: Interactive Media Player Sync & Seek]
 **Learning:** In interactive media player elements, toggling text labels (e.g., from 'Play' to 'Pause') visually is not enough if the screen reader focuses on static `aria-label` tags. Both text labels and `aria-label` attributes must be synchronized dynamically. Additionally, elements with `role="slider"` (like progress seek bars) require dynamic `aria-valuenow` and `aria-valuetext` updates to be accessible, as well as a full range of standard keyboard bindings (ArrowUp/Down, Home/End, PageUp/Down) for robust keyboard navigation.
 **Action:** Always synchronize state text and ARIA attributes (such as `aria-label`, `aria-valuenow`, `aria-valuetext`) during real-time state changes and implement ARIA-compliant key handlers for slider/seek components.
+
+## 2026-08-14 - [Accessibility: HTMX Modal Dialog Roles]
+**Learning:** HTMX modal templates injected dynamically into a shared container must declare `role="dialog"`, `aria-modal="true"`, and `aria-labelledby="modal-title"` directly on the modal card component. Without these ARIA attributes in the partial template markup, screen readers treat the newly swapped DOM subtree as generic content instead of an accessible modal dialog, failing to announce its presence and title upon focus movement.
+**Action:** Always include `role="dialog"`, `aria-modal="true"`, and `aria-labelledby="modal-title"` on modal card templates served via HTMX partials.

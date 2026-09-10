@@ -1,7 +1,7 @@
 <div class="modal-overlay" data-close-modal>
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-header">
-            <h3>{% if IsNew %}Add{% else %}Edit{% endif %} Profile</h3>
+            <h3 id="modal-title">{% if IsNew %}Add{% else %}Edit{% endif %} Profile</h3>
             <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
         <form hx-post="/api/profiles" hx-target="#profiles-list" hx-swap="outerHTML">
