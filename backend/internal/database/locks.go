@@ -88,6 +88,10 @@ func sqlDB(db *gorm.DB) (*sql.DB, error) {
 }
 
 func (m *PostgresLockManager) AcquireTryLock(ctx context.Context, key int64) (bool, error) {
+	// Callers historically pass nil contexts; database/sql dereferences ctx.
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	pool, err := sqlDB(m.db)
 	if err != nil {
 		return false, fmt.Errorf("failed to acquire advisory lock: %w", err)
@@ -115,6 +119,9 @@ func (m *PostgresLockManager) AcquireTryLock(ctx context.Context, key int64) (bo
 }
 
 func (m *PostgresLockManager) ReleaseLock(ctx context.Context, key int64) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	m.mu.Lock()
 	conn, ok := m.held(key)
 	if ok {
