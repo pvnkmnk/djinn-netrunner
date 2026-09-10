@@ -113,7 +113,7 @@ See `.env.example` for the full list. Below are the non-obvious or conditionally
 
 ## E2E Testing (Playwright)
 
-E2E tests use Playwright against the full Docker Compose stack (Postgres, slskd, gonic, caddy, web, worker).
+E2E tests use Playwright against the full Docker Compose stack (Postgres, slskd, caddy, web, worker).
 
 **Key files:**
 - `e2e/playwright.config.ts` — Playwright config with Docker webServer
