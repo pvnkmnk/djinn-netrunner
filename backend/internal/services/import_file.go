@@ -142,6 +142,46 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		}
 	}
 
+	// The monitored artist (item.Artist) is the canonical album artist. Resolve
+	// it BEFORE the album-level dedup check so the dedup key uses the canonical
+	// album artist rather than per-track credits — cross-credit tracks of one
+	// album then share a single key and all land in one folder.
+	if metadata.AlbumArtist == "" && item.Artist != "" {
+		metadata.AlbumArtist = item.Artist
+	}
+
+	// 3.6 Album-level dedup: acquisitions are keyed on the monitored artist,
+	// but one album download imports many tracks — re-running a release (or a
+	// re-enqueued backlog item) must not re-import the whole album. If another
+	// acquisition already imported this artist+album, treat this file as a
+	// duplicate unless it is the exact file hash we just checked. The key is
+	// the canonical (album) artist, so per-track credit variants dedup too.
+	albumArtist := metadata.AlbumArtist
+	if albumArtist == "" {
+		albumArtist = metadata.Artist
+	}
+	if albumArtist != "" && metadata.Album != "" {
+		var existing database.Acquisition
+		err := h.db.Where("artist = ? AND album = ? AND (file_hash = '' OR file_hash IS NULL OR file_hash != ?)",
+			albumArtist, metadata.Album, hash).First(&existing).Error
+		if err == nil {
+			metrics.AcquisitionDedupTotal.WithLabelValues("artist_album").Inc()
+			h.Log(jobID, "OK", fmt.Sprintf("Album already acquired (existing acquisition #%d at %s). Skipping track.",
+				existing.ID, existing.FinalPath), &itemID)
+			h.db.Model(&item).Updates(map[string]interface{}{
+				"status":      "completed (duplicate album)",
+				"finished_at": time.Now(),
+				"final_path":  existing.FinalPath,
+			})
+			// The staged file is now redundant — remove it so staging does not
+			// grow unbounded. Best-effort.
+			if rmErr := os.Remove(downloadPath); rmErr != nil {
+				h.Log(jobID, "WARN", fmt.Sprintf("Staging cleanup failed (duplicate album): %v", rmErr), &itemID)
+			}
+			return nil
+		}
+	}
+
 	// Determine library path
 	libraryRoot := h.cfg.MusicLibraryPath
 	if libraryRoot == "" {
@@ -167,6 +207,15 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	}
 	if cleanupErr != nil {
 		h.Log(jobID, "WARN", fmt.Sprintf("Staging cleanup failed (file imported OK): %v", cleanupErr), &itemID)
+	} else {
+		// The move succeeded; sweep empty album directories the download left
+		// behind so staging does not accumulate skeletons.
+		h.cleanupEmptyStagingDirs(filepath.Dir(downloadPath), jobID, &itemID)
+	}
+
+	// Stamp the canonical album artist so library grouping is stable.
+	if err := h.ext.NormalizeAlbumTags(finalPath, metadata.AlbumArtist); err != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Album-artist stamp failed: %v", err), &itemID)
 	}
 
 	// Attempt to fetch and embed cover art with fallback chain
@@ -284,6 +333,42 @@ func (h *AcquisitionHandler) moveFile(src, dst string) (cleanupErr error, copyEr
 	out.Close()
 	in.Close()
 	return os.Remove(src), nil
+}
+
+// cleanupEmptyStagingDirs removes now-empty directories from dir up to (but
+// not including) stagingRoot. Whole-album downloads leave behind empty album
+// and artist folders after their files are imported; without this sweep the
+// staging volume grows unbounded skeletons. Best-effort, depth-capped.
+func (h *AcquisitionHandler) cleanupEmptyStagingDirs(dir string, jobID uint64, itemID *uint64) {
+	stagingRoot := "./downloads"
+	if h.cfg != nil && h.cfg.DownloadStagingPath != "" {
+		stagingRoot = h.cfg.DownloadStagingPath
+	}
+	stagingRoot, err := filepath.Abs(filepath.Clean(stagingRoot))
+	if err != nil {
+		return
+	}
+	dir = filepath.Clean(dir)
+	// Never climb above the staging root, and only touch directories that
+	// are genuinely inside it (a real path-relationship check — not a string
+	// prefix, which would match sibling dirs like "./downloads-backup").
+	for i := 0; i < 4; i++ {
+		rel, relErr := filepath.Rel(stagingRoot, dir)
+		if relErr != nil || rel == "." || strings.HasPrefix(rel, "..") {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			return
+		}
+		if err := os.Remove(dir); err != nil {
+			return
+		}
+		if h.db != nil {
+			h.Log(jobID, "DEBUG", fmt.Sprintf("Removed empty staging dir: %s", dir), itemID)
+		}
+		dir = filepath.Dir(dir)
+	}
 }
 
 // noResultsItem records a terminal "nothing was found" outcome for an item.
