@@ -1114,3 +1114,62 @@ func TestProcessAcquisitionItem_FinalizesWhenAllTerminal(t *testing.T) {
 	_, active := w.activeJobs[job.ID]
 	require.False(t, active, "finished job must leave activeJobs")
 }
+
+// TestHealStaleItems_CoversDownloading verifies that items orphaned by a dead
+// worker in 'downloading' (not just 'running') are healed back to queued, so a
+// job with a mid-transfer crash cannot wedge forever or finalize dishonestly.
+func TestHealStaleItems_CoversDownloading(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	job := database.Job{Type: "acquisition", State: "running", ScopeType: "artist", ScopeID: "heal-scope"}
+	require.NoError(t, w.db.Create(&job).Error)
+
+	staleCutoff := time.Now().Add(-20 * time.Minute)
+	staleDl := database.JobItem{JobID: job.ID, Status: "downloading", NormalizedQuery: "a", Sequence: 1, StartedAt: &staleCutoff}
+	freshDl := database.JobItem{JobID: job.ID, Status: "downloading", NormalizedQuery: "b", Sequence: 2, StartedAt: &nowVal}
+	staleRun := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "c", Sequence: 3, StartedAt: &staleCutoff}
+	imported := database.JobItem{JobID: job.ID, Status: "imported", NormalizedQuery: "d", Sequence: 4}
+	for _, it := range []*database.JobItem{&staleDl, &freshDl, &staleRun, &imported} {
+		require.NoError(t, w.db.Create(it).Error)
+	}
+
+	healed := w.healStaleRunningItems(job.ID, 15*time.Minute)
+	require.EqualValues(t, 2, healed, "stale downloading + stale running items must heal")
+
+	var fresh database.JobItem
+	require.NoError(t, w.db.Where("id = ?", freshDl.ID).First(&fresh).Error)
+	require.Equal(t, "downloading", fresh.Status, "fresh in-flight item must be untouched")
+
+	var done database.JobItem
+	require.NoError(t, w.db.Where("id = ?", imported.ID).First(&done).Error)
+	require.Equal(t, "imported", done.Status, "terminal items must be untouched")
+}
+
+// TestProcessAcquisitionItem_WaitsForFreshDownloadingItem verifies the
+// finalize guard: a job must not finalize while another worker holds an item
+// in 'downloading' with a fresh start.
+func TestProcessAcquisitionItem_WaitsForFreshDownloadingItem(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	job := database.Job{Type: "acquisition", State: "running", ScopeType: "artist", ScopeID: "dl-scope"}
+	require.NoError(t, w.db.Create(&job).Error)
+
+	freshStart := time.Now().Add(-2 * time.Minute)
+	dl := database.JobItem{JobID: job.ID, Status: "downloading", NormalizedQuery: "a", Sequence: 1, StartedAt: &freshStart}
+	require.NoError(t, w.db.Create(&dl).Error)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	jc := &jobContext{job: job, ctx: ctx, cancel: cancel, lockKey: 0}
+	w.jobMutex.Lock()
+	w.activeJobs[job.ID] = jc
+	w.jobMutex.Unlock()
+
+	w.processAcquisitionItem(jc)
+
+	var dbJob database.Job
+	require.NoError(t, w.db.First(&dbJob, job.ID).Error)
+	require.Equal(t, "running", dbJob.State, "job with a fresh downloading item must not finalize")
+	_, active := w.activeJobs[job.ID]
+	require.True(t, active, "job must remain active with a wake-up scheduled")
+}
