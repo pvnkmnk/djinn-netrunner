@@ -1362,31 +1362,68 @@ func (h *SubsonicHandler) GetPlaylists(c *fiber.Ctx) error {
 		return h.respondError(c, 0, "Failed to fetch playlists")
 	}
 
-	// For each playlist, count tracks
 	var result []subsonicPlaylist
-	for _, p := range playlists {
-		var count int64
-		h.db.Model(&database.PlaylistTrack{}).Where("playlist_id = ?", p.ID).Count(&count)
-
-		// Get owner name
-		var ownerName string
-		if p.OwnerUserID != nil {
-			var owner database.User
-			h.db.First(&owner, *p.OwnerUserID)
-			ownerName = owner.Email
+	if len(playlists) > 0 {
+		// Bolt Optimization: Batch fetch track counts and owner emails to eliminate 2N+1 queries.
+		// Reduces database roundtrips from 2N + 1 down to at most 3.
+		playlistIDs := make([]uuid.UUID, len(playlists))
+		ownerIDsMap := make(map[uint64]bool)
+		for i, p := range playlists {
+			playlistIDs[i] = p.ID
+			if p.OwnerUserID != nil {
+				ownerIDsMap[*p.OwnerUserID] = true
+			}
 		}
 
-		result = append(result, subsonicPlaylist{
-			ID:        p.ID.String(),
-			Name:      p.Name,
-			Comment:   p.Description,
-			Owner:     ownerName,
-			Public:    p.Public,
-			SongCount: int(count),
-			Duration:  0, // Track has no duration field
-			Created:   p.CreatedAt.Format(time.RFC3339),
-			Changed:   p.UpdatedAt.Format(time.RFC3339),
-		})
+		// 1. Bulk query track counts grouped by playlist_id
+		type playlistTrackCount struct {
+			PlaylistID uuid.UUID
+			Count      int
+		}
+		var counts []playlistTrackCount
+		h.db.Model(&database.PlaylistTrack{}).
+			Select("playlist_id, COUNT(*) as count").
+			Where("playlist_id IN ?", playlistIDs).
+			Group("playlist_id").
+			Scan(&counts)
+
+		countsMap := make(map[uuid.UUID]int, len(counts))
+		for _, c := range counts {
+			countsMap[c.PlaylistID] = c.Count
+		}
+
+		// 2. Bulk query owner emails
+		ownerMap := make(map[uint64]string)
+		if len(ownerIDsMap) > 0 {
+			ownerIDs := make([]uint64, 0, len(ownerIDsMap))
+			for id := range ownerIDsMap {
+				ownerIDs = append(ownerIDs, id)
+			}
+			var owners []database.User
+			h.db.Select("id, email").Where("id IN ?", ownerIDs).Find(&owners)
+			for _, owner := range owners {
+				ownerMap[owner.ID] = owner.Email
+			}
+		}
+
+		for _, p := range playlists {
+			var ownerName string
+			if p.OwnerUserID != nil {
+				ownerName = ownerMap[*p.OwnerUserID]
+			}
+
+			result = append(result, subsonicPlaylist{
+				ID:        p.ID.String(),
+				Name:      p.Name,
+				Comment:   p.Description,
+				Owner:     ownerName,
+				Public:    p.Public,
+				SongCount: countsMap[p.ID],
+				Duration:  0, // Track has no duration field
+				Created:   p.CreatedAt.Format(time.RFC3339),
+				Changed:   p.UpdatedAt.Format(time.RFC3339),
+			})
+		}
 	}
 
 	return h.respond(c, &subsonicResponse{
