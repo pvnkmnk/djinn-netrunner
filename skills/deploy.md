@@ -18,7 +18,7 @@ Build, package, deploy, and verify NetRunner using the Docker Compose stack.
 
 ## Core Concepts
 - `backend/Dockerfile` builds `netrunner-server` and `netrunner-worker` binaries.
-- Compose stack includes `postgres`, `slskd`, `gonic`, `caddy`, and `netrunner`.
+- Compose stack includes `postgres`, `slskd`, `caddy`, and `netrunner`.
 - Caddy handles TLS termination and reverse proxy routing.
 
 ## Step-by-Step Procedures
@@ -40,7 +40,7 @@ curl http://localhost:8080/api/health
 docker compose logs -f netrunner
 ```
 5. Validate external paths:
-   - `/music/*` and `/rest/*` should reverse proxy to gonic via Caddy.
+   - A Subsonic-compatible music server (e.g. Navidrome) is optional; if enabled, expose it via `NAVIDROME_URL` on `ops-web`/`ops-worker`.
 
 ## Code Patterns
 Compose env interpolation example:

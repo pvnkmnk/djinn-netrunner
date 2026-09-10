@@ -32,14 +32,13 @@ Back up these named volumes for a complete restore:
 | `netrunner-music` | Imported music library | High |
 | `netrunner-downloads` | Staging area for in-progress downloads | Low (transient) |
 | `netrunner-slskd-data` | slskd config and state | Medium |
-| `netrunner-gonic-data` | Gonic database and index | Medium (rebuildable via scan) |
 
 ```bash
 # Stop services before volume backup for consistency
 docker compose stop
 
 # Backup volumes (adjust paths as needed)
-for vol in netrunner-postgres-data netrunner-music netrunner-slskd-data netrunner-gonic-data; do
+for vol in netrunner-postgres-data netrunner-music netrunner-slskd-data; do
   docker run --rm -v ${vol}:/data -v /backups:/backup alpine \
     tar czf /backup/${vol}_$(date +%Y%m%d).tar.gz -C /data .
 done

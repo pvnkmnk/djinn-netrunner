@@ -27,7 +27,7 @@ docker compose up -d --build
 | `ops-web` (API/UI) | ~10-30s during container rebuild |
 | `ops-worker` (background jobs) | ~10-30s; in-progress jobs will be marked as zombies and cleaned up automatically |
 | `postgres` | Zero (persistent volume, not rebuilt) |
-| `slskd` / `gonic` | Zero (not rebuilt unless image updated) |
+| `slskd` | Zero (not rebuilt unless image updated) |
 
 ## Rollback
 

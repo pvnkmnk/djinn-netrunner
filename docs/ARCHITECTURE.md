@@ -8,7 +8,6 @@ This document defines the runtime contracts and invariants for NETRUNNER, especi
 - **ops-web (Go/Fiber)**: Management API + server-rendered templates + HTMX UI; WebSockets for console streaming (fanout filtered by job_id subscription, Phase 8).
 - **ops-worker (Go)**: Background job orchestrator with native goroutine concurrency, heartbeats, and reaper.
 - **slskd**: Acquisition daemon with bounded download slots.
-- **gonic**: Streaming server (Subsonic-compatible).
 
 ## Core Services (Go)
 The worker orchestrates multiple specialized services:
