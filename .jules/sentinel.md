@@ -44,3 +44,8 @@
 **Vulnerability:** Subsonic API's `GetCoverArt` fetched track cover URLs directly using Go's `http.Get()`. This bypassed the centralized Server-Side Request Forgery (SSRF) protections in the `services` package, exposing internal and loopback IP addresses to unauthorized outbound queries.
 **Learning:** Naive use of standard library HTTP clients inside API endpoints can lead to isolated SSRF vectors, even when external data providers have been secured.
 **Prevention:** Always route user-supplied or external URLs through the centralized `services.SafeGet()` helper to ensure consistent SSRF protection.
+
+## 2026-09-10 - [Unauthorized Quality Profile Assignment (BOLA)]
+**Vulnerability:** Non-admin users could assign watchlists or monitored artists to another user's private quality profile by directly passing its ID in POST/PATCH request bodies.
+**Learning:** While GET endpoints and forms were filtered for BOLA, creation/update handlers accepted foreign key IDs (like `quality_profile_id`) without validating whether the user had permission to use the referenced profile.
+**Prevention:** When accepting foreign key IDs in write endpoints, always verify that non-admin users own the referenced resource or that it is public/default (`owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?`). Validate resource ownership before triggering external integrations like MusicBrainz search.

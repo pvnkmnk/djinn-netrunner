@@ -57,6 +57,33 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
 	}
 
+	// Get quality profile
+	var profileID uuid.UUID
+	if payload.QualityProfileID != "" {
+		var err error
+		profileID, err = uuid.Parse(payload.QualityProfileID)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid quality_profile_id"})
+		}
+		if user.Role != "admin" {
+			var count int64
+			h.db.Model(&database.QualityProfile{}).
+				Where("id = ? AND (owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?)", profileID, user.ID, true).
+				Count(&count)
+			if count == 0 {
+				return c.Status(403).JSON(fiber.Map{"error": "forbidden: unauthorized quality profile"})
+			}
+		}
+	} else {
+		// Get default profile
+		var profile database.QualityProfile
+		if err := h.db.Where("is_default = ?", true).First(&profile).Error; err == nil {
+			profileID = profile.ID
+		} else if err != gorm.ErrRecordNotFound {
+			slog.Error("Error fetching default profile", "error", err)
+		}
+	}
+
 	// Search MusicBrainz
 	results, err := h.mbService.SearchArtist(payload.Name)
 	if err != nil || len(results) == 0 {
@@ -70,24 +97,6 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	// Log ambiguous results for debugging
 	if len(results) > 1 {
 		slog.Warn("Ambiguous artist search", "query", payload.Name, "results", len(results), "selected", results[0].Name)
-	}
-
-	// Get quality profile
-	var profileID uuid.UUID
-	if payload.QualityProfileID != "" {
-		var err error
-		profileID, err = uuid.Parse(payload.QualityProfileID)
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid quality_profile_id"})
-		}
-	} else {
-		// Get default profile
-		var profile database.QualityProfile
-		if err := h.db.Where("is_default = ?", true).First(&profile).Error; err == nil {
-			profileID = profile.ID
-		} else if err != gorm.ErrRecordNotFound {
-			slog.Error("Error fetching default profile", "error", err)
-		}
 	}
 
 	// Create monitored artist with name and sort name

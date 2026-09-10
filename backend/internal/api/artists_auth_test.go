@@ -51,8 +51,16 @@ func TestArtistsAuthorization(t *testing.T) {
 		db.Delete(&database.User{}, "email LIKE ?", "%"+testID+"@%")
 	}()
 
+	// Setup private quality profile owned by User1
+	qpPrivateUser1 := database.QualityProfile{
+		Name:        "User1 Private Profile for Artists-" + testID,
+		OwnerUserID: &user1.ID,
+		IsDefault:   false,
+	}
+	db.Create(&qpPrivateUser1)
+
 	// Setup quality profile with unique name
-	qp := database.QualityProfile{Name: "Test Profile for Artists-" + testID}
+	qp := database.QualityProfile{Name: "Test Profile for Artists-" + testID, IsDefault: true}
 	db.Create(&qp)
 
 	// Setup monitored artist for user1
@@ -99,4 +107,16 @@ func TestArtistsAuthorization(t *testing.T) {
 
 	db.First(&checkArtist, "id = ?", artist1.ID)
 	assert.True(t, checkArtist.Monitored)
+
+	// 4. User2 tries to add an artist using User1's private quality profile - should be 403 Forbidden
+	addPayload := map[string]interface{}{
+		"name":               "Radiohead",
+		"quality_profile_id": qpPrivateUser1.ID.String(),
+	}
+	addBody, _ := json.Marshal(addPayload)
+	req = httptest.NewRequest("POST", "/api/artists", bytes.NewBuffer(addBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: sess2.SessionID})
+	resp, _ = app.Test(req)
+	assert.Equal(t, 403, resp.StatusCode, "User2 should NOT be allowed to add artist with User1's private quality profile")
 }
