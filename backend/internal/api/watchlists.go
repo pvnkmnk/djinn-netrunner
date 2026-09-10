@@ -64,6 +64,16 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
+	if input.QualityProfileID != uuid.Nil && user.Role != "admin" {
+		var count int64
+		h.db.Model(&database.QualityProfile{}).
+			Where("id = ? AND (owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?)", input.QualityProfileID, user.ID, true).
+			Count(&count)
+		if count == 0 {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden: unauthorized quality profile"})
+		}
+	}
+
 	watchlist, err := h.service.CreateWatchlist(input.Name, input.SourceType, input.SourceURI, input.QualityProfileID, &user.ID)
 	if err != nil {
 		slog.Error("Failed to create watchlist", "error", err)
@@ -125,6 +135,15 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 		watchlist.SourceURI = *input.SourceURI
 	}
 	if input.QualityProfileID != nil {
+		if user.Role != "admin" {
+			var count int64
+			h.db.Model(&database.QualityProfile{}).
+				Where("id = ? AND (owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?)", *input.QualityProfileID, user.ID, true).
+				Count(&count)
+			if count == 0 {
+				return c.Status(403).JSON(fiber.Map{"error": "forbidden: unauthorized quality profile"})
+			}
+		}
 		watchlist.QualityProfileID = *input.QualityProfileID
 	}
 	if input.Enabled != nil {
@@ -185,7 +204,7 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 	// Bolt Optimization: Select only necessary columns for the dropdown.
 	query := h.db.Select("id, name").Order("name")
 	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
+		query = query.Where("owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?", user.ID, true)
 	}
 	if err := query.Find(&profiles).Error; err != nil {
 		return internalServerError(c, err)
@@ -258,7 +277,7 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 	var profiles []database.QualityProfile
 	query := h.db.Order("name")
 	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
+		query = query.Where("owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?", user.ID, true)
 	}
 	if err := query.Find(&profiles).Error; err != nil {
 		slog.Error("Error fetching profiles for watchlist form", "error", err)
