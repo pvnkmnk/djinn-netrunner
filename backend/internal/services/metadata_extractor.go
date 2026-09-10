@@ -1,9 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif" // register decoders for cover-art round-tripping
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log/slog"
 	"os"
@@ -13,7 +18,7 @@ import (
 
 	"github.com/bogem/id3v2/v2"
 	"github.com/dhowden/tag"
-	"github.com/gcottom/audiometa"
+	"github.com/gcottom/audiometa/v3"
 	"github.com/go-flac/flacpicture/v2"
 	"github.com/go-flac/go-flac/v2"
 )
@@ -79,8 +84,12 @@ func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error
 	}
 }
 
-// embedGeneric uses audiometa to embed cover art into M4A/OGG files.
-// Same audiometa covr panic risk as NormalizeAlbumTags — guard it too.
+// embedGeneric uses audiometa v3 to embed cover art into M4A/OGG files.
+//
+// Upstream note: audiometa v1.3.1 panicked on malformed/undecodable MP4 covr
+// atoms (unchecked covr.(*image.Image) assertion); v3 returns errors instead.
+// The recover() guard is kept as a backstop for any other latent panic in the
+// tagging stack — it should never fire with v3.
 func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -89,17 +98,46 @@ func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) (err e
 			err = nil
 		}
 	}()
-	t, err := audiometa.OpenTag(filePath)
+
+	// v3's Tag model carries decoded images: decode the art bytes first.
+	img, _, err := image.Decode(bytes.NewReader(artData))
+	if err != nil {
+		return fmt.Errorf("cover art is not a decodable image: %w", err)
+	}
+
+	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file for tagging: %w", err)
 	}
-
-	if err := t.SetAlbumArtFromByteArray(artData); err != nil {
-		return fmt.Errorf("failed to set album art: %w", err)
+	t, err := audiometa.OpenTag(f)
+	if err != nil {
+		f.Close()
+		return fmt.Errorf("failed to open tags: %w", err)
 	}
+	t.SetCoverArt(&img)
 
-	if err := t.Save(); err != nil {
-		return fmt.Errorf("failed to save tags: %w", err)
+	// v3 Save() writes to an io.Writer; M4A atoms must be rewritten from the
+	// start of the file, so save to a sibling and swap atomically.
+	tmpPath := filePath + ".tagtmp"
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		f.Close()
+		return fmt.Errorf("failed to create temp file for tagging: %w", err)
+	}
+	saveErr := t.Save(out)
+	closeErr := out.Close()
+	f.Close()
+	if saveErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to save tags: %w", saveErr)
+	}
+	if closeErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to write tagged file: %w", closeErr)
+	}
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to replace file with tagged copy: %w", err)
 	}
 	return nil
 }
@@ -111,6 +149,9 @@ func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) (err e
 // canonical album artist because acquisition items are keyed on it. When the
 // file already carries an ALBUMARTIST tag it is left untouched.
 // Best-effort: tagging errors are logged, never fail the import.
+//
+// Upstream note: audiometa v1.3.1 panicked on malformed/undecodable MP4 covr
+// atoms; v3 returns errors instead. The recover() guard is kept as a backstop.
 func (e *MetadataExtractor) NormalizeAlbumTags(filePath, albumArtist string) (err error) {
 	if albumArtist == "" {
 		return nil
@@ -118,11 +159,9 @@ func (e *MetadataExtractor) NormalizeAlbumTags(filePath, albumArtist string) (er
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".m4a", ".ogg":
-		// audiometa's MP4 picture() does an unchecked type assertion on the
-		// covr atom; real-world files (e.g. HEIC/WebP covers, or covers whose
-		// image data fails to decode) leave the covr value nil and the lib
-		// panics. A stamp is cosmetic — convert any panic into an error and
-		// let the caller's best-effort WARN handle it.
+		// A stamp is cosmetic — convert any panic into a clean skip and let
+		// the caller's best-effort WARN handle it. (Backstop only; v3 returns
+		// errors instead of panicking on malformed covr atoms.)
 		defer func() {
 			if r := recover(); r != nil {
 				slog.Warn("audiometa panicked while stamping albumartist; skipping stamp",
@@ -130,16 +169,43 @@ func (e *MetadataExtractor) NormalizeAlbumTags(filePath, albumArtist string) (er
 				err = nil
 			}
 		}()
-		t, err := audiometa.OpenTag(filePath)
+		f, err := os.Open(filePath)
 		if err != nil {
 			return fmt.Errorf("open for albumartist stamp: %w", err)
 		}
-		if cur := t.AlbumArtist(); cur != "" {
+		t, err := audiometa.OpenTag(f)
+		if err != nil {
+			f.Close()
+			return fmt.Errorf("open for albumartist stamp: %w", err)
+		}
+		if cur := t.GetAlbumArtist(); cur != "" {
+			f.Close()
 			return nil
 		}
 		t.SetAlbumArtist(albumArtist)
-		if err := t.Save(); err != nil {
-			return fmt.Errorf("save albumartist stamp: %w", err)
+
+		// v3 Save() writes to an io.Writer; M4A atoms must be rewritten from
+		// the start of the file, so save to a sibling and swap atomically.
+		tmpPath := filePath + ".tagtmp"
+		out, err := os.Create(tmpPath)
+		if err != nil {
+			f.Close()
+			return fmt.Errorf("create temp for albumartist stamp: %w", err)
+		}
+		saveErr := t.Save(out)
+		closeErr := out.Close()
+		f.Close()
+		if saveErr != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("save albumartist stamp: %w", saveErr)
+		}
+		if closeErr != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("write albumartist stamp: %w", closeErr)
+		}
+		if err := os.Rename(tmpPath, filePath); err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("replace file with stamped copy: %w", err)
 		}
 		return nil
 	default:

@@ -119,10 +119,11 @@ func cfgWithStaging(t *testing.T, staging string) *config.Config {
 func TestNormalizeAlbumTags_PanicGuarded(t *testing.T) {
 	e := NewMetadataExtractor()
 
-	// A truncated/garbage .m4a exercises the audiometa MP4 parser without
-	// needing a real audio file. The lib has a known panic path in its covr
-	// handling (unchecked covr.(*image.Image) assertion); either way, our
-	// wrapper must convert any panic into a clean no-error skip.
+	// A truncated/garbage .m4a exercises the audiometa v3 MP4 parser without
+	// needing a real audio file. Upstream v1.3.1 had a panic path in its covr
+	// handling (unchecked covr.(*image.Image) assertion); v3 returns errors
+	// instead — this test pins that the wrapper stays panic-free and that the
+	// recover() backstop would convert any latent panic into a clean skip.
 	path := filepath.Join(t.TempDir(), "track.m4a")
 	require.NoError(t, os.WriteFile(path, []byte("garbage not an m4a"), 0o644))
 
