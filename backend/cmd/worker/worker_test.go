@@ -179,9 +179,11 @@ func TestFinishJob_Success(t *testing.T) {
 func TestFinishJob_Failure(t *testing.T) {
 	w := setupWorkerTestDB(t)
 
-	// Create a job in DB with state "running"
+	// Create a job in DB with state "running". Type "sync" exercises the
+	// generic error path (acquisition jobs derive their state from item
+	// outcomes instead — see TestFinishJob_AcquisitionHonestReporting).
 	job := database.Job{
-		Type:        "acquisition",
+		Type:        "sync",
 		State:       "running",
 		RequestedAt: time.Now(),
 	}
@@ -246,13 +248,18 @@ func TestFinishJob_NotInActiveJobs(t *testing.T) {
 func TestFinishJob_AcquisitionTriggersLibraryScan(t *testing.T) {
 	w := setupWorkerTestDB(t)
 
-	// Create an acquisition job in DB with state "running"
+	// Create an acquisition job in DB with state "running", with one imported
+	// item so the honest finalization reports "succeeded" — only then is the
+	// library scan triggered (failed/partially-failed jobs skip it when
+	// nothing was imported).
 	job := database.Job{
 		Type:        "acquisition",
 		State:       "running",
 		RequestedAt: time.Now(),
 	}
 	require.NoError(t, w.db.Create(&job).Error)
+	imported := database.JobItem{JobID: job.ID, Status: "imported", NormalizedQuery: "a", Sequence: 1}
+	require.NoError(t, w.db.Create(&imported).Error)
 
 	// Add to activeJobs
 	ctx, cancel := context.WithCancel(context.Background())
@@ -743,11 +750,12 @@ func TestProcessAcquisitionItem_NoItems(t *testing.T) {
 	w.jobMutex.Unlock()
 
 	// Call processAcquisitionItem — since there are no items in job_items,
-	// ClaimNextItem returns itemID=0, so ProcessItem returns NoItems=true,
-	// which triggers finishJob with nil error.
+	// ClaimNextItem returns itemID=0, so ProcessItem returns NoItems=true.
+	// Honest finalization treats an item-less acquisition job as an anomaly
+	// and fails it (producers never create empty acquisition jobs).
 	w.processAcquisitionItem(w.activeJobs[job.ID])
 
-	// Job should be finished (removed from activeJobs) with "succeeded" state
+	// Job should be finished (removed from activeJobs) with "failed" state
 	w.jobMutex.Lock()
 	_, ok := w.activeJobs[job.ID]
 	w.jobMutex.Unlock()
@@ -755,7 +763,8 @@ func TestProcessAcquisitionItem_NoItems(t *testing.T) {
 
 	var dbJob database.Job
 	require.NoError(t, w.db.First(&dbJob, job.ID).Error)
-	require.Equal(t, "succeeded", dbJob.State)
+	require.Equal(t, "failed", dbJob.State)
+	require.Contains(t, dbJob.Summary, "No items queued")
 }
 
 // TestSchedulerLoop_CreatesSyncJobForDueSchedule tests that the scheduler
@@ -961,4 +970,147 @@ func TestSchedulerLoop_InitializesNullNextRunAt(t *testing.T) {
 	var updatedSchedule database.Schedule
 	require.NoError(t, w.db.First(&updatedSchedule, schedule.ID).Error)
 	require.NotNil(t, updatedSchedule.NextRunAt, "next_run_at should be initialized to non-NULL")
+}
+
+// nowVal is a shared timestamp for terminal-status fixtures.
+var nowVal = time.Now()
+
+// TestFinishJob_AcquisitionHonestReporting pins the honest finalization of
+// acquisition jobs: outcomes map to succeeded/partial/failed, and the summary
+// reflects actual per-item results instead of a generic "Completed".
+func TestFinishJob_AcquisitionHonestReporting(t *testing.T) {
+	tests := []struct {
+		name      string
+		items     []database.JobItem
+		wantState string
+		wantSub   string
+	}{
+		{
+			name: "all no-results reports failed, not succeeded",
+			items: []database.JobItem{
+				{Status: "failed (no results)", NormalizedQuery: "a", Sequence: 1, FinishedAt: &nowVal},
+				{Status: "failed (no results)", NormalizedQuery: "b", Sequence: 2, FinishedAt: &nowVal},
+			},
+			wantState: "failed",
+			wantSub:   "Acquired 0/2",
+		},
+		{
+			name: "one imported one no-results reports partial with 1/2",
+			items: []database.JobItem{
+				{Status: "imported", NormalizedQuery: "a", Sequence: 1},
+				{Status: "failed (no results)", NormalizedQuery: "b", Sequence: 2, FinishedAt: &nowVal},
+			},
+			wantState: "partial",
+			wantSub:   "Acquired 1/2",
+		},
+		{
+			name: "mixed real success reports partial",
+			items: []database.JobItem{
+				{Status: "imported", NormalizedQuery: "a", Sequence: 1},
+				{Status: "imported", NormalizedQuery: "b", Sequence: 2},
+				{Status: "abandoned", NormalizedQuery: "c", Sequence: 3, FinishedAt: &nowVal},
+			},
+			wantState: "partial",
+			wantSub:   "Acquired 2/3",
+		},
+		{
+			name: "all imported reports succeeded",
+			items: []database.JobItem{
+				{Status: "imported", NormalizedQuery: "a", Sequence: 1},
+				{Status: "completed (already indexed)", NormalizedQuery: "b", Sequence: 2},
+			},
+			wantState: "succeeded",
+			wantSub:   "Acquired 2/2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := setupWorkerTestDB(t)
+
+			job := database.Job{Type: "acquisition", State: "running", ScopeType: "artist", ScopeID: "test-scope"}
+			require.NoError(t, w.db.Create(&job).Error)
+
+			for i := range tt.items {
+				tt.items[i].JobID = job.ID
+				require.NoError(t, w.db.Create(&tt.items[i]).Error)
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w.jobMutex.Lock()
+			w.activeJobs[job.ID] = &jobContext{job: job, ctx: ctx, cancel: cancel, lockKey: 0}
+			w.jobMutex.Unlock()
+
+			w.finishJob(job.ID, nil)
+
+			var dbJob database.Job
+			require.NoError(t, w.db.First(&dbJob, job.ID).Error)
+			require.Equal(t, tt.wantState, dbJob.State, "honest final state mismatch")
+			require.Contains(t, dbJob.Summary, tt.wantSub, "summary must reflect item outcomes")
+		})
+	}
+}
+
+// TestProcessAcquisitionItem_WaitsForRetryBackoff pins the second bug: a job
+// whose items are all in retry backoff must NOT be finalized when nothing is
+// claimable — it schedules a wake-up instead.
+func TestProcessAcquisitionItem_WaitsForRetryBackoff(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	job := database.Job{Type: "acquisition", State: "running", ScopeType: "artist", ScopeID: "retry-scope"}
+	require.NoError(t, w.db.Create(&job).Error)
+
+	future := time.Now().Add(30 * time.Minute)
+	item := database.JobItem{JobID: job.ID, Status: "failed", NormalizedQuery: "a", Sequence: 1, NextAttemptAt: &future}
+	require.NoError(t, w.db.Create(&item).Error)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	jc := &jobContext{job: job, ctx: ctx, cancel: cancel, lockKey: 0}
+	w.jobMutex.Lock()
+	w.activeJobs[job.ID] = jc
+	w.jobMutex.Unlock()
+
+	w.processAcquisitionItem(jc)
+
+	// Job must still be running (not finalized) and a wake-up scheduled.
+	var dbJob database.Job
+	require.NoError(t, w.db.First(&dbJob, job.ID).Error)
+	require.Equal(t, "running", dbJob.State, "job with items in retry backoff must not finalize")
+
+	w.jobMutex.Lock()
+	stored := w.activeJobs[job.ID]
+	w.jobMutex.Unlock()
+	require.NotNil(t, stored, "job must remain active")
+	require.NotNil(t, stored.wakeAt, "wake-up must be scheduled for retry backoff")
+	// Note: not asserting the exact delay — SQLite's timestamp round-trip is
+	// timezone-naive in tests; the real Postgres path preserves exact instants.
+}
+
+// TestProcessAcquisitionItem_FinalizesWhenAllTerminal ensures jobs still finish
+// promptly when every item is terminal (the common case).
+func TestProcessAcquisitionItem_FinalizesWhenAllTerminal(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	job := database.Job{Type: "acquisition", State: "running", ScopeType: "artist", ScopeID: "terminal-scope"}
+	require.NoError(t, w.db.Create(&job).Error)
+
+	item := database.JobItem{JobID: job.ID, Status: "failed (no results)", NormalizedQuery: "a", Sequence: 1, FinishedAt: &nowVal}
+	require.NoError(t, w.db.Create(&item).Error)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	jc := &jobContext{job: job, ctx: ctx, cancel: cancel, lockKey: 0}
+	w.jobMutex.Lock()
+	w.activeJobs[job.ID] = jc
+	w.jobMutex.Unlock()
+
+	w.processAcquisitionItem(jc)
+
+	var dbJob database.Job
+	require.NoError(t, w.db.First(&dbJob, job.ID).Error)
+	require.Equal(t, "failed", dbJob.State, "all-no-results job must finalize as failed")
+	_, active := w.activeJobs[job.ID]
+	require.False(t, active, "finished job must leave activeJobs")
 }

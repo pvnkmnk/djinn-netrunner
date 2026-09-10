@@ -62,11 +62,20 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	// 2. Extract basic tags
 	metadata, err := h.ext.Extract(downloadPath)
 	if err != nil {
-		h.Log(jobID, "ERR", fmt.Sprintf("Metadata extraction failed: %v", err), &itemID)
+		h.Log(jobID, "WARN", fmt.Sprintf("Metadata extraction failed: %v", err), &itemID)
 		metadata = &AudioMetadata{
 			Artist: item.Artist,
 			Title:  item.TrackTitle,
 			Album:  item.Album,
+		}
+	}
+
+	// Preserve the container type when tag parsing failed or yielded no
+	// format: an extensionless import is invisible to the media server's
+	// scanner (Navidrome ignores files without recognized extensions).
+	if metadata.Format == "" {
+		if ext := strings.TrimPrefix(filepath.Ext(downloadPath), "."); ext != "" {
+			metadata.Format = ext
 		}
 	}
 
@@ -275,6 +284,20 @@ func (h *AcquisitionHandler) moveFile(src, dst string) (cleanupErr error, copyEr
 	out.Close()
 	in.Close()
 	return os.Remove(src), nil
+}
+
+// noResultsItem records a terminal "nothing was found" outcome for an item.
+// Unlike failItem, it does not schedule retries: a search that returned no
+// results is a definitive answer for this attempt cycle, and pretending it is
+// a transient failure would both spam the peer network with pointless
+// searches and (previously) leave items cycling instead of finalizing.
+func (h *AcquisitionHandler) noResultsItem(jobID uint64, itemID uint64, reason string) {
+	h.Log(jobID, "ERR", reason, &itemID)
+	h.db.Model(&database.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
+		"status":         "failed (no results)",
+		"failure_reason": reason,
+		"finished_at":    time.Now(),
+	})
 }
 
 func (h *AcquisitionHandler) failItem(jobID uint64, itemID uint64, reason string) {

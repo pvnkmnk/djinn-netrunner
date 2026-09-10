@@ -33,56 +33,6 @@ func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd SlskdClient, m
 	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, library: library, discogs: discogs, cache: cache, lyrics: lyrics, transcoder: transcoder, ytdlp: ytdlp}
 }
 
-func (h *AcquisitionHandler) Execute(ctx context.Context, jobID uint64, job database.Job) error {
-	h.Log(jobID, "INFO", "Monitoring acquisition progress", nil)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(5 * time.Second):
-			// Bolt Optimization: Consolidate three count queries into one to reduce polling overhead.
-			// Using COUNT(*) FILTER is supported by both PostgreSQL and modern SQLite.
-			var stats struct {
-				Total     int64
-				Completed int64
-				Failed    int64
-			}
-			h.db.Model(&database.JobItem{}).Where("job_id = ?", jobID).
-				Select("COUNT(*) as total, " +
-					"COUNT(*) FILTER (WHERE status LIKE 'completed%' OR status = 'imported') as completed, " +
-					"COUNT(*) FILTER (WHERE status = 'failed') as failed").
-				Scan(&stats)
-
-			total, completed, failed := stats.Total, stats.Completed, stats.Failed
-
-			summary := fmt.Sprintf("Progress: %d/%d (Success: %d, Failed: %d)", completed+failed, total, completed, failed)
-			h.db.Model(&database.Job{}).Where("id = ?", jobID).Update("summary", summary)
-
-			if completed+failed >= total {
-				h.Log(jobID, "OK", fmt.Sprintf("Acquisition finished. %s", summary), nil)
-
-				// Final State
-				finalState := "succeeded"
-				if failed == total {
-					finalState = "failed"
-				}
-				h.db.Model(&database.Job{}).Where("id = ?", jobID).Update("state", finalState)
-
-				// 2.3 Library Sync Hook (Subsonic-compatible library server)
-				if h.library != nil {
-					h.Log(jobID, "INFO", "Triggering library server scan...", nil)
-					if ok, err := h.library.TriggerScan(); err != nil || !ok {
-						h.Log(jobID, "WARN", fmt.Sprintf("Library scan trigger failed: %v", err), nil)
-					} else {
-						h.Log(jobID, "OK", "Library scan triggered", nil)
-					}
-				}
-				return nil
-			}
-		}
-	}
-}
 
 // acquisitionPipeline carries state between pipeline stages.
 type acquisitionPipeline struct {
@@ -94,16 +44,14 @@ type acquisitionPipeline struct {
 	best       SearchResult
 	download   string     // path after download completes
 	albumFiles []PeerFile // files found during album-mode browse
-}
-
-// ExecuteItem runs the acquisition pipeline for a single job item.
+}// ExecuteItem runs the acquisition pipeline for a single job item.
 // Stages are named and independently testable:
-//  1. loadItemContext  — load job, item, profile from DB
-//  2. checkGonicIndex  — skip if already in library
-//  3. searchSoulseek   — execute search with profile awareness
-//  4. selectBestResult — score and validate best match
-//  5. downloadFile     — queue and wait for download
-//  6. importAndEnrich  — import to library, enrich metadata
+//  1. loadItemContext     — load job, item, profile from DB
+//  2. checkLibraryIndex   — skip if already in library
+//  3. searchSoulseek      — execute search with profile awareness
+//  4. selectBestResult    — score and validate best match
+//  5. downloadFile        — queue and wait for download
+//  6. importAndEnrich     — import to library, enrich metadata
 func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, itemID uint64) error {
 	p := &acquisitionPipeline{ctx: ctx}
 
@@ -207,8 +155,16 @@ func (h *AcquisitionHandler) stageSearchSoulseek(p *acquisitionPipeline) (skip b
 	h.Log(p.item.JobID, "INFO", "Searching Soulseek...", &p.item.ID)
 
 	results, err := h.slskd.Search(p.item.NormalizedQuery, 30, p.profile)
-	if err != nil || len(results) == 0 {
-		h.failItem(p.item.JobID, p.item.ID, "No results found")
+	if err != nil {
+		// A transport failure is retryable — use the standard failure path.
+		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Soulseek search failed: %v", err))
+		return true, nil
+	}
+	if len(results) == 0 {
+		// Genuinely nothing found. Retrying in a few minutes will not conjure
+		// results, so record a terminal no-results outcome instead of cycling
+		// the item through the retry machinery.
+		h.noResultsItem(p.item.JobID, p.item.ID, "No results found")
 		return true, nil
 	}
 
@@ -263,6 +219,14 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 
 // stageSelectBestResult picks the top-scored result and validates it against the profile.
 func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip bool, err error) {
+	if len(p.results) == 0 {
+		// Defensive: the search stage classifies empty results itself, so this
+		// only triggers if stages are reordered. Guarding here keeps an index
+		// panic from killing the item without a terminal status.
+		h.noResultsItem(p.item.JobID, p.item.ID, "No results found")
+		return true, nil
+	}
+
 	p.best = p.results[0]
 
 	// Check if the best result matches the profile requirements

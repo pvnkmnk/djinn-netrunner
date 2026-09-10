@@ -310,10 +310,11 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		}
 	}
 
-	searchTimeout := timeout * 1000
-	if searchTimeout < 5000 {
-		searchTimeout = 15000
-	}
+	// Network-side search window. Soulseek's distributed tree answers most
+	// queries well within 15s; a shorter window also lets slskd reach its own
+	// terminal state early, so the poll below sees "Completed" with the full
+	// response set instead of racing the search's completion.
+	searchTimeout := 15000
 
 	u := fmt.Sprintf("%s/api/v0/searches", s.cfg.SlskdURL)
 	payload := map[string]interface{}{
@@ -344,25 +345,22 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		return nil, err
 	}
 
-	// Wait for search to gather results
-	waitSeconds := timeout
-	if waitSeconds < 5 {
-		waitSeconds = 15
-	}
-	time.Sleep(time.Duration(waitSeconds) * time.Second)
-
-	// Fetch results (includeResponses=true is required to get file data)
-	resultsURL := fmt.Sprintf("%s/api/v0/searches/%s?includeResponses=true", s.cfg.SlskdURL, startResult.ID)
-	req, _ = http.NewRequest("GET", resultsURL, nil)
-	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
-
-	resp, err = s.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	// Wait for the search to complete, polling its state. Two failure modes
+	// are guarded against here:
+	//
+	//  1. Leaving at exactly the network search timeout — slskd finalizes the
+	//     search at its own timeout, and on a distributed network the bulk of
+	//     responses arrive in that final stretch; leaving on the same tick
+	//     turns a healthy search into a false "no results".
+	//  2. Polling forever when slskd never reports a terminal state.
+	//
+	// The deadline therefore extends a 45s grace past the network window, and
+	// the loop exits early on slskd's own terminal state.
+	waitSeconds := timeout + 45
+	deadline := time.Now().Add(time.Duration(waitSeconds) * time.Second)
 
 	var resultsData struct {
+		State     string `json:"state"`
 		Responses []struct {
 			Username    string `json:"username"`
 			UploadSpeed int    `json:"uploadSpeed"`
@@ -377,9 +375,34 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		} `json:"responses"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&resultsData); err != nil {
-		return nil, err
+	resultsURL := fmt.Sprintf("%s/api/v0/searches/%s?includeResponses=true", s.cfg.SlskdURL, startResult.ID)
+	for {
+		time.Sleep(3 * time.Second)
+
+		req, _ = http.NewRequest("GET", resultsURL, nil)
+		req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
+
+		resp, err = s.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		decodeErr := json.NewDecoder(resp.Body).Decode(&resultsData)
+		resp.Body.Close()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+
+		// Done when slskd reports a terminal state, or when the budget expires
+		// (in which case whatever has accumulated is still worth scoring).
+		if resultsData.State != "" && strings.HasPrefix(resultsData.State, "Completed") {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
 	}
+
 
 	// Batch fetch peer reputations to avoid N+1 query problem
 	peerReputations := make(map[string]database.PeerReputation)

@@ -198,7 +198,17 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 		})
 	}
 
-	// Create acquisition job for new releases
+	// Create acquisition job for new releases AND for tracked releases that
+	// never finished (wanted/queued/failed): a sync means "make the monitored
+	// discography complete", so the existing backlog must be re-enqueued too,
+	// otherwise repeated syncs are no-ops for anything but brand-new groups.
+	var unfinishedReleases []database.TrackedRelease
+	if err := s.db.Where("artist_id = ? AND monitored = ? AND status IN ?",
+		artist.ID, true, []string{"wanted", "queued", "failed"}).Find(&unfinishedReleases).Error; err != nil {
+		slog.Error("Error fetching unfinished releases", "error", err)
+	}
+	newReleasesForJob = append(newReleasesForJob, unfinishedReleases...)
+
 	if len(newReleasesForJob) > 0 {
 		job := database.Job{
 			Type:        "acquisition",
