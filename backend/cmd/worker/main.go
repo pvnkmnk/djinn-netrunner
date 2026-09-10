@@ -736,18 +736,17 @@ func (w *WorkerOrchestrator) finalizeAcquisition(jobID uint64, err error) (final
 	}
 	// Write item outcomes back to the tracked-release lifecycle so subsequent
 	// artist syncs know what is actually in the library (before this, releases
-	// stayed 'queued' forever and syncs could never tell acquired from missing).
+	// stayed 'wanted' forever and syncs kept re-enqueueing acquired albums).
+	// One-way upgrade only: a release acquired by THIS job becomes 'acquired',
+	// but misses never downgrade a release an earlier job already acquired.
 	var acqJob database.Job
 	if w.db.First(&acqJob, jobID).Error == nil && acqJob.ScopeType == "artist" {
 		if artistID, perr := uuid.Parse(acqJob.ScopeID); perr == nil {
 			var artist database.MonitoredArtist
 			if nerr := w.db.First(&artist, "id = ?", artistID).Error; nerr == nil {
 				w.db.Model(&database.TrackedRelease{}).Where(
-					"artist_id = ? AND status = 'queued'", artistID).Updates(map[string]interface{}{
-					"status": gorm.Expr(
-						"CASE WHEN EXISTS (SELECT 1 FROM jobitems ji WHERE ji.job_id = ? AND ji.normalized_query = ? || ' ' || tracked_releases.title AND (ji.status = 'imported' OR ji.status LIKE 'completed%')) THEN 'acquired' ELSE 'wanted' END",
-						jobID, artist.Name),
-				})
+					"artist_id = ? AND status IN ('wanted', 'queued') AND EXISTS (SELECT 1 FROM jobitems ji WHERE ji.job_id = ? AND ji.normalized_query = ? || ' ' || tracked_releases.title AND (ji.status = 'imported' OR ji.status LIKE 'completed%'))",
+					artistID, jobID, artist.Name).Update("status", "acquired")
 			}
 		}
 	}

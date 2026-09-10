@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/require"
@@ -330,9 +331,9 @@ func TestTriggerWatchlistSyncs_EnabledOnly(t *testing.T) {
 
 	// Create a QualityProfile (required by Watchlist foreign key)
 	qp := database.QualityProfile{
-		Name:          "Test Profile",
+		Name:           "Test Profile",
 		AllowedFormats: "flac",
-		MinBitrate:    320,
+		MinBitrate:     320,
 	}
 	require.NoError(t, w.db.Create(&qp).Error)
 
@@ -621,10 +622,10 @@ func TestProcessActiveJobsRoundRobin_SkipsAlreadyProcessing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	w.jobMutex.Lock()
 	w.activeJobs[job.ID] = &jobContext{
-		job:       job,
-		ctx:       ctx,
-		cancel:    cancel,
-		lockKey:   0,
+		job:        job,
+		ctx:        ctx,
+		cancel:     cancel,
+		lockKey:    0,
 		processing: true, // already processing — should be skipped
 	}
 	w.jobMutex.Unlock()
@@ -1172,4 +1173,66 @@ func TestProcessAcquisitionItem_WaitsForFreshDownloadingItem(t *testing.T) {
 	require.Equal(t, "running", dbJob.State, "job with a fresh downloading item must not finalize")
 	_, active := w.activeJobs[job.ID]
 	require.True(t, active, "job must remain active with a wake-up scheduled")
+}
+
+// TestFinalizeAcquisition_ReleasesWriteBack verifies the one-way tracked-release
+// lifecycle upgrade: releases whose acquisition item imported become 'acquired'
+// (even if previously 'wanted' or 'queued'), misses keep their prior status,
+// and releases acquired by an earlier job are never downgraded.
+func TestFinalizeAcquisition_ReleasesWriteBack(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	profile := database.QualityProfile{Name: "WriteBack Profile", AllowedFormats: "flac"}
+	require.NoError(t, w.db.Create(&profile).Error)
+	artist := database.MonitoredArtist{
+		ID:               uuid.New(),
+		MusicBrainzID:    "mb-1",
+		Name:             "Test Artist",
+		QualityProfileID: profile.ID,
+	}
+	require.NoError(t, w.db.Create(&artist).Error)
+
+	job := database.Job{Type: "acquisition", State: "running", ScopeType: "artist", ScopeID: artist.ID.String()}
+	require.NoError(t, w.db.Create(&job).Error)
+
+	mkRel := func(title, status string) database.TrackedRelease {
+		rel := database.TrackedRelease{
+			ID:                        uuid.New(),
+			ArtistID:                  artist.ID,
+			ReleaseGroupID: "rg-" + title,
+			Title:                     title,
+			ReleaseType:               "Album",
+			Status:                    status,
+		}
+		require.NoError(t, w.db.Create(&rel).Error)
+		return rel
+	}
+	hitWanted := mkRel("Hit Wanted", "wanted")
+	hitQueued := mkRel("Hit Queued", "queued")
+	miss := mkRel("Missed Album", "wanted")
+	earlierHit := mkRel("Earlier Hit", "acquired")
+
+	mkItem := func(query, status string) {
+		require.NoError(t, w.db.Create(&database.JobItem{
+			JobID: job.ID, Status: status, NormalizedQuery: query, Sequence: 1,
+		}).Error)
+	}
+	mkItem("Test Artist Hit Wanted", "imported")
+	mkItem("Test Artist Hit Queued", "completed (already indexed)")
+	mkItem("Test Artist Missed Album", "failed (no results)")
+	mkItem("Test Artist Earlier Hit", "failed (no results)")
+
+	w.finalizeAcquisition(job.ID, nil)
+
+	// Fresh struct per read: reusing one variable would leak the previous
+	// primary key into GORM's implicit conditions.
+	statusOf := func(id uuid.UUID) string {
+		var rel database.TrackedRelease
+		require.NoError(t, w.db.First(&rel, id).Error)
+		return rel.Status
+	}
+	require.Equal(t, "acquired", statusOf(hitWanted.ID), "wanted + imported this job -> acquired")
+	require.Equal(t, "acquired", statusOf(hitQueued.ID), "queued + already-indexed this job -> acquired")
+	require.Equal(t, "wanted", statusOf(miss.ID), "miss keeps its status")
+	require.Equal(t, "acquired", statusOf(earlierHit.ID), "earlier acquisition never downgraded")
 }
