@@ -634,22 +634,23 @@ func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	}
 
 	// Nothing was claimable — but that no longer means the job is done: items
-	// that failed earlier may be sitting in their retry backoff. Finalize only
-	// when every item is terminal; otherwise sleep until the earliest retry
-	// is due and let the round-robin wake the job up.
+	// that failed earlier may be sitting in their retry backoff, and items a
+	// dead worker left in 'running'/'downloading' would otherwise wedge the
+	// job forever. Finalize only when every item is terminal.
 	pending, next := w.pendingRetry(jc.job.ID)
 	if pending == 0 {
-		// No retryable items — but items abandoned mid-flight by a dead worker
-		// (status 'running' with a stale start) would otherwise wedge the job
-		// forever. Heal them back to queued so they get re-claimed.
-		healed := w.healStaleRunningItems(jc.job.ID, 10*time.Minute)
+		// Items abandoned mid-flight by a dead worker (status 'running' or
+		// 'downloading' with a stale start) must be healed back to queued so
+		// they get re-claimed. The threshold must exceed the pipeline's own
+		// download timeout (10m) so genuinely slow downloads are never healed.
+		healed := w.healStaleRunningItems(jc.job.ID, 15*time.Minute)
 		if healed > 0 {
-			slog.Warn("Requeued stale running items", "worker_id", w.workerID, "job_id", jc.job.ID, "count", healed)
+			slog.Warn("Requeued stale in-flight items", "worker_id", w.workerID, "job_id", jc.job.ID, "count", healed)
 			return // next round-robin tick will claim them
 		}
 		// Another live worker may be executing an item of this job right now
-		// (its item shows 'running' with a fresh start). Never finalize under
-		// it — check back shortly instead.
+		// (item 'running'/'downloading' with a fresh start). Never finalize
+		// under it — check back shortly instead.
 		if n := w.countRunningItems(jc.job.ID); n > 0 {
 			w.scheduleWake(jc, 1*time.Minute, fmt.Sprintf("Waiting for %d running item(s) on another worker", n))
 			return
@@ -681,10 +682,12 @@ func (w *WorkerOrchestrator) scheduleWake(jc *jobContext, delay time.Duration, r
 	slog.Info("Acquisition job sleeping", "worker_id", w.workerID, "job_id", jc.job.ID, "reason", reason, "wake_in", delay.Round(time.Second))
 }
 
-// countRunningItems counts items of a job currently claimed by any worker.
+// countRunningItems counts items of a job currently claimed by any worker —
+// both the search/prepare phase ('running') and the transfer phase
+// ('downloading') — so a worker never finalizes a job out from under another.
 func (w *WorkerOrchestrator) countRunningItems(jobID uint64) int64 {
 	var n int64
-	w.db.Model(&database.JobItem{}).Where("job_id = ? AND status = 'running'", jobID).Count(&n)
+	w.db.Model(&database.JobItem{}).Where("job_id = ? AND status IN ('running', 'downloading')", jobID).Count(&n)
 	return n
 }
 
@@ -701,16 +704,16 @@ func (w *WorkerOrchestrator) pendingRetry(jobID uint64) (int64, time.Time) {
 		return 0, time.Time{}
 	}
 	return stats.Count, *stats.Earliest
-}
-
-// healStaleRunningItems returns items claimed by a dead worker back to the
-// queue: a worker crash (or restart) leaves items in 'running' with no one
-// executing them, and nothing else ever touches that status. Only items whose
-// start is older than the threshold are healed, so live items are untouched.
+}// healStaleRunningItems returns items claimed by a dead worker back to the
+// queue: a worker crash (or restart) leaves items in 'running' or 'downloading'
+// with no one executing them, and nothing else ever touches those statuses.
+// Only items whose start is older than the threshold are healed, so live items
+// are untouched. The caller must pass a threshold strictly greater than the
+// pipeline's download timeout (10m).
 func (w *WorkerOrchestrator) healStaleRunningItems(jobID uint64, threshold time.Duration) int64 {
 	cutoff := time.Now().Add(-threshold)
 	res := w.db.Model(&database.JobItem{}).
-		Where("job_id = ? AND status = 'running' AND started_at < ?", jobID, cutoff).
+		Where("job_id = ? AND status IN ('running', 'downloading') AND started_at < ?", jobID, cutoff).
 		Updates(map[string]interface{}{
 			"status":     "queued",
 			"started_at": nil,
