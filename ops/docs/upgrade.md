@@ -29,6 +29,19 @@ docker compose up -d --build
 | `postgres` | Zero (persistent volume, not rebuilt) |
 | `slskd` | Zero (not rebuilt unless image updated) |
 
+## Volume ownership for slskd (UID 1000)
+
+slskd now runs as `user: "1000:1000"` so downloaded files are owned by the
+same UID the netrunner worker uses on the shared `netrunner-downloads`
+volume (worker post-import cleanup previously failed with EACCES on
+root-owned downloads). Named volumes initialize root-owned and slskd's
+entrypoint refuses to start in non-root mode when `/app` is not writable,
+so the compose file includes a one-shot `volume-init` service that chowns
+`netrunner-slskd-data` and `netrunner-downloads` to `1000:1000` before
+slskd/web/worker start. It is idempotent — a no-op once ownership is
+correct — and handles both fresh volumes and pre-existing root-owned
+content automatically. No manual steps are required on upgrade.
+
 ## Rollback
 
 ```bash

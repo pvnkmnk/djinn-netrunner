@@ -46,6 +46,13 @@ services:
   slskd:
     image: slskd/slskd:latest
     container_name: netrunner-slskd
+    # Run as UID/GID 1000 so downloaded files are owned by the same user the
+    # netrunner worker runs as (Dockerfile creates netrunner with UID 1000).
+    # Both containers share the netrunner-downloads volume; without this,
+    # slskd writes root-owned downloads and the worker's post-import cleanup
+    # fails with EACCES. Per slskd docs the user: key is the recommended
+    # non-root method — the container never gains root privileges.
+    user: "1000:1000"
     environment:
       SLSKD_SLSK_USERNAME: ${SLSKD_USERNAME}
       SLSKD_SLSK_PASSWORD: ${SLSKD_PASSWORD}
@@ -53,7 +60,24 @@ services:
     volumes:
       - netrunner-slskd-data:/app
       - netrunner-downloads:/downloads
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  # One-shot bootstrap: named volumes initialize root-owned, and slskd's
+  # entrypoint refuses to start (in user: mode) when /app is not writable by
+  # UID 1000. Chown both slskd-shared volumes to 1000:1000 before anything
+  # starts. Idempotent — a no-op once ownership is correct.
+  volume-init:
+    image: alpine:3
+    container_name: netrunner-volume-init
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 1000:1000 /slskd-data /downloads && echo 'volume-init: ownership OK'"]
+    volumes:
+      - netrunner-slskd-data:/slskd-data
+      - netrunner-downloads:/downloads
+    restart: "no"
 
   caddy:
     image: caddy:2-alpine
@@ -94,6 +118,8 @@ services:
       - netrunner-downloads:/app/downloads
       - netrunner-music:/app/music
     depends_on:
+      volume-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       slskd:
@@ -126,6 +152,8 @@ services:
       - netrunner-downloads:/app/downloads
       - netrunner-music:/app/music
     depends_on:
+      volume-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       slskd:
