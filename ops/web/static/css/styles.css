@@ -343,7 +343,18 @@ textarea:focus-visible,
 .state-queued { background: var(--accent-warning); color: black; }
 .state-running { background: var(--accent-primary); color: var(--bg-primary); }
 .state-succeeded { background: var(--accent-success); color: var(--bg-primary); }
+.state-partial { background: var(--accent-warning); color: black; }
 .state-failed { background: var(--accent-error); color: white; }
+
+/* Human-readable outcome / live progress note for a job (e.g. "Acquired
+   21/25 items (4 failed permanently)" or "Waiting for retry: …"). */
+.job-summary {
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
 .job-card-running {
     border-left: 3px solid var(--accent-cyan);
 }

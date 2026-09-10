@@ -100,6 +100,11 @@ type Config struct {
 	NotificationWebhookURL string
 	NotificationEnabled    bool
 
+	// Worker
+	// Listen address for the worker's /healthz endpoint (docker healthcheck).
+	// Empty disables the endpoint (default for backwards compatibility).
+	WorkerHealthAddr string
+
 	// Subsonic
 	Subsonic struct {
 		Enabled  bool   `envconfig:"SUBSONIC_ENABLED" default:"false"`
@@ -355,6 +360,7 @@ func Load(filenames ...string) (*Config, error) {
 	cfg.AuthRateLimitExpiration = getEnv("AUTH_RATE_LIMIT_EXPIRATION", cfg.AuthRateLimitExpiration)
 	cfg.NotificationEnabled = getEnvBool("NOTIFICATION_ENABLED", cfg.NotificationEnabled)
 	cfg.NotificationWebhookURL = getEnv("NOTIFICATION_WEBHOOK_URL", cfg.NotificationWebhookURL)
+	cfg.WorkerHealthAddr = getEnv("WORKER_HEALTH_ADDR", "")
 	cfg.AllowPrivateTargets = getEnvBool("ALLOW_PRIVATE_TARGETS", cfg.AllowPrivateTargets)
 	cfg.CSRFEnabled = getEnvBool("CSRF_ENABLED", cfg.CSRFEnabled)
 	cfg.MusicLibraryPath = getEnv("MUSIC_LIBRARY", cfg.MusicLibraryPath)

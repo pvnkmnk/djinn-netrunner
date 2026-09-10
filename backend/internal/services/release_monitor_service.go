@@ -1,9 +1,7 @@
 package services
 
 import (
-	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -52,29 +50,4 @@ func (s *ReleaseMonitorService) CheckAllArtists() error {
 	}
 
 	return nil
-}
-
-// StartBackgroundTask starts a loop that runs every hour to check for new releases.
-// Stops when ctx is cancelled; wg is optional (nil allowed) for tracking.
-func (s *ReleaseMonitorService) StartBackgroundTask(ctx context.Context, wg *sync.WaitGroup) {
-	ticker := time.NewTicker(1 * time.Hour)
-	if wg != nil {
-		wg.Add(1)
-	}
-	go func() {
-		if wg != nil {
-			defer wg.Done()
-		}
-		for {
-			select {
-			case <-ctx.Done():
-				ticker.Stop()
-				return
-			case <-ticker.C:
-				if err := s.CheckAllArtists(); err != nil {
-					fmt.Printf("[MONITOR] Background check failed: %v\n", err)
-				}
-			}
-		}
-	}()
 }

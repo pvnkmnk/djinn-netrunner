@@ -17,6 +17,7 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/health"
 	"github.com/pvnkmnk/netrunner/backend/internal/metrics"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/robfig/cron/v3"
@@ -69,8 +70,8 @@ type jobContext struct {
 	cancel     context.CancelFunc
 	ctx        context.Context
 	lockKey    int64
-	processing bool        // true when a goroutine is actively processing this job
-	wakeAt     *time.Time  // when a retry-backoff wake-up is scheduled (nil = run now)
+	processing bool       // true when a goroutine is actively processing this job
+	wakeAt     *time.Time // when a retry-backoff wake-up is scheduled (nil = run now)
 }
 
 func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator {
@@ -115,35 +116,35 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, libraryClient, discogs, cache, lyrics, transcoder, ytdlp)
 
 	return &WorkerOrchestrator{
-		workerID:            fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
-		db:                  db,
-		cfg:                 cfg,
-		mbService:           mb,
-		atService:           at,
-		rmService:           rm,
-		watchlist:           watchlist,
-		scanService:         services.NewScannerService(db),
-		discogs:             discogs,
-		lockManager:         lm,
-		spotify:             spotify,
-		slskd:               slskd,
-		metadata:            metadata,
-		litefs:              database.NewLiteFSGuard(cfg.DatabaseURL),
-		syncHandler:         services.NewSyncHandler(db, spotify, watchlist),
-		acqHandler:          acqHandler,
-		itemProcessor:       services.NewJobItemProcessor(db, acqHandler),
-		zombieRecovery:      services.NewZombieRecovery(db, lm, services.DefaultZombieRecoveryConfig()),
+		workerID:       fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
+		db:             db,
+		cfg:            cfg,
+		mbService:      mb,
+		atService:      at,
+		rmService:      rm,
+		watchlist:      watchlist,
+		scanService:    services.NewScannerService(db),
+		discogs:        discogs,
+		lockManager:    lm,
+		spotify:        spotify,
+		slskd:          slskd,
+		metadata:       metadata,
+		litefs:         database.NewLiteFSGuard(cfg.DatabaseURL),
+		syncHandler:    services.NewSyncHandler(db, spotify, watchlist),
+		acqHandler:     acqHandler,
+		itemProcessor:  services.NewJobItemProcessor(db, acqHandler),
+		zombieRecovery: services.NewZombieRecovery(db, lm, services.DefaultZombieRecoveryConfig()),
 		notificationService: func() *services.NotificationService {
 			ns := services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled, proxyClient)
 			ns.ConfigureSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom, cfg.SMTPEnabled)
 			return ns
 		}(),
-		library:             libraryClient,
-		diskQuotaService:    services.NewDiskQuotaService(sqlDB),
-		activeJobs:          make(map[uint64]*jobContext),
-		wakeupChan:          make(chan bool, 1),
-		ctx:                 ctx,
-		cancel:              cancel,
+		library:          libraryClient,
+		diskQuotaService: services.NewDiskQuotaService(sqlDB),
+		activeJobs:       make(map[uint64]*jobContext),
+		wakeupChan:       make(chan bool, 1),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 }
 
@@ -179,7 +180,17 @@ func (w *WorkerOrchestrator) Start() {
 			defer w.wg.Done()
 			w.zombieRecovery.Run(w.ctx, w.workerID)
 		}()
-		w.rmService.StartBackgroundTask(w.ctx, &w.wg)
+		// Recurring release monitoring: the monitorJobLoop enqueues a system
+		// release_monitor job each hour (first one seeded at startup). The job —
+		// not a hidden goroutine — does the work, so claiming, heartbeats,
+		// honest finalization, and the jobs UI all apply. The old inline
+		// StartBackgroundTask loop was removed: it duplicated this producer and
+		// double-enqueued acquisition items alongside the job.
+		w.wg.Add(1)
+		go func() {
+			defer w.wg.Done()
+			w.monitorJobLoop()
+		}()
 	} else {
 		slog.Info("Running in replica mode. Skipping scheduler and watchlist poller.", "worker_id", w.workerID)
 	}
@@ -346,8 +357,6 @@ func (w *WorkerOrchestrator) checkQuotaAlerts() {
 		}
 	}
 }
-
-
 
 func (w *WorkerOrchestrator) updateHeartbeats() {
 	w.jobMutex.Lock()
@@ -695,7 +704,7 @@ func (w *WorkerOrchestrator) countRunningItems(jobID uint64) int64 {
 // when the earliest one becomes claimable.
 func (w *WorkerOrchestrator) pendingRetry(jobID uint64) (int64, time.Time) {
 	var stats struct {
-		Count   int64
+		Count    int64
 		Earliest *time.Time
 	}
 	w.db.Model(&database.JobItem{}).Where("job_id = ? AND status = 'failed' AND next_attempt_at IS NOT NULL", jobID).
@@ -704,7 +713,7 @@ func (w *WorkerOrchestrator) pendingRetry(jobID uint64) (int64, time.Time) {
 		return 0, time.Time{}
 	}
 	return stats.Count, *stats.Earliest
-}// healStaleRunningItems returns items claimed by a dead worker back to the
+} // healStaleRunningItems returns items claimed by a dead worker back to the
 // queue: a worker crash (or restart) leaves items in 'running' or 'downloading'
 // with no one executing them, and nothing else ever touches those statuses.
 // Only items whose start is older than the threshold are healed, so live items
@@ -958,6 +967,23 @@ func main() {
 		}
 	}()
 
+	// Docker healthcheck endpoint: reports healthy only while the DB answers.
+	var healthServer *health.Server
+	if cfg.WorkerHealthAddr != "" {
+		hs, err := health.New(cfg.WorkerHealthAddr, worker.db)
+		if err != nil {
+			slog.Error("health endpoint bind failed — continuing without it", "addr", cfg.WorkerHealthAddr, "error", err)
+		} else {
+			healthServer = hs
+			slog.Info("Worker health endpoint listening", "addr", hs.Addr())
+		}
+	}
+
+	// Seed the recurring release-monitor job so wanted releases are re-enqueued
+	// automatically until each discography completes; monitorJobLoop re-enqueues
+	// hourly after that.
+	database.EnqueueMonitorJobIfIdle(worker.db)
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
@@ -966,6 +992,9 @@ func main() {
 	slog.Info("Worker process running. Press Ctrl+C to stop.")
 	<-stop
 	metricsServer.Close()
+	if healthServer != nil {
+		healthServer.Stop()
+	}
 	worker.Stop()
 }
 
@@ -975,4 +1004,26 @@ func (w *WorkerOrchestrator) triggerLibraryScan() (bool, error) {
 		return w.library.TriggerScan()
 	}
 	return false, fmt.Errorf("no library server configured (set NAVIDROME_URL or GONIC_URL)")
+}
+
+// monitorJobInterval is how often a new release_monitor job is enqueued.
+// CheckAllArtists additionally skips artists checked within the last 24h,
+// so this cadence bounds sync lag without hammering MusicBrainz.
+const monitorJobInterval = database.MonitorJobInterval
+
+// monitorJobLoop periodically enqueues a system release_monitor job. The job
+// (not a hidden goroutine) does the work, so claiming, heartbeats, honest
+// finalization, and the jobs UI all apply. The previous queued job acts as
+// the mutex: if one is still pending or running, skip this tick.
+func (w *WorkerOrchestrator) monitorJobLoop() {
+	ticker := time.NewTicker(monitorJobInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		case <-ticker.C:
+			database.EnqueueMonitorJobIfIdle(w.db)
+		}
+	}
 }

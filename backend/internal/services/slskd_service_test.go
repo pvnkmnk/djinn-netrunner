@@ -536,9 +536,10 @@ func hasPrefix(path, prefix string) bool {
 	return len(path) >= len(prefix) && path[:len(prefix)] == prefix
 }
 
-// TestParseEnqueueFailure covers slskd's two `failed` payload shapes (string
-// array and filename->error map) plus the empty/unknown cases. A real
-// rejection must surface as a message, never as a decode error.
+// TestParseEnqueueFailure covers slskd's `failed` payload shapes observed in
+// the wild: string arrays, filename->error maps, and per-file objects with no
+// message (`[{}]` — reproduced live on a duplicate enqueue). A real rejection
+// must surface as a message, never as a decode error or a bare "[{}]".
 func TestParseEnqueueFailure(t *testing.T) {
 	cases := []struct {
 		name string
@@ -550,6 +551,9 @@ func TestParseEnqueueFailure(t *testing.T) {
 		{"empty list", "[]", ""},
 		{"string list", `["File already in queue"]`, "File already in queue"},
 		{"map", `{"downloads/song.flac":"File is already queued"}`, "File is already queued"},
+		{"empty object entry", `[{}]`, "slskd rejected the file without detail (likely already queued or in library)"},
+		{"object with message", `[{"file":"downloads/song.flac","error":"File is already queued"}]`, "File is already queued"},
+		{"empty map", `{}`, ""},
 		{"unknown shape", `{"weird":42}`, `{"weird":42}`},
 	}
 	for _, tc := range cases {
