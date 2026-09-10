@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 // testSlskdClient returns a plain HTTP client without SSRF validation,
@@ -533,4 +534,32 @@ func TestResolveDownloadPath_Traversal(t *testing.T) {
 
 func hasPrefix(path, prefix string) bool {
 	return len(path) >= len(prefix) && path[:len(prefix)] == prefix
+}
+
+// TestParseEnqueueFailure covers slskd's two `failed` payload shapes (string
+// array and filename->error map) plus the empty/unknown cases. A real
+// rejection must surface as a message, never as a decode error.
+func TestParseEnqueueFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"absent", "", ""},
+		{"null", "null", ""},
+		{"empty list", "[]", ""},
+		{"string list", `["File already in queue"]`, "File already in queue"},
+		{"map", `{"downloads/song.flac":"File is already queued"}`, "File is already queued"},
+		{"unknown shape", `{"weird":42}`, `{"weird":42}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw json.RawMessage
+			if tc.raw != "" {
+				require.NoError(t, json.Unmarshal([]byte(tc.raw), &raw))
+			}
+			got := parseEnqueueFailure(raw)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }

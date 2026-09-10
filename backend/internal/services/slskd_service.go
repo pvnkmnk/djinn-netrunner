@@ -502,15 +502,18 @@ func (s *SlskdService) EnqueueDownload(username, filename string, size int64) (s
 	// Parse the response to extract the download ID from enqueued transfers.
 	// slskd returns { "enqueued": [...transfers], "failed": ["filename1", ...] }
 	var enqueueResp struct {
-		Enqueued []Download `json:"enqueued"`
-		Failed   []string   `json:"failed"`
+		Enqueued []Download      `json:"enqueued"`
+		Failed   json.RawMessage `json:"failed"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&enqueueResp); err != nil {
 		return "", fmt.Errorf("failed to decode slskd enqueue response: %w", err)
 	}
 
-	if len(enqueueResp.Failed) > 0 {
-		return "", fmt.Errorf("slskd rejected download: %s", enqueueResp.Failed[0])
+	// slskd has shipped at least two shapes for `failed`: an array of strings
+	// and a map of filename -> error message. Accept both so a real rejection
+	// surfaces as a retryable enqueue failure instead of a decode error.
+	if failureMsg := parseEnqueueFailure(enqueueResp.Failed); failureMsg != "" {
+		return "", fmt.Errorf("slskd rejected download: %s", failureMsg)
 	}
 
 	if len(enqueueResp.Enqueued) == 0 {
@@ -518,6 +521,33 @@ func (s *SlskdService) EnqueueDownload(username, filename string, size int64) (s
 	}
 
 	return enqueueResp.Enqueued[0].ID, nil
+}
+
+// parseEnqueueFailure extracts a human-readable message from slskd's `failed`
+// field, which has shipped as either an array of strings or a map of
+// filename -> error message. Returns "" when there is no failure.
+func parseEnqueueFailure(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var asList []string
+	if err := json.Unmarshal(raw, &asList); err == nil {
+		if len(asList) > 0 {
+			return asList[0]
+		}
+		return ""
+	}
+	var asMap map[string]string
+	if err := json.Unmarshal(raw, &asMap); err == nil {
+		for _, msg := range asMap {
+			if msg != "" {
+				return msg
+			}
+		}
+		return ""
+	}
+	// Unknown shape — surface the raw payload rather than swallow it.
+	return string(raw)
 }
 
 // GetDownload retrieves a specific download by its GUID.
