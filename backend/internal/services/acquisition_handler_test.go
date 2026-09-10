@@ -232,78 +232,53 @@ func TestAcquisitionHandler_StageLoadItemContext_WithNoParams(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Execute tests
+// Honest finalization tests (classifyAcquisitionOutcome / AcquisitionFinalState)
+// The old Execute monitor was removed: the worker owns job finalization via
+// services.AcquisitionFinalState, so these tests pin the outcome mapping.
 // ---------------------------------------------------------------------------
 
-func TestAcquisitionHandler_Execute_EmptyJob(t *testing.T) {
-	db := setupHandlerTestDB(t)
-
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-
-	// Create job with 0 items - with 0 items, loop exits immediately
-	// because completed+failed (0) >= total (0)
-	job := database.Job{Type: "acquisition", State: "running"}
-	require.NoError(t, db.Create(&job).Error, "failed to create job")
-
-	err := handler.Execute(context.Background(), job.ID, job)
-	require.NoError(t, err, "unexpected error")
-
-	// Verify job state is "failed" (since failed (0) == total (0))
-	var updatedJob database.Job
-	require.NoError(t, db.First(&updatedJob, job.ID).Error, "failed to fetch updated job")
-	if updatedJob.State != "failed" {
-		t.Errorf("expected state 'failed', got %s", updatedJob.State)
+func TestClassifyAcquisitionOutcome(t *testing.T) {
+	tests := []struct {
+		name       string
+		stats      AcquisitionItemStats
+		wantState  string
+		wantSubstr string
+	}{
+		{"all acquired", AcquisitionItemStats{Total: 3, Succeeded: 3}, "succeeded", "Acquired 3/3"},
+		{"none acquired", AcquisitionItemStats{Total: 2, Failed: 2}, "failed", "Acquired 0/2"},
+		{"mixed", AcquisitionItemStats{Total: 4, Succeeded: 2, Failed: 2}, "partial", "Acquired 2/4"},
+		{"nothing queued", AcquisitionItemStats{}, "failed", "No items queued"},
+		{"pending retry", AcquisitionItemStats{Total: 2, Pending: 1}, "partial", "pending retry"},
 	}
-
-	// Verify summary was updated
-	if updatedJob.Summary == "" {
-		t.Error("expected summary to be updated")
-	}
-	if updatedJob.Summary != "Progress: 0/0 (Success: 0, Failed: 0)" {
-		t.Errorf("expected summary 'Progress: 0/0 (Success: 0, Failed: 0)', got %s", updatedJob.Summary)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, summary := classifyAcquisitionOutcome(tt.stats)
+			require.Equal(t, tt.wantState, state)
+			require.Contains(t, summary, tt.wantSubstr)
+		})
 	}
 }
 
-func TestAcquisitionHandler_Execute_CancelledContext(t *testing.T) {
+// TestAcquisitionFinalState_MixedOutcomes reproduces the exact shape the live
+// ETID run produced — one imported item plus terminal no-results items — which
+// the previous code reported as job "succeeded".
+func TestAcquisitionFinalState_MixedOutcomes(t *testing.T) {
 	db := setupHandlerTestDB(t)
 
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-
-	// Create job with 1 item
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
-	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test", Sequence: 1}
-	require.NoError(t, db.Create(&item).Error, "failed to create item")
+	items := []database.JobItem{
+		{JobID: job.ID, Status: "imported", NormalizedQuery: "a", Sequence: 1},
+		{JobID: job.ID, Status: "failed (no results)", NormalizedQuery: "b", Sequence: 2},
+	}
+	for i := range items {
+		require.NoError(t, db.Create(&items[i]).Error, "failed to create item")
+	}
 
-	// Create cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := handler.Execute(ctx, job.ID, job)
-	require.Error(t, err, "expected error")
-	require.Equal(t, context.Canceled, err, "expected Canceled")
-}
-
-func TestAcquisitionHandler_Execute_Timeout(t *testing.T) {
-	db := setupHandlerTestDB(t)
-
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-
-	// Create job with 1 queued item
-	job := database.Job{Type: "acquisition", State: "running"}
-	require.NoError(t, db.Create(&job).Error, "failed to create job")
-
-	item := database.JobItem{JobID: job.ID, Status: "queued", NormalizedQuery: "test", Sequence: 1}
-	require.NoError(t, db.Create(&item).Error, "failed to create item")
-
-	// Use a short timeout - the 5s tick never fires, so select picks ctx.Done()
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	err := handler.Execute(ctx, job.ID, job)
-	require.Error(t, err, "expected error")
-	require.Equal(t, context.DeadlineExceeded, err, "expected DeadlineExceeded")
+	state, summary := AcquisitionFinalState(db, job.ID)
+	require.Equal(t, "partial", state, "1 imported of 2 is a partial result, not a success")
+	require.Contains(t, summary, "Acquired 1/2")
 }
 
 // ---------------------------------------------------------------------------

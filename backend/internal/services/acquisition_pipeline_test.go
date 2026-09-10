@@ -199,27 +199,29 @@ func TestAcquisitionHandler_StageSelectBestResult_WithProfile_NonMatching(t *tes
 }
 
 func TestAcquisitionHandler_StageSelectBestResult_NoResults(t *testing.T) {
-	// stageSelectBestResult panics on p.results[0] with empty results.
-	// The caller (stageSearchSoulseek) fails the item if no results are found,
-	// so this case is tested via stageSearchSoulseek tests instead.
-	// We verify here that the assumption holds: calling with empty results panics.
+	// stageSelectBestResult guards against empty results instead of panicking:
+	// the item is marked with a terminal no-results status and the stage skips.
 	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
+	job := database.Job{Type: "acquisition", State: "running"}
+	require.NoError(t, db.Create(&job).Error, "failed to create job")
+	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test", Sequence: 1}
+	require.NoError(t, db.Create(&item).Error, "failed to create item")
+
 	p := &acquisitionPipeline{
-		item:    database.JobItem{JobID: 1, ID: 1},
+		item:    item,
 		results: []SearchResult{},
 	}
 
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("expected panic on empty results")
-			}
-		}()
-		handler.stageSelectBestResult(p)
-	}()
+	skip, err := handler.stageSelectBestResult(p)
+	require.NoError(t, err, "guard must not error")
+	require.True(t, skip, "expected skip=true on empty results")
+
+	var updated database.JobItem
+	require.NoError(t, db.First(&updated, item.ID).Error, "failed to fetch updated item")
+	require.Equal(t, "failed (no results)", updated.Status)
 }
 
 // ---------------------------------------------------------------------------
@@ -286,11 +288,11 @@ func TestAcquisitionHandler_StageSearchSoulseek_NoResults(t *testing.T) {
 		t.Errorf("expected 0 results, got %d", len(p.results))
 	}
 
-	// Verify item was failed
+	// Verify item got a terminal no-results status (not retryable 'failed').
 	var updatedItem database.JobItem
 	require.NoError(t, db.First(&updatedItem, item.ID).Error, "failed to fetch updated item")
-	if updatedItem.Status != "failed" {
-		t.Errorf("expected status 'failed', got %s", updatedItem.Status)
+	if updatedItem.Status != "failed (no results)" {
+		t.Errorf("expected status 'failed (no results)', got %s", updatedItem.Status)
 	}
 }
 
@@ -577,7 +579,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpNil(t *testing.T) {
 // We only test immediate-exit cases here (0 items, context cancellation).
 // ---------------------------------------------------------------------------
 
-func TestAcquisitionHandler_Execute_ContextCancelledWhilePolling(t *testing.T) {
+func TestAcquisitionHandler_NoResultsItem_Terminal(t *testing.T) {
 	db := setupPipelineTestDB(t)
 
 	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
@@ -585,17 +587,17 @@ func TestAcquisitionHandler_Execute_ContextCancelledWhilePolling(t *testing.T) {
 	job := database.Job{Type: "acquisition", State: "running"}
 	require.NoError(t, db.Create(&job).Error, "failed to create job")
 
-	// Create item that's "in progress" (not completed/failed)
 	item := database.JobItem{JobID: job.ID, Status: "running", NormalizedQuery: "test", Sequence: 1}
 	require.NoError(t, db.Create(&item).Error, "failed to create item")
 
-	// Use a timeout context - will cancel after a brief wait
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
+	handler.noResultsItem(job.ID, item.ID, "No results found")
 
-	err := handler.Execute(ctx, job.ID, job)
-	require.Error(t, err, "expected error")
-	require.Equal(t, context.DeadlineExceeded, err, "expected DeadlineExceeded")
+	var updated database.JobItem
+	require.NoError(t, db.First(&updated, item.ID).Error, "failed to fetch item")
+	require.Equal(t, "failed (no results)", updated.Status)
+	require.Equal(t, "No results found", updated.FailureReason)
+	require.NotNil(t, updated.FinishedAt, "terminal item must be finished")
+	require.Zero(t, updated.RetryCount, "no-results must not consume retry attempts")
 }
 
 // ---------------------------------------------------------------------------

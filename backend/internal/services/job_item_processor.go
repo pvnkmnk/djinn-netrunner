@@ -89,10 +89,71 @@ func (p *JobItemProcessor) ProcessItem(ctx context.Context, workerID string, job
 	if execErr != nil {
 		slog.Error("Error processing item", "worker_id", workerID, "job_id", jobID, "item_id", itemID, "error", execErr)
 		metrics.ItemsProcessedTotal.WithLabelValues("error").Inc()
+		// Record the failure on the item so it cannot be left 'running' forever:
+		// nothing ever re-claims a running item, and an unclaimed terminal-less
+		// item would keep the job from ever finalizing honestly.
+		p.acqHandler.failItem(jobID, itemID, fmt.Sprintf("Item execution error: %v", execErr))
 	} else {
 		metrics.ItemsProcessedTotal.WithLabelValues("success").Inc()
 	}
 	return ItemResult{ItemID: itemID, ExecErr: execErr}
+}
+
+// AcquisitionItemStats summarizes the terminal state of every item in an
+// acquisition job.
+type AcquisitionItemStats struct {
+	Total     int64 // every item in the job
+	Succeeded int64 // imported into the library (incl. already-indexed/duplicate skips)
+	Failed    int64 // permanently failed after retries (abandoned)
+	Pending   int64 // queued/running/failed-with-backoff — not yet terminal
+}
+
+// acquisitionItemStats computes per-item outcome counts for a job in one query.
+// Success = 'imported' or any 'completed …' status written by the import stage.
+// Permanent failure = 'abandoned' (retries exhausted) or 'failed (no results)'
+// (the search definitively found nothing — not retryable). Everything else
+// (queued, running, downloading, retryable 'failed') is pending.
+//	(COUNT(*) FILTER is PostgreSQL-only; CASE WHEN works on both backends.)
+func acquisitionItemStats(db *gorm.DB, jobID uint64) AcquisitionItemStats {
+	var stats AcquisitionItemStats
+	db.Model(&database.JobItem{}).Where("job_id = ?", jobID).
+		Select("COUNT(*) AS total, " +
+			"SUM(CASE WHEN status = 'imported' OR status LIKE 'completed%' THEN 1 ELSE 0 END) AS succeeded, " +
+			"SUM(CASE WHEN status = 'abandoned' OR status = 'failed (no results)' THEN 1 ELSE 0 END) AS failed, " +
+			"SUM(CASE WHEN status != 'imported' AND status != 'abandoned' AND status != 'failed (no results)' AND status NOT LIKE 'completed%' THEN 1 ELSE 0 END) AS pending").
+		Scan(&stats)
+	return stats
+}
+
+// classifyAcquisitionOutcome maps item outcomes to an honest final job state.
+//
+//	succeeded — every item was acquired (or was already in the library)
+//	partial   — some items acquired, some permanently failed
+//	failed    — nothing was acquired
+func classifyAcquisitionOutcome(s AcquisitionItemStats) (state string, summary string) {
+	switch {
+	case s.Total == 0:
+		// Producers never create empty acquisition jobs, so this is an anomaly.
+		// Failing loudly (instead of reporting success for nothing happening)
+		// is the whole point of honest finalization.
+		return "failed", "No items queued (anomalous: job created without items)"
+	case s.Pending > 0:
+		return "partial", fmt.Sprintf("%d/%d items pending retry", s.Pending, s.Total)
+	case s.Succeeded == s.Total:
+		return "succeeded", fmt.Sprintf("Acquired %d/%d items", s.Succeeded, s.Total)
+	case s.Succeeded == 0:
+		return "failed", fmt.Sprintf("Acquired 0/%d items (%d failed permanently)", s.Total, s.Failed)
+	default:
+		return "partial", fmt.Sprintf("Acquired %d/%d items (%d failed permanently)", s.Succeeded, s.Total, s.Failed)
+	}
+}
+
+// AcquisitionFinalState computes the honest final state and summary for an
+// acquisition job from its per-item outcomes. The worker calls this when an
+// acquisition job has no more claimable items, so that a job whose items all
+// failed to acquire is never reported as "succeeded".
+func AcquisitionFinalState(db *gorm.DB, jobID uint64) (state string, summary string) {
+	return classifyAcquisitionOutcome(acquisitionItemStats(db, jobID))
 }
 
 // RunSafely wraps fn with panic recovery. If the function panics, the panic is

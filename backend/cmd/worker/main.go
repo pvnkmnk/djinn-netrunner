@@ -69,7 +69,8 @@ type jobContext struct {
 	cancel     context.CancelFunc
 	ctx        context.Context
 	lockKey    int64
-	processing bool // true when a goroutine is actively processing this job
+	processing bool        // true when a goroutine is actively processing this job
+	wakeAt     *time.Time  // when a retry-backoff wake-up is scheduled (nil = run now)
 }
 
 func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator {
@@ -553,7 +554,8 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 	for _, id := range activeIDs {
 		w.jobMutex.Lock()
 		jc, ok := w.activeJobs[id]
-		if ok && jc.processing {
+		if ok && (jc.processing || (jc.wakeAt != nil && time.Now().Before(*jc.wakeAt))) {
+			// Busy, or sleeping until an item retry's backoff elapses.
 			w.jobMutex.Unlock()
 			continue
 		}
@@ -627,9 +629,126 @@ func (w *WorkerOrchestrator) runJobSafely(jc *jobContext, fn func() error) error
 
 func (w *WorkerOrchestrator) processAcquisitionItem(jc *jobContext) {
 	result := w.itemProcessor.ProcessItem(jc.ctx, w.workerID, jc.job.ID)
-	if result.NoItems {
-		w.finishJob(jc.job.ID, nil)
+	if !result.NoItems {
+		return
 	}
+
+	// Nothing was claimable — but that no longer means the job is done: items
+	// that failed earlier may be sitting in their retry backoff. Finalize only
+	// when every item is terminal; otherwise sleep until the earliest retry
+	// is due and let the round-robin wake the job up.
+	pending, next := w.pendingRetry(jc.job.ID)
+	if pending == 0 {
+		// No retryable items — but items abandoned mid-flight by a dead worker
+		// (status 'running' with a stale start) would otherwise wedge the job
+		// forever. Heal them back to queued so they get re-claimed.
+		healed := w.healStaleRunningItems(jc.job.ID, 10*time.Minute)
+		if healed > 0 {
+			slog.Warn("Requeued stale running items", "worker_id", w.workerID, "job_id", jc.job.ID, "count", healed)
+			return // next round-robin tick will claim them
+		}
+		// Another live worker may be executing an item of this job right now
+		// (its item shows 'running' with a fresh start). Never finalize under
+		// it — check back shortly instead.
+		if n := w.countRunningItems(jc.job.ID); n > 0 {
+			w.scheduleWake(jc, 1*time.Minute, fmt.Sprintf("Waiting for %d running item(s) on another worker", n))
+			return
+		}
+		w.finishJob(jc.job.ID, nil)
+		return
+	}
+
+	delay := time.Until(next)
+	if delay < 0 {
+		delay = 0
+	}
+	if delay > time.Hour {
+		delay = time.Hour // wake periodically even for very long backoffs
+	}
+	w.scheduleWake(jc, delay, fmt.Sprintf("Waiting for retry: %d item(s), next attempt in %s", pending, delay.Round(time.Second)))
+}
+
+// scheduleWake marks a job as sleeping until wakeAt so the round-robin skips
+// it until then, and records why on the job summary.
+func (w *WorkerOrchestrator) scheduleWake(jc *jobContext, delay time.Duration, reason string) {
+	wakeAt := time.Now().Add(delay)
+
+	w.jobMutex.Lock()
+	jc.wakeAt = &wakeAt
+	w.jobMutex.Unlock()
+
+	w.db.Model(&database.Job{}).Where("id = ?", jc.job.ID).Update("summary", reason)
+	slog.Info("Acquisition job sleeping", "worker_id", w.workerID, "job_id", jc.job.ID, "reason", reason, "wake_in", delay.Round(time.Second))
+}
+
+// countRunningItems counts items of a job currently claimed by any worker.
+func (w *WorkerOrchestrator) countRunningItems(jobID uint64) int64 {
+	var n int64
+	w.db.Model(&database.JobItem{}).Where("job_id = ? AND status = 'running'", jobID).Count(&n)
+	return n
+}
+
+// pendingRetry reports how many items of a job are waiting for a retry and
+// when the earliest one becomes claimable.
+func (w *WorkerOrchestrator) pendingRetry(jobID uint64) (int64, time.Time) {
+	var stats struct {
+		Count   int64
+		Earliest *time.Time
+	}
+	w.db.Model(&database.JobItem{}).Where("job_id = ? AND status = 'failed' AND next_attempt_at IS NOT NULL", jobID).
+		Select("COUNT(*) AS count, MIN(next_attempt_at) AS earliest").Scan(&stats)
+	if stats.Earliest == nil {
+		return 0, time.Time{}
+	}
+	return stats.Count, *stats.Earliest
+}
+
+// healStaleRunningItems returns items claimed by a dead worker back to the
+// queue: a worker crash (or restart) leaves items in 'running' with no one
+// executing them, and nothing else ever touches that status. Only items whose
+// start is older than the threshold are healed, so live items are untouched.
+func (w *WorkerOrchestrator) healStaleRunningItems(jobID uint64, threshold time.Duration) int64 {
+	cutoff := time.Now().Add(-threshold)
+	res := w.db.Model(&database.JobItem{}).
+		Where("job_id = ? AND status = 'running' AND started_at < ?", jobID, cutoff).
+		Updates(map[string]interface{}{
+			"status":     "queued",
+			"started_at": nil,
+		})
+	return res.RowsAffected
+}
+
+// finalizeAcquisition computes the honest final state for an acquisition job
+// from its per-item outcomes and applies it. It is called from finishJob for
+// acquisition jobs, replacing the old unconditional "succeeded".
+//
+// The returned summary overwrites the generic "Completed"; the returned state
+// is one of "succeeded", "partial", or "failed". An err from the processing
+// loop still forces "failed" — per-item outcomes cannot resurrect a job whose
+// orchestration itself crashed.
+func (w *WorkerOrchestrator) finalizeAcquisition(jobID uint64, err error) (finalState string, summary string) {
+	state, summary := services.AcquisitionFinalState(w.db, jobID)
+	if err != nil {
+		return "failed", summary
+	}
+	// Write item outcomes back to the tracked-release lifecycle so subsequent
+	// artist syncs know what is actually in the library (before this, releases
+	// stayed 'queued' forever and syncs could never tell acquired from missing).
+	var acqJob database.Job
+	if w.db.First(&acqJob, jobID).Error == nil && acqJob.ScopeType == "artist" {
+		if artistID, perr := uuid.Parse(acqJob.ScopeID); perr == nil {
+			var artist database.MonitoredArtist
+			if nerr := w.db.First(&artist, "id = ?", artistID).Error; nerr == nil {
+				w.db.Model(&database.TrackedRelease{}).Where(
+					"artist_id = ? AND status = 'queued'", artistID).Updates(map[string]interface{}{
+					"status": gorm.Expr(
+						"CASE WHEN EXISTS (SELECT 1 FROM jobitems ji WHERE ji.job_id = ? AND ji.normalized_query = ? || ' ' || tracked_releases.title AND (ji.status = 'imported' OR ji.status LIKE 'completed%')) THEN 'acquired' ELSE 'wanted' END",
+						jobID, artist.Name),
+				})
+			}
+		}
+	}
+	return state, summary
 }
 
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
@@ -765,6 +884,12 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 		finalState = "failed"
 		summary = err.Error()
 	}
+	// Acquisition jobs report honestly: derive final state from per-item
+	// outcomes (succeeded / partial / failed) instead of claiming success
+	// whenever the claim loop ran dry.
+	if jc.job.Type == "acquisition" {
+		finalState, summary = w.finalizeAcquisition(jobID, err)
+	}
 
 	now := time.Now()
 	updates := map[string]interface{}{
@@ -780,10 +905,10 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 
 	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
 
-	// Trigger library index refresh after successful acquisition so new
-	// tracks appear in the streaming server without waiting for a manual
-	// or scheduled scan.
-	if finalState == "succeeded" && jc.job.Type == "acquisition" {
+	// Trigger library index refresh after an acquisition that imported anything
+	// (fully or partially) so new tracks appear in the streaming server without
+	// waiting for a manual or scheduled scan.
+	if (finalState == "succeeded" || finalState == "partial") && jc.job.Type == "acquisition" {
 		w.wg.Add(1)
 		go func() {
 			defer w.wg.Done()
