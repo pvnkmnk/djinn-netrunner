@@ -1,8 +1,8 @@
 <div class="modal-overlay" data-close-modal>
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-header">
-            <h3>{% if ID %}Edit{% else %}Add{% endif %} Schedule</h3>
-            <button class="modal-close" data-close-modal>&times;</button>
+            <h3 id="modal-title">{% if ID %}Edit{% else %}Add{% endif %} Schedule</h3>
+            <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
         <form hx-post="/api/schedules" hx-target="#schedules-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
             {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}

@@ -1,13 +1,13 @@
 <div class="jobs-region">
     <div class="filters" hx-get="/partials/jobs" hx-target="#jobs-list" hx-trigger="change">
-        <select name="job_type">
+        <select name="job_type" aria-label="Filter by job type">
             <option value="">All Types</option>
             <option value="sync">Sync</option>
             <option value="scan">Scan</option>
             <option value="acquisition">Acquisition</option>
             <option value="enrich">Enrich</option>
         </select>
-        <select name="state">
+        <select name="state" aria-label="Filter by job state">
             <option value="">All States</option>
             <option value="queued">Queued</option>
             <option value="running">Running</option>
