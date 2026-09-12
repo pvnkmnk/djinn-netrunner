@@ -101,6 +101,15 @@ services:
       dockerfile: backend/Dockerfile
     container_name: ops-web
     command: ["./netrunner-server"]
+    # Inject .env into the container. Without this, .env is only used for
+    # ${VAR} substitution *inside this file*: JWT_SECRET, CONFIG_ENV,
+    # PROXY_URL, NAVIDROME_*, SUBSONIC_* and every provider key documented in
+    # .env.example would never reach the process. `environment:` below still
+    # wins over env_file, so the compose-derived values stay authoritative.
+    # `required: false` keeps a fresh clone (no .env) startable.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030
@@ -137,6 +146,11 @@ services:
       dockerfile: backend/Dockerfile
     container_name: ops-worker
     command: ["./netrunner-worker"]
+    # Same passthrough as ops-web: the worker is the process that actually needs
+    # the provider keys, proxy and media-server credentials.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030

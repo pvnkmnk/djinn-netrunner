@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -38,6 +39,15 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 	jobs := make(chan ScanJob, 100)
 	var wg sync.WaitGroup
 
+	// Per-file failures must not be swallowed: a scan that indexes some files
+	// and fails on others has to surface as a failed job, not "Completed".
+	var (
+		mu       sync.Mutex
+		indexed  int
+		failed   int
+		firstErr error
+	)
+
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
@@ -48,7 +58,19 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 					return
 				default:
 				}
-				s.processFile(job.Path, job.LibraryID)
+				if err := s.processFile(job.Path, job.LibraryID); err != nil {
+					slog.Error("Error indexing file", "library_id", job.LibraryID, "path", job.Path, "error", err)
+					mu.Lock()
+					failed++
+					if firstErr == nil {
+						firstErr = fmt.Errorf("%s: %w", job.Path, err)
+					}
+					mu.Unlock()
+					continue
+				}
+				mu.Lock()
+				indexed++
+				mu.Unlock()
 			}
 		}()
 	}
@@ -73,16 +95,21 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 	close(jobs)
 	wg.Wait()
 
-	slog.Info("Finished scan", "library_id", libraryID, "path", path)
-	return err
+	slog.Info("Finished scan", "library_id", libraryID, "path", path, "indexed", indexed, "failed", failed)
+	if err != nil {
+		return err
+	}
+	if failed > 0 {
+		return fmt.Errorf("scan indexed %d file(s) but failed on %d: %w", indexed, failed, firstErr)
+	}
+	return nil
 }
 
-func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
+func (s *ScannerService) processFile(path string, libraryID uuid.UUID) error {
 	// Extract metadata
 	meta, err := s.metadata.Extract(path)
 	if err != nil {
-		slog.Error("Error extracting metadata", "library_id", libraryID, "path", path, "error", err)
-		return
+		return fmt.Errorf("extract metadata: %w", err)
 	}
 
 	// Compute hash
@@ -93,27 +120,38 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 	var fingerprint string
 	var existing database.Track
 	err = s.db.Where("path = ?", path).First(&existing).Error
-	if err != nil {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		// Track not found — new, fingerprint and create
 		fp, _, fpErr := s.metadata.Fingerprint(path)
 		if fpErr == nil {
 			fingerprint = fp
 		}
-		var track database.Track
-		track = database.Track{
+		// Path is NOT NULL with a unique index: leaving it empty makes the first
+		// insert succeed and every later track collide on idx_tracks_path.
+		track := database.Track{
 			LibraryID:   libraryID,
 			Title:       meta.Title,
 			Artist:      meta.Artist,
 			Album:       meta.Album,
+			Path:        path,
 			Format:      meta.Format,
 			FileSize:    meta.FileSize,
 			FileHash:    hash,
 			Fingerprint: fingerprint,
 		}
-		if err := s.db.Create(&track).Error; err != nil {
-			slog.Error("Error saving track", "library_id", libraryID, "path", path, "error", err)
+		if meta.TrackNumber > 0 {
+			track.TrackNum = &meta.TrackNumber
 		}
-		return
+		if meta.Year > 0 {
+			track.Year = &meta.Year
+		}
+		if createErr := s.db.Create(&track).Error; createErr != nil {
+			return fmt.Errorf("save track: %w", createErr)
+		}
+		return nil
+	case err != nil:
+		return fmt.Errorf("look up track: %w", err)
 	}
 
 	// Track exists — preserve fingerprint if already set; only recompute if missing
@@ -127,16 +165,26 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) {
 		}
 	}
 
-	// Update metadata fields on existing track
-	s.db.Model(&existing).Where("id = ?", existing.ID).Assign(database.Track{
-		Title:       meta.Title,
-		Artist:      meta.Artist,
-		Album:       meta.Album,
-		Format:      meta.Format,
-		FileSize:    meta.FileSize,
-		FileHash:    hash,
-		Fingerprint: fingerprint,
-	}).Save(&existing)
+	// Update metadata fields on existing track, preserving enrichment fields
+	// (genre, composer, cover_url, provenance) that the scanner does not own.
+	existing.Title = meta.Title
+	existing.Artist = meta.Artist
+	existing.Album = meta.Album
+	existing.Path = path
+	existing.Format = meta.Format
+	existing.FileSize = meta.FileSize
+	existing.FileHash = hash
+	existing.Fingerprint = fingerprint
+	if meta.TrackNumber > 0 {
+		existing.TrackNum = &meta.TrackNumber
+	}
+	if meta.Year > 0 {
+		existing.Year = &meta.Year
+	}
+	if err := s.db.Save(&existing).Error; err != nil {
+		return fmt.Errorf("update track: %w", err)
+	}
+	return nil
 }
 
 func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID, jobID uint64) error {

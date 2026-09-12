@@ -217,6 +217,14 @@ func (h *SubsonicHandler) AuthMiddleware(c *fiber.Ctx) error {
 			return h.respondError(c, 40, "Authentication failed")
 		}
 	} else if token != "" && salt != "" {
+		// SECURITY: with no configured shared password, md5Password is empty and
+		// the expected token collapses to md5(salt) — computable by anyone who
+		// knows the salt they just sent. Refuse token auth instead of accepting
+		// a forgery; account-password (p=) auth still works.
+		if h.md5Password == "" {
+			slog.Warn("Subsonic auth failed: token authentication requires SUBSONIC_PASSWORD to be configured")
+			return h.respondError(c, 40, "Authentication failed")
+		}
 		// Token authentication
 		hash := md5.Sum([]byte(h.md5Password + salt))
 		expected := hex.EncodeToString(hash[:])

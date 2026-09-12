@@ -226,9 +226,15 @@ func Load(filenames ...string) (*Config, error) {
 	}
 
 	// SECURITY: JWT_SECRET must be explicitly set. Never use a hardcoded default.
-	// In development, auto-generate a random secret if not provided.
+	env := getEnv("ENVIRONMENT", "development")
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
+		// In development an ephemeral secret is convenient. In production it would
+		// silently invalidate every session on each restart and make tokens
+		// unverifiable across replicas, so fail closed instead of degrading.
+		if env == "production" {
+			return nil, fmt.Errorf("JWT_SECRET is required in production: without it sessions are invalidated on every restart")
+		}
 		jwtSecret = generateSecureSecret()
 		slog.Warn("JWT_SECRET not set — generated random secret. Set JWT_SECRET in .env for persistence across restarts.")
 	}
@@ -238,7 +244,6 @@ func Load(filenames ...string) (*Config, error) {
 	// a Navidrome-only production deployment must not be forced to provide Gonic credentials.
 	gonicUser := os.Getenv("GONIC_USER")
 	gonicPass := os.Getenv("GONIC_PASS")
-	env := getEnv("ENVIRONMENT", "development")
 	if getEnv("GONIC_URL", "") != "" && (gonicUser == "" || gonicPass == "") {
 		if env == "production" {
 			return nil, fmt.Errorf("GONIC_USER and GONIC_PASS are required in production when GONIC_URL is set")
@@ -369,6 +374,16 @@ func Load(filenames ...string) (*Config, error) {
 	// Validate required fields
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	// SECURITY: an enabled Subsonic endpoint with no shared password leaves the
+	// token-auth path forgeable (token == md5("" + salt)). Fail closed rather
+	// than expose an endpoint whose only defence is the caller's goodwill.
+	if cfg.Subsonic.Enabled && cfg.Subsonic.Password == "" {
+		if cfg.Environment == "production" {
+			return nil, fmt.Errorf("SUBSONIC_PASSWORD is required in production when SUBSONIC_ENABLED=true")
+		}
+		slog.Warn("SUBSONIC_PASSWORD not set — Subsonic token authentication is disabled; clients must authenticate with their account password (p= parameter).")
 	}
 
 	// Validate proxy URL if set

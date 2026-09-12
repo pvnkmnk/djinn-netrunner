@@ -79,3 +79,5 @@ Thumbs.db
 # Playwright artifacts
 e2e/playwright-report/
 e2e/test-results/
+# Graphify knowledge-graph output (local tooling)
+graphify-out/
