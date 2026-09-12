@@ -2,10 +2,12 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -123,4 +125,42 @@ func TestScanLibrary_ReportsPartialFailure(t *testing.T) {
 	var tracks []database.Track
 	require.NoError(t, db.Find(&tracks).Error)
 	require.Len(t, tracks, 1, "valid files must still be indexed")
+}
+
+// Cancelling after discovery but before the pool drains the queue left every
+// worker returning early with err == nil and failed == 0, so the scan reported
+// success while files it never looked at were silently dropped. The invariant
+// is strict: returning nil means every file was indexed.
+func TestScanLibrary_CancelledScanNeverReportsIncompleteSuccess(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not available")
+	}
+
+	db := newScannerTestDB(t)
+	library := database.Library{Name: "Beta Library", Path: t.TempDir()}
+	require.NoError(t, db.Create(&library).Error)
+
+	const total = 8
+	for i := 0; i < total; i++ {
+		generateTestAudio(t, library.Path, fmt.Sprintf("%02d - Track.flac", i),
+			"-metadata", fmt.Sprintf("title=Track %d", i))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel mid-flight so the race can land on either side of discovery; the
+	// assertion below is what must hold regardless of which side it lands on.
+	go func() {
+		time.Sleep(time.Millisecond)
+		cancel()
+	}()
+	defer cancel()
+
+	err := NewScannerService(db).ScanLibrary(ctx, library.ID, library.Path)
+
+	var indexed int64
+	require.NoError(t, db.Model(&database.Track{}).Count(&indexed).Error)
+	if err == nil {
+		require.EqualValues(t, total, indexed,
+			"a scan that reports success must have indexed every file")
+	}
 }

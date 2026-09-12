@@ -143,6 +143,7 @@ only the account password is accepted.
 | Upgrade | `git pull && docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d --build` |
 | Back up | see `ops/docs/backup.md` — back up the Postgres volume *and* the music volume together |
 | Deduplicate a pre-existing library | `ops/docs/library-dedup-runbook.md` |
+| Reach it from another host | The beta port binds to `127.0.0.1` because it serves plain HTTP with session cookies and Subsonic credentials. Put the `edge` profile's Caddy in front, or set `BETA_BIND_ADDR=0.0.0.0` behind your own TLS terminator. `NAVIDROME_BIND_ADDR` works the same way for the optional media server. |
 | Tear down (keep data) | `docker compose ... down` |
 | Destroy (lose everything) | `docker compose ... down -v` |
 
@@ -154,7 +155,7 @@ only the account password is accepted.
 | Server exits, `SUBSONIC_PASSWORD is required in production when SUBSONIC_ENABLED=true` | Set `SUBSONIC_PASSWORD`, or set `SUBSONIC_ENABLED=false` if you do not want streaming. |
 | `403` on register/login | Missing `X-CSRF-Token` header (see step 3). |
 | Logins die after every restart | `JWT_SECRET` is not reaching the container: check `docker compose ... exec ops-web env \| grep JWT_SECRET`. |
-| Every variable in `.env` seems ignored | You are running `docker-compose.yml` alone against an old checkout, or a local override replaced `env_file`. The base file only forwards what it lists. |
+| Every variable in `.env` seems ignored | The container predates the current compose file. `env_file` is applied at *create* time, so `docker compose restart` does not pick up `.env` changes — run `up -d` (add `--build` after a code change). A local override that replaces `env_file` has the same effect. `docker compose exec ops-web env` shows what actually arrived. |
 | `exec /entrypoint.sh: no such file or directory` when building on Windows | The working copy has CRLF in `backend/entrypoint.sh`. The repo forces LF via `.gitattributes`; `git checkout -- backend/entrypoint.sh` (or `git config core.autocrlf input`) fixes it. |
 | slskd exits immediately / downloads unwritable | `volume-init` must run before slskd; it chowns the shared volumes to UID 1000. Keep it in the stack. |
 | `port is already allocated` | Another stack holds 8080/5432; set `BETA_HTTP_PORT` (or stop the other stack). |

@@ -94,8 +94,23 @@ api() {
 
 status() { cat "$STATUS_FILE" 2>/dev/null || echo 000; }
 
-# Authenticated GET that must not be a state-changing call.
-authed_get() { curl -s -b "$COOKIE_FILE" "$BASE_URL$1"; }
+# Authenticated GET for checks that must prove a real response. Prints the body
+# and records the HTTP status in STATUS_FILE — for the same reason as api(), a
+# variable assigned inside $( ) never reaches the caller, and checking only for
+# an absence of "error" would accept an empty body from a failed request.
+authed_get() {
+    curl -s -b "$COOKIE_FILE" -w '%{http_code}' -o "$BODY_FILE" "$BASE_URL$1" > "$STATUS_FILE"
+    cat "$BODY_FILE"
+}
+
+# A deployment still carrying a documented placeholder secret is not healthy:
+# those values are published in the repo, so anyone can authenticate with them.
+is_template_secret() {
+    case "$1" in
+        changeme|CHANGE_ME|smokepass|smoke-jwt-secret|smoke-api-key|your_random_api_key|generate_random_api_key|replace_with_a_long_random_secret|your_*) return 0 ;;
+    esac
+    return 1
+}
 
 json_field() { printf '%s' "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | sed 's/.*:"//;s/"$//'; }
 # Counts occurrences of an already-quoted JSON fragment, e.g. '"title":"Smoke'.
@@ -136,10 +151,13 @@ fi
 for c in "$WEB_CONTAINER" "$WORKER_CONTAINER"; do
     env_dump="$(docker exec "$c" env 2>/dev/null || true)"
     for required in JWT_SECRET SUBSONIC_PASSWORD; do
-        if printf '%s' "$env_dump" | grep -q "^${required}=.\+"; then
-            pass "$c has $required set"
-        else
+        value="$(printf '%s' "$env_dump" | sed -n "s/^${required}=//p")"
+        if [ -z "$value" ]; then
             fail "$c is missing $required — check env_file: in the compose service"
+        elif is_template_secret "$value"; then
+            fail "$c is still using the template value for $required — generate a real one (openssl rand -base64 48)"
+        else
+            pass "$c has a non-template $required set"
         fi
     done
     if printf '%s' "$env_dump" | grep -q "^SUBSONIC_ENABLED=true"; then
@@ -183,7 +201,9 @@ for _ in $(seq 1 30); do
 done
 
 libs_after="$(authed_get /api/libraries)"
-if printf '%s' "$libs_after" | grep -qi '"error"'; then
+if [ "$(status)" != "200" ]; then
+    fail "session did not survive the restart (status $(status)): $libs_after"
+elif printf '%s' "$libs_after" | grep -qi '"error"'; then
     fail "session did not survive the restart: $libs_after"
 else
     pass "session survived a $WEB_CONTAINER restart"
@@ -242,6 +262,7 @@ INDEXED=0
 TRACKS_JSON=""
 for _ in $(seq 1 30); do
     TRACKS_JSON="$(authed_get "/api/libraries/$LIB_ID/tracks")"
+    [ "$(status)" = "200" ] || continue
     INDEXED="$(json_count "$TRACKS_JSON" "\"title\":\"Smoke Track")"
     [ "$INDEXED" -ge "$FIXTURE_COUNT" ] && break
     sleep 2

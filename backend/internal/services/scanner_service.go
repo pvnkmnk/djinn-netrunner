@@ -95,6 +95,14 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 	close(jobs)
 	wg.Wait()
 
+	// A cancellation can land after discovery finished but before the pool
+	// drained the queue: every worker returns early, err stays nil and failed
+	// stays zero, so reporting success here would hide the files that were
+	// never indexed.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("scan cancelled with %d of %d file(s) indexed: %w", indexed, indexed+failed, ctxErr)
+	}
+
 	slog.Info("Finished scan", "library_id", libraryID, "path", path, "indexed", indexed, "failed", failed)
 	if err != nil {
 		return err
@@ -175,9 +183,13 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) error {
 	existing.FileSize = meta.FileSize
 	existing.FileHash = hash
 	existing.Fingerprint = fingerprint
+	// Assign unconditionally: a rescan of a file whose tags were stripped must
+	// clear the previous values rather than keep reporting stale ones.
+	existing.TrackNum = nil
 	if meta.TrackNumber > 0 {
 		existing.TrackNum = &meta.TrackNumber
 	}
+	existing.Year = nil
 	if meta.Year > 0 {
 		existing.Year = &meta.Year
 	}
