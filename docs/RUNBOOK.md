@@ -120,6 +120,7 @@ Weekly:
 - Review failed jobs and error patterns.
 
 ## Beta release checklist (operator)
+0. Reproducible bring-up and per-check verification: [BETA_DEPLOYMENT.md](BETA_DEPLOYMENT.md).
 1. Automated gate:
    - `pwsh -File scripts/validate.ps1 -SkipVulnCheck`
 2. Manual Docker acceptance:

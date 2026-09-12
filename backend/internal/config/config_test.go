@@ -551,6 +551,7 @@ func TestLoad_ProductionRequiresGonicCredentials(t *testing.T) {
 	// (No GONIC_URL means no Gonic server is configured — no error expected.)
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("ENVIRONMENT", "production")
+	os.Setenv("JWT_SECRET", "production-test-secret")
 	os.Setenv("GONIC_URL", "http://gonic:4747")
 
 	_, err := Load(".non-existent-env")
@@ -571,6 +572,7 @@ func TestLoad_ProductionNavidromeOnlySucceedsWithoutGonicCredentials(t *testing.
 	// required whenever NAVIDROME_URL is set (fail closed).
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("ENVIRONMENT", "production")
+	os.Setenv("JWT_SECRET", "production-test-secret")
 	os.Setenv("NAVIDROME_URL", "http://navidrome:4533")
 	os.Setenv("NAVIDROME_USER", "admin")
 	os.Setenv("NAVIDROME_PASS", "navpass")
@@ -591,6 +593,7 @@ func TestLoad_ProductionWithGonicCredentials(t *testing.T) {
 
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	os.Setenv("ENVIRONMENT", "production")
+	os.Setenv("JWT_SECRET", "production-test-secret")
 	os.Setenv("GONIC_USER", "gonicuser")
 	os.Setenv("GONIC_PASS", "gonicpass")
 

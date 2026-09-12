@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/md5"
 	"crypto/rand"
+	"errors"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -168,6 +169,13 @@ func (c *SubsonicClient) GetSong(id string) (*SubsonicSong, error) {
 }
 
 func (c *SubsonicClient) doRequest(endpoint string, params url.Values, target interface{}) error {
+	// A nil *SubsonicClient is reachable in practice: when no library server is
+	// configured the worker has no client, and a typed nil stored in an
+	// interface is not a nil interface, so callers' `client == nil` checks pass
+	// and the call lands here. Return an error instead of dereferencing c.
+	if c == nil {
+		return errors.New("no library server configured")
+	}
 	if params == nil {
 		params = url.Values{}
 	}

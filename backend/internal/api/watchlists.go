@@ -358,9 +358,11 @@ func (h *WatchlistHandler) SyncWatchlist(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
-	// Create sync job
+	// Create sync job. The worker dispatches on "sync" and SyncHandler.Execute
+	// requires ScopeType "watchlist" — a "watchlist_sync" type matched no case
+	// and every sync died as "unsupported job type: watchlist_sync".
 	job := database.Job{
-		Type:        "watchlist_sync",
+		Type:        "sync",
 		State:       "queued",
 		ScopeType:   "watchlist",
 		ScopeID:     wl.ID.String(),
