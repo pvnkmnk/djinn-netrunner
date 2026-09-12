@@ -114,6 +114,12 @@ services:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
+      # slskd/Navidrome/Gonic are reached by their compose service name, which
+      # resolves to a private IP — the SSRF guard rejects that by default, and
+      # every Soulseek search would fail with `ssrf: no public IP found`. The
+      # URLs here are operator-configured, not user input, so the inner-service
+      # check is waived for this client. Provider APIs keep full SSRF protection.
+      ALLOW_PRIVATE_TARGETS: "true"
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
       PORT: "8080"
@@ -155,6 +161,9 @@ services:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops?sslmode=disable
       SLSKD_URL: http://netrunner-slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
+      # See the note on ops-web: the worker is the process that actually calls
+      # slskd, so this is the one that breaks acquisition without it.
+      ALLOW_PRIVATE_TARGETS: "true"
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
       MUSIC_LIBRARY: /app/music

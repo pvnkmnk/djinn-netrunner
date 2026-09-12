@@ -113,7 +113,16 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	transcoder := services.NewTranscoderService()
 	ytdlp := services.NewYtdlpService()
 
-	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, libraryClient, discogs, cache, lyrics, transcoder, ytdlp)
+	// NewAcquisitionHandler takes a SubsonicClientInterface. A typed-nil
+	// *SubsonicClient is NOT a nil interface, so the handler's `library == nil`
+	// guard would pass and Search3 would panic on the nil receiver — which is
+	// exactly what happened to every acquisition on a stack with no media
+	// server. Only populate the interface when a client actually exists.
+	var libraryForAcquisition services.SubsonicClientInterface
+	if libraryClient != nil {
+		libraryForAcquisition = libraryClient
+	}
+	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, libraryForAcquisition, discogs, cache, lyrics, transcoder, ytdlp)
 
 	return &WorkerOrchestrator{
 		workerID:       fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
