@@ -172,11 +172,13 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 				"status":      "completed (duplicate album)",
 				"finished_at": time.Now(),
 				"final_path":  existing.FinalPath,
-			})
-			// The staged file is now redundant — remove it so staging does not
-			// grow unbounded. Best-effort.
+			}) // The staged file is now redundant — remove it and sweep the
+			// album folder it leaves empty, so staging does not grow
+			// unbounded. Best-effort.
 			if rmErr := os.Remove(downloadPath); rmErr != nil {
 				h.Log(jobID, "WARN", fmt.Sprintf("Staging cleanup failed (duplicate album): %v", rmErr), &itemID)
+			} else {
+				h.cleanupEmptyStagingDirs(filepath.Dir(downloadPath), jobID, &itemID)
 			}
 			return nil
 		}

@@ -3,13 +3,12 @@
 // Package integration provides end-to-end pipeline tests for acquisition flows.
 //
 // Tests cover:
-//   1. Watchlist sync creates acquisition job with correct items
-//   2. Full pipeline with mock slskd: sync → search → download → import
-//   3. Download failure handling
-//   4. Metadata enrichment fallback
-//   5. Concurrent job execution
-//   6. Library prune removes stale track records and writes job logs
-//
+//  1. Watchlist sync creates acquisition job with correct items
+//  2. Full pipeline with mock slskd: sync → search → download → import
+//  3. Download failure handling
+//  4. Metadata enrichment fallback
+//  5. Concurrent job execution
+//  6. Library prune removes stale track records and writes job logs
 package integration
 
 import (
@@ -46,6 +45,14 @@ type mockSlskdConfig struct {
 	downloadErr     bool
 	downloadTimeout int
 	healthOK        bool
+
+	// Staging fixture: when stagingDir is set, the mock materializes the
+	// "downloaded" file there when its state poll first reports Completed,
+	// mimicking real slskd writing into its downloads volume. stagedRelPath
+	// is the remote path (dir + filename) the peer serves.
+	stagingDir      string
+	stagedRelPath   string
+	downloadCounter int
 }
 
 func defaultMockSlskdConfig() *mockSlskdConfig {
@@ -57,7 +64,7 @@ func defaultMockSlskdConfig() *mockSlskdConfig {
 				"uploadSpeed": 1000,
 				"queueLength": 0,
 				"files": []map[string]interface{}{
-					{"filename": "Test Artist - Test Song.mp3", "size": 5000000, "bitRate": 320, "isLocked": false},
+					{"filename": "Test Album/Test Artist - Test Song.mp3", "size": 5000000, "bitRate": 320, "isLocked": false},
 				},
 			},
 		},
@@ -98,7 +105,10 @@ func newMockSlskdServer(cfg *mockSlskdConfig) *httptest.Server {
 		}
 		if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v0/searches/") {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{"responses": cfg.searchResults})
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"state":     "Completed", // terminal state so Search exits its poll loop immediately
+				"responses": cfg.searchResults,
+			})
 			return
 		}
 		if r.Method == "DELETE" && strings.HasPrefix(r.URL.Path, "/api/v0/searches/") {
@@ -125,14 +135,24 @@ func newMockSlskdServer(cfg *mockSlskdConfig) *httptest.Server {
 				pollCount++
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"id": "mock-download-id", "state": "InProgress",
-					"filename": "Test Artist - Test Song.mp3",
+					"filename":         "Test Album/Test Artist - Test Song.mp3",
 					"bytesTransferred": int64(pollCount * 100000), "size": int64(5000000),
 				})
 				return
 			}
+			// Materialize the staged file like real slskd would have, once
+			// per completed download. Each download gets distinct bytes so
+			// hash-level dedup cannot mask album-level dedup in tests.
+			if cfg.stagingDir != "" {
+				cfg.downloadCounter++
+				staged := filepath.Join(cfg.stagingDir, filepath.FromSlash(cfg.stagedRelPath))
+				if err := os.MkdirAll(filepath.Dir(staged), 0o755); err == nil {
+					_ = os.WriteFile(staged, []byte(fmt.Sprintf("fake audio payload #%d for Test Artist - Test Song", cfg.downloadCounter)), 0o644)
+				}
+			}
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"id": "mock-download-id", "state": cfg.downloadState,
-				"filename": "Test Artist - Test Song.mp3", "size": int64(5000000),
+				"filename": "Test Album/Test Artist - Test Song.mp3", "size": int64(5000000),
 			})
 			return
 		}
@@ -236,53 +256,41 @@ func TestPipelineSyncCreatesAcquisitionJob(t *testing.T) {
 // Note: SlskdService.Search() has a built-in 30-second sleep for result
 // gathering, so this test takes ~35s. Expected for integration tests.
 //
+// TestPipelineFullPipelineWithMockSlskd exercises the full acquisition
+// pipeline end-to-end at the app level: search → select → enqueue →
+// download-wait → import (canonical album-artist folder) → staging sweep,
+// plus the album-level dedup on a re-run of the same release.
+//
+// The mock slskd materializes the "downloaded" file into the staging dir
+// (like real slskd writing into its downloads volume) so the import stage's
+// os.Stat passes — this is the fixture the original version of this test
+// lacked, which is why it used to be skipped.
 func TestPipelineFullPipelineWithMockSlskd(t *testing.T) {
-	// Requires staging directory with a physical file matching the mock download
-	// filename. The mock routes are correct but the import stage calls os.Stat
-	// on the resolved path which doesn't exist in CI.
-	t.Skip("Skipping: needs staging-dir file fixture for import stage")
-
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 	defer cleanupPipelineData(t, harness.DB)
 
+	libRoot := filepath.Join(t.TempDir(), "music_lib")
+	staging := filepath.Join(t.TempDir(), "downloads")
+	require.NoError(t, os.MkdirAll(staging, 0o755))
+
 	mockCfg := defaultMockSlskdConfig()
+	mockCfg.stagingDir = staging
+	mockCfg.stagedRelPath = "Test Album/Test Artist - Test Song.mp3"
+	// Real slskd reports "Completed, Succeeded"; WaitForDownload requires both.
+	mockCfg.downloadState = "Completed, Succeeded"
 	mockServer := newMockSlskdServer(mockCfg)
 	defer mockServer.Close()
 
-	libRoot := filepath.Join(t.TempDir(), "music_lib")
 	pipelineCfg := &config.Config{
 		DatabaseURL: harness.Config.DatabaseURL, SlskdURL: mockServer.URL,
 		SlskdAPIKey: "test-key", MusicLibraryPath: libRoot,
+		DownloadStagingPath: staging,
 		AllowPrivateTargets: true, // mock slskd serves from loopback httptest
 	}
 
-	mockProvider := &testutil.MockProvider{
-		Tracks: []map[string]string{
-			{"artist": "Test Artist", "title": "Test Song", "album": "Test Album", "cover_art_url": ""},
-		},
-		SnapID: "test-snap-002",
-	}
-
-	ws := services.NewWatchlistService(harness.DB, nil, pipelineCfg)
-	ws.RegisterProvider("pipeline_test", mockProvider)
-	sh := services.NewSyncHandler(harness.DB, nil, ws)
-
-	watchlist := createPipelineWatchlist(t, harness.DB, harness.TestQualityProfile)
-	job := createSyncJob(t, harness.DB, watchlist)
-
-	err := sh.Execute(context.Background(), job.ID, *job)
-	require.NoError(t, err)
-
-	var acqJob database.Job
-	require.NoError(t, harness.DB.Where("job_type = ? AND scope_id = ?",
-		"acquisition", watchlist.ID.String()).First(&acqJob).Error)
-	var items []database.JobItem
-	require.NoError(t, harness.DB.Where("job_id = ?", acqJob.ID).Find(&items).Error)
-	require.Len(t, items, 1)
-
 	mockSlskd := services.NewSlskdService(pipelineCfg, harness.DB)
-	os.MkdirAll(libRoot, 0755)
+	require.NoError(t, os.MkdirAll(libRoot, 0o755))
 
 	ah := services.NewAcquisitionHandler(
 		harness.DB, pipelineCfg, mockSlskd,
@@ -290,21 +298,76 @@ func TestPipelineFullPipelineWithMockSlskd(t *testing.T) {
 		nil, nil, nil, nil, nil, nil,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	// Two queued items for the same artist+album (the release re-enqueued).
+	job := &database.Job{
+		Type: "acquisition", State: "running", ScopeType: "manual",
+		RequestedAt: time.Now(), CreatedBy: "integration_test",
+	}
+	require.NoError(t, harness.DB.Create(job).Error)
+
+	mkItem := func(seq int) *database.JobItem {
+		item := &database.JobItem{
+			JobID: job.ID, Sequence: seq, Status: "queued",
+			NormalizedQuery: "test artist test song",
+			Artist:          "Test Artist", TrackTitle: "Test Song", Album: "Test Album",
+		}
+		require.NoError(t, harness.DB.Create(item).Error)
+		return item
+	}
+	item1 := mkItem(0)
+	item2 := mkItem(1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	err = ah.ExecuteItem(ctx, acqJob.ID, items[0].ID)
+	// ── First item: full import. ────────────────────────────────────────
+	require.NoError(t, ah.ExecuteItem(ctx, job.ID, item1.ID))
+
+	var updated1 database.JobItem
+	require.NoError(t, harness.DB.First(&updated1, item1.ID).Error)
+	assert.Contains(t, updated1.Status, "imported", "first item should import (got %q: %s)",
+		updated1.Status, updated1.FailureReason)
+
+	var acqs1 []database.Acquisition
+	require.NoError(t, harness.DB.Where("job_item_id = ?", item1.ID).Find(&acqs1).Error)
+	require.Len(t, acqs1, 1, "acquisition record should exist for the import")
+
+	// Canonical album-artist folder layout: libraryRoot/<artist>/<album>/<file>
+	expectedDir := filepath.Join(libRoot, "Test Artist", "Test Album")
+	assert.True(t, strings.HasPrefix(acqs1[0].FinalPath, expectedDir),
+		"import should land in the canonical artist/album folder, got %q", acqs1[0].FinalPath)
+	_, err := os.Stat(acqs1[0].FinalPath)
+	require.NoError(t, err, "imported file should exist in the library")
+
+	// Staging sweep: the emptied Test Album dir (and its file) must be gone.
+	_, err = os.Stat(filepath.Join(staging, "Test Album"))
+	assert.True(t, os.IsNotExist(err), "staging album dir should be swept after import")
+
+	// ── Second item: same release re-enqueued → album-level dedup. ─────
+	require.NoError(t, ah.ExecuteItem(ctx, job.ID, item2.ID))
+
+	var updated2 database.JobItem
+	require.NoError(t, harness.DB.First(&updated2, item2.ID).Error)
+	assert.Contains(t, updated2.Status, "duplicate album",
+		"re-enqueued release should be caught by album-level dedup (got %q: %s)",
+		updated2.Status, updated2.FailureReason)
+
+	var acqs2 int64
+	harness.DB.Model(&database.Acquisition{}).Where("job_item_id = ?", item2.ID).Count(&acqs2)
+	assert.Equal(t, int64(0), acqs2, "deduped item must not create an acquisition record")
+
+	// The redundant staged file was removed; staging stays clean.
+	_, err = os.Stat(filepath.Join(staging, "Test Album", "Test Artist - Test Song.mp3"))
+	assert.True(t, os.IsNotExist(err), "redundant staged file should be removed after dedup")
+
+	entries, err := os.ReadDir(staging)
 	require.NoError(t, err)
+	assert.Empty(t, entries, "staging dir should be empty after import + dedup")
 
-	var updatedItem database.JobItem
-	require.NoError(t, harness.DB.First(&updatedItem, items[0].ID).Error)
-	assert.Contains(t, updatedItem.Status, "imported", "item should be imported after pipeline")
-
-	var acqs []database.Acquisition
-	require.NoError(t, harness.DB.Where("job_item_id = ?", items[0].ID).Find(&acqs).Error)
-	assert.NotEmpty(t, acqs, "acquisition record should exist")
-
-	os.RemoveAll(libRoot)
+	// Library holds exactly one copy of the track.
+	var total int64
+	harness.DB.Model(&database.Acquisition{}).Where("artist = ? AND album = ?", "Test Artist", "Test Album").Count(&total)
+	assert.Equal(t, int64(1), total, "exactly one acquisition for the artist+album")
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -313,7 +376,6 @@ func TestPipelineFullPipelineWithMockSlskd(t *testing.T) {
 //
 // When slskd download enqueue fails, the item should be marked as failed
 // with the appropriate error reason.
-//
 func TestPipelineDownloadFailure(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
@@ -353,7 +415,7 @@ func TestPipelineDownloadFailure(t *testing.T) {
 	item := &database.JobItem{
 		JobID: job.ID, Sequence: 0, Status: "queued",
 		NormalizedQuery: "Test Artist Test Song",
-		Artist: "Test Artist", TrackTitle: "Test Song", Album: "Test Album",
+		Artist:          "Test Artist", TrackTitle: "Test Song", Album: "Test Album",
 	}
 	require.NoError(t, harness.DB.Create(item).Error)
 
@@ -377,26 +439,31 @@ func TestPipelineDownloadFailure(t *testing.T) {
 // When metadata enrichment services (MusicBrainz, AcoustID) are unavailable,
 // the pipeline should still complete import using basic tag extraction.
 //
+// TestPipelineMetadataFallback verifies the import completes with every
+// enrichment service nil (no MusicBrainz/AcoustID/cover/lyrics), using only
+// the job item's declared metadata — the degraded-network path.
 func TestPipelineMetadataFallback(t *testing.T) {
-	// Same as TestPipelineFullPipelineWithMockSlskd: mock routes are correct
-	// but import stage requires a physical file in a staging directory.
-	t.Skip("Skipping: needs staging-dir file fixture for import stage")
-
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
 	defer cleanupPipelineData(t, harness.DB)
 
+	libRoot := filepath.Join(t.TempDir(), "music_lib")
+	staging := filepath.Join(t.TempDir(), "downloads")
+	require.NoError(t, os.MkdirAll(staging, 0o755))
+
 	mockCfg := defaultMockSlskdConfig()
+	mockCfg.stagingDir = staging
+	mockCfg.stagedRelPath = "Test Album/Test Artist - Test Song.mp3"
+	mockCfg.downloadState = "Completed, Succeeded"
 	mockServer := newMockSlskdServer(mockCfg)
 	defer mockServer.Close()
 
-	libRoot := filepath.Join(t.TempDir(), "music_lib")
-	os.MkdirAll(libRoot, 0755)
-	defer os.RemoveAll(libRoot)
+	require.NoError(t, os.MkdirAll(libRoot, 0o755))
 
 	pipelineCfg := &config.Config{
 		DatabaseURL: harness.Config.DatabaseURL, SlskdURL: mockServer.URL,
 		SlskdAPIKey: "test-key", MusicLibraryPath: libRoot,
+		DownloadStagingPath: staging,
 		AllowPrivateTargets: true, // mock slskd serves from loopback httptest
 	}
 
@@ -425,25 +492,28 @@ func TestPipelineMetadataFallback(t *testing.T) {
 	item := &database.JobItem{
 		JobID: job.ID, Sequence: 0, Status: "queued",
 		NormalizedQuery: "Test Artist Test Song",
-		Artist: "Test Artist", TrackTitle: "Test Song", Album: "Test Album",
+		Artist:          "Test Artist", TrackTitle: "Test Song", Album: "Test Album",
 	}
 	require.NoError(t, harness.DB.Create(item).Error)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	err := ah.ExecuteItem(ctx, job.ID, item.ID)
-	require.NoError(t, err)
+	require.NoError(t, ah.ExecuteItem(ctx, job.ID, item.ID))
 
 	var updatedItem database.JobItem
 	require.NoError(t, harness.DB.First(&updatedItem, item.ID).Error)
 	assert.Contains(t, updatedItem.Status, "imported",
-		"item should import even without enrichment services")
+		"item should import even without enrichment services (got %q: %s)",
+		updatedItem.Status, updatedItem.FailureReason)
 
 	var acqs []database.Acquisition
 	require.NoError(t, harness.DB.Where("job_item_id = ?", item.ID).Find(&acqs).Error)
 	require.NotEmpty(t, acqs, "acquisition record should exist")
 	assert.Empty(t, acqs[0].MBRecordingID, "MB recording ID should be empty (no enrichment)")
+
+	_, err := os.Stat(acqs[0].FinalPath)
+	require.NoError(t, err, "imported file should exist despite missing enrichment")
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -452,7 +522,6 @@ func TestPipelineMetadataFallback(t *testing.T) {
 //
 // Two sync jobs on different watchlists should complete without conflicts.
 // Each should create its own acquisition job.
-//
 func TestPipelineConcurrentSyncJobs(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)
@@ -548,7 +617,6 @@ func TestPipelineConcurrentSyncJobs(t *testing.T) {
 // Prune should remove Track records whose files no longer exist on disk,
 // keep records for files that still exist, and record per-file status in
 // job logs.
-//
 func TestLibraryPrune(t *testing.T) {
 	harness := SetupIntegrationHarness(t)
 	defer harness.Teardown(t)

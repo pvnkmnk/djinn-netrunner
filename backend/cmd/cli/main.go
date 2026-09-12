@@ -355,6 +355,124 @@ func libraryCmd() *cobra.Command {
 	})
 
 	cmd.AddCommand(&cobra.Command{
+		Use:   "detect-fragments [libraryID]",
+		Short: "Detect albums split across per-credit artist folders (legacy imports)",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			var roots []database.Library
+			if len(args) == 1 {
+				id, err := uuid.Parse(args[0])
+				if err != nil {
+					handleError(fmt.Errorf("invalid library UUID: %w", err))
+					return
+				}
+				var lib database.Library
+				if err := db.First(&lib, "id = ?", id).Error; err != nil {
+					handleError(fmt.Errorf("library not found: %w", err))
+					return
+				}
+				roots = []database.Library{lib}
+			} else {
+				libs, err := agent.ListLibraries(db)
+				if err != nil {
+					handleError(err)
+					return
+				}
+				roots = libs
+			}
+
+			var all []services.FragmentedAlbum
+			for _, lib := range roots {
+				found, err := services.DetectFragmentedAlbums(db, lib.Path)
+				if err != nil {
+					handleError(fmt.Errorf("library %s: %w", lib.Name, err))
+					return
+				}
+				all = append(all, found...)
+			}
+
+			if jsonOutput {
+				printJSON(all)
+				return
+			}
+			if len(all) == 0 {
+				fmt.Println("No fragmented albums found.")
+				return
+			}
+			fmt.Printf("Found %d fragmented album(s):\n\n", len(all))
+			for _, g := range all {
+				fmt.Printf("%s — %d track(s) across %d folder(s)\n", g.Album, g.TrackCount, len(g.Folders))
+				for _, f := range g.Folders {
+					marker := "    "
+					if f.IsCanonical {
+						marker = " ==>" // suggested merge target
+					}
+					fmt.Printf("%s %-45s (%d track(s))\n", marker, f.ArtistFolder, f.TrackCount)
+				}
+				fmt.Printf("    merge: netrunner-cli library merge-album <libraryID> %q %q [--apply]\n\n",
+					g.Album, g.CanonicalFolder)
+			}
+			fmt.Println("Review the plan, then run merge-album WITHOUT --apply first (dry run).")
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "merge-album <libraryID> <albumFolder> <canonicalArtistFolder>",
+		Short: "Merge an album's per-credit artist folders into one (dry run unless --apply)",
+		Args:  cobra.ExactArgs(3),
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Flags().Bool("apply", false, "execute the merge (default is a dry run)")
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid library UUID: %w", err))
+				return
+			}
+			var lib database.Library
+			if err := db.First(&lib, "id = ?", id).Error; err != nil {
+				handleError(fmt.Errorf("library not found: %w", err))
+				return
+			}
+
+			apply, _ := cmd.Flags().GetBool("apply")
+			report, err := services.MergeAlbumFolders(db, lib.Path, args[1], args[2], !apply)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(report)
+			} else {
+				mode := "DRY RUN (nothing changed; pass --apply to execute)"
+				if apply {
+					mode = "APPLIED"
+				}
+				fmt.Printf("Album %q → %s [%s]\n", report.Album, report.CanonicalDir, mode)
+				fmt.Printf("  moved: %d, duplicates removed: %d, dirs removed: %d, conflicts: %d, errors: %d\n\n",
+					len(report.Moved), len(report.RemovedFiles), len(report.RemovedDirs), len(report.Conflicts), len(report.Errors))
+				for _, m := range report.Moved {
+					fmt.Printf("  MOVE  %s\n    -> %s\n", m.From, m.To)
+				}
+				for _, f := range report.RemovedFiles {
+					fmt.Printf("  DEL   %s (identical copy exists at destination)\n", f)
+				}
+				for _, d := range report.RemovedDirs {
+					fmt.Printf("  RMDIR %s\n", d)
+				}
+				for _, c := range report.Conflicts {
+					fmt.Printf("  CONFLICT  %s\n", c)
+				}
+				for _, e := range report.Errors {
+					fmt.Printf("  ERROR %s\n", e)
+				}
+				if apply && len(report.Errors) == 0 {
+					fmt.Println("\nNext: trigger a Navidrome scan so the server re-indexes (ops/docs/library-dedup-runbook.md).")
+				}
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
 		Use:   "duplicates",
 		Short: "List suspected duplicate recordings by MusicBrainz recording ID",
 		Run: func(cmd *cobra.Command, args []string) {
