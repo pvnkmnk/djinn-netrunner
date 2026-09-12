@@ -1,5 +1,11 @@
 # NetRunner Beta Acceptance Evidence
 
+> **SUPERSEDED — do not use for release decisions.** These results predate the
+> acquisition pipeline, the ffmpeg tagger, Subsonic streaming, and the scanner
+> fix, run against `:memory:` SQLite rather than a deployed stack. The current
+> record is `docs/BETA_ACCEPTANCE.md` (live stack, per-row environment). Kept for
+> history.
+
 Date: 2026-05-25
 Commit: working tree (Cycle 9)
 Executor: Devin
