@@ -21,6 +21,7 @@ import (
 	"github.com/gcottom/audiometa/v3"
 	"github.com/go-flac/flacpicture/v2"
 	"github.com/go-flac/go-flac/v2"
+	_ "golang.org/x/image/webp" // register WebP cover-art decoding
 )
 
 type AudioMetadata struct {
@@ -109,34 +110,42 @@ func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) (err e
 	if err != nil {
 		return fmt.Errorf("failed to open file for tagging: %w", err)
 	}
+	defer f.Close()
+
 	t, err := audiometa.OpenTag(f)
 	if err != nil {
-		f.Close()
 		return fmt.Errorf("failed to open tags: %w", err)
 	}
 	t.SetCoverArt(&img)
 
 	// v3 Save() writes to an io.Writer; M4A atoms must be rewritten from the
-	// start of the file, so save to a sibling and swap atomically.
-	tmpPath := filePath + ".tagtmp"
-	out, err := os.Create(tmpPath)
+	// start of the file, so save to a unique sibling temp file and swap
+	// atomically. Unique name so a concurrent tagger of the same directory
+	// (import + stamp) never clobbers another writer's temp file.
+	tmp, err := os.CreateTemp(filepath.Dir(filePath), filepath.Base(filePath)+".tagtmp-*")
 	if err != nil {
-		f.Close()
 		return fmt.Errorf("failed to create temp file for tagging: %w", err)
 	}
-	saveErr := t.Save(out)
-	closeErr := out.Close()
-	f.Close()
+	tmpPath := tmp.Name()
+	// Cleans up on any error/panic exit; a no-op after a successful rename.
+	defer os.Remove(tmpPath)
+
+	saveErr := t.Save(tmp)
+	closeErr := tmp.Close()
 	if saveErr != nil {
-		os.Remove(tmpPath)
 		return fmt.Errorf("failed to save tags: %w", saveErr)
 	}
 	if closeErr != nil {
-		os.Remove(tmpPath)
 		return fmt.Errorf("failed to write tagged file: %w", closeErr)
 	}
+	// CreateTemp uses 0600; keep the original file's permissions so media
+	// servers running as another user can still read the imported file.
+	if info, statErr := os.Stat(filePath); statErr == nil {
+		if chmodErr := os.Chmod(tmpPath, info.Mode().Perm()); chmodErr != nil {
+			return fmt.Errorf("failed to preserve file permissions: %w", chmodErr)
+		}
+	}
 	if err := os.Rename(tmpPath, filePath); err != nil {
-		os.Remove(tmpPath)
 		return fmt.Errorf("failed to replace file with tagged copy: %w", err)
 	}
 	return nil
@@ -173,38 +182,43 @@ func (e *MetadataExtractor) NormalizeAlbumTags(filePath, albumArtist string) (er
 		if err != nil {
 			return fmt.Errorf("open for albumartist stamp: %w", err)
 		}
+		defer f.Close()
+
 		t, err := audiometa.OpenTag(f)
 		if err != nil {
-			f.Close()
 			return fmt.Errorf("open for albumartist stamp: %w", err)
 		}
 		if cur := t.GetAlbumArtist(); cur != "" {
-			f.Close()
 			return nil
 		}
 		t.SetAlbumArtist(albumArtist)
 
 		// v3 Save() writes to an io.Writer; M4A atoms must be rewritten from
-		// the start of the file, so save to a sibling and swap atomically.
-		tmpPath := filePath + ".tagtmp"
-		out, err := os.Create(tmpPath)
+		// the start of the file, so save to a unique sibling temp file and
+		// swap atomically (unique name avoids clobbering a concurrent tagger).
+		tmp, err := os.CreateTemp(filepath.Dir(filePath), filepath.Base(filePath)+".tagtmp-*")
 		if err != nil {
-			f.Close()
 			return fmt.Errorf("create temp for albumartist stamp: %w", err)
 		}
-		saveErr := t.Save(out)
-		closeErr := out.Close()
-		f.Close()
+		tmpPath := tmp.Name()
+		// Cleans up on any error/panic exit; a no-op after a successful rename.
+		defer os.Remove(tmpPath)
+
+		saveErr := t.Save(tmp)
+		closeErr := tmp.Close()
 		if saveErr != nil {
-			os.Remove(tmpPath)
 			return fmt.Errorf("save albumartist stamp: %w", saveErr)
 		}
 		if closeErr != nil {
-			os.Remove(tmpPath)
 			return fmt.Errorf("write albumartist stamp: %w", closeErr)
 		}
+		// CreateTemp uses 0600; keep the original file's permissions.
+		if info, statErr := os.Stat(filePath); statErr == nil {
+			if chmodErr := os.Chmod(tmpPath, info.Mode().Perm()); chmodErr != nil {
+				return fmt.Errorf("preserve file permissions: %w", chmodErr)
+			}
+		}
 		if err := os.Rename(tmpPath, filePath); err != nil {
-			os.Remove(tmpPath)
 			return fmt.Errorf("replace file with stamped copy: %w", err)
 		}
 		return nil
