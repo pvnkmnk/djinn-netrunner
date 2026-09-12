@@ -1,9 +1,12 @@
 package services
 
 import (
+	"encoding/base64"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/stretchr/testify/require"
@@ -116,17 +119,152 @@ func cfgWithStaging(t *testing.T, staging string) *config.Config {
 	return &config.Config{DownloadStagingPath: staging}
 }
 
-func TestNormalizeAlbumTags_PanicGuarded(t *testing.T) {
+func TestNormalizeAlbumTags_GarbageFileSafety(t *testing.T) {
 	e := NewMetadataExtractor()
 
-	// A truncated/garbage .m4a exercises the audiometa MP4 parser without
-	// needing a real audio file. The lib has a known panic path in its covr
-	// handling (unchecked covr.(*image.Image) assertion); either way, our
-	// wrapper must convert any panic into a clean no-error skip.
+	// A truncated/garbage .m4a must not crash the process and must surface a
+	// clean error (ffmpeg cannot demux it). Import stays best-effort: the
+	// caller logs and continues. The old audiometa path PANICKED here; ffmpeg
+	// just fails the one file.
 	path := filepath.Join(t.TempDir(), "track.m4a")
 	require.NoError(t, os.WriteFile(path, []byte("garbage not an m4a"), 0o644))
 
 	require.NotPanics(t, func() {
-		_ = e.NormalizeAlbumTags(path, "Every Time I Die")
+		err := e.NormalizeAlbumTags(path, "Every Time I Die")
+		require.Error(t, err, "garbage input must produce an error, not a silent skip")
+	})
+	// The original file must survive the failed write.
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "garbage not an m4a", string(data))
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// FFmpegTagger round-trip tests (skipped when ffmpeg is unavailable, e.g.
+// minimal CI runners; the Docker integration suite always has ffmpeg).
+// ──────────────────────────────────────────────────────────────────────────
+
+const testPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+func generateTestAudio(t *testing.T, dir, name string, extraArgs ...string) string {
+	t.Helper()
+	out := filepath.Join(dir, name)
+	args := []string{"-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1"}
+	args = append(args, extraArgs...)
+	args = append(args, out)
+	require.NoError(t, exec.Command("ffmpeg", args...).Run(), "ffmpeg audio generation failed")
+	return out
+}
+
+func waitMtimeChange(t *testing.T, path string, before time.Time) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		if info.ModTime().After(before) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("tagged file was not rewritten (mtime unchanged)")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestFFmpegTagger(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not available")
+	}
+	tg := NewFFmpegTagger()
+
+	t.Run("stamps albumartist on m4a", func(t *testing.T) {
+		path := generateTestAudio(t, t.TempDir(), "track.m4a")
+		before, err := os.Stat(path)
+		require.NoError(t, err)
+
+		require.NoError(t, tg.StampAlbumArtist(path, "Every Time I Die"))
+		waitMtimeChange(t, path, before.ModTime())
+
+		m := readTagFile(path)
+		require.NotNil(t, m, "rewritten file must still parse as audio")
+		require.Equal(t, "Every Time I Die", m.AlbumArtist())
+
+		// Idempotent: a file that already carries ALBUMARTIST is untouched.
+		mtime, err := os.Stat(path)
+		require.NoError(t, err)
+		require.NoError(t, tg.StampAlbumArtist(path, "Somebody Else"))
+		after, err := os.Stat(path)
+		require.NoError(t, err)
+		require.Equal(t, mtime.ModTime(), after.ModTime(), "existing tag must be a no-op")
+	})
+
+	t.Run("stamps albumartist on ogg", func(t *testing.T) {
+		path := generateTestAudio(t, t.TempDir(), "track.ogg")
+		require.NoError(t, tg.StampAlbumArtist(path, "Daryl Palumbo"))
+		m := readTagFile(path)
+		require.NotNil(t, m)
+		require.Equal(t, "Daryl Palumbo", m.AlbumArtist())
+	})
+
+	t.Run("stamp preserves existing tags", func(t *testing.T) {
+		path := generateTestAudio(t, t.TempDir(), "track.m4a",
+			"-metadata", "title=Test Song", "-metadata", "artist=Orig Artist")
+		require.NoError(t, tg.StampAlbumArtist(path, "Every Time I Die"))
+
+		m := readTagFile(path)
+		require.NotNil(t, m)
+		require.Equal(t, "Every Time I Die", m.AlbumArtist())
+		require.Equal(t, "Test Song", m.Title())
+		require.Equal(t, "Orig Artist", m.Artist())
+
+		// And the Extractor (dhowden/tag) still reads it all.
+		e := NewMetadataExtractor()
+		md, err := e.Extract(path)
+		require.NoError(t, err)
+		require.Equal(t, "Test Song", md.Title)
+		require.Equal(t, "Orig Artist", md.Artist)
+	})
+
+	t.Run("embeds cover art on m4a once", func(t *testing.T) {
+		png, err := base64.StdEncoding.DecodeString(testPNGBase64)
+		require.NoError(t, err)
+		path := generateTestAudio(t, t.TempDir(), "track.m4a")
+
+		require.NoError(t, tg.EmbedCoverArt(path, png))
+		m := readTagFile(path)
+		require.NotNil(t, m)
+		require.NotNil(t, m.Picture(), "cover art must be embedded")
+
+		// Second embed is a no-op (first cover wins; no duplicate streams).
+		mtime, err := os.Stat(path)
+		require.NoError(t, err)
+		require.NoError(t, tg.EmbedCoverArt(path, png))
+		after, err := os.Stat(path)
+		require.NoError(t, err)
+		require.Equal(t, mtime.ModTime(), after.ModTime())
+	})
+
+	t.Run("garbage input errors without side effects", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "track.m4a")
+		require.NoError(t, os.WriteFile(path, []byte("garbage not an m4a"), 0o644))
+
+		require.Error(t, tg.StampAlbumArtist(path, "Every Time I Die"))
+
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "garbage not an m4a", string(data))
+		leftovers, err := filepath.Glob(filepath.Join(dir, "*.tagtmp-*"))
+		require.NoError(t, err)
+		require.Empty(t, leftovers, "failed write must clean up its temp file")
+	})
+
+	t.Run("rejects unsupported extensions", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "track.wav")
+		require.NoError(t, os.WriteFile(path, []byte("x"), 0o644))
+		require.Error(t, tg.StampAlbumArtist(path, "X"))
+		require.Error(t, tg.EmbedCoverArt(path, []byte("x")))
 	})
 }

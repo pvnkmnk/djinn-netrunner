@@ -13,7 +13,6 @@ import (
 
 	"github.com/bogem/id3v2/v2"
 	"github.com/dhowden/tag"
-	"github.com/gcottom/audiometa"
 	"github.com/go-flac/flacpicture/v2"
 	"github.com/go-flac/go-flac/v2"
 )
@@ -33,10 +32,19 @@ func (m *AudioMetadata) IsValid() bool {
 	return m.Artist != "" && m.Title != ""
 }
 
-type MetadataExtractor struct{}
+type MetadataExtractor struct {
+	tagger *FFmpegTagger
+}
 
 func NewMetadataExtractor() *MetadataExtractor {
-	return &MetadataExtractor{}
+	return &MetadataExtractor{tagger: NewFFmpegTagger()}
+}
+
+// NewMetadataExtractorWithFFmpeg returns an extractor whose M4A/OGG tag
+// writes shell out to the given ffmpeg binary (mirrors
+// NewTranscoderServiceWithFFmpeg; used by tests).
+func NewMetadataExtractorWithFFmpeg(ffmpegPath string) *MetadataExtractor {
+	return &MetadataExtractor{tagger: NewFFmpegTaggerWithFFmpeg(ffmpegPath)}
 }
 
 // MinimumCoverArtSize is the minimum byte size for a valid cover art image (2KB).
@@ -79,29 +87,11 @@ func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error
 	}
 }
 
-// embedGeneric uses audiometa to embed cover art into M4A/OGG files.
-// Same audiometa covr panic risk as NormalizeAlbumTags — guard it too.
-func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Warn("audiometa panicked while embedding cover art; skipping embed",
-				"path", filePath, "panic", r)
-			err = nil
-		}
-	}()
-	t, err := audiometa.OpenTag(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file for tagging: %w", err)
-	}
-
-	if err := t.SetAlbumArtFromByteArray(artData); err != nil {
-		return fmt.Errorf("failed to set album art: %w", err)
-	}
-
-	if err := t.Save(); err != nil {
-		return fmt.Errorf("failed to save tags: %w", err)
-	}
-	return nil
+// embedGeneric embeds cover art into M4A/OGG files via FFmpegTagger
+// (lossless re-mux; replaces the audiometa library that panicked on
+// real-world MP4 covr atoms).
+func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) error {
+	return e.tagger.EmbedCoverArt(filePath, artData)
 }
 
 // NormalizeAlbumTags stamps a canonical ALBUMARTIST onto a downloaded file so
@@ -111,37 +101,14 @@ func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) (err e
 // canonical album artist because acquisition items are keyed on it. When the
 // file already carries an ALBUMARTIST tag it is left untouched.
 // Best-effort: tagging errors are logged, never fail the import.
-func (e *MetadataExtractor) NormalizeAlbumTags(filePath, albumArtist string) (err error) {
+func (e *MetadataExtractor) NormalizeAlbumTags(filePath, albumArtist string) error {
 	if albumArtist == "" {
 		return nil
 	}
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".m4a", ".ogg":
-		// audiometa's MP4 picture() does an unchecked type assertion on the
-		// covr atom; real-world files (e.g. HEIC/WebP covers, or covers whose
-		// image data fails to decode) leave the covr value nil and the lib
-		// panics. A stamp is cosmetic — convert any panic into an error and
-		// let the caller's best-effort WARN handle it.
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Warn("audiometa panicked while stamping albumartist; skipping stamp",
-					"path", filePath, "panic", r)
-				err = nil
-			}
-		}()
-		t, err := audiometa.OpenTag(filePath)
-		if err != nil {
-			return fmt.Errorf("open for albumartist stamp: %w", err)
-		}
-		if cur := t.AlbumArtist(); cur != "" {
-			return nil
-		}
-		t.SetAlbumArtist(albumArtist)
-		if err := t.Save(); err != nil {
-			return fmt.Errorf("save albumartist stamp: %w", err)
-		}
-		return nil
+		return e.tagger.StampAlbumArtist(filePath, albumArtist)
 	default:
 		// MP3/FLAC: the underlying libs here do not expose ALBUMARTIST
 		// writing cleanly; the canonical folder layout below still groups
