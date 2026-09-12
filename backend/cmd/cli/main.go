@@ -416,12 +416,11 @@ func libraryCmd() *cobra.Command {
 		},
 	})
 
-	cmd.AddCommand(&cobra.Command{
+	mergeCmd := &cobra.Command{
 		Use:   "merge-album <libraryID> <albumFolder> <canonicalArtistFolder>",
 		Short: "Merge an album's per-credit artist folders into one (dry run unless --apply)",
 		Args:  cobra.ExactArgs(3),
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Flags().Bool("apply", false, "execute the merge (default is a dry run)")
 			id, err := uuid.Parse(args[0])
 			if err != nil {
 				handleError(fmt.Errorf("invalid library UUID: %w", err))
@@ -470,7 +469,9 @@ func libraryCmd() *cobra.Command {
 				}
 			}
 		},
-	})
+	}
+	mergeCmd.Flags().Bool("apply", false, "execute the merge (default is a dry run)")
+	cmd.AddCommand(mergeCmd)
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "duplicates",
