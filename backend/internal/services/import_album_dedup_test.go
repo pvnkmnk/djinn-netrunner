@@ -1,12 +1,14 @@
 package services
 
 import (
+	"context"
+	"crypto/md5"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/stretchr/testify/require"
@@ -130,7 +132,7 @@ func TestNormalizeAlbumTags_GarbageFileSafety(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("garbage not an m4a"), 0o644))
 
 	require.NotPanics(t, func() {
-		err := e.NormalizeAlbumTags(path, "Every Time I Die")
+		err := e.NormalizeAlbumTags(context.Background(), path, "Every Time I Die")
 		require.Error(t, err, "garbage input must produce an error, not a silent skip")
 	})
 	// The original file must survive the failed write.
@@ -156,20 +158,13 @@ func generateTestAudio(t *testing.T, dir, name string, extraArgs ...string) stri
 	return out
 }
 
-func waitMtimeChange(t *testing.T, path string, before time.Time) {
+// fileHash is a deterministic content identity for asserting whether a file
+// was rewritten (mtime has too little resolution to be reliable).
+func fileHash(t *testing.T, path string) string {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		info, err := os.Stat(path)
-		require.NoError(t, err)
-		if info.ModTime().After(before) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("tagged file was not rewritten (mtime unchanged)")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return fmt.Sprintf("%x", md5.Sum(data))
 }
 
 func TestFFmpegTagger(t *testing.T) {
@@ -177,31 +172,27 @@ func TestFFmpegTagger(t *testing.T) {
 		t.Skip("ffmpeg not available")
 	}
 	tg := NewFFmpegTagger()
+	ctx := context.Background()
 
 	t.Run("stamps albumartist on m4a", func(t *testing.T) {
 		path := generateTestAudio(t, t.TempDir(), "track.m4a")
-		before, err := os.Stat(path)
-		require.NoError(t, err)
 
-		require.NoError(t, tg.StampAlbumArtist(path, "Every Time I Die"))
-		waitMtimeChange(t, path, before.ModTime())
+		require.NoError(t, tg.StampAlbumArtist(ctx, path, "Every Time I Die"))
 
 		m := readTagFile(path)
 		require.NotNil(t, m, "rewritten file must still parse as audio")
 		require.Equal(t, "Every Time I Die", m.AlbumArtist())
 
-		// Idempotent: a file that already carries ALBUMARTIST is untouched.
-		mtime, err := os.Stat(path)
-		require.NoError(t, err)
-		require.NoError(t, tg.StampAlbumArtist(path, "Somebody Else"))
-		after, err := os.Stat(path)
-		require.NoError(t, err)
-		require.Equal(t, mtime.ModTime(), after.ModTime(), "existing tag must be a no-op")
+		// Idempotent: a file that already carries ALBUMARTIST is untouched
+		// (no re-mux — content identity must not change).
+		hashBefore := fileHash(t, path)
+		require.NoError(t, tg.StampAlbumArtist(ctx, path, "Somebody Else"))
+		require.Equal(t, hashBefore, fileHash(t, path), "existing tag must be a no-op")
 	})
 
 	t.Run("stamps albumartist on ogg", func(t *testing.T) {
 		path := generateTestAudio(t, t.TempDir(), "track.ogg")
-		require.NoError(t, tg.StampAlbumArtist(path, "Daryl Palumbo"))
+		require.NoError(t, tg.StampAlbumArtist(ctx, path, "Daryl Palumbo"))
 		m := readTagFile(path)
 		require.NotNil(t, m)
 		require.Equal(t, "Daryl Palumbo", m.AlbumArtist())
@@ -210,7 +201,7 @@ func TestFFmpegTagger(t *testing.T) {
 	t.Run("stamp preserves existing tags", func(t *testing.T) {
 		path := generateTestAudio(t, t.TempDir(), "track.m4a",
 			"-metadata", "title=Test Song", "-metadata", "artist=Orig Artist")
-		require.NoError(t, tg.StampAlbumArtist(path, "Every Time I Die"))
+		require.NoError(t, tg.StampAlbumArtist(ctx, path, "Every Time I Die"))
 
 		m := readTagFile(path)
 		require.NotNil(t, m)
@@ -231,18 +222,31 @@ func TestFFmpegTagger(t *testing.T) {
 		require.NoError(t, err)
 		path := generateTestAudio(t, t.TempDir(), "track.m4a")
 
-		require.NoError(t, tg.EmbedCoverArt(path, png))
+		require.NoError(t, tg.EmbedCoverArt(ctx, path, png))
 		m := readTagFile(path)
 		require.NotNil(t, m)
 		require.NotNil(t, m.Picture(), "cover art must be embedded")
 
 		// Second embed is a no-op (first cover wins; no duplicate streams).
-		mtime, err := os.Stat(path)
+		hashBefore := fileHash(t, path)
+		require.NoError(t, tg.EmbedCoverArt(ctx, path, png))
+		require.Equal(t, hashBefore, fileHash(t, path))
+	})
+
+	t.Run("embeds cover art on ogg", func(t *testing.T) {
+		png, err := base64.StdEncoding.DecodeString(testPNGBase64)
 		require.NoError(t, err)
-		require.NoError(t, tg.EmbedCoverArt(path, png))
-		after, err := os.Stat(path)
-		require.NoError(t, err)
-		require.Equal(t, mtime.ModTime(), after.ModTime())
+		path := generateTestAudio(t, t.TempDir(), "track.ogg")
+
+		require.NoError(t, tg.EmbedCoverArt(ctx, path, png))
+		m := readTagFile(path)
+		require.NotNil(t, m)
+		require.NotNil(t, m.Picture(), "cover art must be embedded via METADATA_BLOCK_PICTURE")
+
+		// Second embed is a no-op.
+		hashBefore := fileHash(t, path)
+		require.NoError(t, tg.EmbedCoverArt(ctx, path, png))
+		require.Equal(t, hashBefore, fileHash(t, path))
 	})
 
 	t.Run("garbage input errors without side effects", func(t *testing.T) {
@@ -250,7 +254,7 @@ func TestFFmpegTagger(t *testing.T) {
 		path := filepath.Join(dir, "track.m4a")
 		require.NoError(t, os.WriteFile(path, []byte("garbage not an m4a"), 0o644))
 
-		require.Error(t, tg.StampAlbumArtist(path, "Every Time I Die"))
+		require.Error(t, tg.StampAlbumArtist(ctx, path, "Every Time I Die"))
 
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -264,7 +268,7 @@ func TestFFmpegTagger(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "track.wav")
 		require.NoError(t, os.WriteFile(path, []byte("x"), 0o644))
-		require.Error(t, tg.StampAlbumArtist(path, "X"))
-		require.Error(t, tg.EmbedCoverArt(path, []byte("x")))
+		require.Error(t, tg.StampAlbumArtist(ctx, path, "X"))
+		require.Error(t, tg.EmbedCoverArt(ctx, path, []byte("x")))
 	})
 }

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -70,7 +71,7 @@ func detectImageMimeType(data []byte) string {
 }
 
 // EmbedCoverArt embeds image data into the audio file
-func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error {
+func (e *MetadataExtractor) EmbedCoverArt(ctx context.Context, filePath string, artData []byte) error {
 	if len(artData) < MinimumCoverArtSize {
 		return fmt.Errorf("cover art image too small (%d bytes), likely invalid", len(artData))
 	}
@@ -81,7 +82,7 @@ func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error
 	case ".flac":
 		return e.embedFLAC(filePath, artData)
 	case ".m4a", ".ogg":
-		return e.embedGeneric(filePath, artData)
+		return e.embedGeneric(ctx, filePath, artData)
 	default:
 		return fmt.Errorf("unsupported file format for cover art embedding: %s", ext)
 	}
@@ -90,8 +91,8 @@ func (e *MetadataExtractor) EmbedCoverArt(filePath string, artData []byte) error
 // embedGeneric embeds cover art into M4A/OGG files via FFmpegTagger
 // (lossless re-mux; replaces the audiometa library that panicked on
 // real-world MP4 covr atoms).
-func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) error {
-	return e.tagger.EmbedCoverArt(filePath, artData)
+func (e *MetadataExtractor) embedGeneric(ctx context.Context, filePath string, artData []byte) error {
+	return e.tagger.EmbedCoverArt(ctx, filePath, artData)
 }
 
 // NormalizeAlbumTags stamps a canonical ALBUMARTIST onto a downloaded file so
@@ -101,14 +102,14 @@ func (e *MetadataExtractor) embedGeneric(filePath string, artData []byte) error 
 // canonical album artist because acquisition items are keyed on it. When the
 // file already carries an ALBUMARTIST tag it is left untouched.
 // Best-effort: tagging errors are logged, never fail the import.
-func (e *MetadataExtractor) NormalizeAlbumTags(filePath, albumArtist string) error {
+func (e *MetadataExtractor) NormalizeAlbumTags(ctx context.Context, filePath, albumArtist string) error {
 	if albumArtist == "" {
 		return nil
 	}
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".m4a", ".ogg":
-		return e.tagger.StampAlbumArtist(filePath, albumArtist)
+		return e.tagger.StampAlbumArtist(ctx, filePath, albumArtist)
 	default:
 		// MP3/FLAC: the underlying libs here do not expose ALBUMARTIST
 		// writing cleanly; the canonical folder layout below still groups

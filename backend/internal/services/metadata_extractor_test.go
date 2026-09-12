@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,7 +51,7 @@ func TestEmbedCoverArt_SizeValidation(t *testing.T) {
 
 	// Art data smaller than MinimumCoverArtSize (2048) should fail
 	smallData := make([]byte, 100) // 100 bytes < 2048
-	err := e.EmbedCoverArt("test.mp3", smallData)
+	err := e.EmbedCoverArt(context.Background(), "test.mp3", smallData)
 	if err == nil {
 		t.Error("expected error for art data below minimum size")
 	}
@@ -342,10 +343,10 @@ func TestMetadataExtractor_GenerateLibraryPath(t *testing.T) {
 		{
 			name: "without track number",
 			metadata: &AudioMetadata{
-				Artist:   "Radiohead",
-				Album:    "In Rainbows",
-				Title:    "Killer Cars",
-				Format:   "MP3",
+				Artist: "Radiohead",
+				Album:  "In Rainbows",
+				Title:  "Killer Cars",
+				Format: "MP3",
 			},
 			libraryRoot:    libraryRoot,
 			expectedSuffix: filepath.Join("Radiohead", "In Rainbows", "Killer Cars.mp3"),
@@ -353,12 +354,12 @@ func TestMetadataExtractor_GenerateLibraryPath(t *testing.T) {
 		{
 			name: "empty album defaults to Unknown Album",
 			metadata: &AudioMetadata{
-				Artist:   "Unknown Artist",
-				Album:    "",
-				Title:    "Unknown Title",
-				Format:   "OGG",
+				Artist: "Unknown Artist",
+				Album:  "",
+				Title:  "Unknown Title",
+				Format: "OGG",
 			},
-			libraryRoot:    libraryRoot,
+			libraryRoot: libraryRoot,
 			// Note: SanitizeFilename("") returns "Unknown", so the album check "if album == \"\"" is false
 			// and album remains "Unknown" (not "Unknown Album")
 			expectedSuffix: filepath.Join("Unknown Artist", "Unknown", "Unknown Title.ogg"),
@@ -383,7 +384,7 @@ func TestMetadataExtractor_GenerateLibraryPath(t *testing.T) {
 				Title:  "Test Title",
 				Format: "OPUS",
 			},
-			libraryRoot:    libraryRoot,
+			libraryRoot: libraryRoot,
 			// Same issue: SanitizeFilename("") returns "Unknown", not replaced by "Unknown Album"
 			expectedSuffix: filepath.Join("Test Artist", "Unknown", "Test Title.opus"),
 		},
