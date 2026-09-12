@@ -29,9 +29,10 @@ RUN chmod +x entrypoint.sh
 # Stage 2: Runtime
 FROM alpine:3.21
 
-# Install runtime dependencies: wget, Node.js for yt-dlp JS sites, Python/pip for yt-dlp
+# Install runtime dependencies: wget, Node.js for yt-dlp JS sites, Python/pip for yt-dlp,
+# ffmpeg for transcoding and M4A/OGG tag writes (FFmpegTagger)
 # --break-system-packages is safe here (disposable Docker container, not shared system)
-RUN apk add --no-cache wget nodejs npm python3 py3-pip && \
+RUN apk add --no-cache wget nodejs npm python3 py3-pip ffmpeg && \
     pip3 install --break-system-packages --upgrade yt-dlp
 
 # Create app directory

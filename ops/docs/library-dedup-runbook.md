@@ -170,6 +170,6 @@ netrunner-cli library detect-fragments   # expect: No fragmented albums found.
 
 - PR #219 — album-fragmentation fix (canonical album-artist folders, album dedup, staging sweep)
 - PR #220 — staging permission fix (slskd at UID 1000, volume-init bootstrap)
-- PR #221 — audiometa v3 upgrade (tag-writing crash hardening)
+- PR #223 — tag writes via ffmpeg (replaces audiometa, whose MP4 parser crashed on real-world cover atoms)
 - `netrunner-cli library duplicates` — MB-recording-level duplicates (different concern,
   quality-aware replacement is tracked as DJI-366)

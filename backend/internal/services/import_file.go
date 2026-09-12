@@ -216,7 +216,7 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	}
 
 	// Stamp the canonical album artist so library grouping is stable.
-	if err := h.ext.NormalizeAlbumTags(finalPath, metadata.AlbumArtist); err != nil {
+	if err := h.ext.NormalizeAlbumTags(ctx, finalPath, metadata.AlbumArtist); err != nil {
 		h.Log(jobID, "WARN", fmt.Sprintf("Album-artist stamp failed: %v", err), &itemID)
 	}
 
@@ -225,7 +225,7 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	artData, err := h.getCoverArtWithFallback(ctx, &item, metadata.Artist, metadata.Title, metadata.Album, coverArtSources)
 	if err == nil && len(artData) > 0 {
 		h.Log(jobID, "INFO", "Embedding cover art...", &itemID)
-		if err := h.ext.EmbedCoverArt(finalPath, artData); err != nil {
+		if err := h.ext.EmbedCoverArt(ctx, finalPath, artData); err != nil {
 			h.Log(jobID, "WARN", fmt.Sprintf("Failed to embed cover art: %v", err), &itemID)
 		} else {
 			h.Log(jobID, "OK", "Cover art embedded successfully", &itemID)
