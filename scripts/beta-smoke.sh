@@ -25,6 +25,7 @@ BASE_URL="${BETA_BASE_URL:-http://localhost:8080}"
 COMPOSE_ARGS="${BETA_COMPOSE_ARGS:--f docker-compose.yml -f docker-compose.beta.yml}"
 WEB_CONTAINER="${BETA_WEB_CONTAINER:-ops-web}"
 WORKER_CONTAINER="${BETA_WORKER_CONTAINER:-ops-worker}"
+SLSKD_CONTAINER="${BETA_SLSKD_CONTAINER:-netrunner-slskd}"
 
 SMOKE_USER="beta-smoke+$(date +%s)@smoke.test"
 SMOKE_PASS="Betasmoke123!"
@@ -54,6 +55,7 @@ info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
 
 compose() { docker compose $COMPOSE_ARGS "$@"; }
 in_web() { compose exec -T "$WEB_CONTAINER" "$@"; }
+in_worker() { compose exec -T "$WORKER_CONTAINER" "$@"; }
 
 cleanup() {
     if [ "$KEEP" -eq 0 ] && [ -n "${LIB_ID:-}" ]; then
@@ -107,7 +109,7 @@ authed_get() {
 # those values are published in the repo, so anyone can authenticate with them.
 is_template_secret() {
     case "$1" in
-        changeme|CHANGE_ME|smokepass|smoke-jwt-secret|smoke-api-key|your_random_api_key|generate_random_api_key|replace_with_a_long_random_secret|your_*) return 0 ;;
+        changeme|CHANGE_ME|smokepass|smoke-jwt-secret|smoke-api-key|your_random_api_key|generate_random_api_key|change_me_*|replace_with_a_long_random_secret|your_*) return 0 ;;
     esac
     return 1
 }
@@ -128,7 +130,9 @@ command -v curl >/dev/null || { fail "curl is not installed"; exit 1; }
 pass "docker and curl available"
 
 # ── 2. Containers running and healthy ───────────────────────────────────────
-for c in "$WEB_CONTAINER" "$WORKER_CONTAINER"; do
+SMOKE_CONTAINERS=("$WEB_CONTAINER" "$WORKER_CONTAINER")
+docker inspect "$SLSKD_CONTAINER" >/dev/null 2>&1 && SMOKE_CONTAINERS+=("$SLSKD_CONTAINER")
+for c in "${SMOKE_CONTAINERS[@]}"; do
     state="$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo missing)"
     health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null || echo none)"
     if [ "$state" = "running" ] && { [ "$health" = "healthy" ] || [ "$health" = "none" ]; }; then
@@ -166,6 +170,36 @@ for c in "$WEB_CONTAINER" "$WORKER_CONTAINER"; do
         fail "$c does not have SUBSONIC_ENABLED=true — the streaming API will 404"
     fi
 done
+
+# slskd must hold the same key the app sends as X-API-Key. Setting it only on
+# the app containers stays invisible until acquisition runs: every Soulseek
+# search returns 401 while slskd logs "Unknown API key beginning with: ...".
+# Checked two ways, because comparing strings cannot see a misconfigured slskd.
+if docker inspect "$SLSKD_CONTAINER" >/dev/null 2>&1; then
+    APP_KEY="$(docker exec "$WORKER_CONTAINER" printenv SLSKD_API_KEY 2>/dev/null || true)"
+    SLSKD_KEY="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$SLSKD_CONTAINER" 2>/dev/null | sed -n 's/^SLSKD_API_KEY=//p' || true)"
+    if [ -z "$SLSKD_KEY" ]; then
+        fail "$SLSKD_CONTAINER has no SLSKD_API_KEY — every slskd call from the app will 401"
+    elif [ "$SLSKD_KEY" != "$APP_KEY" ]; then
+        fail "slskd and the app disagree on SLSKD_API_KEY — searches will 401"
+    elif [ "${#SLSKD_KEY}" -lt 16 ]; then
+        fail "SLSKD_API_KEY is under 16 characters — slskd refuses to start with one"
+    elif is_template_secret "$SLSKD_KEY"; then
+        fail "SLSKD_API_KEY is still the template value — generate a real one (openssl rand -base64 48)"
+    else
+        pass "$SLSKD_CONTAINER shares the app's SLSKD_API_KEY (${#SLSKD_KEY} chars)"
+    fi
+
+    # Prove it functionally: ask slskd for a readwrite endpoint with the app's
+    # own key, exactly as the acquisition pipeline does.
+    if in_worker sh -c 'wget -q -O /dev/null --header="X-API-Key: $SLSKD_API_KEY" "$SLSKD_URL/api/v0/application"' >/dev/null 2>&1; then
+        pass "slskd accepted the app's API key on a readwrite endpoint"
+    else
+        fail "slskd rejected the app's API key — acquisition searches will fail"
+    fi
+else
+    info "no $SLSKD_CONTAINER in this deployment; skipping slskd API key checks"
+fi
 
 # ── 5. Health endpoint ──────────────────────────────────────────────────────
 if curl -sf "$BASE_URL/api/health" >/dev/null 2>&1; then

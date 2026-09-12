@@ -9,7 +9,7 @@ open blocker.
 
 | Field | Value |
 |---|---|
-| Commit | `d4593c1` (`beta/readiness-scanner-fix`) |
+| Commit | base `992eb84`; fixes on `beta/slskd-acquisition-wiring` |
 | Stack | `docker-compose.yml` + `docker-compose.beta.yml` |
 | Date | 2026-09-12 |
 | Host | Windows + Docker Desktop |
@@ -17,6 +17,7 @@ open blocker.
 | ffmpeg (app image) | 6.1.2 |
 | PostgreSQL | 16.15 |
 | slskd | 0.26.0.0 |
+| slskd downloads dir | `/downloads` (the shared volume, via `SLSKD_DOWNLOADS_DIR`) |
 | Soulseek account | `beta_smoke_user` (auto-registered, real Soulseek login in the slskd log) |
 | Go (host, for the test suite) | 1.27.0 |
 | Driver | `./scripts/beta-smoke.sh` plus targeted probes |
@@ -43,24 +44,45 @@ open blocker.
 | 16 | MusicBrainz discography sync | PASS | Converge's discography upserted into `tracked_releases` (one transient `503` on the first attempt, succeeded on retry) |
 | 17 | Acquisition job runs | ~~FAIL~~ PASS | Was `panic: nil pointer dereference` + `50/50 items pending retry` on every attempt. Fixed; the job now processes items |
 | 18 | Soulseek search reaches slskd | ~~FAIL~~ PASS | Was `ssrf: no public IP found for netrunner-slskd` on every search. Fixed; the request now reaches slskd |
-| 19 | Soulseek search authenticates | **FAIL** | `slskd search initiation failed: 401 Unauthorized` — see below |
+| 19 | Soulseek search authenticates | ~~FAIL~~ PASS | Was `slskd search initiation failed: 401 Unauthorized` on every item. Fixed; a live run logged `Found 2281 results` and selected a peer |
 | 20 | Watchlist sync dispatches | ~~FAIL~~ PASS | Was `unsupported job type: watchlist_sync` on every sync. Fixed; the job now reaches the provider and fails only on the provider's own missing credentials |
 | 21 | Unit + integration suites | PASS | `go test -count=1 ./...` all packages `ok` (services 76s); `go vet` clean; PR CI `test`, `integration`, `quality`, `review` green |
+| 22 | slskd holds the app's API key | ~~FAIL~~ PASS | Was absent: `SLSKD_API_KEY` reached only the app containers. `netrunner-slskd` now carries the same value, answers 200 on `/api/v0/application`, and logs zero `Unknown API key` entries |
+| 23 | Downloads land where the worker imports from | ~~FAIL~~ PASS | slskd defaulted its downloads to `~/downloads` — its **own** `/app/downloads` — while the worker imported from the shared volume, so every import failed with `Downloaded file not found`. Fixed via `SLSKD_DOWNLOADS_DIR=/downloads` |
+| 24 | Real acquisition, end to end | PASS | 12 items imported from real Soulseek peers; 1 `failed (no results)`; 1 remote-queue timeout (see findings) |
+| 25 | Canonical album-artist folders | PASS | Every import landed under `/app/music/Converge/<Album>/` — no per-credit fragmentation |
+| 26 | Tag writes on acquired files | PASS | `album_artist=Converge` on the imported m4a (ffmpeg tagger) and mp3 |
+| 27 | Staging sweep after import | PASS | Only the in-flight download remained in `/app/downloads` |
+| 28 | Acquired tracks become visible and streamable | PASS | A scan of `/app/music` indexed 16 tracks; `getIndexes` lists Converge (12 albums); `search3`/`stream.view` returned the real bytes (7,062,156 mp3; 94,778,503 m4a, equal to the file on disk) |
 
-## Open blocker
+## Prior blocker, resolved
 
-**Soulseek searches return `401 Unauthorized`.** The API key is half-wired:
-`.env`'s `SLSKD_API_KEY` is what the **app** sends as `X-API-Key`, but nothing
-ever passes it to **slskd**, whose container receives no API-key configuration
-at all. Until the same value is configured on both sides (slskd
-`web.authentication.api_keys`, role `readwrite`), no search can succeed and
-acquisition cannot complete end to end. This is external service configuration,
-not application code.
+**Soulseek searches returned `401 Unauthorized`.** `SLSKD_API_KEY` was what the
+**app** sent as `X-API-Key`, but nothing passed it to **slskd**, which received
+no API-key configuration at all. slskd accepts a *primary* key via
+`SLSKD_API_KEY` (or `-k`/`--api-key`) — the documented, stable form. Treating the
+`web.authentication.api_keys` map as an environment variable is the fragile
+route; the primary key is not. An invalid key length is a silent-looking failure:
+under 16 characters slskd logs `API key must be between 16 and 255 characters`
+and exits **0**.
 
-Note that the slskd API-key **environment-variable** form is version-sensitive —
-nesting the map as `..._API_KEYS_<NAME>_KEY` was rejected at startup, and the
-indexed `..._API_KEYS_0_KEY` form was accepted but ignored. A mounted `slskd.yml`
-or the slskd UI (Settings → API Keys) is the reliable route.
+## Open findings (not blocking)
+
+1. **A remotely-queued peer costs 10 minutes.** When a peer answers but never
+   starts sending, slskd reports `Queued, Remotely` and the worker waits out its
+   full `WaitForDownload` budget (`10m0s`) before failing the item. Because the
+   worker runs one job at a time, that stall also blocks every other queued job
+   — a discography sync can take hours. Re-selecting another candidate once a
+   transfer sits remotely-queued past a short grace period would fix it.
+2. **Subsonic artist entries carry empty ids.** `getIndexes` returns artists with
+   `"id":""`, and the `search3` artist block can come back as
+   `{"id":"artist-","name":"","albumCount":0}`. Clients that drill down via
+   `getArtist` on that id get nothing.
+3. **No minimum-size or validity gate on selected downloads.** An 8,527-byte
+   file named `.flac` from a peer was imported and indexed as a track.
+4. **A duplicate library path returns 500.** `POST /api/libraries` with an
+   existing path surfaces the `idx_libraries_path` violation as
+   `internal server error` rather than a 409 with a readable message.
 
 ## Related fixes landed with this record
 

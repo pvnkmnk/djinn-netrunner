@@ -22,13 +22,14 @@ cd djinn-netrunner
 cp .env.beta.example .env
 ```
 
-Change every `change_me_` value. The three that matter most:
+Change every `change_me_` value. The four that matter most:
 
 | Variable | Why |
 |---|---|
 | `JWT_SECRET` | Session signing key. Without it in production the server **refuses to start** — an ephemeral secret would silently invalidate every login on restart. Generate one: `py -c "import secrets;print(secrets.token_urlsafe(48))"` |
 | `SUBSONIC_PASSWORD` | Shared password for Subsonic token auth. Production refuses to start with Subsonic enabled and no password, because the token path would be `md5("" + salt)` — forgeable. |
 | `SLSKD_USERNAME` / `SLSKD_PASSWORD` | Real Soulseek credentials; searches and downloads fail without them. |
+| `SLSKD_API_KEY` | The key the app sends as `X-API-Key`, and the same value compose hands to slskd as its primary key. **At least 16 characters** — slskd logs `API key must be between 16 and 255 characters` and exits (code 0) below that. The stack wires both sides automatically; a hand-written compose file must set it on the slskd service too. |
 
 The file is read twice: for `${VAR}` substitution inside the compose files, and
 as the runtime environment of the `ops-web` / `ops-worker` containers (`env_file`
@@ -161,6 +162,8 @@ only the account password is accepted.
 | `port is already allocated` | Another stack holds 8080/5432; set `BETA_HTTP_PORT` (or stop the other stack). |
 | Music plays but nothing rescans in an external server | Set `NAVIDROME_URL` (+ user/pass) so the worker has a library client; `/api/health` then reports a `navidrome` check. |
 | Every acquisition fails with `ssrf: no public IP found for netrunner-slskd` | `ALLOW_PRIVATE_TARGETS` is missing or `false`. slskd is reached by its compose service name, which resolves to a private IP and trips the SSRF guard. `docker-compose.yml` sets it for both app services; keep it if you write your own compose file. |
-| Acquisition fails with `slskd search initiation failed: 401 Unauthorized` | The API key is half-wired: `.env`'s `SLSKD_API_KEY` is what the **app sends**, but nothing passes it to **slskd**. Add it to slskd's own config (`web.authentication.api_keys`, role `readwrite`; the API key env-var form is version-sensitive, so prefer `slskd.yml` or the slskd UI under Settings → API Keys) using the same value. Until both sides match, every search 401s. |
+| Every acquisition fails with `401 Unauthorized`, and slskd logs `Unknown API key beginning with: …` | The key is half-wired: `SLSKD_API_KEY` reached the app but not slskd, so the two sides disagree. It must be set on the slskd service as well. Set it once in `.env` and let `docker-compose.yml` pass it to both. (`SLSKD_API_URL`-era guides suggest `web.authentication.api_keys`; that map is awkward to express as an env var, whereas slskd's primary key is a plain `SLSKD_API_KEY`.) |
+| Imports fail with `Downloaded file not found: downloads/…` although slskd reports `Completed, Succeeded` | slskd is downloading into a directory the worker cannot see — by default `~/downloads`, i.e. its **own** `/app/downloads`, not the shared volume the worker imports from. `docker-compose.yml` sets `SLSKD_DOWNLOADS_DIR=/downloads` for this reason. Confirm with `docker compose … exec slskd ls /downloads`. |
+| slskd exits at startup, log shows `API key must be between 16 and 255 characters` | `SLSKD_API_KEY` is shorter than 16 characters. The exit code is **0**, so it looks like a clean stop — check `docker inspect <slskd> --format '{{.State.ExitCode}}'`. |
 | Acquisition job fails with `panic: ... nil pointer dereference` and `N/N items pending retry` | Fixed: the pipeline held a typed-nil library client. If you see it, you are on a build older than the library-client fix. |
 | Watchlist "Sync" fails with `unsupported job type: watchlist_sync` | Fixed: the API created `watchlist_sync` while the worker handles `sync`. A watchlist sync now also needs its provider's credentials (e.g. `LASTFM_API_KEY`); a provider error like `last.fm api returned status: 400` means the dispatch worked and the key is missing. |
