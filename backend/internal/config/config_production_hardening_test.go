@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -104,5 +105,80 @@ func TestLoad_DevelopmentSubsonicWithoutPasswordLoadsWithTokenAuthDisabled(t *te
 	}
 	if cfg.Subsonic.Password != "" {
 		t.Errorf("cfg.Subsonic.Password = %q, want empty", cfg.Subsonic.Password)
+	}
+}
+
+// A YAML overlay can set `environment: production`, and overlays are applied
+// after the env vars are read. Deciding the JWT_SECRET fail-fast from the raw
+// ENVIRONMENT variable therefore let a production deployment boot with an
+// ephemeral secret (sessions invalidated on every restart) instead of refusing.
+func TestLoad_ProductionFromYAMLStillRequiresJWTSecret(t *testing.T) {
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
+	// Load only reads config files from the working directory, so serve the
+	// overlay from an isolated one. godotenv's relative .env lookup then misses
+	// too, which is what keeps this test independent of the developer's .env.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte(`environment: production
+`), 0o644); err != nil {
+		t.Fatalf("write overlay: %v", err)
+	}
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(orig) }()
+
+	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	os.Unsetenv("ENVIRONMENT")
+	os.Unsetenv("CONFIG_ENV")
+	os.Unsetenv("JWT_SECRET")
+
+	_, err = Load()
+	if err == nil {
+		t.Fatal("expected production - from YAML - to demand JWT_SECRET, got nil error")
+	}
+	if !strings.Contains(err.Error(), "JWT_SECRET is required in production") {
+		t.Fatalf("expected the JWT_SECRET production error, got: %v", err)
+	}
+}
+
+// The mirror case: a YAML overlay that says production must not fail when a real
+// secret is configured, so the check keys off the missing secret, not the env name.
+func TestLoad_ProductionFromYAMLPassesWithJWTSecret(t *testing.T) {
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte(`environment: production
+`), 0o644); err != nil {
+		t.Fatalf("write overlay: %v", err)
+	}
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(orig) }()
+
+	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	os.Setenv("JWT_SECRET", "a-real-configured-secret")
+	os.Unsetenv("ENVIRONMENT")
+	os.Unsetenv("CONFIG_ENV")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error with JWT_SECRET configured: %v", err)
+	}
+	if cfg.Environment != "production" {
+		t.Fatalf("expected the YAML overlay to win, got environment %q", cfg.Environment)
 	}
 }

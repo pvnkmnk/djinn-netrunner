@@ -36,10 +36,11 @@ func TestSubsonic_AuthMiddleware_TokenRejectedWhenNoPasswordConfigured(t *testin
 	handler := NewSubsonicHandler(db, cfg)
 	createTestUserForSubsonic(t, db, "nopass@example.com", "accountpass")
 
-	// The forgery an attacker can build when no shared password is configured.
-	md5Empty := md5.Sum([]byte(""))
+	// The exact forgery an attacker can build when no shared password is
+	// configured: md5Password is "", so the expected token is md5("" + salt).
+	// Sending anything else would not prove the guard is what rejects us.
 	salt := "attsalt"
-	hash := md5.Sum([]byte(hex.EncodeToString(md5Empty[:]) + salt))
+	hash := md5.Sum([]byte(salt))
 	token := hex.EncodeToString(hash[:])
 
 	app := fiber.New()

@@ -226,17 +226,17 @@ func Load(filenames ...string) (*Config, error) {
 	}
 
 	// SECURITY: JWT_SECRET must be explicitly set. Never use a hardcoded default.
-	env := getEnv("ENVIRONMENT", "development")
+	// The production decision is deliberately deferred to the fail-fast block
+	// below, *after* the YAML/environment overrides: config.<env>.yaml can set
+	// `environment: production`, so deciding from the raw ENVIRONMENT variable
+	// here would let a production deployment boot with an ephemeral secret.
 	jwtSecret := os.Getenv("JWT_SECRET")
+	jwtSecretGenerated := false
 	if jwtSecret == "" {
-		// In development an ephemeral secret is convenient. In production it would
-		// silently invalidate every session on each restart and make tokens
-		// unverifiable across replicas, so fail closed instead of degrading.
-		if env == "production" {
-			return nil, fmt.Errorf("JWT_SECRET is required in production: without it sessions are invalidated on every restart")
-		}
+		// In development an ephemeral secret is convenient; in production it would
+		// silently invalidate every session on each restart.
 		jwtSecret = generateSecureSecret()
-		slog.Warn("JWT_SECRET not set — generated random secret. Set JWT_SECRET in .env for persistence across restarts.")
+		jwtSecretGenerated = true
 	}
 
 	// SECURITY: library-server credentials must be explicitly set. Never use hardcoded defaults.
@@ -244,18 +244,6 @@ func Load(filenames ...string) (*Config, error) {
 	// a Navidrome-only production deployment must not be forced to provide Gonic credentials.
 	gonicUser := os.Getenv("GONIC_USER")
 	gonicPass := os.Getenv("GONIC_PASS")
-	if getEnv("GONIC_URL", "") != "" && (gonicUser == "" || gonicPass == "") {
-		if env == "production" {
-			return nil, fmt.Errorf("GONIC_USER and GONIC_PASS are required in production when GONIC_URL is set")
-		}
-		slog.Warn("GONIC_USER or GONIC_PASS not set — Gonic integration will fail until credentials are configured.")
-	}
-	if getEnv("NAVIDROME_URL", "") != "" && (os.Getenv("NAVIDROME_USER") == "" || os.Getenv("NAVIDROME_PASS") == "") {
-		if env == "production" {
-			return nil, fmt.Errorf("NAVIDROME_USER and NAVIDROME_PASS are required in production when NAVIDROME_URL is set")
-		}
-		slog.Warn("NAVIDROME_USER or NAVIDROME_PASS not set — Navidrome integration will fail until credentials are configured.")
-	}
 
 	// Determine config environment (defaults to ENVIRONMENT if CONFIG_ENV not set)
 	configEnv := getEnv("CONFIG_ENV", "")
@@ -370,6 +358,31 @@ func Load(filenames ...string) (*Config, error) {
 	cfg.CSRFEnabled = getEnvBool("CSRF_ENABLED", cfg.CSRFEnabled)
 	cfg.MusicLibraryPath = getEnv("MUSIC_LIBRARY", cfg.MusicLibraryPath)
 	cfg.DownloadStagingPath = getEnv("DOWNLOAD_STAGING", cfg.DownloadStagingPath)
+
+	// Production fail-fast, evaluated against the FINAL environment. Env vars
+	// win over YAML, so cfg.Environment is authoritative at this point and a
+	// `environment: production` in a YAML overlay is honoured here.
+	if cfg.Environment == "production" {
+		if jwtSecretGenerated {
+			return nil, fmt.Errorf("JWT_SECRET is required in production: without it sessions are invalidated on every restart")
+		}
+		if getEnv("GONIC_URL", "") != "" && (gonicUser == "" || gonicPass == "") {
+			return nil, fmt.Errorf("GONIC_USER and GONIC_PASS are required in production when GONIC_URL is set")
+		}
+		if getEnv("NAVIDROME_URL", "") != "" && (os.Getenv("NAVIDROME_USER") == "" || os.Getenv("NAVIDROME_PASS") == "") {
+			return nil, fmt.Errorf("NAVIDROME_USER and NAVIDROME_PASS are required in production when NAVIDROME_URL is set")
+		}
+	} else {
+		if jwtSecretGenerated {
+			slog.Warn("JWT_SECRET not set — generated random secret. Set JWT_SECRET in .env for persistence across restarts.")
+		}
+		if getEnv("GONIC_URL", "") != "" && (gonicUser == "" || gonicPass == "") {
+			slog.Warn("GONIC_USER or GONIC_PASS not set — Gonic integration will fail until credentials are configured.")
+		}
+		if getEnv("NAVIDROME_URL", "") != "" && (os.Getenv("NAVIDROME_USER") == "" || os.Getenv("NAVIDROME_PASS") == "") {
+			slog.Warn("NAVIDROME_USER or NAVIDROME_PASS not set — Navidrome integration will fail until credentials are configured.")
+		}
+	}
 
 	// Validate required fields
 	if cfg.DatabaseURL == "" {
