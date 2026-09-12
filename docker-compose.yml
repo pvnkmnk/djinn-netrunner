@@ -57,12 +57,39 @@ services:
       SLSKD_SLSK_USERNAME: ${SLSKD_USERNAME}
       SLSKD_SLSK_PASSWORD: ${SLSKD_PASSWORD}
       SLSKD_REMOTE_CONFIGURATION: "true"
+      # slskd defaults its downloads directory to ~/downloads, which resolves
+      # to /app/downloads inside the container — that is the *slskd data*
+      # volume, not the one the worker imports from. Without this, transfers
+      # report "completed" while the shared volume stays empty and every import
+      # fails with "Downloaded file not found". Point it at the shared volume,
+      # which the app mounts as DOWNLOAD_STAGING (/app/downloads).
+      # Incomplete files stay in slskd's own volume — only finished downloads
+      # need to be visible to the worker.
+      SLSKD_DOWNLOADS_DIR: /downloads
+      # slskd must hold the same key the app sends as X-API-Key. Setting it
+      # only on the app containers is the classic failure: every Soulseek
+      # search returns 401 while slskd logs "Unknown API key beginning with".
+      # This is slskd's *primary* key (-k/--api-key, SLSKD_API_KEY), which is
+      # documented and stable — unlike the web.authentication.api_keys map,
+      # whose environment-variable nesting is version-fragile. Must be 16-255
+      # characters or slskd refuses to start.
+      SLSKD_API_KEY: ${SLSKD_API_KEY}
     volumes:
       - netrunner-slskd-data:/app
       - netrunner-downloads:/downloads
     depends_on:
       volume-init:
         condition: service_completed_successfully
+    # /health is up as soon as the HTTP API is listening — it does not depend on
+    # the Soulseek login succeeding. Without this, an slskd that refuses to
+    # start (e.g. an API key under 16 characters) looks the same as a healthy
+    # one to `depends_on: service_started`.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5030/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   # One-shot bootstrap: named volumes initialize root-owned, and slskd's
@@ -137,8 +164,10 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      # service_healthy, not service_started: a misconfigured slskd exits at
+      # startup, and starting anyway yields an app that 401s every search.
       slskd:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/api/health"]
@@ -179,8 +208,10 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      # See the note on ops-web: wait for a genuinely healthy slskd, or the
+      # worker burns its first acquisition jobs against a dead client.
       slskd:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       # /healthz verifies the database actually answers — a process-only
       # check stays green while the worker is wedged on a dead DB connection.
