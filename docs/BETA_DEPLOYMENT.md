@@ -36,6 +36,16 @@ as the runtime environment of the `ops-web` / `ops-worker` containers (`env_file
 in `docker-compose.yml`). Values the compose files set explicitly — `DATABASE_URL`,
 `SLSKD_URL`, `MUSIC_LIBRARY`, `DOWNLOAD_STAGING`, paths — win over `.env`.
 
+### Deployment boundary
+
+The app talks to slskd as `http://netrunner-slskd:5030` over the compose
+network, sending `SLSKD_API_KEY` as `X-API-Key`. That traffic is cleartext, so
+the Docker network **is** the trust boundary: only containers in this stack, on
+a host you control, may join it. Do not attach untrusted workloads to it, and do
+not publish slskd's port. If slskd ever moves off-host, or crosses a network you
+do not control, enable TLS on slskd and set `SLSKD_URL` to `https://…` so the key
+is not sent in the clear.
+
 ## 2. Bring it up
 
 ```bash
