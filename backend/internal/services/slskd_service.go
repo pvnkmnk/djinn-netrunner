@@ -678,6 +678,12 @@ func (s *SlskdService) CancelDownload(username, downloadID string) error {
 // where last_directory_segment is the final folder in the remote path.
 // slskd strips the peer's share root and intermediate directories, keeping
 // only the immediate parent directory and the file.
+// LocalPathFor implements SlskdClient: the path a transfer will land on, from
+// the same model WaitForDownload uses to fill Download.LocalPath.
+func (s *SlskdService) LocalPathFor(username, filename string) string {
+	return s.resolveDownloadPath(username, filename)
+}
+
 func (s *SlskdService) resolveDownloadPath(username, remoteFilename string) string {
 	staging := stagingRoot(s.cfg)
 	// Convert Windows-style backslash paths to local forward slashes.

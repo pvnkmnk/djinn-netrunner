@@ -14,6 +14,12 @@ type SlskdClient interface {
 	EnqueueDownload(username, filename string, size int64) (string, error)
 	WaitForDownload(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error)
 	CancelDownload(username, downloadID string) error
+	// LocalPathFor reports where slskd will store a transfer. It is exposed so an
+	// item can record which staged file is its own at enqueue time, before the
+	// bytes arrive — the only way an abandoned or late transfer's file can ever
+	// be reclaimed. Keeping it here rather than re-deriving the path in the
+	// pipeline leaves one implementation of the path model.
+	LocalPathFor(username, filename string) string
 }
 
 // DownloadWaitOptions configures a single WaitForDownload call.

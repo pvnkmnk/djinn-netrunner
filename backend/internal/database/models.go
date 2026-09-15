@@ -372,7 +372,11 @@ type JobItem struct {
 	TrackTitle      string
 	SlskdSearchID   string
 	SlskdDownloadID string
-	DownloadPath    string
+	// DownloadPath is where slskd staged this item's file. Recorded at enqueue
+	// time so cleanup can find the file even when the transfer never completes;
+	// indexed because both the ownership check and the janitor look items up by
+	// path.
+	DownloadPath    string `gorm:"index"`
 	FinalPath       string
 	StartedAt       *time.Time
 	FinishedAt      *time.Time

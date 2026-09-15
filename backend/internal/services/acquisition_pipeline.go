@@ -207,10 +207,13 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 
 	h.Log(p.item.JobID, "OK", fmt.Sprintf("yt-dlp downloaded: %s", filepath.Base(downloaded)), &p.item.ID)
 
-	// Reset the item from failed state since yt-dlp succeeded
+	// Reset the item from failed state since yt-dlp succeeded. The output path is
+	// recorded here too, so a fallback download whose import never happens is
+	// still reclaimable by path rather than only by the orphan scan.
 	h.db.Model(&p.item).Updates(map[string]interface{}{
 		"status":         "downloading",
 		"failure_reason": "",
+		"download_path":  downloaded,
 	})
 
 	return downloaded, true
@@ -449,10 +452,15 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 			continue
 		}
 
+		// Record where slskd will put this transfer *before* waiting for it. The
+		// path is knowable now — it is the same model WaitForDownload uses for
+		// LocalPath — and recording it is what lets an abandoned or late-sending
+		// candidate's file be reclaimed later, when nothing else knows its path.
 		if updateErr := h.db.Model(&p.item).Updates(map[string]interface{}{
 			"status":            "downloading",
 			"slskd_search_id":   "completed",
 			"slskd_download_id": downloadID,
+			"download_path":     h.slskd.LocalPathFor(candidate.Username, candidate.Filename),
 		}).Error; updateErr != nil {
 			// The transfer is already queued, so this is not fatal — but a stale
 			// status or download id makes the item look idle in the UI and hides

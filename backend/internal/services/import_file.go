@@ -408,7 +408,7 @@ func (h *AcquisitionHandler) cleanupEmptyStagingDirs(dir string, jobID uint64, i
 		if err := os.Remove(dir); err != nil {
 			return
 		}
-		if h.db != nil {
+		if h.db != nil && jobID != 0 {
 			h.Log(jobID, "DEBUG", fmt.Sprintf("Removed empty staging dir: %s", dir), itemID)
 		}
 		dir = filepath.Dir(dir)

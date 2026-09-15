@@ -273,6 +273,76 @@ func TestCleanupEmptyStagingDirs_AcceptsRelativeDir(t *testing.T) {
 	require.NoError(t, err, "the staging root itself must survive")
 }
 
+// Two items can select the same peer file — the pre-download gate judges format
+// and size, never whether the file matches the track that was asked for — and
+// they then resolve to the same staged path. The first to finish must not delete
+// the file the second is still waiting on.
+func TestDiscardStagedDownload_DefersWhileAnotherLiveItemOwnsThePath(t *testing.T) {
+	db := stagingImportTestDB(t)
+	staging := t.TempDir()
+	h := NewAcquisitionHandler(db, cfgWithStaging(t, staging),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	shared := filepath.Join(staging, "Some Artist", "Some Album", "01 - track.m4a")
+	require.NoError(t, os.MkdirAll(filepath.Dir(shared), 0o755))
+	require.NoError(t, os.WriteFile(shared, []byte("audio"), 0o644))
+
+	// The item that is asking, and a second one that is still downloading the
+	// same file.
+	mine := stagedItem(t, db, "completed (duplicate hash)", shared)
+	other := stagedItem(t, db, "downloading", shared)
+
+	require.False(t, h.discardStagedDownload(shared, mine.JobID, &mine.ID),
+		"a shared staged file must not be taken from the item still using it")
+	_, err := os.Stat(shared)
+	require.NoError(t, err, "the shared file must survive")
+	assert.Contains(t, jobLogMessages(t, db, mine.JobID), "another item is still using it",
+		"the deferral must be visible on the item that asked")
+
+	// Once the other item is finished with it too, the file is fair game.
+	require.NoError(t, db.Model(&database.JobItem{}).Where("id = ?", other.ID).
+		Update("status", "imported").Error)
+
+	require.True(t, h.discardStagedDownload(shared, mine.JobID, &mine.ID),
+		"with no live owner left, the file must be reclaimed")
+	_, err = os.Stat(shared)
+	assert.True(t, os.IsNotExist(err), "the file must be gone once nobody owns it")
+}
+
+// Reading a failed ownership query as "nobody owns it" is the destructive
+// direction, so a lookup error has to keep the file — the same mistake
+// ErrIdentityLookup exists to prevent for artist identity.
+func TestDiscardStagedDownload_KeepsFileWhenOwnershipQueryFails(t *testing.T) {
+	db := stagingImportTestDB(t)
+	staging := t.TempDir()
+	h := NewAcquisitionHandler(db, cfgWithStaging(t, staging),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	file := filepath.Join(staging, "Some Artist", "01 - track.m4a")
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
+
+	// The ownership check reads jobitems, so removing it makes the query fail.
+	require.NoError(t, db.Migrator().DropTable(&database.JobItem{}))
+
+	require.False(t, h.discardStagedDownload(file, 1, nil),
+		"a failed ownership lookup must not authorise a delete")
+	_, err := os.Stat(file)
+	require.NoError(t, err, "the file must be left alone when ownership cannot be read")
+}
+
+// stagedItem seeds an item in the given status whose recorded staged path is the
+// file under test.
+func stagedItem(t *testing.T, db *gorm.DB, status, path string) database.JobItem {
+	t.Helper()
+
+	_, item := createAcquisitionTestItem(t, db)
+	require.NoError(t, db.Model(&database.JobItem{}).Where("id = ?", item.ID).
+		Updates(map[string]interface{}{"status": status, "download_path": path}).Error)
+	require.NoError(t, db.First(&item, item.ID).Error)
+	return item
+}
+
 // stagingImportTestDB is file-backed rather than ":memory:". A memory DSN gives
 // each *pooled connection* its own empty database, so the hash lookup these
 // tests exercise could land on a connection that cannot see the seeded row —

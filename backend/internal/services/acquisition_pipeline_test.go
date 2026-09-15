@@ -37,6 +37,7 @@ type mockSlskd struct {
 	EnqueueDownloadFunc  func(username, filename string, size int64) (string, error)
 	WaitForDownloadFunc  func(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error)
 	CancelDownloadFunc   func(username, downloadID string) error
+	LocalPathForFunc     func(username, filename string) string
 }
 
 func (m *mockSlskd) Search(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
@@ -65,6 +66,16 @@ func (m *mockSlskd) WaitForDownload(ctx context.Context, username, downloadID st
 		return m.WaitForDownloadFunc(ctx, username, downloadID, opts)
 	}
 	return nil, nil
+}
+
+// LocalPathFor defaults to the empty string, which is also the "no staged
+// path recorded" state: a test that does not care about ownership behaves
+// exactly as before the path was recorded.
+func (m *mockSlskd) LocalPathFor(username, filename string) string {
+	if m.LocalPathForFunc != nil {
+		return m.LocalPathForFunc(username, filename)
+	}
+	return ""
 }
 
 func (m *mockSlskd) CancelDownload(username, downloadID string) error {
