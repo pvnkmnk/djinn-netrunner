@@ -138,6 +138,11 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 				"finished_at": time.Now(),
 				"final_path":  existing.FinalPath,
 			})
+			// The staged file is redundant — the library already holds this
+			// recording. Discard it exactly as the album-level branch below does.
+			// This branch used to return without any cleanup, so its downloads sat
+			// in staging forever while the album branch's did not (DJI-492).
+			h.discardStagedDownload(downloadPath, jobID, &itemID)
 			return nil
 		}
 	}
@@ -182,14 +187,10 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 				"status":      "completed (duplicate album)",
 				"finished_at": time.Now(),
 				"final_path":  existing.FinalPath,
-			}) // The staged file is now redundant — remove it and sweep the
-			// album folder it leaves empty, so staging does not grow
-			// unbounded. Best-effort.
-			if rmErr := os.Remove(downloadPath); rmErr != nil {
-				h.Log(jobID, "WARN", fmt.Sprintf("Staging cleanup failed (duplicate album): %v", rmErr), &itemID)
-			} else {
-				h.cleanupEmptyStagingDirs(filepath.Dir(downloadPath), jobID, &itemID)
-			}
+			})
+			// The staged file is now redundant — discard it and sweep the album
+			// folder it leaves empty, so staging does not grow unbounded.
+			h.discardStagedDownload(downloadPath, jobID, &itemID)
 			return nil
 		}
 	}

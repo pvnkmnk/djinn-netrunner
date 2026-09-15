@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -538,10 +537,13 @@ func (h *AcquisitionHandler) rejectUnplayableDownload(p *acquisitionPipeline, ca
 		return "", fmt.Errorf("probing %s: %w", filepath.Base(download.LocalPath), err)
 	}
 
-	// Drop it so a bad file cannot be imported later or linger in staging.
-	if rmErr := os.Remove(download.LocalPath); rmErr != nil && !os.IsNotExist(rmErr) {
-		h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Could not remove rejected file: %v", rmErr), &p.item.ID)
-	}
+	// Drop it so a bad file cannot be imported later or linger in staging. The
+	// discard also sweeps the directory the file emptied: rejecting a
+	// single-file download used to delete the bytes and leave its album and
+	// artist folders behind forever, because the sweep only reclaims
+	// directories that are *already* empty and nothing else removed them
+	// (DJI-490).
+	h.discardStagedDownload(download.LocalPath, p.item.JobID, &p.item.ID)
 	h.Log(p.item.JobID, "WARN", fmt.Sprintf("%s delivered an unplayable file — rejected: %v", candidate.Username, err), &p.item.ID)
 	return fmt.Sprintf("%s: unplayable file: %v", candidate.Username, err), nil
 }
