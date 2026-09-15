@@ -446,3 +446,166 @@ wrong direction. It reads as a hardening requirement, so the tempting response
 is to set `CookieHTTPOnly` on the CSRF middleware — which silently breaks the
 HTMX UI while turning the test green.
 
+
+## Acceptance run at the merge commit — 2026-09-15
+
+The beta criterion, executed against `master` after PR #231 merged. Task 3
+(case-variant repair) and Task 5 (hygiene) were already recorded above and were
+**not** repeated.
+
+| Field | Value |
+|---|---|
+| Commit | `5d29d29` (merge of #231; `d0cf0a8` #230 and `59064b7` #229 beneath it) |
+| Stack | `docker-compose.yml` + `docker-compose.beta.yml` |
+| Date | 2026-09-15 |
+| Host | Windows + Docker Desktop |
+| Clone | the live beta clone, synced from `3d7240a` to `5d29d29` |
+| Volumes at start | **zero** — `down -v --remove-orphans` removed all six |
+| `.env` | rebuilt from `.env.beta.example`, all six `change_me_` values replaced |
+| Environment loaded | `ENVIRONMENT=production`, `CONFIG_ENV=production`, `SUBSONIC_ENABLED=true` |
+| ffmpeg / ffprobe (app image) | 6.1.2 / 6.1.2 |
+| PostgreSQL | 16-alpine |
+| slskd | `slskd/slskd:latest`, downloads dir `/downloads` |
+| Go (host, for the suite) | 1.27.0 |
+| Media server | none — NetRunner serves its own Subsonic API |
+
+### Proving the running binary is the merge commit, not a stale image
+
+Rebuilding is not evidence that the rebuild *took*. The worker's own binary was
+probed for string literals that exist only at `5d29d29` (#231):
+
+```
+$ docker compose ... exec -T ops-worker sh -c "grep -ac 'Staging cleanup failed' /app/netrunner-worker"
+2
+$ ... "grep -ac 'Removed empty staging dir' /app/netrunner-worker"
+1
+$ ... "grep -ac 'canonical identity lookup failed' /app/netrunner-worker"
+1
+```
+
+`ops-web` reports 0 for all three — those symbols live in the worker's
+acquisition path. The component that matters for every clause below is the
+worker, and it carries the merged code. The images were built during this run
+from the synced checkout.
+
+### Matrix (continues from row 40)
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| 41 | Start from zero volumes | PASS | `docker volume ls \| grep netrunner` → ZERO; no `netrunner-*` containers left |
+| 42 | Fresh `.env` from the template alone | PASS | `cp .env.beta.example .env`, all six `change_me_` values replaced; no hand edits, no undocumented variables |
+| 43 | Bring-up reaches healthy unaided | PASS | `up -d --build`; all four containers `healthy` with no intervention |
+| 44 | The running app is the merge commit | PASS | #231 literals present in `/app/netrunner-worker` (above) |
+| 45 | Stack health | PASS | `{"status":"ok","checks":{"database":{"status":"ok"},"disk":{"status":"ok","message":"directory accessible"},"slskd":{"status":"ok"}}}` HTTP 200 |
+| 46 | Configuration reaches both containers | PASS | `JWT_SECRET`, `SUBSONIC_ENABLED`, `CONFIG_ENV`, `SLSKD_API_KEY`, `ALLOW_PRIVATE_TARGETS` all present in `ops-web` **and** `ops-worker` |
+| 47 | ffmpeg/ffprobe in the app image | PASS | `ffmpeg version 6.1.2`, `ffprobe version 6.1.2` inside `ops-web` |
+| 48 | Register + login | PASS | register `201 {"status":"ok"}`; login `302` + `Set-Cookie: session_id` (HttpOnly, SameSite=Strict), body 0 bytes (HTMX-first) |
+| 49 | Session survives a restart | PASS | same cookie jar: `/api/libraries` and `/api/watchlists` both `200` after `restart ops-web` |
+| 50 | Production refuses to boot without `JWT_SECRET` | PASS | `ERROR Failed to load config error="JWT_SECRET is required in production: without it sessions are invalidated on every restart"`, exit 1 |
+| 51 | Production refuses Subsonic without a shared password | PASS | `ERROR ... "SUBSONIC_PASSWORD is required in production when SUBSONIC_ENABLED=true"`, exit 1. A control with the password present got past config and failed only on a deliberately fake DB host — so the check is specific, not a generic boot failure |
+| 52 | Subsonic ping, account password (`p=`) | PASS | `<subsonicResponse status="ok" version="1.16.1" type="netrunner">` |
+| 53 | Subsonic ping, token auth (`t=`/`s=`) | PASS | `status="ok"`; a wrong token returns `error code="40" message="Authentication failed"` |
+| 54 | Create a library owned by the caller | PASS | `201`, `"owner_user_id":1` |
+| 55 | Library path reuse is not a 500 | PASS | same request → `200` with the **same** id `b864b6db-…` |
+| 56 | Artist added and resolved | PASS | `201`, `MusicBrainzID=3165f5e0-44ff-446a-81d7-c09ec69661ae`, `OwnerUserID=1` |
+| 57 | Sync queues the pipeline | PASS | `{"artist":"PUP","job_id":2,"status":"sync_queued"}`; job 2 `artist_scan succeeded`, job 3 `acquisition running` |
+| 58 | Real acquisition imports from real peers | PASS | 9 items `imported`; worker log `Download queued from xelosnim (id: 36562ff6-…)`, `Selected: … [FLAC 16]`, `Found 50 results` |
+| 59 | Imports land in canonical album folders | PASS | `/app/music/PUP/Morbid Stuff/`, `…/The Dream Is Over/`, `…/Who Will Look After the Dogs/`, `…/THE UNRAVELING OF PUPTHEBAND/` — one folder per album, no per-credit fragmentation |
+| 60 | Tags carry a canonical album artist | PASS | `ffprobe` on `Morbid Stuff/06 - Closure.m4a` → `artist=PUP`, `album_artist=PUP` |
+| 61 | Cancellation reaches a terminal state | PASS | `POST /api/jobs/3/cancel` → `{"job_id":3,"status":"cancelled"}`; the row became `cancelled`, summary `Cancelled by request`, `finished_at` `19:53:38`; worker log `Job cancelled, stopping … job_id=3` then `Finished job … state=cancelled` |
+| 62 | A cancel keeps what it imported | PASS | 31 items `cancelled`, **7 `imported` preserved** on job 3; job 7 likewise kept its 2 imports |
+| 63 | **Zero residual directories in `/app/downloads` once every job is terminal** | PASS | `directories: 0`, `files: 0`, `all entries: 0` — `find /app/downloads -mindepth 1` printed nothing, confirmed from both `ops-worker` and `ops-web`. Every jobitem terminal: `cancelled 45`, `imported 9`, `completed (duplicate album) 1`, `failed (no results) 1` |
+| 64 | Post-acquisition index refresh after a cancel | PASS | job 4 `scan succeeded` at `19:53:43`, five seconds after the cancel finalized — the cancelled finalizer queued it itself |
+| 65 | A duplicate re-acquisition is recognised | PASS | job 7 item 40 → `completed (duplicate album)`; `job_logs`: `Album already acquired (existing acquisition #8 at /app/music/PUP/PUP/07 - Lionheart.mp3). Skipping track.` |
+| 66 | The dedup path leaves no staging residue | PASS | staging stayed 0 through the duplicate (the branch routes through `discardStagedDownload`) |
+| 67 | Scan indexes every acquired file | PASS | 9 audio files on disk → `9 tracks, 3 artists, 9 albums` |
+| 68 | `getIndexes` exposes resolvable ids | PASS | `artist id="artist-PUP" name="PUP" albumCount="7"`; no bare `artist-` placeholder |
+| 69 | `getArtist` round-trip | PASS | `getArtist.view?id=artist-PUP` → top-level `<artist>` with 7 albums, each `artistId="artist-PUP"` |
+| 70 | `getAlbum` carries its songs | PASS | `album-Morbid Stuff/PUP` → `<song id="06e18fc5-…" … artistId="artist-PUP" albumId="album-Morbid Stuff/PUP">` |
+| 71 | Streaming returns real audio | PASS | `stream.view` → HTTP 200, 22,991,052 bytes, `audio/m4a`, magic `ftypM4A`, `ffprobe` → `mov,mp4,m4a,3gp,3g2,mj2`, `duration=188.41`. **SHA-256 identical** to the library file on disk |
+| 72 | `scripts/beta-smoke.sh` | PASS | `Beta smoke: all checks passed.` — 28 checks including session persistence, both Subsonic schemes, and `ffprobe present in ops-worker and decoded a generated tone` |
+| 73 | Unit + integration suites and vet | PASS | `go build ./...`, `go vet ./...`, `go vet -tags integration ./...` all clean; `go test -count=1 ./...` every package `ok` (services 94s, ffmpeg live) |
+
+### The criterion, stated plainly
+
+`/app/downloads` holding **zero** entries after both a cancellation and a
+duplicate-rejection is satisfied here. That is the clause DJI-490 left open,
+where the previous run recorded *12 leftover directories*. Every path that ends
+an item without importing — cancel and abandon, and both dedup branches — now
+routes through `discardStagedDownload`, which removes the file and then sweeps
+upward, stopping at the first directory that still holds entries.
+
+### Findings this run produced
+
+Neither was found by reading code.
+
+**OPEN (not blocking) — the folder is canonicalised, the tag is not, so Subsonic still splits the artist.** Acquisition #8 imported with peer tags `artist=Pup`, `album=PUP`. The folder was correctly canonicalised to `/app/music/PUP/PUP/`, but the tags written into the file kept the peer's casing:
+
+```
+$ ffprobe … "/app/music/PUP/PUP/07 - Lionheart.mp3"
+TAG:artist=Pup
+TAG:album_artist=Pup
+TAG:album=PUP
+
+$ ffprobe … "/app/music/PUP/Morbid Stuff/06 - Closure.m4a"   # a peer that said PUP
+TAG:artist=PUP
+TAG:album_artist=PUP
+```
+
+Subsonic groups by tag, so `getIndexes` lists **both** `artist-PUP` (7 albums)
+and `artist-Pup` (1 album) for the same artist. DJI-489 canonicalised the
+folder and the dedup key; the tag axis still carries the raw peer value. This is
+the same defect class on the axis that decides what a client actually sees.
+
+**OPEN (not blocking) — nothing checks that the downloaded file matches what was requested.** Job 3 item 1 requested `artist=PUP, album=PUP, track_title=PUP` and imported:
+
+```
+/app/music/Noriyuki Iwadare/Ace Attorney Investigations: Miles Edgeworth
+Original Soundtrack/17 - Shi-Long Lang - Speak Up, Pup!.m4a
+```
+
+A peer served an unrelated track whose filename happens to contain "Pup". It
+passed the plausibility and `ffprobe` gates, and the importer organised it by its
+own embedded tags, leaving a second and entirely unrelated artist in the library.
+The existing gates validate that a file *is playable audio*, not that it *is the
+audio that was asked for*.
+
+**Observation, not a finding:** `ffprobe` prints `[png @ …] chunk too big` for the
+embedded cover on that mp3. Harmless here, but it is the same family of
+malformed cover atoms that made `audiometa` unusable for MP4 `covr`, and it is
+worth knowing that the files reaching the library do carry them.
+
+**Resolved by this run:** the earlier *Open findings* entry "Staging directories
+accumulate" (12 left over, DJI-490) no longer reproduces — see row 63. The
+`getAlbum` song attributes still report `duration="0"`, unchanged from the
+earlier record and still the one open Subsonic polish item.
+
+### Documentation defects this run exposed, now fixed
+
+The thing under test is `docs/BETA_DEPLOYMENT.md`, and the documented steps
+themselves carried two defects. Both are fixed there; neither needed a workaround
+in the run.
+
+| # | Symptom | Cause | Fix |
+|---|---|---|---|
+| 1 | The documented `ARTIST_ID=$(python -c "…json.load(open('…'))['id']")` raises `KeyError: 'id'` | `POST /api/artists` returns Go's default field names (`"ID"`), while `POST /api/libraries` returns `"id"`. The doc assumed lowercase for both | Parse whichever key is present, reading the response from stdin so no temp file is needed |
+| 2 | The same lines stage the response in `/tmp/*.json`, which plain `python` cannot open on the documented Windows host | Git Bash's `/tmp` is the Windows temp directory; a native Python resolves `/tmp` to `C:\tmp` | Pipe the response into the parser instead of staging it through `/tmp` |
+
+One more, recorded rather than fixed: the compose **service** is `postgres` while
+the **container** is `netrunner-postgres`, so `docker compose exec
+netrunner-postgres …` fails with `service "netrunner-postgres" is not running`.
+This run used `docker exec netrunner-postgres` for its SQL probes; the docs name
+neither, so there was nothing wrong to correct.
+
+### Final state
+
+| Item | Value |
+|---|---|
+| Containers | `netrunner-postgres`, `netrunner-slskd`, `ops-web`, `ops-worker` — all `healthy` |
+| Volumes | six, all created during this run |
+| Images | `djinn-netrunner-ops-web` / `ops-worker`, built during the run from `5d29d29` |
+| Jobs | `release_monitor` ×1, `artist_scan` ×2, `acquisition` ×2 (`cancelled`), `scan` ×5 — every one terminal with a `finished_at` |
+| Items | `cancelled` 45, `imported` 9, `completed (duplicate album)` 1, `failed (no results)` 1 |
+| Library | 9 tracks / 3 artists / 9 albums indexed; 9 audio files plus 4 `.lrc` sidecars under `/app/music` |
+| Staging | **0 entries** in `/app/downloads` |
+| Suites | `go build`, `go vet` (both), `go test -count=1 ./...` all green |
