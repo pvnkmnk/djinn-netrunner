@@ -155,15 +155,25 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	// re-enqueued backlog item) must not re-import the whole album. If another
 	// acquisition already imported this artist+album, treat this file as a
 	// duplicate unless it is the exact file hash we just checked. The key is
-	// the canonical (album) artist, so per-track credit variants dedup too.
+	// the canonical (album) artist, so per-track credit variants dedup too, and
+	// the comparison folds case (DJI-489) so a case-only difference is the same
+	// album rather than a second folder.
+	//
+	// Adopt the casing the library already uses for this artist+album before the
+	// dedup key and the library path are derived from it.
+	if metadata.AlbumArtist != "" && metadata.Album != "" {
+		metadata.AlbumArtist, metadata.Album = h.resolveCanonicalIdentity(metadata.AlbumArtist, metadata.Album)
+	}
+
 	albumArtist := metadata.AlbumArtist
 	if albumArtist == "" {
 		albumArtist = metadata.Artist
 	}
 	if albumArtist != "" && metadata.Album != "" {
-		var existing database.Acquisition
-		err := h.db.Where("artist = ? AND album = ? AND (file_hash = '' OR file_hash IS NULL OR file_hash != ?)",
-			albumArtist, metadata.Album, hash).First(&existing).Error
+		// The lookup folds case on both sides and returns the earliest match, so a
+		// case-only difference is recognised as the album the library already
+		// holds and the row reported to the caller is the canonical one (DJI-489).
+		existing, err := h.findExistingAlbumAcquisition(albumArtist, metadata.Artist, metadata.Album, hash)
 		if err == nil {
 			metrics.AcquisitionDedupTotal.WithLabelValues("artist_album").Inc()
 			h.Log(jobID, "OK", fmt.Sprintf("Album already acquired (existing acquisition #%d at %s). Skipping track.",
@@ -185,10 +195,7 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	}
 
 	// Determine library path
-	libraryRoot := h.cfg.MusicLibraryPath
-	if libraryRoot == "" {
-		libraryRoot = "./music_library"
-	}
+	libraryRoot := h.libraryRoot()
 	os.MkdirAll(libraryRoot, 0755)
 
 	finalPath := h.ext.GenerateLibraryPath(metadata, libraryRoot)
