@@ -29,10 +29,29 @@ type AcquisitionHandler struct {
 	lyrics     *LyricsService
 	transcoder *TranscoderService
 	ytdlp      YtdlpClientInterface
+	// locker serialises the claim and the reclaim of one staged path across
+	// worker processes. Nil means no other process can be acting on this
+	// host's staging root; see WithLocker.
+	locker database.LockManager
 }
 
 func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd SlskdClient, mb *MusicBrainzService, aid *AcoustIDService, ext *MetadataExtractor, library SubsonicClientInterface, discogs *DiscogsService, cache *CacheService, lyrics *LyricsService, transcoder *TranscoderService, ytdlp YtdlpClientInterface) *AcquisitionHandler {
 	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, library: library, discogs: discogs, cache: cache, lyrics: lyrics, transcoder: transcoder, ytdlp: ytdlp}
+}
+
+// WithLocker supplies the cross-worker lock manager used to serialise claiming a
+// staged path (recording download_path) against reclaiming it
+// (discardStagedDownload). It is a setter rather than a constructor argument
+// because the constructor already takes twelve positional dependencies and only
+// the worker has a lock manager.
+//
+// A worker process that runs more than one instance MUST call this: two workers
+// writing and reclaiming the same staged path without it can delete a file the
+// other is waiting on. A single-process deployment is unaffected — there is
+// nobody to serialise with — and lockStagingPath reports the lock as available.
+func (h *AcquisitionHandler) WithLocker(lm database.LockManager) *AcquisitionHandler {
+	h.locker = lm
+	return h
 }
 
 // acquisitionPipeline carries state between pipeline stages.
@@ -207,11 +226,27 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 
 	h.Log(p.item.JobID, "OK", fmt.Sprintf("yt-dlp downloaded: %s", filepath.Base(downloaded)), &p.item.ID)
 
-	// Reset the item from failed state since yt-dlp succeeded
-	h.db.Model(&p.item).Updates(map[string]interface{}{
+	// Reset the item from failed state since yt-dlp succeeded. The output path is
+	// recorded here too, so a fallback download whose import never happens is
+	// still reclaimable by path rather than only by the orphan scan. The claim is
+	// taken under the path lock for the same reason as the slskd claim above.
+	unlock, _ := h.lockStagingPath(ctx, downloaded)
+	updateErr := h.db.Model(&p.item).Updates(map[string]interface{}{
 		"status":         "downloading",
 		"failure_reason": "",
-	})
+		"download_path":  downloaded,
+	}).Error
+	unlock()
+
+	if updateErr != nil {
+		// DownloadAudio verified the file exists, so it is on disk and belongs to
+		// no item. Discard it now rather than leaving it for the orphan scan, and
+		// stop the fallback: importing a file with no recorded owner is exactly
+		// what the ownership record exists to prevent.
+		h.Log(p.item.JobID, "WARN", fmt.Sprintf("Could not record the fallback download on the item: %v", updateErr), &p.item.ID)
+		h.discardStagedDownload(ctx, downloaded, p.item.JobID, &p.item.ID)
+		return "", false
+	}
 
 	return downloaded, true
 }
@@ -449,15 +484,34 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 			continue
 		}
 
-		if updateErr := h.db.Model(&p.item).Updates(map[string]interface{}{
+		// Record where slskd will put this transfer *before* waiting for it. The
+		// path is knowable now — it is the same model WaitForDownload uses for
+		// LocalPath — and recording it is what lets an abandoned or late-sending
+		// candidate's file be reclaimed later, when nothing else knows its path.
+		//
+		// The claim is taken under the path lock, the same lock a reclaim of this
+		// path takes, so a file can never be reclaimed in the window between being
+		// written and being claimed.
+		localPath := h.slskd.LocalPathFor(candidate.Username, candidate.Filename)
+		unlock, _ := h.lockStagingPath(p.ctx, localPath)
+		updateErr := h.db.Model(&p.item).Updates(map[string]interface{}{
 			"status":            "downloading",
 			"slskd_search_id":   "completed",
 			"slskd_download_id": downloadID,
-		}).Error; updateErr != nil {
-			// The transfer is already queued, so this is not fatal — but a stale
-			// status or download id makes the item look idle in the UI and hides
-			// which transfer to cancel.
+			"download_path":     localPath,
+		}).Error
+		unlock()
+
+		if updateErr != nil {
+			// Nothing can reclaim what no row points at, so letting this transfer
+			// run would produce a file that only the orphan scan can ever find —
+			// and the item would look idle in the UI, hiding which transfer to
+			// cancel. Cancel it and fail the item so the retry re-claims the path.
 			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Could not record the download on the item: %v", updateErr), &p.item.ID)
+			if cancelErr := h.slskd.CancelDownload(candidate.Username, downloadID); cancelErr != nil {
+				h.Log(p.item.JobID, "WARN", fmt.Sprintf("Could not cancel the untracked transfer %s: %v", downloadID, cancelErr), &p.item.ID)
+			}
+			return false, fmt.Errorf("recording the staged download failed: %w", updateErr)
 		}
 
 		h.Log(p.item.JobID, "INFO", fmt.Sprintf("Download queued from %s (id: %s)", candidate.Username, downloadID), &p.item.ID)
@@ -540,7 +594,7 @@ func (h *AcquisitionHandler) rejectUnplayableDownload(p *acquisitionPipeline, ca
 	// artist folders behind forever, because the sweep only reclaims
 	// directories that are *already* empty and nothing else removed them
 	// (DJI-490).
-	h.discardStagedDownload(download.LocalPath, p.item.JobID, &p.item.ID)
+	h.discardStagedDownload(p.ctx, download.LocalPath, p.item.JobID, &p.item.ID)
 	h.Log(p.item.JobID, "WARN", fmt.Sprintf("%s delivered an unplayable file — rejected: %v", candidate.Username, err), &p.item.ID)
 	return fmt.Sprintf("%s: unplayable file: %v", candidate.Username, err), nil
 }
@@ -574,7 +628,7 @@ func (h *AcquisitionHandler) stageImportAndEnrich(ctx context.Context, p *acquis
 	// library is not at risk: the stat fails against the old path and nothing is
 	// removed. An empty path also stats as missing, so it is skipped.
 	if _, statErr := os.Stat(p.download); statErr == nil {
-		h.discardStagedDownload(p.download, p.item.JobID, &p.item.ID)
+		h.discardStagedDownload(ctx, p.download, p.item.JobID, &p.item.ID)
 	}
 
 	return err

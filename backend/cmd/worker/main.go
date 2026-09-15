@@ -55,6 +55,7 @@ type WorkerOrchestrator struct {
 	// Extracted sub-components (DJI-364)
 	itemProcessor  *services.JobItemProcessor
 	zombieRecovery *services.ZombieRecovery
+	stagingReclaim *services.StagingReclaim
 
 	activeJobs map[uint64]*jobContext
 	jobMutex   sync.Mutex
@@ -123,7 +124,17 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	if libraryClient != nil {
 		libraryForAcquisition = libraryClient
 	}
-	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, libraryForAcquisition, discogs, cache, lyrics, transcoder, ytdlp)
+	// The lock manager serialises claiming and reclaiming a staged path across
+	// worker processes, so a reclaim cannot delete a file another worker just
+	// claimed.
+	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, libraryForAcquisition, discogs, cache, lyrics, transcoder, ytdlp).
+		WithLocker(lm)
+
+	// Staging janitor. The switches are config-backed so a deployment can turn it
+	// (or just its orphan pass) off without a rebuild.
+	stagingReclaimCfg := services.DefaultStagingReclaimConfig()
+	stagingReclaimCfg.Enabled = cfg.StagingReclaimEnabled
+	stagingReclaimCfg.RemoveOrphans = cfg.StagingReclaimOrphans
 
 	return &WorkerOrchestrator{
 		workerID:       fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
@@ -144,6 +155,7 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 		acqHandler:     acqHandler,
 		itemProcessor:  services.NewJobItemProcessor(db, acqHandler),
 		zombieRecovery: services.NewZombieRecovery(db, lm, services.DefaultZombieRecoveryConfig()),
+		stagingReclaim: services.NewStagingReclaim(db, acqHandler, stagingReclaimCfg),
 		notificationService: func() *services.NotificationService {
 			ns := services.NewNotificationService(cfg.NotificationWebhookURL, cfg.NotificationEnabled, proxyClient)
 			ns.ConfigureSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom, cfg.SMTPEnabled)
@@ -177,7 +189,7 @@ func (w *WorkerOrchestrator) Start() {
 	}()
 
 	if w.litefs.IsPrimary() {
-		w.wg.Add(3)
+		w.wg.Add(4)
 		go func() {
 			defer w.wg.Done()
 			w.schedulerLoop()
@@ -189,6 +201,13 @@ func (w *WorkerOrchestrator) Start() {
 		go func() {
 			defer w.wg.Done()
 			w.zombieRecovery.Run(w.ctx, w.workerID)
+		}()
+		// Staged downloads are filesystem state, so exactly one worker may sweep:
+		// this sits behind the same primary gate as the scheduler and the zombie
+		// recovery for the same reason.
+		go func() {
+			defer w.wg.Done()
+			w.stagingReclaim.Run(w.ctx, w.workerID)
 		}()
 		// Recurring release monitoring: the monitorJobLoop enqueues a system
 		// release_monitor job each hour (first one seeded at startup). The job —

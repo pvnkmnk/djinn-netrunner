@@ -71,6 +71,11 @@ type Config struct {
 	// Library
 	MusicLibraryPath     string
 	DownloadStagingPath  string
+	// Staging reclaim is the janitor for staged downloads no live item owns.
+	// Both switches default on; the orphan pass (files no item references) is
+	// the higher-blast-radius half, so it can be disabled on its own.
+	StagingReclaimEnabled bool
+	StagingReclaimOrphans bool
 
 	// Templates
 	TemplatesPath   string
@@ -295,6 +300,9 @@ func Load(filenames ...string) (*Config, error) {
 		MusicLibraryPath:    getEnv("MUSIC_LIBRARY", "./music_library"),
 		DownloadStagingPath: getEnv("DOWNLOAD_STAGING", "./downloads"),
 
+		StagingReclaimEnabled: getEnvBool("STAGING_RECLAIM_ENABLED", true),
+		StagingReclaimOrphans: getEnvBool("STAGING_RECLAIM_ORPHANS", true),
+
 		TemplatesPath:   getEnv("TEMPLATES_PATH", "./ops/web/templates"),
 		StaticFilesPath: getEnv("STATIC_FILES_PATH", "./ops/web/static"),
 
@@ -358,6 +366,8 @@ func Load(filenames ...string) (*Config, error) {
 	cfg.CSRFEnabled = getEnvBool("CSRF_ENABLED", cfg.CSRFEnabled)
 	cfg.MusicLibraryPath = getEnv("MUSIC_LIBRARY", cfg.MusicLibraryPath)
 	cfg.DownloadStagingPath = getEnv("DOWNLOAD_STAGING", cfg.DownloadStagingPath)
+	cfg.StagingReclaimEnabled = getEnvBool("STAGING_RECLAIM_ENABLED", cfg.StagingReclaimEnabled)
+	cfg.StagingReclaimOrphans = getEnvBool("STAGING_RECLAIM_ORPHANS", cfg.StagingReclaimOrphans)
 
 	// Production fail-fast, evaluated against the FINAL environment. Env vars
 	// win over YAML, so cfg.Environment is authoritative at this point and a

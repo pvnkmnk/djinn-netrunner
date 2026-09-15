@@ -49,6 +49,13 @@ var (
 		Name:      "zombie_jobs_recovered_total",
 		Help:      "Total number of zombie jobs detected and reset to queued.",
 	})
+
+	StagingFilesReclaimed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "netrunner",
+		Subsystem: "worker",
+		Name:      "staging_files_reclaimed_total",
+		Help:      "Staged files reclaimed by the janitor, labeled by reason.",
+	}, []string{"reason"})
 )
 
 // External API call metrics
