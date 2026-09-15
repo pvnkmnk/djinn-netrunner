@@ -12,7 +12,21 @@ type SlskdClient interface {
 	Search(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error)
 	Browse(username string) ([]PeerFile, error)
 	EnqueueDownload(username, filename string, size int64) (string, error)
-	WaitForDownload(ctx context.Context, username, downloadID string, timeout time.Duration) (*Download, error)
+	WaitForDownload(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error)
+	CancelDownload(username, downloadID string) error
+}
+
+// DownloadWaitOptions configures a single WaitForDownload call.
+type DownloadWaitOptions struct {
+	// Timeout bounds the whole transfer.
+	Timeout time.Duration
+	// HasAlternatives reports whether another candidate can be tried if this
+	// peer fails. When true, a transfer that sits queued without ever starting
+	// is abandoned after remoteQueueGrace rather than consuming the full
+	// timeout. When false — the last candidate — the wait is allowed to run its
+	// course, because abandoning it saves nothing and would fail an item that
+	// waiting might still complete.
+	HasAlternatives bool
 }
 
 // SubsonicClientInterface defines the interface for Subsonic-compatible library

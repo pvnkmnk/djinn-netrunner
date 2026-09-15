@@ -435,7 +435,7 @@ func (h *IntegrationHarness) ValidateDownloadFlow(t *testing.T, username, filena
 	errChan := make(chan error, 1)
 	
 	go func() {
-		download, err := h.Slskd.WaitForDownload(ctx, username, downloadID, downloadWaitTimeout)
+		download, err := h.Slskd.WaitForDownload(ctx, username, downloadID, services.DownloadWaitOptions{Timeout: downloadWaitTimeout})
 		if err != nil {
 			errChan <- err
 			return

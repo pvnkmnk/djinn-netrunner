@@ -1,6 +1,9 @@
 # Environment
 .env
 
+# Agent scratch (Freebuff session working files)
+.freebuff/
+
 # Python
 __pycache__/
 *.py[cod]
