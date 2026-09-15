@@ -291,3 +291,56 @@ string, so Subsonic requests need it URL-encoded. Both are now noted.
 - **`getAlbum` songs report `duration="0"` and an empty `contentType`.** The
   stream and the file are both correct; only these two attributes are unpopulated
   for tracks whose `format`/duration the scanner did not record.
+
+## Case-canonicalised album identity — 2026-09-15
+
+DJI-489. The library already contained the failure this fixes: one album held as two
+case-variant folders, `/app/music/PUP/The Unraveling Of Puptheband/` beside
+`/app/music/PUP/The Unraveling of Puptheband/`, backed by acquisitions #9 and #4.
+
+### What changed
+
+| Where | Before | After |
+|---|---|---|
+| album dedup key | `artist = ? AND album = ?` — case-sensitive in both PostgreSQL and SQLite | `LOWER(TRIM(artist)) = ? AND LOWER(TRIM(album)) = ?`, earliest row first |
+| artist / album casing used for the path | whatever the file's tags happened to say | the earliest acquisition's casing, else an existing library folder, else the tag |
+
+### Live re-acquire, through the app's own agent tool
+
+    {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"enqueue_acquisition",
+      "arguments":{"artist":"PUP","title":"Totally Fine","album":"The Unraveling Of Puptheband"}}}
+    Acquisition job #14 enqueued for: PUP - Totally Fine
+
+Job #14 is the decisive case, because the MusicBrainz recording was **new**
+(`53881f92-ff2b-40ac-952c-e05569fd3e77`) — so the recording-ID dedup that short-circuited
+the earlier attempt could not fire, and only the album dedup could:
+
+    Selected: @@znjxx\Soulseek Downloads\pup - (2022) the unraveling of puptheband\PUP - The Unraveling Of Puptheband - 02 - Totally Fine.mp3
+    OK  | Download completed
+    OK  | Found recording via search: 53881f92-ff2b-40ac-952c-e05569fd3e77
+    OK  | Album already acquired (existing acquisition #4 at /app/music/PUP/The Unraveling of Puptheband/03 - Robot Writes a Love Song.mp3). Skipping track.
+
+The tags and the peer's folder both say "Of"; the row it matched is #4 — the earliest,
+lowercase "of" — which is the canonical folder. A case-sensitive key either matches the
+later case variant or matches nothing and imports another copy.
+
+| Evidence | Result |
+|---|---|
+| Item #90 | `completed (duplicate album)` |
+| Item #90 `final_path` | `/app/music/PUP/The Unraveling of Puptheband/03 - Robot Writes a Love Song.mp3` — the canonical folder |
+| Files under `/app/music/PUP/The Unraveling*` | unchanged: still the same two tracks in the two pre-existing folders |
+| Folders under `/app/music` | unchanged: `Noriyuki Iwadare`, `PUP`, `Pent Up Pup` — no case-variant folder created |
+| `acquisitions` rows | still 9; nothing recorded for *Totally Fine* |
+| Staged duplicate | removed and its emptied directory swept |
+
+An earlier re-acquire (job #12, item #89) of a track already in the library was
+short-circuited by the MusicBrainz recording-ID dedup, reporting the folder of
+acquisition #9. That exercises a different branch and is not evidence for the case fold.
+
+The unit tests pin the same behaviour at the comparison level, including one asserting
+that the pre-fix case-sensitive comparison cannot see the case variant at all; making
+`CanonicalKey` an identity function turns seven of them red.
+
+### Open finding this run exposed
+
+- **The recording-ID dedup branch leaves the staged file behind.** `/app/downloads/THE UNRAVELING OF PUPTHEBAND/12 PUPTHEBAND Inc. Is Filing for Bankruptcy.mp3` survived job #12, whereas the album branch removes the staged file and sweeps the directory it emptied. Same class as DJI-490's leftovers.
