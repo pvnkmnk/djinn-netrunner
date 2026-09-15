@@ -3,10 +3,13 @@ package services
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -800,4 +803,41 @@ func TestAcquisitionHandler_StageAlbumBrowse_NoAudioFiles(t *testing.T) {
 	if len(p.albumFiles) != 0 {
 		t.Errorf("expected 0 album files (no audio), got %d", len(p.albumFiles))
 	}
+}
+
+// DownloadAudio verifies the output file exists before returning, so a fallback
+// whose ownership write fails has left a real file on disk that no item points
+// at. Importing it would be importing unowned bytes, and leaving it would make it
+// the orphan scan's problem an hour later.
+func TestAcquisitionHandler_StageYtdlpFallback_DiscardsAFileItCannotRecord(t *testing.T) {
+	db := stagingImportTestDB(t)
+	staging := t.TempDir()
+	handler := NewAcquisitionHandler(db, &config.Config{DownloadStagingPath: staging},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	_, item := createAcquisitionTestItem(t, db)
+	item.SourceURL = "https://example.test/watch?v=abc"
+	// See the slskd case: a zero ID is what GORM refuses to update.
+	item.ID = 0
+
+	output := filepath.Join(staging, "Fallback Artist", "Fallback Album", "01 - Track.flac")
+	require.NoError(t, os.MkdirAll(filepath.Dir(output), 0o755))
+	require.NoError(t, os.WriteFile(output, []byte("fallback audio"), 0o644))
+
+	handler.ytdlp = &mockYtdlp{
+		IsYtdlpAvailableFunc: func() bool { return true },
+		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+			return output, nil
+		},
+	}
+
+	downloaded, ok := handler.stageYtdlpFallback(context.Background(),
+		&acquisitionPipeline{ctx: context.Background(), item: item})
+
+	assert.False(t, ok, "a fallback whose path cannot be recorded must not continue")
+	assert.Empty(t, downloaded)
+	_, err := os.Stat(output)
+	assert.True(t, os.IsNotExist(err), "the unattributable file must be discarded, not left in staging")
+	_, err = os.Stat(filepath.Join(staging, "Fallback Artist"))
+	assert.True(t, os.IsNotExist(err), "and the directories it emptied must be swept with it")
 }

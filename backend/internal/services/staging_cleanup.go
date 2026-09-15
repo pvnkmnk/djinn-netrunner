@@ -1,11 +1,13 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -111,6 +113,96 @@ func (h *AcquisitionHandler) anotherLiveItemOwns(path string, itemID *uint64) bo
 	return false
 }
 
+// The staged-path lock.
+//
+// Claiming a staged path (stageDownloadFile recording download_path) and
+// reclaiming it (discardStagedDownload) are two workers acting on one file, and
+// neither can read the other's intent from the filesystem. Two items can select
+// the same peer file — the pre-download gate judges format and size, never
+// whether the file matches the track that was asked for — so they resolve to the
+// same staged path. Without serialisation a reclaim that has just decided "no
+// live item wants this" can delete the file a second worker claimed
+// microseconds later.
+//
+// So both sides take this lock, keyed by the path. It is the database's
+// LockManager rather than an in-process mutex because the competitors are
+// separate worker processes.
+const (
+	// stagingPathScope namespaces the key, so it cannot collide with the
+	// job-scope locks the worker already takes.
+	stagingPathScope = "staging_path"
+	// stagingPathLockBudget bounds the wait. Reclaiming a file is never urgent:
+	// declining and letting the next sweep retry costs nothing, while blocking a
+	// worker behind a stall would hold up shutdown.
+	stagingPathLockBudget = 2 * time.Second
+	stagingPathLockPoll   = 25 * time.Millisecond
+)
+
+// absStagingPath is what the lock keys on. Both sides must derive the same key
+// from the same file, and one of them may hold "./downloads/x" while the other
+// holds "/app/downloads/x": a key that disagreed with itself would serialise
+// nothing at all.
+func absStagingPath(path string) string {
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return abs
+}
+
+// lockStagingPath takes the cross-worker lock for one staged path. It always
+// returns a release function — never nil, so a caller can defer it
+// unconditionally — and whether the caller may act on the path.
+//
+// ok is false only when the lock could not be taken (another worker holds it, the
+// database refused, or the wait expired). A reclaim must treat that as "leave the
+// file alone"; a claim, whose action is the safe direction, proceeds and is
+// logged.
+//
+// A handler with no lock manager wired reports ok: there is no second process to
+// serialise with, and refusing every reclaim would turn a missing dependency into
+// silently abandoned staging — the failure this file exists to prevent. See
+// WithLocker for when wiring it is mandatory.
+func (h *AcquisitionHandler) lockStagingPath(ctx context.Context, path string) (release func(), ok bool) {
+	noop := func() {}
+	if h.locker == nil {
+		return noop, true
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	key, err := h.locker.GetScopeLockKey(ctx, stagingPathScope, absStagingPath(path))
+	if err != nil {
+		slog.Error("Could not derive the staging path lock key", "path", path, "error", err)
+		return noop, false
+	}
+
+	deadline := time.Now().Add(stagingPathLockBudget)
+	for {
+		acquired, lockErr := h.locker.AcquireTryLock(ctx, key)
+		if lockErr == nil && acquired {
+			return func() {
+				// Released on a background context: the lock outlives a cancelled
+				// caller's context, and a leaked lock would block the next sweep
+				// until its expiry.
+				if relErr := h.locker.ReleaseLock(context.Background(), key); relErr != nil {
+					slog.Warn("Could not release the staging path lock", "path", path, "error", relErr)
+				}
+			}, true
+		}
+		if lockErr != nil {
+			slog.Warn("Could not take the staging path lock", "path", path, "error", lockErr)
+			return noop, false
+		}
+		if ctx.Err() != nil || time.Now().After(deadline) {
+			slog.Warn("Timed out waiting for the staging path lock", "path", path)
+			return noop, false
+		}
+		time.Sleep(stagingPathLockPoll)
+	}
+}
+
 // logStaging records a staging decision against the item's job log, when there is
 // a job to record it against. The janitor reclaims files that belong to no item,
 // so it has no job; a job_id of 0 is not a job, and rows written there are read
@@ -140,6 +232,14 @@ func (h *AcquisitionHandler) logStaging(jobID uint64, itemID *uint64, level, mes
 // path: that is two items sharing one staged file, not a fault, and the file has
 // to survive until the last of them is done with it.
 //
+// The ownership check and the removal happen under the staged-path lock, which
+// the claim side also takes: otherwise they are two separate acts, and a worker
+// that claims this path between them has the file deleted from under it. An item
+// ID exempts that item from the check, and is therefore only correct for a caller
+// that *is* that item's own execution — a reclaim of an item that looks terminal
+// must pass none, or an item retried back into the queue would not protect its
+// own file.
+//
 // It reports whether the file is gone as a result of the call (removed now, or
 // already absent), which is what the janitor counts.
 //
@@ -148,7 +248,7 @@ func (h *AcquisitionHandler) logStaging(jobID uint64, itemID *uint64, level, mes
 // soon as *this* file is gone would delete a sibling that a different item still
 // has to import. The directory is only reclaimed once nothing else is staged
 // beside it.
-func (h *AcquisitionHandler) discardStagedDownload(path string, jobID uint64, itemID *uint64) bool {
+func (h *AcquisitionHandler) discardStagedDownload(ctx context.Context, path string, jobID uint64, itemID *uint64) bool {
 	if path == "" {
 		return false
 	}
@@ -161,6 +261,17 @@ func (h *AcquisitionHandler) discardStagedDownload(path string, jobID uint64, it
 			fmt.Sprintf("Refused to discard %s: outside the staging root %s", path, root))
 		return false
 	}
+
+	// Serialised against the claim of this path; see lockStagingPath.
+	unlock, ok := h.lockStagingPath(ctx, path)
+	if !ok {
+		slog.Warn("Leaving a staged file whose path lock could not be taken",
+			"path", path, "job_id", jobID)
+		h.logStaging(jobID, itemID, "WARN",
+			fmt.Sprintf("Left %s in staging: another worker is working on it", path))
+		return false
+	}
+	defer unlock()
 
 	if h.anotherLiveItemOwns(path, itemID) {
 		slog.Info("Leaving a staged file another live item still owns",

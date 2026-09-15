@@ -124,7 +124,11 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	if libraryClient != nil {
 		libraryForAcquisition = libraryClient
 	}
-	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, libraryForAcquisition, discogs, cache, lyrics, transcoder, ytdlp)
+	// The lock manager serialises claiming and reclaiming a staged path across
+	// worker processes, so a reclaim cannot delete a file another worker just
+	// claimed.
+	acqHandler := services.NewAcquisitionHandler(db, cfg, slskd, mb, aid, metadata, libraryForAcquisition, discogs, cache, lyrics, transcoder, ytdlp).
+		WithLocker(lm)
 
 	// Staging janitor. The switches are config-backed so a deployment can turn it
 	// (or just its orphan pass) off without a rebuild.

@@ -28,7 +28,7 @@ func TestDiscardStagedDownload_RemovesFileAndSweepsEmptyDirs(t *testing.T) {
 	file := filepath.Join(albumDir, "01 - track.m4a")
 	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
 
-	h.discardStagedDownload(file, 1, nil)
+	h.discardStagedDownload(context.Background(), file, 1, nil)
 
 	_, err := os.Stat(file)
 	assert.True(t, os.IsNotExist(err), "the staged file must be removed")
@@ -54,7 +54,7 @@ func TestDiscardStagedDownload_KeepsSiblingsStillNeeded(t *testing.T) {
 	require.NoError(t, os.WriteFile(dup, []byte("x"), 0o644))
 	require.NoError(t, os.WriteFile(other, []byte("y"), 0o644))
 
-	h.discardStagedDownload(dup, 1, nil)
+	h.discardStagedDownload(context.Background(), dup, 1, nil)
 
 	_, err := os.Stat(dup)
 	assert.True(t, os.IsNotExist(err), "the duplicate must be removed")
@@ -76,8 +76,8 @@ func TestDiscardStagedDownload_MissingFileStillSweeps(t *testing.T) {
 	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
 	require.NoError(t, os.Remove(file))
 
-	h.discardStagedDownload(file, 1, nil)
-	h.discardStagedDownload(file, 1, nil) // second call must be a no-op
+	h.discardStagedDownload(context.Background(), file, 1, nil)
+	h.discardStagedDownload(context.Background(), file, 1, nil) // second call must be a no-op
 
 	_, err := os.Stat(albumDir)
 	assert.True(t, os.IsNotExist(err), "an already-empty directory should still be reclaimed")
@@ -85,7 +85,7 @@ func TestDiscardStagedDownload_MissingFileStillSweeps(t *testing.T) {
 
 func TestDiscardStagedDownload_EmptyPathIsIgnored(t *testing.T) {
 	h := &AcquisitionHandler{}
-	require.NotPanics(t, func() { h.discardStagedDownload("", 1, nil) })
+	require.NotPanics(t, func() { h.discardStagedDownload(context.Background(), "", 1, nil) })
 }
 
 // A path outside the staging root is refused *whole*: the file is not removed
@@ -102,7 +102,7 @@ func TestDiscardStagedDownload_RefusesPathOutsideStagingRoot(t *testing.T) {
 	file := filepath.Join(outside, "01 - track.m4a")
 	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
 
-	h.discardStagedDownload(file, 1, nil)
+	h.discardStagedDownload(context.Background(), file, 1, nil)
 
 	_, err := os.Stat(file)
 	require.NoError(t, err, "a file outside the staging root must not be removed at all")
@@ -124,7 +124,7 @@ func TestDiscardStagedDownload_RefusesSharedPrefixSibling(t *testing.T) {
 	file := filepath.Join(sibling, "01 - track.m4a")
 	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
 
-	h.discardStagedDownload(file, 1, nil)
+	h.discardStagedDownload(context.Background(), file, 1, nil)
 
 	_, err := os.Stat(file)
 	require.NoError(t, err, "a sibling sharing the staging root's prefix must not be touched")
@@ -153,7 +153,7 @@ func TestDiscardStagedDownload_DefaultRelativeRootStillDiscards(t *testing.T) {
 
 	// An empty staging path is the default "./downloads" relative to the cwd.
 	h := &AcquisitionHandler{cfg: &config.Config{}}
-	h.discardStagedDownload(file, 1, nil)
+	h.discardStagedDownload(context.Background(), file, 1, nil)
 
 	_, statErr := os.Stat(file)
 	assert.True(t, os.IsNotExist(statErr),
@@ -179,7 +179,7 @@ func TestDiscardStagedDownload_RefusalIsLogged(t *testing.T) {
 	file := filepath.Join(outside, "01 - track.m4a")
 	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
 
-	h.discardStagedDownload(file, item.JobID, &item.ID)
+	h.discardStagedDownload(context.Background(), file, item.JobID, &item.ID)
 
 	logs := jobLogMessages(t, db, item.JobID)
 	assert.Contains(t, logs, "Refused to discard", "the refusal must reach the item's log")
@@ -292,7 +292,7 @@ func TestDiscardStagedDownload_DefersWhileAnotherLiveItemOwnsThePath(t *testing.
 	mine := stagedItem(t, db, "completed (duplicate hash)", shared)
 	other := stagedItem(t, db, "downloading", shared)
 
-	require.False(t, h.discardStagedDownload(shared, mine.JobID, &mine.ID),
+	require.False(t, h.discardStagedDownload(context.Background(), shared, mine.JobID, &mine.ID),
 		"a shared staged file must not be taken from the item still using it")
 	_, err := os.Stat(shared)
 	require.NoError(t, err, "the shared file must survive")
@@ -303,7 +303,7 @@ func TestDiscardStagedDownload_DefersWhileAnotherLiveItemOwnsThePath(t *testing.
 	require.NoError(t, db.Model(&database.JobItem{}).Where("id = ?", other.ID).
 		Update("status", "imported").Error)
 
-	require.True(t, h.discardStagedDownload(shared, mine.JobID, &mine.ID),
+	require.True(t, h.discardStagedDownload(context.Background(), shared, mine.JobID, &mine.ID),
 		"with no live owner left, the file must be reclaimed")
 	_, err = os.Stat(shared)
 	assert.True(t, os.IsNotExist(err), "the file must be gone once nobody owns it")
@@ -325,7 +325,7 @@ func TestDiscardStagedDownload_KeepsFileWhenOwnershipQueryFails(t *testing.T) {
 	// The ownership check reads jobitems, so removing it makes the query fail.
 	require.NoError(t, db.Migrator().DropTable(&database.JobItem{}))
 
-	require.False(t, h.discardStagedDownload(file, 1, nil),
+	require.False(t, h.discardStagedDownload(context.Background(), file, 1, nil),
 		"a failed ownership lookup must not authorise a delete")
 	_, err := os.Stat(file)
 	require.NoError(t, err, "the file must be left alone when ownership cannot be read")
@@ -471,4 +471,75 @@ func TestStageImportAndEnrich_FailedImportLeavesNoStagedDownload(t *testing.T) {
 	require.Equal(t, "failed", got.Status)
 
 	assertStagingIsEmptyExceptRoot(t, staging, staged, albumDir, "failed import")
+}
+
+// The claim of a staged path and its reclaim are two workers acting on one file,
+// and neither can read the other's intent from the filesystem. Without the
+// path lock the reclaim's ownership check and its removal are two separate acts,
+// and a worker that claims the path between them loses its file.
+func TestDiscardStagedDownload_RefusesWhileAnotherWorkerHoldsThePathLock(t *testing.T) {
+	db := stagingImportTestDB(t)
+	staging := t.TempDir()
+	handler := NewAcquisitionHandler(db, &config.Config{DownloadStagingPath: staging},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).WithLocker(database.NewLockManager(db))
+
+	file := filepath.Join(staging, "Some Artist", "01 - track.m4a")
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
+
+	// A *second* manager, not the handler's own: the lock has to be the database's
+	// row, or this would only be proving an in-process mutex.
+	other := database.NewLockManager(db)
+	key, err := other.GetScopeLockKey(context.Background(), stagingPathScope, absStagingPath(file))
+	require.NoError(t, err)
+	acquired, err := other.AcquireTryLock(context.Background(), key)
+	require.NoError(t, err)
+	require.True(t, acquired, "the fixture must actually hold the lock")
+
+	assert.False(t, handler.discardStagedDownload(context.Background(), file, 1, nil),
+		"a reclaim must not remove a path whose lock another worker holds")
+	_, err = os.Stat(file)
+	require.NoError(t, err, "the file must survive the refusal")
+
+	require.NoError(t, other.ReleaseLock(context.Background(), key))
+
+	// The refusal above must have been the lock and nothing else: with the lock
+	// free the same call reclaims the file.
+	assert.True(t, handler.discardStagedDownload(context.Background(), file, 1, nil),
+		"with the lock free the reclaim must proceed")
+	_, err = os.Stat(file)
+	assert.True(t, os.IsNotExist(err), "the file must be gone once the lock is free")
+}
+
+// The lock only serialises anything if claim and reclaim derive the same key, and
+// the two sides are handed whatever path their caller had: slskd's resolver can
+// answer a relative "./downloads/..." while the janitor's walk reports absolute
+// paths.
+func TestLockStagingPath_RelativeAndAbsoluteSpellingsShareOneKey(t *testing.T) {
+	db := stagingImportTestDB(t)
+	staging := t.TempDir()
+	handler := NewAcquisitionHandler(db, &config.Config{DownloadStagingPath: staging},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).WithLocker(database.NewLockManager(db))
+
+	abs := filepath.Join(staging, "album", "01 - track.m4a")
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	rel, err := filepath.Rel(wd, abs)
+	require.NoError(t, err)
+
+	lm := database.NewLockManager(db)
+	relKey, err := lm.GetScopeLockKey(context.Background(), stagingPathScope, absStagingPath(rel))
+	require.NoError(t, err)
+	absKey, err := lm.GetScopeLockKey(context.Background(), stagingPathScope, absStagingPath(abs))
+	require.NoError(t, err)
+	assert.Equal(t, absKey, relKey, "both spellings of one file must derive one key")
+
+	// And the helper must take exactly that key, not merely something stable.
+	unlock, ok := handler.lockStagingPath(context.Background(), rel)
+	require.True(t, ok)
+	defer unlock()
+
+	held, err := lm.AcquireTryLock(context.Background(), absKey)
+	require.NoError(t, err)
+	assert.False(t, held, "locking the relative spelling must hold the absolute key")
 }

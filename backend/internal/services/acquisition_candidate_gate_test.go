@@ -492,3 +492,50 @@ func jobLogMessages(t *testing.T, db *gorm.DB, jobID uint64) string {
 	require.NoError(t, db.Table("job_logs").Where("job_id = ?", jobID).Pluck("message", &messages).Error)
 	return fmt.Sprint(messages)
 }
+
+// A transfer whose staged path cannot be recorded belongs to no item: nothing can
+// reclaim the bytes it produces, and a stale status makes the item look idle in
+// the UI while hiding which transfer to cancel. Cancelling and failing the item
+// is recoverable; an unowned file is not.
+func TestAcquisitionHandler_StageDownloadFile_CancelsATransferItCannotRecord(t *testing.T) {
+	db := stagingImportTestDB(t)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	_, item := createAcquisitionTestItem(t, db)
+
+	var cancelled []string
+	waited := 0
+	handler.slskd = &mockSlskd{
+		EnqueueDownloadFunc: func(username, filename string, size int64) (string, error) {
+			return "id-" + username, nil
+		},
+		CancelDownloadFunc: func(username, downloadID string) error {
+			cancelled = append(cancelled, username+"/"+downloadID)
+			return nil
+		},
+		WaitForDownloadFunc: func(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error) {
+			waited++
+			return nil, fmt.Errorf("the item must not wait on a transfer it cannot record")
+		},
+		LocalPathForFunc: func(username, filename string) string {
+			return filepath.Join(t.TempDir(), "01 - Track.flac")
+		},
+	}
+
+	// A zero ID is what GORM refuses to update: it has no WHERE clause to build, so
+	// the ownership write fails without the database being broken.
+	item.ID = 0
+
+	p := &acquisitionPipeline{
+		ctx:        context.Background(),
+		item:       item,
+		candidates: []SearchResult{{Username: "peer-a", Filename: "music/Album/01.flac", Size: 30_000_000}},
+	}
+
+	skip, err := handler.stageDownloadFile(p)
+
+	require.Error(t, err, "an unrecordable transfer must fail the item")
+	assert.False(t, skip)
+	assert.Equal(t, []string{"peer-a/id-peer-a"}, cancelled,
+		"the queued transfer must be cancelled, or it can still deliver an unowned file")
+	assert.Zero(t, waited, "the transfer must be cancelled before waiting on it")
+}

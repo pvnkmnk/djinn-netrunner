@@ -229,3 +229,25 @@ func writeAgedFile(t *testing.T, path string, age time.Duration) {
 }
 
 var _ = database.JobItem{}
+
+// Pass one acts on a snapshot, and that snapshot goes stale in the one direction
+// that hurts: RetryJob resets a terminal item to queued and the claimant picks it
+// up again. The janitor therefore passes no item ID, so the owner's live-owner
+// check — which re-reads the row — is authoritative instead of the snapshot.
+func TestStagingReclaim_KeepsTheFileOfAnItemRetriedAfterTheSnapshot(t *testing.T) {
+	staging := t.TempDir()
+	reclaim, _, db := newStagingReclaim(t, staging, nil)
+
+	staged := filepath.Join(staging, "Some Artist", "01 - track.m4a")
+	writeAgedFile(t, staged, 2*time.Hour)
+	item := stagedItem(t, db, "imported", staged)
+
+	// The snapshot this pass is holding still says "imported"; the row does not.
+	require.NoError(t, db.Model(&database.JobItem{}).Where("id = ?", item.ID).
+		Update("status", "queued").Error)
+
+	assert.False(t, reclaim.reclaimTerminalFile(context.Background(), item),
+		"an item retried into the queue must not have its staged file reclaimed")
+	_, err := os.Stat(staged)
+	require.NoError(t, err, "the file the retried item will download into must survive")
+}

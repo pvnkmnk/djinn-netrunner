@@ -37,9 +37,10 @@ const (
 // scan exists.
 //
 // It reuses the owner rather than removing files itself, so the staging-root
-// guard, the "another live item still owns this" check, the sibling check and the
-// loud refusal all apply to everything the janitor touches — one removal path,
-// not two.
+// guard, the staged-path lock, the "another live item still owns this" check, the
+// sibling check and the loud refusal all apply to everything the janitor touches —
+// one removal path, not two. Every call therefore passes a context, and none of
+// them exempts an item from the live-owner check (see reclaimTerminalFile).
 type StagingReclaim struct {
 	db      *gorm.DB
 	handler *AcquisitionHandler
@@ -78,6 +79,18 @@ func DefaultStagingReclaimConfig() StagingReclaimConfig {
 
 func NewStagingReclaim(db *gorm.DB, handler *AcquisitionHandler, cfg StagingReclaimConfig) *StagingReclaim {
 	return &StagingReclaim{db: db, handler: handler, cfg: cfg}
+}
+
+// reclaimTerminalFile routes one pass-one candidate through the owner.
+//
+// It passes no item ID deliberately. Pass one acts on a snapshot that this item
+// was finished with, and that snapshot can go stale in the only direction that
+// hurts: RetryJob resets a terminal item to queued, and the claimant can pick it
+// up again. Exempting the item from the owner's live-owner check would then let
+// the janitor delete the file that same item is downloading. Asking the owner
+// with no exemption makes the re-read inside it authoritative instead.
+func (s *StagingReclaim) reclaimTerminalFile(ctx context.Context, item database.JobItem) bool {
+	return s.handler.discardStagedDownload(ctx, item.DownloadPath, item.JobID, nil)
 }
 
 // ReclaimReport is what one pass did, so a run is auditable from a single log
@@ -150,7 +163,7 @@ func (s *StagingReclaim) Reclaim(ctx context.Context, workerID string) ReclaimRe
 	// Absolutised, because the walk below reports absolute paths: a stored
 	// relative "./downloads/x" would never match them.
 	var items []database.JobItem
-	if err := s.db.Select("id", "job_id", "status", "download_path").
+	if err := s.db.WithContext(ctx).Select("id", "job_id", "status", "download_path").
 		Where("download_path <> ''").Find(&items).Error; err != nil {
 		// A failed query must not be read as "no item owns anything": that is the
 		// destructive direction for the orphan pass.
@@ -200,7 +213,7 @@ func (s *StagingReclaim) Reclaim(ctx context.Context, workerID string) ReclaimRe
 			continue
 		}
 
-		if s.handler.discardStagedDownload(item.DownloadPath, item.JobID, &item.ID) {
+		if s.reclaimTerminalFile(ctx, item) {
 			report.Removed++
 			report.BytesRemoved += info.Size()
 			metrics.StagingFilesReclaimed.WithLabelValues(reclaimTerminalItem).Inc()
@@ -221,7 +234,11 @@ func (s *StagingReclaim) Reclaim(ctx context.Context, workerID string) ReclaimRe
 	var orphans []string
 	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			// Keep walking: one unreadable entry must not abandon the sweep.
+			// Keep walking: one unreadable entry must not abandon the sweep — but
+			// say so, because an entry that could not be inspected is
+			// indistinguishable in the report from one that was clean.
+			slog.Warn("Staging janitor could not inspect entry",
+				"worker_id", workerID, "path", path, "error", walkErr)
 			return nil
 		}
 		if ctx.Err() != nil {
@@ -271,7 +288,7 @@ func (s *StagingReclaim) Reclaim(ctx context.Context, workerID string) ReclaimRe
 				continue
 			}
 			// jobID 0: nothing owns this file, so there is no job log to write to.
-			if s.handler.discardStagedDownload(orphan, 0, nil) {
+			if s.handler.discardStagedDownload(ctx, orphan, 0, nil) {
 				report.Removed++
 				report.BytesRemoved += info.Size()
 				metrics.StagingFilesReclaimed.WithLabelValues(reclaimOrphan).Inc()
