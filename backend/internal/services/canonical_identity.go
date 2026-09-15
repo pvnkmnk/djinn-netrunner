@@ -51,6 +51,10 @@ func (h *AcquisitionHandler) resolveCanonicalIdentity(artist, album string) (str
 // resolved independently of the album: a new album by a known artist must not
 // create a second, case-variant artist folder. Acquisition history wins over
 // the filesystem (earliest record first), and the input is the last resort.
+//
+// Trade-off, deliberate: two genuinely distinct artists whose names differ only
+// by case are treated as one. The alternative is the fragmentation this fixes,
+// and a case-only artist collision is far rarer than case-only tag drift.
 func (h *AcquisitionHandler) resolveCanonicalArtist(artist string) string {
 	key := CanonicalKey(artist)
 	if key == "" {
