@@ -16,9 +16,21 @@ import (
 // tooling touches.
 func repairTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+
+	// File-backed, not ":memory:": a memory DSN gives each *pooled connection*
+	// its own empty database, so a query landing on a fresh connection sees
+	// "no such table" and detection reports an empty library. That produced a
+	// flaky pass/fail here, and it only surfaced once a failed query was
+	// propagated instead of being silently read as "nothing found".
+	dsn := filepath.Join(t.TempDir(), "repair_test.db")
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&database.Library{}, &database.Track{}, &database.Acquisition{}))
+
+	// Windows will not delete the TempDir while the DB file is still open.
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
 

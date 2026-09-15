@@ -371,17 +371,24 @@ docker compose -f docker-compose.yml -f docker-compose.beta.yml exec -T ops-web 
 
 - [ ] **Step 4: Confirm the false-positive control is still not flagged** — `Band A/Greatest Hits` vs `Band B/Greatest Hits`.
 
-- [ ] **Step 5: Merge, dry-run first, then apply**
+- [ ] **Step 5: Merge the artist splits first, dry-run then apply.** Step 2 detects `Pup` beside `PUP`, and `merge-album` cannot repair that: it only reaches tracks that already sit under the album's own folder, so an artist split whose albums do not overlap is invisible to it. The artist merge is broader — moving the artist folder takes every album under it, subsuming album-level splits it does not name.
 ```bash
+docker compose ... exec -T ops-web netrunner-cli library merge-artist <libraryID> "<canonicalArtist>"          # dry run
+docker compose ... exec -T ops-web netrunner-cli library merge-artist <libraryID> "<canonicalArtist>" --apply
+```
+
+- [ ] **Step 6: Re-run detection before touching albums.** The artist merge may have resolved splits Step 2 listed, so re-detect rather than replaying a stale plan. Merge what remains, dry-run first, then apply:
+```bash
+docker compose ... exec -T ops-web netrunner-cli library detect-fragments
 docker compose ... exec -T ops-web netrunner-cli library merge-album <libraryID> "<canonicalAlbum>" "<canonicalArtist>"          # dry run
 docker compose ... exec -T ops-web netrunner-cli library merge-album <libraryID> "<canonicalAlbum>" "<canonicalArtist>" --apply
 ```
 
-- [ ] **Step 6: Verify DB and filesystem agree** — one canonical folder per album, no orphaned credit folders, no duplicate or orphaned `tracks` rows. Re-run `detect-fragments`; expect `No fragmented albums found.`
+- [ ] **Step 7: Verify DB and filesystem agree** — one canonical folder per album, no orphaned credit folders, no duplicate or orphaned `tracks` rows. Re-run `detect-fragments`; expect `No fragmented albums found.`
 
-- [ ] **Step 7: Rescan** and confirm no duplicate albums or ghost entries via `getIndexes` / `getArtist`.
+- [ ] **Step 8: Rescan** and confirm no duplicate albums or ghost entries via `getIndexes` / `getArtist`.
 
-- [ ] **Step 8: Record before/after counts** in the runbook and as acceptance rows, then commit.
+- [ ] **Step 9: Record before/after counts** in the runbook and as acceptance rows, then commit.
 
 ---
 

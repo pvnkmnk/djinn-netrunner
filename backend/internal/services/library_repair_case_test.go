@@ -3,6 +3,7 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -20,10 +21,21 @@ func seedCaseLibrary(t *testing.T, db *gorm.DB, root string, files map[string]st
 	lib := &database.Library{Name: "Music", Path: root}
 	require.NoError(t, db.Create(lib).Error)
 
-	for rel, content := range files {
+	// Create in sorted order, because iterating a map is randomized in Go. Two
+	// paths differing only by case are ONE directory on a case-insensitive
+	// filesystem, so whichever is created first decides the on-disk casing —
+	// which is what canonical-identity resolution reads back. Unsorted, the
+	// canonical choice flips between runs and the assertions below go flaky.
+	rels := make([]string, 0, len(files))
+	for rel := range files {
+		rels = append(rels, rel)
+	}
+	sort.Strings(rels)
+
+	for _, rel := range rels {
 		p := filepath.Join(root, rel)
 		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
-		require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+		require.NoError(t, os.WriteFile(p, []byte(files[rel]), 0o644))
 		require.NoError(t, db.Create(&database.Track{
 			LibraryID: lib.ID, Title: "T", Path: p,
 		}).Error)
@@ -227,11 +239,11 @@ func TestSiblingSidecars_MatchesOnlySameStemNonAudio(t *testing.T) {
 	dir := t.TempDir()
 	audio := filepath.Join(dir, "12 - Title.mp3")
 	for name := range map[string]bool{
-		"12 - Title.mp3":         true,
-		"12 - Title.lrc":         true,
-		"12 - Title.jpg":         true,
-		"12 - Title (live).mp3":  true,
-		"12 - Title (live).lrc":  true,
+		"12 - Title.mp3":          true,
+		"12 - Title.lrc":          true,
+		"12 - Title.jpg":          true,
+		"12 - Title (live).mp3":   true,
+		"12 - Title (live).lrc":   true,
 		"12 - Different Song.mp3": true,
 	} {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644))
@@ -364,4 +376,42 @@ func TestMergeArtistFolders_RejectsEscapingCanonicalFolder(t *testing.T) {
 
 	_, err := MergeArtistFolders(db, root, "..", false)
 	require.Error(t, err, "a canonical folder escaping the library root must be rejected")
+}
+
+// The same-name control above uses one spelling, which leaves this gap: the
+// group is keyed on the *folded* album name, so "Band A/Greatest Hits" and
+// "Band B/GREATEST HITS" land in the same group and a bare case check accepts
+// it. Canonical artist resolution then picks one artist, and --apply moves the
+// other band's track underneath it.
+func TestDetectFragmentedAlbums_IgnoresCaseOnlyAlbumAcrossUnrelatedArtists(t *testing.T) {
+	db := repairTestDB(t)
+	root := t.TempDir()
+	seedCaseLibrary(t, db, root, map[string]string{
+		"Band A/Greatest Hits/01.mp3": "a",
+		"Band B/GREATEST HITS/01.mp3": "b",
+	})
+
+	frags, err := DetectLibraryFragments(db, root)
+	require.NoError(t, err)
+	assert.Empty(t, frags.Albums,
+		"albums differing only by case under unrelated artists must not be merged")
+	assert.Empty(t, frags.Artists, "these artist names are unrelated, not case variants")
+}
+
+// The counterpart, so the guard above cannot be satisfied by rejecting every
+// case-only album group: one artist with two spellings is a real fragment.
+func TestDetectFragmentedAlbums_FlagsCaseOnlyAlbumForOneArtist(t *testing.T) {
+	db := repairTestDB(t)
+	root := t.TempDir()
+	seedCaseLibrary(t, db, root, map[string]string{
+		"PUP/Greatest Hits/01.mp3": "a",
+		"PUP/GREATEST HITS/01.mp3": "b",
+	})
+
+	frags, err := DetectLibraryFragments(db, root)
+	require.NoError(t, err)
+	require.Len(t, frags.Albums, 1, "one artist with case-only album spellings is fragmentation")
+	assert.Equal(t, FragmentCaseAlbum, frags.Albums[0].Kind)
+	assert.Equal(t, 2, frags.Albums[0].TrackCount)
+	assert.Equal(t, "PUP", frags.Albums[0].CanonicalFolder)
 }

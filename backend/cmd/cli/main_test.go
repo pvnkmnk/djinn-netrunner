@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -268,10 +270,10 @@ func TestHandleError(t *testing.T) {
 	defer func() { osExit = oldExit }()
 
 	tests := []struct {
-		name       string
-		err        error
-		wantExit   bool
-		wantCode   int
+		name     string
+		err      error
+		wantExit bool
+		wantCode int
 	}{
 		{
 			name:     "nil error should not exit",
@@ -491,14 +493,14 @@ func captureStdout(t *testing.T) (func() string, func()) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 	return func() string {
-		w.Close()
-		var buf bytes.Buffer
-		io.Copy(&buf, r)
-		os.Stdout = oldStdout
-		return buf.String()
-	}, func() {
-		os.Stdout = oldStdout
-	}
+			w.Close()
+			var buf bytes.Buffer
+			io.Copy(&buf, r)
+			os.Stdout = oldStdout
+			return buf.String()
+		}, func() {
+			os.Stdout = oldStdout
+		}
 }
 
 func captureStderr(t *testing.T) (func() string, func()) {
@@ -506,14 +508,14 @@ func captureStderr(t *testing.T) (func() string, func()) {
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 	return func() string {
-		w.Close()
-		var buf bytes.Buffer
-		io.Copy(&buf, r)
-		os.Stderr = oldStderr
-		return buf.String()
-	}, func() {
-		os.Stderr = oldStderr
-	}
+			w.Close()
+			var buf bytes.Buffer
+			io.Copy(&buf, r)
+			os.Stderr = oldStderr
+			return buf.String()
+		}, func() {
+			os.Stderr = oldStderr
+		}
 }
 
 func TestWatchlistCmd_List_Run(t *testing.T) {
@@ -530,11 +532,11 @@ func TestWatchlistCmd_List_Run(t *testing.T) {
 
 	// Create a quality profile first (required for watchlist)
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
 		PreferLossless: true,
-		AllowedFormats:  "FLAC",
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -599,11 +601,11 @@ func TestWatchlistCmd_Add_Run(t *testing.T) {
 
 	// Create a quality profile first
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -653,11 +655,11 @@ func TestWatchlistCmd_Sync_Run(t *testing.T) {
 
 	// Create a profile and watchlist
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -744,11 +746,11 @@ func TestWatchlistCmd_Import_Run(t *testing.T) {
 
 	// Create a quality profile first
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -984,13 +986,13 @@ func TestProfileCmd_List_Run_WithData(t *testing.T) {
 
 	// Create a profile
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC,WAV",
-		MinBitrate:      320,
-		Description:     "Test description",
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC,WAV",
+		MinBitrate:     320,
+		Description:    "Test description",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -1097,11 +1099,11 @@ func TestProfileCmd_Rm_Run(t *testing.T) {
 
 	// Create a profile
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "To Delete",
-		IsDefault:       false,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "To Delete",
+		IsDefault:      false,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -1135,18 +1137,18 @@ func TestProfileCmd_SetDefault_Run(t *testing.T) {
 
 	// Create two profiles
 	profile1 := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Profile One",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "Profile One",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	profile2 := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Profile Two",
-		IsDefault:       false,
-		PreferLossless:  false,
-		AllowedFormats:  "MP3",
+		ID:             uuid.New(),
+		Name:           "Profile Two",
+		IsDefault:      false,
+		PreferLossless: false,
+		AllowedFormats: "MP3",
 	}
 	err := db.Create(&profile1).Error
 	require.NoError(t, err, "should create profile1")
@@ -1292,11 +1294,11 @@ func TestWatchlistCmd_List_Run_JSONOutput(t *testing.T) {
 
 	// Create a quality profile and watchlist
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -1501,11 +1503,11 @@ func TestWatchlistCmd_Add_Run_UnsupportedSourceType(t *testing.T) {
 
 	// Create a quality profile
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -1564,11 +1566,11 @@ func TestWatchlistCmd_Import_Run_PartialFailure(t *testing.T) {
 
 	// Create a quality profile
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -2048,11 +2050,11 @@ func TestWatchlistCmd_Add_Run_JSONOutput(t *testing.T) {
 
 	// Create a quality profile first
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "Test Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "Test Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -2083,11 +2085,11 @@ func TestProfileCmd_List_Run_JSONOutput(t *testing.T) {
 
 	// Create a profile
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "JSON Profile",
-		IsDefault:       true,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "JSON Profile",
+		IsDefault:      true,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -2142,11 +2144,11 @@ func TestProfileCmd_Rm_Run_JSONOutput(t *testing.T) {
 
 	// Create a profile to delete
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "To Delete JSON",
-		IsDefault:       false,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "To Delete JSON",
+		IsDefault:      false,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -2257,11 +2259,11 @@ func TestProfileCmd_SetDefault_Run_JSONOutput(t *testing.T) {
 
 	// Create a profile to set as default
 	profile := database.QualityProfile{
-		ID:              uuid.New(),
-		Name:            "New Default",
-		IsDefault:       false,
-		PreferLossless:  true,
-		AllowedFormats:  "FLAC",
+		ID:             uuid.New(),
+		Name:           "New Default",
+		IsDefault:      false,
+		PreferLossless: true,
+		AllowedFormats: "FLAC",
 	}
 	err := db.Create(&profile).Error
 	require.NoError(t, err, "should create profile")
@@ -2274,4 +2276,120 @@ func TestProfileCmd_SetDefault_Run_JSONOutput(t *testing.T) {
 
 	require.NoError(t, err, "profile set-default should not error with jsonOutput")
 	assert.Contains(t, output, `"status"`)
+}
+
+// ---------------------------------------------------------------------------
+// detect-fragments report tests
+// ---------------------------------------------------------------------------
+
+// Every command the fragment report prints takes a library id. When the report
+// aggregated libraries into one flat list, it printed a literal "<libraryID>"
+// placeholder and the operator had no way to know which library to pass.
+func TestPrintLibraryFragments_PrintsRunnableMergeCommands(t *testing.T) {
+	libraryID := uuid.New()
+
+	// The live split: "PUP/The Unraveling Of Puptheband" beside
+	// "PUP/The Unraveling of Puptheband".
+	frags := &services.LibraryFragments{
+		Albums: []services.FragmentedAlbum{{
+			Album:           "The Unraveling of Puptheband",
+			CanonicalAlbum:  "The Unraveling of Puptheband",
+			Kind:            services.FragmentCaseAlbum,
+			TrackCount:      2,
+			CanonicalFolder: "PUP",
+			Folders: []services.AlbumFolder{
+				{ArtistFolder: "PUP", AlbumFolder: "The Unraveling Of Puptheband", TrackCount: 1},
+				{ArtistFolder: "PUP", AlbumFolder: "The Unraveling of Puptheband", TrackCount: 1, IsCanonical: true},
+			},
+		}},
+		Artists: []services.FragmentedArtist{{
+			CanonicalFolder: "PUP",
+			TrackCount:      2,
+			Fragments: []services.ArtistFragment{
+				{Folder: "Pup", TrackCount: 1},
+				{Folder: "PUP", TrackCount: 1, IsCanonical: true},
+			},
+		}},
+	}
+
+	getOutput, restore := captureStdout(t)
+	printLibraryFragments(libraryID.String(), frags)
+	output := getOutput()
+	restore()
+
+	assert.NotContains(t, output, "<libraryID>",
+		"a placeholder id is not a runnable command")
+	assert.Contains(t, output, "merge-album "+libraryID.String(),
+		"the album merge command must carry the library id")
+	assert.Contains(t, output, "merge-artist "+libraryID.String(),
+		"the artist merge command must carry the library id")
+	// The artist repair is broader - merging the folder relocates every album
+	// under the losing spelling - so it must be offered first. That ordering is
+	// the documented repair procedure, not an accident of iteration.
+	assert.Less(t, strings.Index(output, "merge-artist"), strings.Index(output, "merge-album"),
+		"the artist merge must be suggested before the album merge")
+}
+
+// A script reading --json has to be able to build the same merge command the
+// human report prints, and the command scans every library at once. Aggregating
+// them lost that identity, so each library must keep its own id in the payload.
+func TestDetectFragmentsCmd_KeepsEachLibrarysIdentity(t *testing.T) {
+	// File-backed on purpose: :memory: hands each pooled connection its own
+	// empty database, so a pooled read can find no tables at all.
+	cwd := t.TempDir()
+	dbPath := filepath.Join(cwd, "cli-fragments.db")
+	testDB, err := database.Connect(&config.Config{DatabaseURL: dbPath})
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate(testDB))
+	sqlDB, err := testDB.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { sqlDB.Close() })
+
+	oldDB, oldCfg, oldJSON, oldExit := db, cfg, jsonOutput, osExit
+	t.Cleanup(func() { db, cfg, jsonOutput, osExit = oldDB, oldCfg, oldJSON, oldExit })
+	exitCode := -1
+	db, cfg, jsonOutput = testDB, &config.Config{DatabaseURL: dbPath}, true
+	osExit = func(code int) { exitCode = code }
+
+	// Two libraries, each carrying the same case-only album split.
+	type seeded struct {
+		id   uuid.UUID
+		name string
+	}
+	var seededLibs []seeded
+	for _, name := range []string{"First Library", "Second Library"} {
+		root := filepath.Join(cwd, name)
+		require.NoError(t, os.MkdirAll(root, 0o755))
+
+		lib := database.Library{Name: name, Path: root}
+		require.NoError(t, db.Create(&lib).Error)
+		seededLibs = append(seededLibs, seeded{id: lib.ID, name: name})
+
+		for _, album := range []string{"The Unraveling Of Puptheband", "The Unraveling of Puptheband"} {
+			require.NoError(t, db.Create(&database.Track{
+				LibraryID: lib.ID,
+				Title:     "Track in " + album,
+				Artist:    "PUP",
+				Album:     album,
+				Path:      filepath.Join(root, "PUP", album, "01.flac"),
+			}).Error)
+		}
+	}
+
+	getOutput, restore := captureStdout(t)
+	cmd := libraryCmd()
+	cmd.SetArgs([]string{"detect-fragments"})
+	execErr := cmd.Execute()
+	output := getOutput()
+	restore()
+
+	require.NoError(t, execErr)
+	require.Equal(t, -1, exitCode, "detection must not fail: %s", output)
+
+	for _, lib := range seededLibs {
+		assert.Contains(t, output, `"library_id": "`+lib.id.String()+`"`,
+			"library %q must keep its own id in the JSON payload", lib.name)
+	}
+	assert.NotContains(t, output, "<libraryID>",
+		"a placeholder id is not a runnable command")
 }

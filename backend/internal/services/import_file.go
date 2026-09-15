@@ -133,11 +133,17 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 			metrics.AcquisitionDedupTotal.WithLabelValues("recording_id").Inc()
 			h.Log(jobID, "OK", fmt.Sprintf("Duplicate recording detected (MB ID: %s, existing acquisition #%d at %s). "+
 				"Quality-aware replacement deferred — see DJI-366 docs.", mbIDs.RecordingID, existing.ID, existing.FinalPath), &itemID)
-			h.db.Model(&item).Updates(map[string]interface{}{
+			// The status write is checked before cleanup, and deliberately so. If it
+			// fails the item is never marked terminal, so discarding the staged file
+			// and returning nil would have the worker report success while the row
+			// sat in `running` — no retry, and no download left to retry with.
+			if err := h.db.Model(&item).Updates(map[string]interface{}{
 				"status":      "completed (duplicate recording)",
 				"finished_at": time.Now(),
 				"final_path":  existing.FinalPath,
-			})
+			}).Error; err != nil {
+				return fmt.Errorf("recording dedup: marking item completed: %w", err)
+			}
 			// The staged file is redundant — the library already holds this
 			// recording. Discard it exactly as the album-level branch below does.
 			// This branch used to return without any cleanup, so its downloads sat
@@ -167,7 +173,16 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	// Adopt the casing the library already uses for this artist+album before the
 	// dedup key and the library path are derived from it.
 	if metadata.AlbumArtist != "" && metadata.Album != "" {
-		metadata.AlbumArtist, metadata.Album = h.resolveCanonicalIdentity(metadata.AlbumArtist, metadata.Album)
+		canonicalArtist, canonicalAlbum, err := h.resolveCanonicalIdentity(metadata.AlbumArtist, metadata.Album)
+		if err != nil {
+			// The library's committed casing could not be read. Importing anyway
+			// would derive the path from whatever these tags say and risk creating
+			// the case-variant sibling this resolution exists to prevent, so fail
+			// the item instead — failItem schedules the retry.
+			h.failItem(jobID, itemID, fmt.Sprintf("Canonical identity lookup failed: %v", err))
+			return nil
+		}
+		metadata.AlbumArtist, metadata.Album = canonicalArtist, canonicalAlbum
 	}
 
 	albumArtist := metadata.AlbumArtist
@@ -178,16 +193,24 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		// The lookup folds case on both sides and returns the earliest match, so a
 		// case-only difference is recognised as the album the library already
 		// holds and the row reported to the caller is the canonical one (DJI-489).
+		// A failed lookup must not read as "not a duplicate": that would import a
+		// second copy of an album the library already holds. findExistingAlbumAcquisition
+		// reports a missing row as (nil, nil), so any error here is real.
 		existing, err := h.findExistingAlbumAcquisition(albumArtist, metadata.Artist, metadata.Album, hash)
-		if err == nil {
+		if err != nil {
+			return fmt.Errorf("album dedup lookup: %w", err)
+		}
+		if existing != nil {
 			metrics.AcquisitionDedupTotal.WithLabelValues("artist_album").Inc()
 			h.Log(jobID, "OK", fmt.Sprintf("Album already acquired (existing acquisition #%d at %s). Skipping track.",
 				existing.ID, existing.FinalPath), &itemID)
-			h.db.Model(&item).Updates(map[string]interface{}{
+			if err := h.db.Model(&item).Updates(map[string]interface{}{
 				"status":      "completed (duplicate album)",
 				"finished_at": time.Now(),
 				"final_path":  existing.FinalPath,
-			})
+			}).Error; err != nil {
+				return fmt.Errorf("album dedup: marking item completed: %w", err)
+			}
 			// The staged file is now redundant — discard it and sweep the album
 			// folder it leaves empty, so staging does not grow unbounded.
 			h.discardStagedDownload(downloadPath, jobID, &itemID)
@@ -358,7 +381,15 @@ func (h *AcquisitionHandler) cleanupEmptyStagingDirs(dir string, jobID uint64, i
 	if err != nil {
 		return
 	}
-	dir = filepath.Clean(dir)
+	// stagingRoot above is absolute, so dir has to be too: filepath.Rel returns
+	// an error for a mixed absolute/relative pair, and the containment check
+	// below would then bail out before removing anything. That is how this
+	// failed silently under the default relative "./downloads" staging path —
+	// the sweep never ran at all, while an absolute path worked fine.
+	dir, err = filepath.Abs(filepath.Clean(dir))
+	if err != nil {
+		return
+	}
 	// Never climb above the staging root, and only touch directories that
 	// are genuinely inside it (a real path-relationship check — not a string
 	// prefix, which would match sibling dirs like "./downloads-backup").

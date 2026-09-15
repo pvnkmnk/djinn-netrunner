@@ -381,67 +381,59 @@ func libraryCmd() *cobra.Command {
 				roots = libs
 			}
 
-			var albums []services.FragmentedAlbum
-			var artists []services.FragmentedArtist
+			// Each library's fragments are kept separate rather than merged into
+			// one flat list: every suggested repair command takes a library id, so
+			// aggregating across libraries left the operator with a literal
+			// `<libraryID>` placeholder and no way to know which library to pass.
+			type scannedLibrary struct {
+				lib   database.Library
+				frags *services.LibraryFragments
+			}
+
+			var scanned []scannedLibrary
+			total := 0
+			anyArtists, anyAlbums := false, false
 			for _, lib := range roots {
 				frags, err := services.DetectLibraryFragments(db, lib.Path)
 				if err != nil {
 					handleError(fmt.Errorf("library %s: %w", lib.Name, err))
 					return
 				}
-				albums = append(albums, frags.Albums...)
-				artists = append(artists, frags.Artists...)
+				total += len(frags.Albums) + len(frags.Artists)
+				anyArtists = anyArtists || len(frags.Artists) > 0
+				anyAlbums = anyAlbums || len(frags.Albums) > 0
+				scanned = append(scanned, scannedLibrary{lib: lib, frags: frags})
 			}
 
 			if jsonOutput {
-				printJSON(services.LibraryFragments{Albums: albums, Artists: artists})
+				out := make([]libraryFragmentsJSON, 0, len(scanned))
+				for _, s := range scanned {
+					out = append(out, libraryFragmentsJSON{
+						LibraryID:   s.lib.ID.String(),
+						LibraryName: s.lib.Name,
+						Albums:      s.frags.Albums,
+						Artists:     s.frags.Artists,
+					})
+				}
+				printJSON(out)
 				return
 			}
-			if len(albums) == 0 && len(artists) == 0 {
+
+			if total == 0 {
 				fmt.Println("No fragmented albums or artists found.")
 				return
 			}
 
-			// Artist splits come first because their repair is broader: merging the
-			// artist folder moves every album under it, so it can subsume
-			// album-level splits it does not name.
-			if len(artists) > 0 {
-				fmt.Printf("Found %d artist(s) split across case-variant folders:\n\n", len(artists))
-				for _, a := range artists {
-					fmt.Printf("%s — %d track(s) across %d folder(s)\n", a.CanonicalFolder, a.TrackCount, len(a.Fragments))
-					for _, f := range a.Fragments {
-						marker := "    "
-						if f.IsCanonical {
-							marker = " ==>" // suggested merge target
-						}
-						fmt.Printf("%s %-45s (%d track(s))\n", marker, f.Folder, f.TrackCount)
-					}
-					fmt.Printf("    merge: netrunner-cli library merge-artist <libraryID> %q [--apply]\n\n",
-						a.CanonicalFolder)
+			for _, s := range scanned {
+				if len(s.frags.Albums) == 0 && len(s.frags.Artists) == 0 {
+					continue
 				}
-			}
-
-			if len(albums) > 0 {
-				fmt.Printf("Found %d fragmented album(s):\n\n", len(albums))
-				for _, g := range albums {
-					fmt.Printf("%s — %d track(s) across %d folder(s) [%s]\n",
-						g.Album, g.TrackCount, len(g.Folders), g.Kind)
-					for _, f := range g.Folders {
-						marker := "    "
-						if f.IsCanonical {
-							marker = " ==>" // suggested merge target
-						}
-						// Both segments: a case-only split differs in the album
-						// folder, so printing the artist alone is ambiguous.
-						fmt.Printf("%s %s / %s (%d track(s))\n", marker, f.ArtistFolder, f.AlbumFolder, f.TrackCount)
-					}
-					fmt.Printf("    merge: netrunner-cli library merge-album <libraryID> %q %q [--apply]\n\n",
-						g.CanonicalAlbum, g.CanonicalFolder)
-				}
+				fmt.Printf("Library: %s (%s)\n\n", s.lib.Name, s.lib.ID)
+				printLibraryFragments(s.lib.ID.String(), s.frags)
 			}
 
 			fmt.Println("Review the plan, then run the merge WITHOUT --apply first (dry run).")
-			if len(artists) > 0 && len(albums) > 0 {
+			if anyArtists && anyAlbums {
 				fmt.Println("Merge the artist splits first, then re-run detect-fragments before merging albums.")
 			}
 		},
@@ -675,6 +667,58 @@ func printMergeReport(header string, report *services.MergeReport, apply bool) {
 	}
 	if apply && len(report.Errors) == 0 {
 		fmt.Println("\nNext: trigger a media-server scan so the server re-indexes (ops/docs/library-dedup-runbook.md).")
+	}
+}
+
+// libraryFragmentsJSON is the per-library shape printed by detect-fragments. It
+// carries the library identity because every suggested merge command takes a
+// library id — a flat aggregate of all libraries would not be actionable.
+type libraryFragmentsJSON struct {
+	LibraryID   string                      `json:"library_id"`
+	LibraryName string                      `json:"library_name"`
+	Albums      []services.FragmentedAlbum  `json:"albums"`
+	Artists     []services.FragmentedArtist `json:"artists"`
+}
+
+// printLibraryFragments renders one library's fragments. libraryID is passed in
+// rather than left as a placeholder so the merge commands it prints can be run
+// verbatim. Artist splits come first because their repair is broader: merging
+// the artist folder moves every album under it, so it can subsume album-level
+// splits it does not name.
+func printLibraryFragments(libraryID string, frags *services.LibraryFragments) {
+	if len(frags.Artists) > 0 {
+		fmt.Printf("Found %d artist(s) split across case-variant folders:\n\n", len(frags.Artists))
+		for _, a := range frags.Artists {
+			fmt.Printf("%s — %d track(s) across %d folder(s)\n", a.CanonicalFolder, a.TrackCount, len(a.Fragments))
+			for _, f := range a.Fragments {
+				marker := "    "
+				if f.IsCanonical {
+					marker = " ==>" // suggested merge target
+				}
+				fmt.Printf("%s %-45s (%d track(s))\n", marker, f.Folder, f.TrackCount)
+			}
+			fmt.Printf("    merge: netrunner-cli library merge-artist %s %q [--apply]\n\n",
+				libraryID, a.CanonicalFolder)
+		}
+	}
+
+	if len(frags.Albums) > 0 {
+		fmt.Printf("Found %d fragmented album(s):\n\n", len(frags.Albums))
+		for _, g := range frags.Albums {
+			fmt.Printf("%s — %d track(s) across %d folder(s) [%s]\n",
+				g.Album, g.TrackCount, len(g.Folders), g.Kind)
+			for _, f := range g.Folders {
+				marker := "    "
+				if f.IsCanonical {
+					marker = " ==>" // suggested merge target
+				}
+				// Both segments: a case-only split differs in the album
+				// folder, so printing the artist alone is ambiguous.
+				fmt.Printf("%s %s / %s (%d track(s))\n", marker, f.ArtistFolder, f.AlbumFolder, f.TrackCount)
+			}
+			fmt.Printf("    merge: netrunner-cli library merge-album %s %q %q [--apply]\n\n",
+				libraryID, g.CanonicalAlbum, g.CanonicalFolder)
+		}
 	}
 }
 

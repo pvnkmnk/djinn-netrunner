@@ -151,3 +151,31 @@ func TestAcquisitionHandler_RejectedDownloadSweepsEmptiedStagingDir(t *testing.T
 	_, statErr = os.Stat(staging)
 	require.NoError(t, statErr, "the staging root must survive")
 }
+
+// The containment check made the staging root absolute but left the incoming dir
+// alone. filepath.Rel errors on that mixed pair, so the check bailed out and
+// nothing was ever removed — invisible in Docker and in t.TempDir() tests, where
+// the staging path is absolute, but the default "./downloads" is relative.
+func TestCleanupEmptyStagingDirs_AcceptsRelativeDir(t *testing.T) {
+	staging := t.TempDir()
+	h := &AcquisitionHandler{cfg: cfgWithStaging(t, staging)}
+
+	albumDir := filepath.Join(staging, "Some Artist", "Some Album")
+	require.NoError(t, os.MkdirAll(albumDir, 0o755))
+
+	// Stand where a relative staging path resolves from, and hand the sweep the
+	// relative form — exactly what filepath.Dir on "./downloads/..." produces.
+	t.Chdir(staging)
+	rel := filepath.Join("Some Artist", "Some Album")
+	require.False(t, filepath.IsAbs(rel), "this test must exercise a relative dir")
+
+	h.cleanupEmptyStagingDirs(rel, 1, nil)
+
+	_, err := os.Stat(albumDir)
+	assert.True(t, os.IsNotExist(err),
+		"an empty staging dir given as a relative path must still be swept")
+	_, err = os.Stat(filepath.Join(staging, "Some Artist"))
+	assert.True(t, os.IsNotExist(err), "the emptied artist dir must be swept too")
+	_, err = os.Stat(staging)
+	require.NoError(t, err, "the staging root itself must survive")
+}

@@ -184,15 +184,21 @@ func DetectLibraryFragments(db *gorm.DB, libraryRoot string) (*LibraryFragments,
 	}
 	ext := &MetadataExtractor{}
 
-	return &LibraryFragments{
-		Albums:  detectAlbumFragments(db, ext, root, pairs),
-		Artists: detectArtistFragments(db, ext, root, pairs),
-	}, nil
+	albums, err := detectAlbumFragments(db, ext, root, pairs)
+	if err != nil {
+		return nil, err
+	}
+	artists, err := detectArtistFragments(db, ext, root, pairs)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LibraryFragments{Albums: albums, Artists: artists}, nil
 }
 
 // detectAlbumFragments is the album axis: group by folded album name, then
 // classify the group. The folded key is what makes case variants visible.
-func detectAlbumFragments(db *gorm.DB, ext *MetadataExtractor, root string, pairs []layout) []FragmentedAlbum {
+func detectAlbumFragments(db *gorm.DB, ext *MetadataExtractor, root string, pairs []layout) ([]FragmentedAlbum, error) {
 	byFoldedAlbum := map[string][]layout{}
 	for _, p := range pairs {
 		key := CanonicalKey(p.album)
@@ -226,8 +232,13 @@ func detectAlbumFragments(db *gorm.DB, ext *MetadataExtractor, root string, pair
 		// fragmentation shapes are credit variants of one primary artist
 		// ("Every Time I Die", "Every Time I Die & Daryl Palumbo", …) and
 		// case-only drift. Anything else is left alone.
+		// A case-only album match is only a fragment when the *artist* agrees
+		// too. Grouping is by folded album name, so "Band A/Greatest Hits" and
+		// "Band B/GREATEST HITS" land in one group, and a group like that would
+		// pass a bare case check: the repair would then resolve one canonical
+		// artist and move the other band's track underneath it.
 		credit := isCreditVariantSet(artists)
-		caseAlbum := allCaseEqual(albums)
+		caseAlbum := allCaseEqual(albums) && (len(artists) == 1 || allCaseEqual(artists))
 		if !credit && !caseAlbum {
 			continue
 		}
@@ -241,10 +252,14 @@ func detectAlbumFragments(db *gorm.DB, ext *MetadataExtractor, root string, pair
 		// could fight the next import.
 		canonicalArtist := group[0].artist
 		canonicalAlbum := group[0].album
-		if name, ok := resolveCanonicalArtistCasing(db, ext, root, group[0].artist); ok {
+		if name, ok, err := resolveCanonicalArtistCasing(db, ext, root, group[0].artist); err != nil {
+			return nil, err
+		} else if ok {
 			canonicalArtist = name
 		}
-		if name, ok := resolveCanonicalAlbumCasing(db, ext, root, canonicalArtist, group[0].album); ok {
+		if name, ok, err := resolveCanonicalAlbumCasing(db, ext, root, canonicalArtist, group[0].album); err != nil {
+			return nil, err
+		} else if ok {
 			canonicalAlbum = name
 		}
 
@@ -270,7 +285,7 @@ func detectAlbumFragments(db *gorm.DB, ext *MetadataExtractor, root string, pair
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Album < out[j].Album })
-	return out
+	return out, nil
 }
 
 // detectArtistFragments is the artist axis: group by folded artist name, and
@@ -281,7 +296,7 @@ func detectAlbumFragments(db *gorm.DB, ext *MetadataExtractor, root string, pair
 //
 // Only case-only sets qualify. Credit variants ("X" beside "X & Y") are the
 // album axis's business, and flagging them here would double-report.
-func detectArtistFragments(db *gorm.DB, ext *MetadataExtractor, root string, pairs []layout) []FragmentedArtist {
+func detectArtistFragments(db *gorm.DB, ext *MetadataExtractor, root string, pairs []layout) ([]FragmentedArtist, error) {
 	byFoldedArtist := map[string][]layout{}
 	for _, p := range pairs {
 		key := CanonicalKey(p.artist)
@@ -298,7 +313,9 @@ func detectArtistFragments(db *gorm.DB, ext *MetadataExtractor, root string, pai
 
 		sort.Strings(names)
 		canonical := names[0]
-		if resolved, ok := resolveCanonicalArtistCasing(db, ext, root, names[0]); ok {
+		if resolved, ok, err := resolveCanonicalArtistCasing(db, ext, root, names[0]); err != nil {
+			return nil, err
+		} else if ok {
 			canonical = resolved
 		}
 
@@ -323,7 +340,7 @@ func detectArtistFragments(db *gorm.DB, ext *MetadataExtractor, root string, pai
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CanonicalFolder < out[j].CanonicalFolder })
-	return out
+	return out, nil
 }
 
 // markCanonicalArtistFragment flags the artist folder matching the canonical

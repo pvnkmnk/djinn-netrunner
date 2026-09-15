@@ -83,6 +83,14 @@ func TestLibraryRoot_FallsBackToDefault(t *testing.T) {
 	require.Equal(t, "/tmp/lib", (&AcquisitionHandler{cfg: &config.Config{MusicLibraryPath: "/tmp/lib"}}).libraryRoot())
 }
 
+// resolveIdentity calls the resolver and fails the test on a lookup error.
+func resolveIdentity(t *testing.T, h *AcquisitionHandler, artist, album string) (string, string) {
+	t.Helper()
+	gotArtist, gotAlbum, err := h.resolveCanonicalIdentity(artist, album)
+	require.NoError(t, err)
+	return gotArtist, gotAlbum
+}
+
 // DJI-489: the beta library holds "The Unraveling of Puptheband" (imported
 // earlier) beside "The Unraveling Of Puptheband". Either casing in a fresh
 // re-acquire must resolve to the earlier one, so imports converge on a single
@@ -94,12 +102,12 @@ func TestResolveCanonicalIdentity_EarliestCasingWins(t *testing.T) {
 	seedAcquisition(t, db, "PUP", "The Unraveling Of Puptheband",
 		filepath.Join(root, "PUP", "The Unraveling Of Puptheband", "12 - PUPTHEBAND Inc. Is Filing For Bankruptcy.mp3"))
 
-	artist, album := h.resolveCanonicalIdentity("PUP", "The Unraveling Of Puptheband")
+	artist, album := resolveIdentity(t, h, "PUP", "The Unraveling Of Puptheband")
 	require.Equal(t, "PUP", artist)
 	require.Equal(t, "The Unraveling of Puptheband", album)
 
 	// Casing anywhere in the pair folds the same way.
-	artist, album = h.resolveCanonicalIdentity("pup", "the unraveling OF puptheband")
+	artist, album = resolveIdentity(t, h, "pup", "the unraveling OF puptheband")
 	require.Equal(t, "PUP", artist)
 	require.Equal(t, "The Unraveling of Puptheband", album)
 }
@@ -110,7 +118,7 @@ func TestResolveCanonicalIdentity_ArtistCasingAppliesToNewAlbum(t *testing.T) {
 	h, _, root := newCanonicalIdentityHandler(t)
 	mkLibraryDirs(t, root, "PUP", "Morbid Stuff")
 
-	artist, album := h.resolveCanonicalIdentity("pup", "Brand New Album")
+	artist, album := resolveIdentity(t, h, "pup", "Brand New Album")
 	require.Equal(t, "PUP", artist, "existing artist folder casing must win")
 	require.Equal(t, "Brand New Album", album, "a genuinely new album keeps its tag casing")
 }
@@ -120,7 +128,7 @@ func TestResolveCanonicalIdentity_FallsBackToLibraryFolders(t *testing.T) {
 	h, _, root := newCanonicalIdentityHandler(t)
 	mkLibraryDirs(t, root, "PUP", "The Unraveling of Puptheband")
 
-	artist, album := h.resolveCanonicalIdentity("pup", "the unraveling OF puptheband")
+	artist, album := resolveIdentity(t, h, "pup", "the unraveling OF puptheband")
 	require.Equal(t, "PUP", artist)
 	require.Equal(t, "The Unraveling of Puptheband", album)
 }
@@ -131,7 +139,7 @@ func TestResolveCanonicalIdentity_MatchesSanitisedFolderName(t *testing.T) {
 	h, _, root := newCanonicalIdentityHandler(t)
 	mkLibraryDirs(t, root, "PUP", "Who Will Look After the Dogs")
 
-	artist, album := h.resolveCanonicalIdentity("PUP", "Who Will Look After the Dogs?")
+	artist, album := resolveIdentity(t, h, "PUP", "Who Will Look After the Dogs?")
 	require.Equal(t, "PUP", artist)
 	require.Equal(t, "Who Will Look After the Dogs", album)
 }
@@ -140,7 +148,7 @@ func TestResolveCanonicalIdentity_NewPairKeepsTagCasing(t *testing.T) {
 	h, _, root := newCanonicalIdentityHandler(t)
 	mkLibraryDirs(t, root, "Someone Else", "Other Album")
 
-	artist, album := h.resolveCanonicalIdentity("Some Artist", "Some Album")
+	artist, album := resolveIdentity(t, h, "Some Artist", "Some Album")
 	require.Equal(t, "Some Artist", artist)
 	require.Equal(t, "Some Album", album)
 }
@@ -172,12 +180,32 @@ func TestFindExistingAlbumAcquisition_SameFileIsNotAnAlbumDuplicate(t *testing.T
 		filepath.Join(root, "PUP", "Morbid Stuff", "01 - Track.mp3"))
 	require.NoError(t, db.Model(acq).Update("file_hash", "abc123").Error)
 
-	_, err := h.findExistingAlbumAcquisition("PUP", "PUP", "Morbid Stuff", "abc123")
-	require.ErrorIs(t, err, gorm.ErrRecordNotFound, "the exact file just installed is not a duplicate of itself")
+	// The exact file just installed is not a duplicate of itself. A missing row
+	// comes back as (nil, nil) rather than gorm.ErrRecordNotFound, because the
+	// import caller reads any non-nil error as "the lookup failed" — an error
+	// here would make a real database failure look like a new album.
+	found, err := h.findExistingAlbumAcquisition("PUP", "PUP", "Morbid Stuff", "abc123")
+	require.NoError(t, err, "a missing row is not a failure")
+	require.Nil(t, found)
 
-	found, err := h.findExistingAlbumAcquisition("PUP", "PUP", "Morbid Stuff", "some-other-hash")
+	found, err = h.findExistingAlbumAcquisition("PUP", "PUP", "Morbid Stuff", "some-other-hash")
 	require.NoError(t, err)
 	require.Equal(t, acq.ID, found.ID)
+}
+
+// A failed query must never be reported as "no duplicate": the import would then
+// install a second copy of an album the library already holds.
+func TestFindExistingAlbumAcquisition_PropagatesQueryFailure(t *testing.T) {
+	h, db, _ := newCanonicalIdentityHandler(t)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close(), "closing the pool makes the next query fail")
+
+	found, err := h.findExistingAlbumAcquisition("PUP", "PUP", "Morbid Stuff", "hash")
+	require.Error(t, err, "a failed lookup must reach the caller")
+	require.NotErrorIs(t, err, gorm.ErrRecordNotFound)
+	require.Nil(t, found)
 }
 
 // A row records metadata.Artist (the track artist) while the import keys the
@@ -209,9 +237,14 @@ func TestResolveCanonicalArtist_MatchesSanitisedFolderName(t *testing.T) {
 	h, _, root := newCanonicalIdentityHandler(t)
 	mkLibraryDirs(t, root, "AC-DC", "Back In Black")
 
-	require.Equal(t, "AC-DC", h.resolveCanonicalArtist("AC/DC"),
+	gotArtist, err := h.resolveCanonicalArtist("AC/DC")
+	require.NoError(t, err)
+	require.Equal(t, "AC-DC", gotArtist,
 		"the existing sanitised folder casing must win over the raw tag")
-	require.Equal(t, "Back In Black", h.resolveCanonicalAlbum("AC-DC", "Back In Black"))
+
+	gotAlbum, err := h.resolveCanonicalAlbum("AC-DC", "Back In Black")
+	require.NoError(t, err)
+	require.Equal(t, "Back In Black", gotAlbum)
 }
 
 // Resolution and path building must compose into the canonical folder — the
@@ -231,7 +264,7 @@ func TestResolveCanonicalIdentity_ProducesCanonicalFolder(t *testing.T) {
 		TrackNumber: 3,
 		Format:      "MP3",
 	}
-	metadata.AlbumArtist, metadata.Album = h.resolveCanonicalIdentity(metadata.AlbumArtist, metadata.Album)
+	metadata.AlbumArtist, metadata.Album = resolveIdentity(t, h, metadata.AlbumArtist, metadata.Album)
 
 	want := filepath.Join(root, "PUP", "The Unraveling of Puptheband", "03 - Robot Writes a Love Song.mp3")
 	require.Equal(t, want, h.ext.GenerateLibraryPath(metadata, root))
