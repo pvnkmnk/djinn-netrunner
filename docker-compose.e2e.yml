@@ -5,9 +5,19 @@ services:
     environment:
       # E2E tests make many auth requests; higher limit for testing
       AUTH_RATE_LIMIT_MAX: 1000
-      # Use test database for E2E tests
-      DATABASE_URL: postgresql://musicops:testpass@postgres:5432/musicops_test?sslmode=disable
+      # Use test database for E2E tests. The password is interpolated from
+      # POSTGRES_PASSWORD (.env.e2e) rather than hardcoded: the postgres service
+      # gets its role password from that same variable, so a literal here meant
+      # the two could disagree and ops-web failed auth against a stack that
+      # otherwise looked healthy.
+      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops_test?sslmode=disable
       # Enable Subsonic API for E2E tests
       SUBSONIC_ENABLED: "true"
       # Enable E2E test helper API (create-dir, etc.)
       E2E_ENABLE_TEST_API: "true"
+      # Pinned so a developer's local `.env` (picked up by the base compose's
+      # `env_file`) cannot put the e2e stack into production mode, where a
+      # missing JWT_SECRET or Subsonic password refuses to boot. The suite must
+      # behave identically in CI, where no `.env` exists at all.
+      ENVIRONMENT: development
+      CONFIG_ENV: development

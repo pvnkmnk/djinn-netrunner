@@ -1,17 +1,29 @@
 name: E2E Tests
 
+# The default branch here is `master`. This workflow previously watched
+# [main, develop] — neither exists in this repo, and the other workflows all
+# watch [master, main] — so it never ran once. "All checks green" said nothing
+# at all about the browser flows.
+#
+# It is deliberately NOT a pull_request gate: the suite builds every image and
+# drives a real Chromium, which is too slow to sit on every PR. It runs on
+# master to catch regressions and on demand (workflow_dispatch) as the manual
+# pre-release check. See docs/BETA_ACCEPTANCE.md.
 on:
+  workflow_dispatch:
   push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+    branches: [master]
 
 jobs:
   e2e:
     name: Playwright E2E Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
+    timeout-minutes: 20
+    env:
+      # Playwright retries and takes a trace on the first retry; `true` also
+      # makes its globalTeardown run `down -v`.
+      CI: true
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,32 +33,13 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Start Docker stack
-        run: docker compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
-
-      - name: Wait for health
-        run: |
-          for i in {1..30}; do
-            if curl -f http://localhost:8080/api/health; then
-              echo "Server ready"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Server failed to start"
-          exit 1
-
-      - name: Install Playwright dependencies
-        working-directory: e2e
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-
-      - name: Run Playwright tests
-        working-directory: e2e
-        env:
-          CI: true
-        run: npx playwright test
+      # Invoked through `bash` rather than the shebang so a checkout that lost
+      # the executable bit still runs. The script materialises `.env.e2e` from
+      # the checked-in template and installs Chromium; the stack itself is
+      # started by Playwright's webServer (e2e/setup-test-db.sh), so there is
+      # no separate bring-up step to drift out of sync with local runs.
+      - name: Run E2E suite
+        run: bash scripts/e2e.sh test
 
       - name: Upload test results
         if: always()
@@ -64,6 +57,12 @@ jobs:
           path: e2e/test-results/
           retention-days: 7
 
+      # A failed spec and a wedged stack look identical from the report alone.
+      - name: Dump stack logs on failure
+        if: failure()
+        run: |
+          docker compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml logs --tail=100
+
       - name: Stop Docker stack
         if: always()
-        run: docker compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml down -v --remove-orphans
+        run: bash scripts/e2e.sh down
