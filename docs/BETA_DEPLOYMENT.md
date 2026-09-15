@@ -158,8 +158,21 @@ Acquisitions import into a library, and the library is what the scanner indexes.
 `ops-worker`, so that path means the same thing on both sides:
 
 ```bash
-curl -s -b $JAR -c $JAR -X POST http://localhost:8080/api/libraries -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN" -d '{"name":"Music","path":"/app/music"}' | tee /tmp/library.json
+LIBRARY_ID=$(curl -sS --fail-with-body -b $JAR -c $JAR -X POST http://localhost:8080/api/libraries -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN" -d '{"name":"Music","path":"/app/music"}' | tee /tmp/library.json | python -c "import sys,json;d=json.load(sys.stdin);print(d.get('id') or d.get('ID') or sys.exit('no library id in response: %r' % (d,)))")
+echo "library: ${LIBRARY_ID:?no library id — see /tmp/library.json}"
 ```
+
+`tee` keeps the response for you to read while the parser reads the same bytes
+from the pipe. Three details stop a failed request from turning into a confusing
+one: `--fail-with-body` makes an HTTP error non-zero while still keeping the
+body for `tee`, the parser exits when neither key is present, and
+`${VAR:?…}` refuses to continue with an empty id. Without them a `4xx` leaves
+`LIBRARY_ID` holding the string `None`, and the next step quietly posts to
+`/api/artists/None/sync`.
+
+Note the two endpoints disagree on key casing — `/api/libraries`
+answers `id`, `/api/artists` answers `ID` (Go's default field names) — so read
+the key that is present rather than assuming one.
 
 A path is unique across libraries, and re-running this is harmless: you get the
 existing library back (`200`) when you own it, and `409` naming the existing row
@@ -170,7 +183,8 @@ when someone else does — never a bare `500`.
 The `name` is resolved against MusicBrainz, which needs no API key:
 
 ```bash
-curl -s -b $JAR -c $JAR -X POST http://localhost:8080/api/artists -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN" -d '{"name":"PUP"}' | tee /tmp/artist.json
+ARTIST_ID=$(curl -sS --fail-with-body -b $JAR -c $JAR -X POST http://localhost:8080/api/artists -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN" -d '{"name":"PUP"}' | tee /tmp/artist.json | python -c "import sys,json;d=json.load(sys.stdin);print(d.get('id') or d.get('ID') or sys.exit('no artist id in response: %r' % (d,)))")
+echo "artist: ${ARTIST_ID:?no artist id — see /tmp/artist.json}"
 ```
 
 Adding an artist does not start acquiring — syncing does. This queues an
@@ -178,7 +192,6 @@ Adding an artist does not start acquiring — syncing does. This queues an
 that then queues the `acquisition` job; both are visible under `/jobs`:
 
 ```bash
-ARTIST_ID=$(python -c "import json;print(json.load(open('/tmp/artist.json'))['id'])")
 curl -s -b $JAR -c $JAR -X POST "http://localhost:8080/api/artists/$ARTIST_ID/sync" -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN"
 ```
 
@@ -203,7 +216,6 @@ acquisition finalizes — run against your media server if you configured one,
 otherwise as a local scan of the library at `MUSIC_LIBRARY`. To force one:
 
 ```bash
-LIBRARY_ID=$(python -c "import json;print(json.load(open('/tmp/library.json'))['id'])")
 curl -s -b $JAR -c $JAR -X POST "http://localhost:8080/api/libraries/$LIBRARY_ID/scan" -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN"
 ```
 
