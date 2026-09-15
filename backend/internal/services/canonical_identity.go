@@ -2,12 +2,14 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"gorm.io/gorm"
 )
 
 // This file owns how an artist+album pair is *identified* in the library.
@@ -21,6 +23,11 @@ import (
 // already committed to for *display and paths*. Nothing here renames an
 // existing folder — the earliest record wins, so a folder already on disk keeps
 // its name and becomes the one all later imports converge on.
+//
+// The resolution functions are package-level (not handler methods) because the
+// CLI repair tooling in library_repair.go needs the same answer: the canonical
+// folder `library detect-fragments` suggests must be exactly the casing the
+// importer would choose, or a repair fights the next import.
 
 // CanonicalKey folds an artist or album name to the form used for identity
 // comparisons. It mirrors the SQL fold `LOWER(TRIM(col))` used by the album
@@ -38,36 +45,95 @@ func (h *AcquisitionHandler) libraryRoot() string {
 	return h.cfg.MusicLibraryPath
 }
 
+// ErrIdentityLookup reports that the library's committed casing could not be
+// read. It exists so callers cannot confuse "the query failed" with "the
+// artist/album is new": on a failed query the fallback below would pick
+// filesystem or tag casing, and a repair acting on that answer could merge into
+// the wrong destination folder. A failed lookup must abort the operation, not
+// be silently read as a fresh identity.
+var ErrIdentityLookup = errors.New("canonical identity lookup failed")
+
+// ResolveCanonicalArtist returns the casing the library already uses for this
+// artist, falling back to the input when the artist is genuinely new.
+func ResolveCanonicalArtist(db *gorm.DB, ext *MetadataExtractor, libraryRoot, artist string) (string, error) {
+	name, _, err := resolveCanonicalArtistCasing(db, ext, libraryRoot, artist)
+	return name, err
+}
+
+// ResolveCanonicalAlbum returns the casing the library already uses for this
+// album under the (already canonical) artist, falling back to the input.
+func ResolveCanonicalAlbum(db *gorm.DB, ext *MetadataExtractor, libraryRoot, artist, album string) (string, error) {
+	name, _, err := resolveCanonicalAlbumCasing(db, ext, libraryRoot, artist, album)
+	return name, err
+}
+
+// ResolveCanonicalIdentity returns both casings. Artist is resolved before
+// album so a new album lands in the artist's existing folder.
+func ResolveCanonicalIdentity(db *gorm.DB, ext *MetadataExtractor, libraryRoot, artist, album string) (string, string, error) {
+	if artist == "" || album == "" {
+		return artist, album, nil
+	}
+	canonicalArtist, err := ResolveCanonicalArtist(db, ext, libraryRoot, artist)
+	if err != nil {
+		return artist, album, err
+	}
+	canonicalAlbum, err := ResolveCanonicalAlbum(db, ext, libraryRoot, canonicalArtist, album)
+	if err != nil {
+		return canonicalArtist, album, err
+	}
+	return canonicalArtist, canonicalAlbum, nil
+}
+
 // resolveCanonicalIdentity returns the artist and album casing the library
 // already uses for this pair, so a re-acquire whose tags differ only by case
 // lands in the existing folder instead of creating a case-variant sibling.
 // Both fall back to the input casing when the pair is genuinely new.
-func (h *AcquisitionHandler) resolveCanonicalIdentity(artist, album string) (string, string) {
-	canonicalArtist := h.resolveCanonicalArtist(artist)
-	return canonicalArtist, h.resolveCanonicalAlbum(canonicalArtist, album)
+func (h *AcquisitionHandler) resolveCanonicalIdentity(artist, album string) (string, string, error) {
+	return ResolveCanonicalIdentity(h.db, h.ext, h.libraryRoot(), artist, album)
 }
 
-// resolveCanonicalArtist returns the casing already used for the artist. It is
-// resolved independently of the album: a new album by a known artist must not
-// create a second, case-variant artist folder. Acquisition history wins over
-// the filesystem (earliest record first), and the input is the last resort.
+// resolveCanonicalArtist returns the casing already used for the artist: a new
+// album by a known artist must not create a second, case-variant artist folder.
+func (h *AcquisitionHandler) resolveCanonicalArtist(artist string) (string, error) {
+	return ResolveCanonicalArtist(h.db, h.ext, h.libraryRoot(), artist)
+}
+
+// resolveCanonicalAlbum returns the casing already used for the album under
+// the (already canonical) artist.
+func (h *AcquisitionHandler) resolveCanonicalAlbum(artist, album string) (string, error) {
+	return ResolveCanonicalAlbum(h.db, h.ext, h.libraryRoot(), artist, album)
+}
+
+// resolveCanonicalArtistCasing is the shared implementation behind
+// ResolveCanonicalArtist. It is resolved independently of the album: a new
+// album by a known artist must not create a second, case-variant artist folder.
+// Acquisition history wins over the filesystem (earliest record first), and the
+// input is the last resort. The bool reports whether the library had an answer:
+// false means the returned name is the input, unchanged.
 //
 // Trade-off, deliberate: two genuinely distinct artists whose names differ only
 // by case are treated as one. The alternative is the fragmentation this fixes,
 // and a case-only artist collision is far rarer than case-only tag drift.
-func (h *AcquisitionHandler) resolveCanonicalArtist(artist string) string {
+func resolveCanonicalArtistCasing(db *gorm.DB, ext *MetadataExtractor, libraryRoot, artist string) (string, bool, error) {
 	key := CanonicalKey(artist)
 	if key == "" {
-		return artist
+		return artist, false, nil
 	}
 
-	if h.db != nil {
+	if db != nil {
 		var existing database.Acquisition
-		err := h.db.Select("artist").
+		err := db.Select("artist").
 			Where("LOWER(TRIM(artist)) = ?", key).
 			Order("id ASC").First(&existing).Error
-		if err == nil && existing.Artist != "" {
-			return existing.Artist
+		switch {
+		case err == nil:
+			if existing.Artist != "" {
+				return existing.Artist, true, nil
+			}
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			// Genuinely new artist; the filesystem is the next source of truth.
+		default:
+			return artist, false, fmt.Errorf("%w: artist %q: %v", ErrIdentityLookup, artist, err)
 		}
 	}
 
@@ -75,57 +141,64 @@ func (h *AcquisitionHandler) resolveCanonicalArtist(artist string) string {
 	// filesystem comparison has to use the sanitised form. The database keeps the
 	// raw artist name, so the query above must NOT use this key.
 	folderKey := key
-	if h.ext != nil {
-		folderKey = CanonicalKey(h.ext.SanitizeFilename(artist))
+	if ext != nil {
+		folderKey = CanonicalKey(ext.SanitizeFilename(artist))
 	}
 
-	for _, name := range sortedSubdirs(h.libraryRoot()) {
+	for _, name := range sortedSubdirs(libraryRoot) {
 		if CanonicalKey(name) == folderKey {
-			return name
+			return name, true, nil
 		}
 	}
 
-	return artist
+	return artist, false, nil
 }
 
-// resolveCanonicalAlbum returns the casing already used for the album under the
-// (already canonical) artist. Folder names on disk are sanitised, so the
-// filesystem comparison uses the sanitised album — an album tagged
-// "Who Will Look After the Dogs?" lives in a folder without the "?" and must
-// still be recognised as the same album.
-func (h *AcquisitionHandler) resolveCanonicalAlbum(artist, album string) string {
+// resolveCanonicalAlbumCasing is the shared implementation behind
+// ResolveCanonicalAlbum. The bool reports whether the library had an answer.
+//
+// Folder names on disk are sanitised, so the filesystem comparison uses the
+// sanitised album — an album tagged "Who Will Look After the Dogs?" lives in a
+// folder without the "?" and must still be recognised as the same album.
+func resolveCanonicalAlbumCasing(db *gorm.DB, ext *MetadataExtractor, libraryRoot, artist, album string) (string, bool, error) {
 	albumKey := CanonicalKey(album)
 	if albumKey == "" {
-		return album
+		return album, false, nil
 	}
 
-	if h.db != nil {
+	if db != nil {
 		var existing database.Acquisition
-		err := h.db.Select("album").
+		err := db.Select("album").
 			Where("LOWER(TRIM(artist)) = ? AND LOWER(TRIM(album)) = ?", CanonicalKey(artist), albumKey).
 			Order("id ASC").First(&existing).Error
-		if err == nil && existing.Album != "" {
-			return existing.Album
+		switch {
+		case err == nil:
+			if existing.Album != "" {
+				return existing.Album, true, nil
+			}
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			// Genuinely new album; the filesystem is the next source of truth.
+		default:
+			return album, false, fmt.Errorf("%w: album %q by %q: %v", ErrIdentityLookup, album, artist, err)
 		}
 	}
 
-	if h.ext == nil {
-		return album
+	if ext == nil {
+		return album, false, nil
 	}
 
-	root := h.libraryRoot()
-	artistKey := CanonicalKey(h.ext.SanitizeFilename(artist))
-	folderKey := CanonicalKey(h.ext.SanitizeFilename(album))
-	for _, artistDir := range sortedSubdirs(root) {
+	artistKey := CanonicalKey(ext.SanitizeFilename(artist))
+	folderKey := CanonicalKey(ext.SanitizeFilename(album))
+	for _, artistDir := range sortedSubdirs(libraryRoot) {
 		if CanonicalKey(artistDir) != artistKey {
 			continue
 		}
-		if name, ok := matchSubdir(filepath.Join(root, artistDir), folderKey); ok {
-			return name
+		if name, ok := matchSubdir(filepath.Join(libraryRoot, artistDir), folderKey); ok {
+			return name, true, nil
 		}
 	}
 
-	return album
+	return album, false, nil
 }
 
 // findExistingAlbumAcquisition returns the earliest acquisition that already
@@ -155,6 +228,12 @@ func (h *AcquisitionHandler) findExistingAlbumAcquisition(albumArtist, trackArti
 			primaryArtist, secondaryArtist, CanonicalKey(album), fileHash).
 		Order("id ASC").
 		First(&existing).Error
+	// A missing row is not a failure — it means the album is new. Everything else
+	// must reach the caller: reading a failed query as "not a duplicate" would
+	// import a second copy of an album the library already holds.
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

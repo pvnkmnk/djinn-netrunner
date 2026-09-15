@@ -1,5 +1,6 @@
 # Environment
 .env
+.env.e2e
 
 # Agent scratch (Freebuff session working files)
 .freebuff/

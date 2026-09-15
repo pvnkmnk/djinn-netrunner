@@ -146,8 +146,20 @@ test.describe('Dashboard (DJI-424)', () => {
     expect(body).toHaveProperty('status');
     expect(body).toHaveProperty('checks');
     expect(body.checks).toHaveProperty('database');
-    expect(body.checks).toHaveProperty('slskd');
-    expect(body.checks).toHaveProperty('gonic');
+
+    // Only `database` is unconditional. Every other check is reported when its
+    // dependency is configured — slskd needs an API key, disk needs the library
+    // path to exist, and the media server needs GONIC_URL or NAVIDROME_URL.
+    // Asserting a fixed `gonic` key encoded one deployment's shape and failed on
+    // this stack, which runs no media server at all. Assert the contract
+    // instead: whatever is reported carries a status, and at most one media
+    // server is reported.
+    for (const [name, check] of Object.entries(body.checks as Record<string, unknown>)) {
+      expect(check, `check "${name}" has no status`).toHaveProperty('status');
+    }
+
+    const mediaServers = ['gonic', 'navidrome'].filter((k) => k in body.checks);
+    expect(mediaServers.length).toBeLessThanOrEqual(1);
   });
 
   // ========================================================================

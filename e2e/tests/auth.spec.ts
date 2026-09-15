@@ -520,14 +520,25 @@ test.describe('Auth & Navigation (DJI-423)', () => {
       expect(sessionCookie?.httpOnly).toBe(true);
     });
 
-    test('CSRF cookie has httpOnly or secure flag', async ({ page }) => {
+    test('CSRF cookie stays readable by the page and is sameSite-scoped', async ({ page }) => {
       await page.goto('/');
 
       const cookies = await page.context().cookies();
       const csrfCookie = cookies.find(c => c.name === 'csrf_');
       expect(csrfCookie).toBeDefined();
       expect(csrfCookie?.value).toBeTruthy();
-      expect(csrfCookie?.httpOnly || csrfCookie?.secure).toBe(true);
+
+      // This cookie is deliberately NOT httpOnly: the double-submit pattern
+      // requires the page to read it and echo it back as X-CSRF-Token (see
+      // ops/web/templates/layouts/base.html and app.js). Making it httpOnly
+      // would break every state-changing request in the UI, so asserting
+      // `httpOnly || secure` here asserted a hardening property the app must
+      // not have. The session cookie is the one that is httpOnly.
+      //
+      // `secure` is not asserted either: the suite runs over plain http, where
+      // a browser will not store a Secure cookie, so it could never be true.
+      expect(csrfCookie?.httpOnly).toBe(false);
+      expect(csrfCookie?.sameSite).toBe('Lax');
     });
 
     test('concurrent sessions - login from two contexts', async ({ browser }) => {

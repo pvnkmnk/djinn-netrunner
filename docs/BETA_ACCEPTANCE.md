@@ -344,3 +344,105 @@ that the pre-fix case-sensitive comparison cannot see the case variant at all; m
 ### Open finding this run exposed
 
 - **The recording-ID dedup branch leaves the staged file behind.** `/app/downloads/THE UNRAVELING OF PUPTHEBAND/12 PUPTHEBAND Inc. Is Filing for Bankruptcy.mp3` survived job #12, whereas the album branch removes the staged file and sweeps the directory it emptied. Same class as DJI-490's leftovers.
+## Case-variant album repair, applied to the live library - 2026-09-15
+
+DJI-475 took two passes, because the tooling could not see the damage it was
+supposed to repair. (Matrix row 15 records the earlier credit-variant repair;
+this is the case-variant one, which that pass was blind to.)
+
+### The tooling gap, found before running it
+
+`DetectFragmentedAlbums` grouped folders by *exact* album name and
+`isCreditVariantSet` only accepted a `" & "` credit suffix, while
+`MergeAlbumFolders` matched source rows with exact string equality. So a
+case-variant split was invisible to `detect-fragments` and unreachable by
+`merge-album`: the CLI reported the library **clean** while leaving every
+case-variant fragmentation in place. The detector now groups on the canonical
+key and classifies credit variants separately from case variants (still
+refusing the two-unrelated-bands control), and the merge matcher folds case.
+
+### Dry run
+
+    netrunner-cli library detect-fragments
+      [case_album] The Unraveling of Puptheband
+        ==> PUP/The Unraveling of Puptheband   (1 track)
+            PUP/The Unraveling Of Puptheband   (1 track)
+
+    netrunner-cli library merge-album 2b050a1a-... "The Unraveling of Puptheband" PUP
+      moved: 2, duplicates removed: 0, dirs removed: 1, conflicts: 0, errors: 0
+
+### A defect the live run exposed
+
+The **first** apply reported `dirs removed: 0` and left the source folder on
+disk. Only the audio file had moved; the album's `.lrc` lyrics sidecar stayed
+behind and kept the directory alive. The merge now moves a track's sibling
+files with it. The library was restored to its pre-repair state and the merge
+re-run, so the fix is proven rather than observed on a half-repaired tree.
+
+### Result
+
+| Check | Result |
+|---|---|
+| Apply | `Album "The Unraveling of Puptheband" -> /app/music/PUP/The Unraveling of Puptheband [APPLIED]`, `moved: 2, dirs removed: 1` |
+| Source folder | gone - `test -d .../The Unraveling Of Puptheband` reports GONE |
+| Canonical folder | holds all four files (2 `.mp3` + 2 `.lrc`) |
+| `tracks` rows for that album | both point at the canonical path; 0 rows match `%Unraveling Of%` |
+| Rescan (job 17) | `succeeded`, summary `Completed` |
+| `detect-fragments` after | `No fragmented albums or artists found.` |
+| Total tracks | 8 before, 8 after - the merge moved files, it did not add or drop any |
+
+Backups taken first: a `music` tar (159 MB) and a `pg_dump` of the `musicops`
+database.
+
+## Browser suite as the pre-release gate - 2026-09-15
+
+`.github/workflows/e2e.yml` watched `branches: [main, develop]` while this
+repo's default branch is `master`, so the workflow **never ran once** - "all
+checks green" said nothing at all about the browser flows. It also started the
+stack itself with `--env-file .env.e2e`, a file that is not in the repo and had
+no template, so it would have failed before Playwright started even with a
+correct trigger.
+
+Now:
+
+    bash scripts/e2e.sh test     # or: gh workflow run e2e.yml
+
+The script materialises `.env.e2e` from the checked-in `.env.e2e.example` when
+missing, installs Chromium, and runs Playwright. Playwright owns the stack
+lifecycle - its `webServer` runs `e2e/setup-test-db.sh` (build, drop and
+recreate `musicops_test`, start, seed) and its `globalTeardown` tears down with
+`-v` when `CI=true` - so CI and local runs share one bring-up path instead of
+two that drift apart.
+
+It is not a `pull_request` gate: it builds every image and drives real
+Chromium. It runs on push to `master` and on `workflow_dispatch`, which is the
+manual pre-release step.
+
+While wiring this up, `docker-compose.e2e.yml` was found to hardcode
+`musicops:testpass` in `DATABASE_URL` while the postgres role takes its
+password from `POSTGRES_PASSWORD` - two independent sources for one secret, so
+any `.env.e2e` with a different password produced a stack that looked healthy
+and then failed auth. The overlay now interpolates `${POSTGRES_PASSWORD}`, and
+pins `ENVIRONMENT: development` so a developer's local `.env` (read by the base
+compose's `env_file`) cannot put the e2e stack into production mode.
+
+
+### First real run — 211 passed, 18 skipped, 2 failed
+
+    https://github.com/pvnkmnk/djinn-netrunner/actions/runs/34954793696
+    Run E2E suite   2 failed   18 skipped   211 passed (4.9m)
+
+Two specs failed, both stale assertions rather than app defects — which is what
+an unrun suite accumulates. Neither fix was applied to the app, and in one case
+it must not be.
+
+| Spec | Asserted | Why it was wrong | Fix |
+|---|---|---|---|
+| `auth.spec.ts` | `csrfCookie.httpOnly \|\| csrfCookie.secure` | The `csrf_` cookie is deliberately **not** `httpOnly`: the double-submit pattern requires the page to read it and echo it as `X-CSRF-Token` (`layouts/base.html`, `app.js`). Satisfying this assertion would have broken every state-changing request in the UI. `secure` is unreachable too — the suite runs over plain http, where a browser will not store a `Secure` cookie. | Assert `httpOnly === false` and `sameSite === 'Lax'`. |
+| `dashboard.spec.ts` | `body.checks.gonic` | `GetHealth` reports every check except `database` only when its dependency is configured. This stack runs no media server, so no `gonic` key — and the repo has since moved to Navidrome. The assertion encoded one deployment's shape. | Assert `database` plus the contract: every reported check carries a `status`, and at most one media server is reported. |
+
+Worth recording plainly: the CSRF assertion was the kind that gets "fixed" in the
+wrong direction. It reads as a hardening requirement, so the tempting response
+is to set `CookieHTTPOnly` on the CSRF middleware — which silently breaks the
+HTMX UI while turning the test green.
+
