@@ -609,3 +609,49 @@ neither, so there was nothing wrong to correct.
 | Library | 9 tracks / 3 artists / 9 albums indexed; 9 audio files plus 4 `.lrc` sidecars under `/app/music` |
 | Staging | **0 entries** in `/app/downloads` |
 | Suites | `go build`, `go vet` (both), `go test -count=1 ./...` all green |
+
+### Independent re-verification — 2026-09-15
+
+The record above was written from the run. This section is a second pass over the
+same live stack, made from a fresh shell after the run ended, to show the headline
+clause is a durable state rather than a momentary one. Queries are reproduced
+verbatim so the claim can be re-run.
+
+```bash
+$ docker exec ops-worker sh -c 'find /app/downloads -mindepth 1 | wc -l'
+0
+
+$ docker exec ops-worker sh -c 'ls -la /app/downloads'
+total 8
+drwxr-xr-x    2 netrunner netrunner      4096 Sep 15 19:59 .
+drwxr-xr-x    1 netrunner netrunner      4096 Sep 15 19:42 ..
+
+$ docker exec netrunner-postgres psql -U musicops -d musicops -tAc \
+    "select status, count(*) from jobitems group by status order by 2 desc;"
+cancelled|45
+imported|9
+completed (duplicate album)|1
+failed (no results)|1
+
+$ docker exec netrunner-postgres psql -U musicops -d musicops -tAc \
+    "select count(*) from jobs where finished_at is null;"
+0
+```
+
+The staging directory's own mtime (`19:59`) is from the last removal, not the
+query, so the zero is the state the sweep left behind rather than something a
+later cleanup produced.
+
+| Check | Re-queried | Against |
+|---|---|---|
+| entries under `/app/downloads` | **0** | row 63 |
+| `jobitems` by status | `cancelled 45`, `imported 9`, `completed (duplicate album) 1`, `failed (no results) 1` | row 63 — identical |
+| jobs | `release_monitor` 1, `artist_scan` 2, `acquisition` 2 (`cancelled`), `scan` **6** | +1 `scan` vs the table above |
+| jobs lacking `finished_at` | **0** | rows 61, 63 |
+
+The one delta is a single extra `scan` job, queued by the smoke run that followed
+the record being written; the snapshot table above is left as it stood at the end
+of the run. `docker exec netrunner-postgres` is used rather than
+`docker compose exec postgres` because the container name and the compose service
+name differ — see the note above.
+
