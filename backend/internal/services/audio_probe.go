@@ -93,9 +93,22 @@ func (p *AudioProbe) Probe(ctx context.Context, path string) (*ProbeResult, erro
 	)
 	out, err := cmd.Output()
 	if err != nil {
-		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%w: %s", ErrProbeUnavailable, p.FFprobePath)
+		// A cancelled or expired context is a statement about the job, not
+		// about the file. Callers must be able to tell these apart, or shutting
+		// a worker down would look like every download being unplayable.
+		if ctxErr := probeCtx.Err(); ctxErr != nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("ffprobe did not finish: %w", ctxErr)
+			}
+			// Only our own budget expired. That is not evidence against the
+			// file, so report it as a check that could not be completed rather
+			// than deleting a download that is probably fine.
+			return nil, fmt.Errorf("%w: ffprobe exceeded %s", ErrProbeUnavailable, audioProbeTimeout)
 		}
+		// An ExitError is the only error that means ffprobe ran and judged the
+		// file. Anything else — an absent binary, a permission problem, a build
+		// for the wrong architecture — means it never started, which is a
+		// deployment gap and must not cause a rejection.
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			msg := firstStderrLine(string(exitErr.Stderr))
@@ -104,7 +117,7 @@ func (p *AudioProbe) Probe(ctx context.Context, path string) (*ProbeResult, erro
 			}
 			return nil, fmt.Errorf("not playable audio: %s", msg)
 		}
-		return nil, fmt.Errorf("ffprobe failed: %w", err)
+		return nil, fmt.Errorf("%w: %s: %v", ErrProbeUnavailable, p.FFprobePath, err)
 	}
 
 	var parsed probeOutput

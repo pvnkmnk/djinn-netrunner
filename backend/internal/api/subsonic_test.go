@@ -1075,7 +1075,7 @@ func TestSubsonic_GetAlbum_Found(t *testing.T) {
 	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
 
 	password := "testpass123"
-	albumID := "album-" + url.PathEscape("Test Album") + "-" + url.PathEscape("Test Artist")
+	albumID := albumID("Test Album", "Test Artist")
 	req := httptest.NewRequest("GET", "/getAlbum?id="+albumID+"&u=test@example.com&p="+password, nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
@@ -1117,7 +1117,7 @@ func TestSubsonic_GetAlbum_NotFound(t *testing.T) {
 	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
 
 	password := "testpass123"
-	albumID := "album-" + url.PathEscape("Nonexistent Album") + "-" + url.PathEscape("Nonexistent Artist")
+	albumID := albumID("Nonexistent Album", "Nonexistent Artist")
 	req := httptest.NewRequest("GET", "/getAlbum?id="+albumID+"&u=test@example.com&p="+password, nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
@@ -1310,7 +1310,7 @@ func TestSubsonic_GetMusicDirectory_AlbumDirectory(t *testing.T) {
 	app.Get("/getMusicDirectory", handler.AuthMiddleware, handler.GetMusicDirectory)
 
 	password := "testpass123"
-	albumID := "album-" + url.PathEscape("Test Album") + "-" + url.PathEscape("Test Artist")
+	albumID := albumID("Test Album", "Test Artist")
 	req := httptest.NewRequest("GET", "/getMusicDirectory?id="+albumID+"&u=test@example.com&p="+password, nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)

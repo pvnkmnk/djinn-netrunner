@@ -36,6 +36,7 @@ type mockSlskd struct {
 	BrowseFunc           func(username string) ([]PeerFile, error)
 	EnqueueDownloadFunc  func(username, filename string, size int64) (string, error)
 	WaitForDownloadFunc  func(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error)
+	CancelDownloadFunc   func(username, downloadID string) error
 }
 
 func (m *mockSlskd) Search(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
@@ -64,6 +65,13 @@ func (m *mockSlskd) WaitForDownload(ctx context.Context, username, downloadID st
 		return m.WaitForDownloadFunc(ctx, username, downloadID, opts)
 	}
 	return nil, nil
+}
+
+func (m *mockSlskd) CancelDownload(username, downloadID string) error {
+	if m.CancelDownloadFunc != nil {
+		return m.CancelDownloadFunc(username, downloadID)
+	}
+	return nil
 }
 
 type mockLibrary struct {

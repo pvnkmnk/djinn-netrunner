@@ -62,6 +62,43 @@ func TestAudioProbe_ReportsUnavailableWhenBinaryMissing(t *testing.T) {
 		"callers must be able to tell an absent tool from a bad file, and must not reject downloads when it is absent")
 }
 
+// A binary that exists but cannot be executed is a deployment problem, not a bad
+// file: a permission error or a build for the wrong architecture must not make
+// every download look unplayable.
+func TestAudioProbe_ReportsUnavailableWhenBinaryCannotStart(t *testing.T) {
+	dir := t.TempDir()
+	notExecutable := filepath.Join(dir, "ffprobe")
+	require.NoError(t, os.WriteFile(notExecutable, []byte("#!/bin/sh\nexit 0\n"), 0o644))
+
+	path := filepath.Join(dir, "track.mp3")
+	require.NoError(t, os.WriteFile(path, []byte("bytes"), 0o644))
+
+	_, err := NewAudioProbeWithFFprobe(notExecutable).Probe(context.Background(), path)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrProbeUnavailable,
+		"only an ExitError means ffprobe ran and judged the file")
+}
+
+// A cancelled context is a statement about the job, not the file. Callers tell
+// them apart so shutting down cannot be mistaken for unplayable audio.
+func TestAudioProbe_ReportsCancellationSeparately(t *testing.T) {
+	requireProbeTools(t)
+
+	path := filepath.Join(t.TempDir(), "tone.wav")
+	writeSineWav(t, path)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := NewAudioProbe().Probe(ctx, path)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.False(t, errors.Is(err, ErrProbeUnavailable),
+		"a cancellation is neither a bad file nor a missing tool")
+}
+
 func TestAudioProbe_RejectsNonAudioFile(t *testing.T) {
 	requireProbeTools(t)
 

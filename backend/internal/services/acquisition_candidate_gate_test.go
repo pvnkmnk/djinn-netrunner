@@ -344,6 +344,114 @@ func TestAcquisitionHandler_StageDownloadFile_ImportsWhenProbeUnavailable(t *tes
 	assert.Contains(t, logs, "ffprobe", "the gap must be visible in the job log")
 }
 
+// A short, low-bitrate track is legitimate. The floor must come from the
+// reported metadata rather than a fixed size, or a ten-second interlude is
+// rejected before ffprobe ever sees the bytes.
+func TestMinPlausibleSize_PrefersMetadataOverAFixedFloor(t *testing.T) {
+	// 10s at 128 kbps implies ~160 KB, well under the 256 KiB floor this used to
+	// apply unconditionally.
+	short := minPlausibleSize(128, 10)
+	assert.Greater(t, short, int64(0))
+	assert.Less(t, short, int64(160_000), "a metadata-consistent short track must clear the floor")
+
+	// Without metadata there is nothing to derive from, so a conservative
+	// stand-in applies — still far above the few-kilobyte placeholders peers share.
+	assert.Equal(t, int64(64<<10), minPlausibleSize(0, 0))
+	assert.Greater(t, minPlausibleSize(0, 0), int64(8000))
+
+	// A longer, higher-bitrate track implies a much larger floor.
+	assert.Greater(t, minPlausibleSize(320, 240), int64(4_000_000))
+}
+
+func TestCandidateRejectionReason_AcceptsShortMetadataConsistentTrack(t *testing.T) {
+	bitrate, length := 128, 10
+
+	reason := candidateRejectionReason(SearchResult{
+		Filename: "Artist/Album/01 - Interlude.mp3",
+		Size:     150_000,
+		Bitrate:  &bitrate,
+		Length:   &length,
+	})
+
+	assert.Empty(t, reason, "a short track whose size matches its metadata is not implausible")
+}
+
+// Abandoning a peer must cancel the queued transfer. Left in slskd it can still
+// start sending later, downloading a file nothing will import while consuming
+// bandwidth and space in the shared staging volume.
+func TestAcquisitionHandler_StageDownloadFile_CancelsAbandonedTransfers(t *testing.T) {
+	db := setupPipelineTestDB(t)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	_, item := createAcquisitionTestItem(t, db)
+
+	var cancelled []string
+	handler.slskd = &mockSlskd{
+		EnqueueDownloadFunc: func(username, filename string, size int64) (string, error) {
+			return "dl-" + username, nil
+		},
+		WaitForDownloadFunc: func(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error) {
+			return nil, fmt.Errorf("%w: slskd state %q", ErrRemoteQueueStalled, "Queued, Remotely")
+		},
+		CancelDownloadFunc: func(username, downloadID string) error {
+			cancelled = append(cancelled, username+"/"+downloadID)
+			return nil
+		},
+	}
+
+	p := &acquisitionPipeline{
+		ctx:  context.Background(),
+		item: item,
+		candidates: []SearchResult{
+			{Username: "dead-a", Filename: "music/a.flac", Size: 30_000_000},
+			{Username: "dead-b", Filename: "music/b.flac", Size: 30_000_000},
+		},
+	}
+
+	skip, err := handler.stageDownloadFile(p)
+	require.NoError(t, err)
+	assert.True(t, skip)
+	assert.Equal(t, []string{"dead-a/dl-dead-a", "dead-b/dl-dead-b"}, cancelled,
+		"every abandoned transfer must be cancelled, not just the first")
+}
+
+// Shutting the worker down must not delete a valid download. A cancelled probe is
+// a statement about the job, not the file, so it unwinds the item instead of
+// being reported as an unplayable file.
+func TestAcquisitionHandler_StageDownloadFile_KeepsFileWhenProbeIsCancelled(t *testing.T) {
+	db := setupPipelineTestDB(t)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.ext = NewMetadataExtractor()
+	_, item := createAcquisitionTestItem(t, db)
+
+	file := filepath.Join(t.TempDir(), "track.mp3")
+	require.NoError(t, os.WriteFile(file, []byte("bytes"), 0o644))
+
+	handler.slskd = &mockSlskd{
+		EnqueueDownloadFunc: func(username, filename string, size int64) (string, error) {
+			return "id", nil
+		},
+		WaitForDownloadFunc: func(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error) {
+			return &Download{ID: downloadID, Username: username, LocalPath: file}, nil
+		},
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	p := &acquisitionPipeline{
+		ctx:        cancelled,
+		item:       item,
+		candidates: []SearchResult{{Username: "peer", Filename: "music/a.mp3", Size: 30_000_000}},
+	}
+
+	_, err := handler.stageDownloadFile(p)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled, "the item must unwind rather than be failed for good")
+
+	_, statErr := os.Stat(file)
+	assert.NoError(t, statErr, "a cancelled probe must not delete the download")
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

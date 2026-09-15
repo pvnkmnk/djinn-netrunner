@@ -283,14 +283,18 @@ func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip
 // length, half the expected size is used as the floor so implausible files are
 // caught even for formats with no sensible default.
 func minPlausibleSize(bitrateKbps, lengthSec int) int64 {
-	floor := int64(256 << 10) // 256 KiB — shorter than any real track
+	// With both figures present the metadata is authoritative: a short,
+	// low-bitrate track is legitimate and must not be rejected for being
+	// smaller than a fixed floor. Only when there is nothing to derive from does
+	// a conservative stand-in apply — 64 KiB, comfortably below any real track
+	// while still catching the few-kilobyte placeholders peers share.
+	const fallbackFloor = int64(64 << 10)
 	if lengthSec > 0 && lengthSec <= 6*60*60 && bitrateKbps > 0 {
-		expected := int64(lengthSec) * int64(bitrateKbps) * 1000 / 8
-		if half := expected / 2; half > floor {
-			floor = half
+		if expected := int64(lengthSec) * int64(bitrateKbps) * 1000 / 8; expected > 0 {
+			return expected / 2
 		}
 	}
-	return floor
+	return fallbackFloor
 }
 
 // candidateRejectionReason explains why a search result should not be downloaded,
@@ -449,11 +453,16 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 			continue
 		}
 
-		h.db.Model(&p.item).Updates(map[string]interface{}{
+		if updateErr := h.db.Model(&p.item).Updates(map[string]interface{}{
 			"status":            "downloading",
 			"slskd_search_id":   "completed",
 			"slskd_download_id": downloadID,
-		})
+		}).Error; updateErr != nil {
+			// The transfer is already queued, so this is not fatal — but a stale
+			// status or download id makes the item look idle in the UI and hides
+			// which transfer to cancel.
+			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Could not record the download on the item: %v", updateErr), &p.item.ID)
+		}
 
 		h.Log(p.item.JobID, "INFO", fmt.Sprintf("Download queued from %s (id: %s)", candidate.Username, downloadID), &p.item.ID)
 
@@ -466,13 +475,24 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 		}
 		download, err := h.slskd.WaitForDownload(p.ctx, candidate.Username, downloadID, waitOpts)
 		if err == nil {
-			if reason := h.rejectUnplayableDownload(p, candidate, download); reason != "" {
+			reason, fatalErr := h.rejectUnplayableDownload(p, candidate, download)
+			if fatalErr != nil {
+				return true, fatalErr
+			}
+			if reason != "" {
 				failures = append(failures, reason)
 				continue
 			}
 			h.Log(p.item.JobID, "OK", "Download completed", &p.item.ID)
 			p.download = download.LocalPath
 			return false, nil
+		}
+
+		// The transfer is still queued on this peer. Abandoning it here only
+		// helps if it can no longer start: left in place it may begin sending
+		// later, downloading a file nothing will import.
+		if cancelErr := h.slskd.CancelDownload(candidate.Username, downloadID); cancelErr != nil {
+			h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Could not cancel the transfer from %s: %v", candidate.Username, cancelErr), &p.item.ID)
 		}
 
 		if errors.Is(err, ErrRemoteQueueStalled) {
@@ -496,28 +516,34 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 // rather than an item failure, so a better peer can still satisfy the item.
 //
 // When ffprobe is unavailable the file is accepted and the gap is logged: an
-// unconfigured probe must not reject every download.
-func (h *AcquisitionHandler) rejectUnplayableDownload(p *acquisitionPipeline, candidate SearchResult, download *Download) string {
+// unconfigured probe must not reject every download. A cancellation is returned
+// as a fatal error instead of a rejection, so shutting the worker down cannot
+// delete a good download.
+func (h *AcquisitionHandler) rejectUnplayableDownload(p *acquisitionPipeline, candidate SearchResult, download *Download) (string, error) {
 	if h.ext == nil || download == nil || download.LocalPath == "" {
-		return ""
+		return "", nil
 	}
 
 	result, err := h.ext.ProbeAudio(p.ctx, download.LocalPath)
-	if errors.Is(err, ErrProbeUnavailable) {
+	switch {
+	case err == nil:
+		h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Validated %s (%s, %s, %s)", filepath.Base(download.LocalPath), result.FormatName, humanBytes(result.SizeBytes), result.Duration), &p.item.ID)
+		return "", nil
+	case errors.Is(err, ErrProbeUnavailable):
 		h.Log(p.item.JobID, "WARN", fmt.Sprintf("Cannot validate %s — importing without an ffprobe check (%v)", filepath.Base(download.LocalPath), err), &p.item.ID)
-		return ""
-	}
-	if err != nil {
-		// Drop it so a bad file cannot be imported later or linger in staging.
-		if rmErr := os.Remove(download.LocalPath); rmErr != nil && !os.IsNotExist(rmErr) {
-			h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Could not remove rejected file: %v", rmErr), &p.item.ID)
-		}
-		h.Log(p.item.JobID, "WARN", fmt.Sprintf("%s delivered an unplayable file — rejected: %v", candidate.Username, err), &p.item.ID)
-		return fmt.Sprintf("%s: unplayable file: %v", candidate.Username, err)
+		return "", nil
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// The job is going away, not the file. Keep the download and let the
+		// caller unwind so a shutdown cannot delete valid audio.
+		return "", fmt.Errorf("probing %s: %w", filepath.Base(download.LocalPath), err)
 	}
 
-	h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Validated %s (%s, %s, %s)", filepath.Base(download.LocalPath), result.FormatName, humanBytes(result.SizeBytes), result.Duration), &p.item.ID)
-	return ""
+	// Drop it so a bad file cannot be imported later or linger in staging.
+	if rmErr := os.Remove(download.LocalPath); rmErr != nil && !os.IsNotExist(rmErr) {
+		h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Could not remove rejected file: %v", rmErr), &p.item.ID)
+	}
+	h.Log(p.item.JobID, "WARN", fmt.Sprintf("%s delivered an unplayable file — rejected: %v", candidate.Username, err), &p.item.ID)
+	return fmt.Sprintf("%s: unplayable file: %v", candidate.Username, err), nil
 }
 
 // stageImportAndEnrich imports the downloaded file and enriches metadata.

@@ -13,6 +13,7 @@ type SlskdClient interface {
 	Browse(username string) ([]PeerFile, error)
 	EnqueueDownload(username, filename string, size int64) (string, error)
 	WaitForDownload(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error)
+	CancelDownload(username, downloadID string) error
 }
 
 // DownloadWaitOptions configures a single WaitForDownload call.

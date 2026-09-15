@@ -359,12 +359,17 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 		Albums int64  `gorm:"column:albums"`
 	}
 	if len(artistNames) > 0 {
-		h.db.Table("tracks").
+		// The same non-empty album predicate artistAlbums uses, or an artist
+		// with untagged tracks reports one album more than getArtist returns.
+		if err := h.db.Table("tracks").
 			Joins("JOIN libraries ON libraries.id = tracks.library_id").
 			Where("libraries.owner_user_id = ?", user.ID).
+			Where("album <> ''").
 			Select("artist, COUNT(DISTINCT album) as albums").
 			Group("artist").
-			Find(&artistAlbumCounts)
+			Find(&artistAlbumCounts).Error; err != nil {
+			return h.respondError(c, 50, "Internal server error")
+		}
 	}
 
 	albumCountMap := make(map[string]int64, len(artistAlbumCounts))
@@ -414,15 +419,8 @@ func (h *SubsonicHandler) GetMusicDirectory(c *fiber.Ctx) error {
 		directory, err = h.getArtistDirectory(user, name)
 	} else if strings.HasPrefix(id, "album-") {
 		// Album directory
-		parts := strings.SplitN(strings.TrimPrefix(id, "album-"), "-", 2)
-		if len(parts) != 2 {
-			return h.respondError(c, 10, "Invalid album ID")
-		}
-		encodedName := parts[0]
-		encodedArtist := parts[1]
-		name, err1 := url.PathUnescape(encodedName)
-		artist, err2 := url.PathUnescape(encodedArtist)
-		if err1 != nil || err2 != nil {
+		name, artist, ok := parseAlbumID(id)
+		if !ok {
 			return h.respondError(c, 10, "Invalid album ID")
 		}
 		directory, err = h.getAlbumDirectory(user, name, artist)
@@ -473,7 +471,7 @@ func (h *SubsonicHandler) getArtistDirectory(user database.User, artistName stri
 	// Add albums as children
 	for _, album := range albums {
 		child := subsonicSong{
-			ID:     "album-" + url.PathEscape(album.Name) + "-" + url.PathEscape(album.Artist),
+			ID:     albumID(album.Name, album.Artist),
 			Title:  album.Name,
 			Artist: album.Artist,
 			Album:  album.Name,
@@ -501,7 +499,7 @@ func (h *SubsonicHandler) getAlbumDirectory(user database.User, albumName, artis
 
 	// Create directory entry
 	directory := musicDirectory{
-		ID:   "album-" + url.PathEscape(albumName) + "-" + url.PathEscape(artistName),
+		ID:   albumID(albumName, artistName),
 		Name: albumName,
 	}
 
@@ -658,28 +656,20 @@ func (h *SubsonicHandler) GetAlbum(c *fiber.Ctx) error {
 		return h.respondError(c, 10, "Missing parameter: id")
 	}
 
-	// Parse album ID (format: album-{name}-{artist})
-	if !strings.HasPrefix(id, "album-") {
+	// Parse album ID (format: album-{name}/{artist})
+	albumName, artistName, ok := parseAlbumID(id)
+	if !ok {
 		return h.respondError(c, 10, "Invalid album ID format")
 	}
 
-	parts := strings.SplitN(strings.TrimPrefix(id, "album-"), "-", 2)
-	if len(parts) != 2 {
-		return h.respondError(c, 10, "Invalid album ID")
-	}
-
-	albumName, err1 := url.PathUnescape(parts[0])
-	artistName, err2 := url.PathUnescape(parts[1])
-	if err1 != nil || err2 != nil {
-		return h.respondError(c, 10, "Invalid album ID")
-	}
-
 	var tracks []database.Track
-	h.db.Table("tracks").
+	if err := h.db.Table("tracks").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
 		Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, albumName, artistName).
 		Order("track_num").
-		Find(&tracks)
+		Find(&tracks).Error; err != nil {
+		return h.respondError(c, 50, "Internal server error")
+	}
 
 	if len(tracks) == 0 {
 		return h.respondError(c, 70, "Album not found")
@@ -696,7 +686,7 @@ func (h *SubsonicHandler) GetAlbum(c *fiber.Ctx) error {
 		ID:        id,
 		Name:      albumName,
 		Artist:    artistName,
-		ArtistID:  "",
+		ArtistID:  albumArtistID(artistName),
 		SongCount: len(tracks),
 		Year:      safeDeref(tracks[0].Year),
 		Genre:     tracks[0].Genre,
@@ -719,6 +709,37 @@ func (h *SubsonicHandler) GetAlbum(c *fiber.Ctx) error {
 // an empty id leaves a client unable to open the artist it just listed.
 func artistID(name string) string {
 	return "artist-" + url.PathEscape(name)
+}
+
+// albumID builds the stable id for an album. The separator is "/" because
+// url.PathEscape escapes that character inside the components themselves, so an
+// album or artist containing "-" cannot be mistaken for the boundary. Joining
+// with "-" did exactly that: the album "Live-Set" by "Artist" produced
+// "album-Live-Set-Artist", which parsed back as album "Live" and artist
+// "Set-Artist", sending getAlbum and getMusicDirectory to the wrong place.
+func albumID(album, artist string) string {
+	return "album-" + url.PathEscape(album) + "/" + url.PathEscape(artist)
+}
+
+// parseAlbumID is the inverse of albumID.
+func parseAlbumID(id string) (album, artist string, ok bool) {
+	rest, found := strings.CutPrefix(id, "album-")
+	if !found {
+		return "", "", false
+	}
+	encodedAlbum, encodedArtist, found := strings.Cut(rest, "/")
+	if !found {
+		return "", "", false
+	}
+	album, err := url.PathUnescape(encodedAlbum)
+	if err != nil {
+		return "", "", false
+	}
+	artist, err = url.PathUnescape(encodedArtist)
+	if err != nil {
+		return "", "", false
+	}
+	return album, artist, true
 }
 
 // albumArtistID is artistID for an album's artist, tolerating an untagged one.
@@ -759,7 +780,7 @@ func (h *SubsonicHandler) artistAlbums(user database.User, artistName string) ([
 			First(&first)
 
 		albums = append(albums, subsonicAlbum{
-			ID:        "album-" + url.PathEscape(name) + "-" + url.PathEscape(artistName),
+			ID:        albumID(name, artistName),
 			Name:      name,
 			Artist:    artistName,
 			ArtistID:  artistID(artistName),
@@ -801,7 +822,18 @@ func (h *SubsonicHandler) GetArtist(c *fiber.Ctx) error {
 	if err != nil {
 		return h.respondError(c, 50, "Internal server error")
 	}
-	if len(albums) == 0 {
+
+	// An artist with tracks but no named album is still a real artist: only a
+	// name that owns no tracks at all is "not found". Reporting error 70 for
+	// both would contradict getIndexes, which lists the artist.
+	var trackCount int64
+	if err := h.db.Table("tracks").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
+		Count(&trackCount).Error; err != nil {
+		return h.respondError(c, 50, "Internal server error")
+	}
+	if trackCount == 0 {
 		return h.respondError(c, 70, "Artist not found")
 	}
 
@@ -1168,11 +1200,14 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 		}
 
 		var albumCount int64
-		h.db.Table("tracks").
+		if err := h.db.Table("tracks").
 			Joins("JOIN libraries ON libraries.id = tracks.library_id").
 			Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
+			Where("album <> ''").
 			Select("COUNT(DISTINCT album)").
-			Scan(&albumCount)
+			Scan(&albumCount).Error; err != nil {
+			return h.respondError(c, 50, "Internal server error")
+		}
 
 		searchResult.Artist = append(searchResult.Artist, subsonicArtist{
 			ID:         artistID(artistName),
@@ -1198,7 +1233,7 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 			First(&firstTrack)
 
 		searchResult.Album = append(searchResult.Album, subsonicAlbum{
-			ID:        "album-" + url.PathEscape(album.Album) + "-" + url.PathEscape(album.Artist),
+			ID:        albumID(album.Album, album.Artist),
 			Name:      album.Album,
 			Artist:    album.Artist,
 			ArtistID:  albumArtistID(album.Artist),
@@ -1307,7 +1342,7 @@ func (h *SubsonicHandler) GetAlbumList2(c *fiber.Ctx) error {
 
 	for _, row := range rows {
 		albumList.Album = append(albumList.Album, subsonicAlbum{
-			ID:        "album-" + url.PathEscape(row.Album) + "-" + url.PathEscape(row.Artist),
+			ID:        albumID(row.Album, row.Artist),
 			Name:      row.Album,
 			Artist:    row.Artist,
 			ArtistID:  "",

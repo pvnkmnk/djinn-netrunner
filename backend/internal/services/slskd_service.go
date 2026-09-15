@@ -644,6 +644,33 @@ func (s *SlskdService) GetDownload(username, downloadID string) (*Download, erro
 	return &d, nil
 }
 
+// CancelDownload removes a transfer from slskd's queue. The pipeline calls this
+// when it abandons a peer: a transfer left queued can still start sending later,
+// downloading a file nothing will import while consuming bandwidth and space in
+// the shared staging volume.
+func (s *SlskdService) CancelDownload(username, downloadID string) error {
+	if downloadID == "" {
+		return nil
+	}
+	u := fmt.Sprintf("%s/api/v0/transfers/downloads/%s/%s",
+		s.cfg.SlskdURL, url.PathEscape(username), downloadID)
+
+	req, _ := http.NewRequest("DELETE", u, nil)
+	req.Header.Set("X-API-Key", s.cfg.SlskdAPIKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// 404 means slskd already forgot it, which is the state we wanted.
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return fmt.Errorf("slskd cancel download failed: %s", resp.Status)
+}
+
 // resolveDownloadPath constructs the local filesystem path where slskd stores
 // a completed download. slskd saves files at:
 //

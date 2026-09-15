@@ -174,6 +174,135 @@ func TestSubsonic_GetArtist_ReturnsTopLevelArtistWithAlbums(t *testing.T) {
 		"the artist belongs at the top level; an index wrapper is not the getArtist contract")
 }
 
+// An artist's tracks are not all necessarily inside a named album. The album
+// count and getArtist must agree about that: counting `album = ”` as an album
+// reports one more album than getArtist can return, and treating an artist whose
+// only tracks are untagged as "not found" contradicts getIndexes, which lists it.
+func TestSubsonic_AlbumCountsMatchGetArtistForUntaggedTracks(t *testing.T) {
+	db, handler := setupSubsonicDBHandlerTest(t)
+	createBrowseTestTracks(t, db, "Mix Artist", "Named Album", 1)
+	createUntaggedAlbumTrack(t, db, "Mix Artist")
+
+	app := fiber.New()
+	app.Get("/getIndexes", handler.AuthMiddleware, handler.GetIndexes)
+	app.Get("/getArtist", handler.AuthMiddleware, handler.GetArtist)
+
+	idxResp, err := app.Test(httptest.NewRequest("GET", "/getIndexes?f=json&u=test@example.com&p=testpass123", nil))
+	require.NoError(t, err)
+
+	var parsed browseIndexResponse
+	require.NoError(t, json.NewDecoder(idxResp.Body).Decode(&parsed))
+
+	counts := map[string]int{}
+	for _, idx := range parsed.SubsonicResponse.Indexes.Index {
+		for _, artist := range idx.Artist {
+			counts[artist.Name] = artist.AlbumCount
+		}
+	}
+	require.Contains(t, counts, "Mix Artist", "the artist must still be listed")
+	assert.Equal(t, 1, counts["Mix Artist"],
+		"an untagged track is not an album, so the count must match what getArtist returns")
+
+	artistResp, err := app.Test(httptest.NewRequest("GET",
+		"/getArtist?id="+url.QueryEscape(artistID("Mix Artist"))+"&u=test@example.com&p=testpass123", nil))
+	require.NoError(t, err)
+	body := string(subsonicGetRespBody(artistResp))
+	assert.Contains(t, body, "Mix Artist", "an artist that owns tracks must be returned")
+	assert.NotContains(t, body, "Artist not found")
+}
+
+// An artist whose only tracks carry no album tag is still a real artist, so
+// getArtist must answer rather than returning error 70.
+func TestSubsonic_GetArtist_WithOnlyUntaggedTracksIsNotEmpty(t *testing.T) {
+	db, handler := setupSubsonicDBHandlerTest(t)
+	createUntaggedAlbumTrack(t, db, "Untagged Only")
+
+	app := fiber.New()
+	app.Get("/getArtist", handler.AuthMiddleware, handler.GetArtist)
+
+	resp, err := app.Test(httptest.NewRequest("GET",
+		"/getArtist?id="+url.QueryEscape(artistID("Untagged Only"))+"&u=test@example.com&p=testpass123", nil))
+	require.NoError(t, err)
+
+	body := string(subsonicGetRespBody(resp))
+	assert.Contains(t, body, "Untagged Only")
+	assert.NotContains(t, body, "Artist not found")
+}
+
+// getAlbum must hand back the artist's id too, or a client that navigated
+// artist -> album has no way back to the artist.
+func TestSubsonic_GetAlbum_ReturnsResolvableArtistID(t *testing.T) {
+	db, handler := setupSubsonicDBHandlerTest(t)
+	createBrowseTestTracks(t, db, "Test Artist", "Test Album", 2)
+	createBrowseTestTracks(t, db, "Test Artist", "Live-Set", 1)
+
+	app := fiber.New()
+	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
+
+	follow := func(album, artist string) string {
+		t.Helper()
+		resp, err := app.Test(httptest.NewRequest("GET",
+			"/getAlbum?id="+url.QueryEscape(albumID(album, artist))+"&u=test@example.com&p=testpass123", nil))
+		require.NoError(t, err)
+		return string(subsonicGetRespBody(resp))
+	}
+
+	body := follow("Test Album", "Test Artist")
+	assert.Contains(t, body, "artistId=\""+artistID("Test Artist")+"\"",
+		"an album with no artistId leaves a client unable to open its artist")
+
+	// A hyphenated album name has to survive the id round trip end to end: the
+	// old "album-{name}-{artist}" form split "Live-Set" into album "Live" and
+	// artist "Set-Test Artist", so this request used to miss the album entirely.
+	hyphenated := follow("Live-Set", "Test Artist")
+	assert.Contains(t, hyphenated, "Live-Set")
+	assert.NotContains(t, hyphenated, "Album not found")
+}
+
+// A hyphen in an album or artist name must survive the id round trip. The older
+// "album-{name}-{artist}" form parsed the album "Live-Set" by "Artist" back as
+// album "Live" and artist "Set-Artist", sending getAlbum and
+// getMusicDirectory to the wrong place.
+func TestAlbumID_RoundTripsNamesContainingHyphens(t *testing.T) {
+	for _, tc := range []struct{ album, artist string }{
+		{"Live-Set", "Artist"},
+		{"A-B-C", "X-Y"},
+		{"Morbid Stuff", "PUP"},
+		{"Album / Weird", "\u00c1rtist & Co"},
+		{"", ""},
+	} {
+		album, artist, ok := parseAlbumID(albumID(tc.album, tc.artist))
+		require.True(t, ok, "id must parse back: %q", albumID(tc.album, tc.artist))
+		assert.Equal(t, tc.album, album, "album round-trip")
+		assert.Equal(t, tc.artist, artist, "artist round-trip")
+	}
+
+	for _, bad := range []string{"", "album-", "album-onlyalbum", "artist-someone"} {
+		_, _, ok := parseAlbumID(bad)
+		assert.False(t, ok, "%q must not parse as an album id", bad)
+	}
+}
+
+// createUntaggedAlbumTrack adds a track with no album tag to the first library.
+func createUntaggedAlbumTrack(t *testing.T, db *gorm.DB, artist string) {
+	t.Helper()
+
+	var library database.Library
+	require.NoError(t, db.First(&library).Error)
+
+	track := database.Track{
+		ID:        uuid.New(),
+		Title:     "Untagged",
+		Artist:    artist,
+		Album:     "",
+		Path:      fmt.Sprintf("/tmp/test-library/%s/untagged.mp3", strings.ReplaceAll(artist, " ", "-")),
+		LibraryID: library.ID,
+		Format:    "MP3",
+		FileSize:  1024000,
+	}
+	require.NoError(t, db.Create(&track).Error)
+}
+
 // createBrowseTestTracks adds n tagged tracks to the first library.
 func createBrowseTestTracks(t *testing.T, db *gorm.DB, artist, album string, n int) {
 	t.Helper()
