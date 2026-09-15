@@ -435,9 +435,13 @@ type MergeMove struct {
 
 // rowMove pairs a Track row with its planned file operation (move or
 // content-duplicate removal, marked by To == "DELETE").
+//
+// A sidecar file (lyrics, artwork) has no Track row of its own, so sidecar
+// moves carry a zero Track and are applied without touching the database.
 type rowMove struct {
-	track database.Track
-	move  MergeMove
+	track   database.Track
+	move    MergeMove
+	sidecar bool
 }
 
 // MergeReport describes what a merge did (or would do, when DryRun).
@@ -606,6 +610,7 @@ func mergeFolders(db *gorm.DB, root string, report *MergeReport, dryRun bool, se
 			if same {
 				report.RemovedFiles = append(report.RemovedFiles, t.Path)
 				rowMoves = append(rowMoves, rowMove{track: t, move: MergeMove{From: t.Path, To: "DELETE"}})
+				rowMoves = planSidecarMoves(t.Path, filepath.Dir(dest), report, rowMoves)
 			} else {
 				report.Conflicts = append(report.Conflicts,
 					fmt.Sprintf("%s collides with %s (different content); left in place", t.Path, dest))
@@ -623,6 +628,7 @@ func mergeFolders(db *gorm.DB, root string, report *MergeReport, dryRun bool, se
 		destRows[dest] = true
 		rowMoves = append(rowMoves, rowMove{track: t, move: MergeMove{From: t.Path, To: dest}})
 		report.Moved = append(report.Moved, MergeMove{From: t.Path, To: dest})
+		rowMoves = planSidecarMoves(t.Path, filepath.Dir(dest), report, rowMoves)
 	}
 
 	if dryRun {
@@ -637,6 +643,9 @@ func mergeFolders(db *gorm.DB, root string, report *MergeReport, dryRun bool, se
 				report.Errors = append(report.Errors, fmt.Sprintf("%s: remove failed: %v", rm.move.From, err))
 				continue
 			}
+			if rm.sidecar {
+				continue // a sidecar has no Track row to delete
+			}
 			if err := db.Delete(&database.Track{}, "id = ?", rm.track.ID).Error; err != nil {
 				report.Errors = append(report.Errors, fmt.Sprintf("%s: track row delete failed: %v", rm.move.From, err))
 			}
@@ -650,6 +659,9 @@ func mergeFolders(db *gorm.DB, root string, report *MergeReport, dryRun bool, se
 			report.Errors = append(report.Errors, fmt.Sprintf("%s → %s: move failed: %v", rm.move.From, rm.move.To, err))
 			continue
 		}
+		if rm.sidecar {
+			continue // a sidecar has no Track row to rewrite
+		}
 		if err := db.Model(&database.Track{}).Where("id = ?", rm.track.ID).Update("path", rm.move.To).Error; err != nil {
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: track row update failed: %v", rm.move.To, err))
 		}
@@ -657,6 +669,75 @@ func mergeFolders(db *gorm.DB, root string, report *MergeReport, dryRun bool, se
 
 	applyRemoveSourceDirs(report, rowMoves, root)
 	return report, nil
+}
+
+// siblingSidecars returns the non-audio files sitting next to a track that
+// belong to it. Lyrics and artwork sidecars share the track's base name and
+// differ only by extension ("12 - Title.mp3" beside "12 - Title.lrc").
+//
+// Requiring a dot immediately after the stem deliberately excludes other tracks
+// that merely start with the same characters ("12 - Title (live).mp3"), which
+// are separate items with their own rows.
+func siblingSidecars(trackPath string) []string {
+	dir := filepath.Dir(trackPath)
+	base := filepath.Base(trackPath)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	if stem == "" {
+		return nil
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(dir, e.Name())
+		// The track's own extension also starts with a dot, so without this the
+		// track matches itself and the merge plans to move it onto itself.
+		if candidate == trackPath {
+			continue
+		}
+		if !strings.HasPrefix(e.Name(), stem) {
+			continue
+		}
+		if rest := strings.TrimPrefix(e.Name(), stem); !strings.HasPrefix(rest, ".") || rest == "." {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// planSidecarMoves appends the moves for a track's sidecar files so they follow
+// it into the canonical folder.
+//
+// Without this the audio is relocated but its sidecar is not, so the source
+// directory is never emptied and the repair leaves a skeleton folder behind —
+// observed live: PUP/The Unraveling Of Puptheband kept an orphaned .lrc after
+// its only track moved, and the merge reported "dirs removed: 0" while the
+// split it had just repaired was still half present on disk.
+//
+// A sidecar whose destination already exists is a duplicate (the canonical
+// folder was imported with the same lyrics), so the source copy is removed
+// instead of moved.
+func planSidecarMoves(srcPath, destDir string, report *MergeReport, rowMoves []rowMove) []rowMove {
+	for _, src := range siblingSidecars(srcPath) {
+		dest := filepath.Join(destDir, filepath.Base(src))
+		if _, err := os.Stat(dest); err == nil {
+			report.RemovedFiles = append(report.RemovedFiles, src)
+			rowMoves = append(rowMoves, rowMove{move: MergeMove{From: src, To: "DELETE"}, sidecar: true})
+			continue
+		}
+		rowMoves = append(rowMoves, rowMove{move: MergeMove{From: src, To: dest}, sidecar: true})
+		report.Moved = append(report.Moved, MergeMove{From: src, To: dest})
+	}
+	return rowMoves
 }
 
 // sourceDirsOf returns the distinct album directories (artist/album, depth 2

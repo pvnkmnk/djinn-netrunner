@@ -215,6 +215,78 @@ func TestMergeAlbumFolders_ReachesCaseVariantAlbum(t *testing.T) {
 	assert.Empty(t, found, "the repaired library should be clean")
 }
 
+// A track's lyrics sidecar must follow it. Observed live: the only track of
+// PUP/The Unraveling Of Puptheband moved to the canonical folder but its .lrc
+// stayed behind, so the source directory was never emptied and the repair left
+// a skeleton folder — "dirs removed: 0" on a merge that had just succeeded.
+// siblingSidecars must match a track's own lyric/art sidecars and nothing else.
+// The dangerous over-match is another track that merely starts with the same
+// characters — that is a separate item with its own row and must not be swept
+// along.
+func TestSiblingSidecars_MatchesOnlySameStemNonAudio(t *testing.T) {
+	dir := t.TempDir()
+	audio := filepath.Join(dir, "12 - Title.mp3")
+	for name := range map[string]bool{
+		"12 - Title.mp3":         true,
+		"12 - Title.lrc":         true,
+		"12 - Title.jpg":         true,
+		"12 - Title (live).mp3":  true,
+		"12 - Title (live).lrc":  true,
+		"12 - Different Song.mp3": true,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644))
+	}
+
+	got := siblingSidecars(audio)
+	var bases []string
+	for _, p := range got {
+		bases = append(bases, filepath.Base(p))
+	}
+
+	assert.Equal(t, []string{"12 - Title.jpg", "12 - Title.lrc"}, bases,
+		"only same-stem non-audio files are sidecars")
+}
+
+// Observed live: the only track of PUP/The Unraveling Of Puptheband moved to the
+// canonical folder but its .lrc stayed behind, so the source directory was
+// never emptied and the repair left a skeleton folder — "dirs removed: 0" on a
+// merge that had just succeeded.
+func TestMergeAlbumFolders_MovesLyricsSidecarWithItsTrack(t *testing.T) {
+	if !caseSensitiveFS(t) {
+		t.Skip("a case-variant folder is the same directory here; the repair is only observable where the split exists")
+	}
+	db := repairTestDB(t)
+	root := t.TempDir()
+	lib := &database.Library{Name: "Music", Path: root}
+	require.NoError(t, db.Create(lib).Error)
+
+	variant := filepath.Join(root, "PUP", "The Unraveling Of Puptheband")
+	require.NoError(t, os.MkdirAll(variant, 0o755))
+	audio := filepath.Join(variant, "12 - PUPTHEBAND Inc. Is Filing For Bankruptcy.mp3")
+	lyrics := filepath.Join(variant, "12 - PUPTHEBAND Inc. Is Filing For Bankruptcy.lrc")
+	require.NoError(t, os.WriteFile(audio, []byte("audio"), 0o644))
+	require.NoError(t, os.WriteFile(lyrics, []byte("[00:01.00] lyric"), 0o644))
+	require.NoError(t, db.Create(&database.Track{LibraryID: lib.ID, Title: "T", Path: audio}).Error)
+
+	report, err := MergeAlbumFolders(db, root, "The Unraveling of Puptheband", "PUP", false)
+	require.NoError(t, err)
+	assert.Empty(t, report.Errors)
+
+	canonical := filepath.Join(root, "PUP", "The Unraveling of Puptheband")
+	_, err = os.Stat(filepath.Join(canonical, filepath.Base(audio)))
+	require.NoError(t, err, "the audio must move")
+	_, err = os.Stat(filepath.Join(canonical, filepath.Base(lyrics)))
+	require.NoError(t, err, "the lyrics sidecar must follow its track")
+
+	_, err = os.Stat(variant)
+	assert.True(t, os.IsNotExist(err), "the emptied source directory must be swept")
+
+	// The sidecar has no Track row, so no row may be lost or duplicated.
+	var rows int64
+	db.Model(&database.Track{}).Count(&rows)
+	assert.Equal(t, int64(1), rows)
+}
+
 func TestMergeArtistFolders_MergesCaseVariantArtist(t *testing.T) {
 	if !caseSensitiveFS(t) {
 		t.Skip("a case-variant folder is the same directory here; the repair is only observable where the split exists")
