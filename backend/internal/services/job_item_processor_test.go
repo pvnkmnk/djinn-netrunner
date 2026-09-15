@@ -303,3 +303,51 @@ func TestNewJobItemProcessor(t *testing.T) {
 	assert.Equal(t, db, processor.db)
 	assert.Nil(t, processor.acqHandler)
 }
+
+// A cancelled item is terminal. Counting it as pending made AcquisitionFinalState
+// promise "N/N items pending retry" for work nothing would ever retry.
+func TestAcquisitionFinalState_CancelledItemsAreTerminal(t *testing.T) {
+	db := setupJobItemTestDB(t)
+	job := database.Job{Type: "acquisition", State: "running", RequestedAt: time.Now()}
+	require.NoError(t, db.Create(&job).Error)
+
+	createJobItem(t, db, job.ID, "cancelled", 1)
+	createJobItem(t, db, job.ID, "cancelled", 2)
+
+	stats := acquisitionItemStats(db, job.ID)
+	assert.EqualValues(t, 2, stats.Cancelled)
+	assert.EqualValues(t, 0, stats.Pending, "cancelled items are terminal, not pending")
+
+	state, summary := AcquisitionFinalState(db, job.ID)
+	assert.Equal(t, "cancelled", state)
+	assert.NotContains(t, summary, "pending retry")
+}
+
+// A cancel is never reported as a success, however much was acquired first.
+func TestAcquisitionFinalState_CancelledWithImportsIsCancelled(t *testing.T) {
+	db := setupJobItemTestDB(t)
+	job := database.Job{Type: "acquisition", State: "running", RequestedAt: time.Now()}
+	require.NoError(t, db.Create(&job).Error)
+
+	createJobItem(t, db, job.ID, "imported", 1)
+	createJobItem(t, db, job.ID, "cancelled", 2)
+
+	state, summary := AcquisitionFinalState(db, job.ID)
+	assert.Equal(t, "cancelled", state)
+	assert.Contains(t, summary, "1/2", "the summary should still report what was acquired")
+}
+
+// Genuinely pending work still wins: cancelling some items must not hide the
+// items that are legitimately waiting on a retry.
+func TestAcquisitionFinalState_PendingOutranksCancelled(t *testing.T) {
+	db := setupJobItemTestDB(t)
+	job := database.Job{Type: "acquisition", State: "running", RequestedAt: time.Now()}
+	require.NoError(t, db.Create(&job).Error)
+
+	createJobItem(t, db, job.ID, "cancelled", 1)
+	createJobItem(t, db, job.ID, "queued", 2)
+
+	state, summary := AcquisitionFinalState(db, job.ID)
+	assert.Equal(t, "partial", state)
+	assert.Contains(t, summary, "pending retry")
+}

@@ -232,10 +232,13 @@ func CancelJob(db *gorm.DB, jobID uint64) error {
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("job %d not found or cannot be cancelled (must be queued or running)", jobID)
 	}
-	// Also cancel any pending job items
+	// Also cancel any pending job items. A 'failed' item with a retry scheduled
+	// counts as pending: the job is about to stop, so that attempt will never
+	// run and leaving it scheduled would misreport the item in the jobs UI.
 	db.Model(&database.JobItem{}).
-		Where("job_id = ? AND status IN ?", jobID, []string{"queued", "running"}).
-		Update("status", "cancelled")
+		Where("job_id = ? AND (status IN ? OR (status = ? AND next_attempt_at IS NOT NULL))",
+			jobID, []string{"queued", "running", "downloading"}, "failed").
+		Updates(map[string]interface{}{"status": "cancelled", "next_attempt_at": nil})
 	return nil
 }
 

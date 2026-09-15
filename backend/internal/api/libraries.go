@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"os"
@@ -131,10 +132,36 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	cleanPath := filepath.Clean(input.Path)
+
+	// Library.Path carries a unique index, so a second library on the same path
+	// previously failed the insert and surfaced as a bare 500 — the bring-up
+	// instructions worked around it by editing owner_user_id in Postgres by hand.
+	// Resolve the collision here instead: idempotent for the same owner, an
+	// explicit conflict (with the existing row) for anyone else.
+	var existing database.Library
+	switch err := h.db.Where("path = ?", cleanPath).First(&existing).Error; {
+	case err == nil:
+		if existing.OwnerUserID != nil && *existing.OwnerUserID == user.ID {
+			return c.Status(200).JSON(existing)
+		}
+		return c.Status(409).JSON(fiber.Map{
+			"error": "a library already exists at this path",
+			"existing_library": fiber.Map{
+				"id":            existing.ID,
+				"name":          existing.Name,
+				"path":          existing.Path,
+				"owner_user_id": existing.OwnerUserID,
+			},
+		})
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return internalServerError(c, err)
+	}
+
 	library := database.Library{
 		ID:          uuid.New(),
 		Name:        input.Name,
-		Path:        filepath.Clean(input.Path),
+		Path:        cleanPath,
 		OwnerUserID: &user.ID,
 	}
 
