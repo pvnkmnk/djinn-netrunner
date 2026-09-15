@@ -114,7 +114,7 @@ All three were reproduced on the live stack, fixed, and re-verified (rows 30–3
 
 ## Open findings (not blocking)
 
-0. **Case-only differences split an album or artist across folders.** A full PUP
+0. **OPEN (DJI-489) — case-only differences split an album or artist across folders.** A full PUP
    acquisition produced both `/app/music/PUP/Who Will Look After The Dogs/` and
    `/app/music/PUP/Who Will Look After the Dogs/`, plus `/app/music/Pup/` beside
    `/app/music/PUP/` for the same artist. Peers tag the same album with different
@@ -122,22 +122,24 @@ All three were reproduced on the live stack, fixed, and re-verified (rows 30–3
    the album fragments exactly as it did with per-track credits. Folder and
    comparison logic needs case-insensitive folding (or a canonical form) rather
    than the raw tag.
-0b. **Staging keeps non-empty leftovers.** 54 directories remained under
+0b. **OPEN (DJI-490) — staging keeps non-empty leftovers.** 54 directories remained under
    `/app/downloads` after the run, 13 of them non-empty. `cleanupEmptyStagingDirs`
    only removes directories that are already empty, so anything left by an item
    that ended as `abandoned`, `completed (duplicate album)` or `failed (no
    results)` — or by a cancelled transfer — stays on disk indefinitely. Row 27
    recorded the sweep as clean at a moment when no such item had yet run.
 
-1. **A duplicate library path returns 500.** `POST /api/libraries` with an
+1. **RESOLVED — see *Clean-slate bring-up* finding 1.** A duplicate library path used to return 500. `POST /api/libraries` with an
    existing path surfaces the `idx_libraries_path` violation as
    `internal server error` rather than a 409 with a readable message.
-2. **The worker runs several acquisition jobs concurrently.** Three jobs
+2. **BY DESIGN** — see *Clean-slate bring-up*: the worker runs up to `MaxConcurrentJobs`
+   acquisitions at once. A stalled peer blocks its own item, not the queue. Three jobs
    (`10`, `68`, `76`) were observed in `running` state with items downloading at
    the same time under one `worker_id`, so a stalled peer blocks its own item but
    not the whole queue. The earlier note that the worker runs one job at a time
    no longer describes this build; the concurrency limit should be made explicit.
-3. **There is no job-cancel endpoint.** A long acquisition cannot be stopped
+3. **RESOLVED — see *Clean-slate bring-up* findings 2-5.** The endpoint existed but no
+   running worker honoured it, and manual SQL was the only way to stop a job. A long acquisition cannot be stopped
    through the API; the local stack was cleared by editing item rows directly.
 
 ## Related fixes landed with this record
@@ -188,6 +190,7 @@ docker compose -f docker-compose.yml -f docker-compose.beta.yml --profile media-
 docker volume ls | grep netrunner     # ZERO
 
 git clone --branch docs/beta-clean-slate-bringup <repo> djinn-netrunner
+cd djinn-netrunner
 cp .env.beta.example .env             # then change every change_me_ value
 docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d --build
 ```

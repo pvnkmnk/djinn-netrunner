@@ -139,23 +139,12 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 	// instructions worked around it by editing owner_user_id in Postgres by hand.
 	// Resolve the collision here instead: idempotent for the same owner, an
 	// explicit conflict (with the existing row) for anyone else.
-	var existing database.Library
-	switch err := h.db.Where("path = ?", cleanPath).First(&existing).Error; {
-	case err == nil:
-		if existing.OwnerUserID != nil && *existing.OwnerUserID == user.ID {
-			return c.Status(200).JSON(existing)
-		}
-		return c.Status(409).JSON(fiber.Map{
-			"error": "a library already exists at this path",
-			"existing_library": fiber.Map{
-				"id":            existing.ID,
-				"name":          existing.Name,
-				"path":          existing.Path,
-				"owner_user_id": existing.OwnerUserID,
-			},
-		})
-	case !errors.Is(err, gorm.ErrRecordNotFound):
+	existing, found, err := h.libraryAtPath(cleanPath)
+	if err != nil {
 		return internalServerError(c, err)
+	}
+	if found {
+		return h.respondWithExistingLibrary(c, existing, user)
 	}
 
 	library := database.Library{
@@ -166,6 +155,12 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&library).Error; err != nil {
+		// The lookup above is not atomic with this insert, so a concurrent create
+		// can win the unique index. Resolve that the same way rather than
+		// reporting the constraint violation as an internal error.
+		if dup, dupFound, lookupErr := h.libraryAtPath(cleanPath); lookupErr == nil && dupFound {
+			return h.respondWithExistingLibrary(c, dup, user)
+		}
 		return internalServerError(c, err)
 	}
 
@@ -174,6 +169,43 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 		return h.RenderLibrariesPartial(c)
 	}
 	return c.Status(201).JSON(library)
+}
+
+// libraryAtPath returns the library registered at a path, if any.
+func (h *LibraryHandler) libraryAtPath(path string) (database.Library, bool, error) {
+	var existing database.Library
+	switch err := h.db.Where("path = ?", path).First(&existing).Error; {
+	case err == nil:
+		return existing, true, nil
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return database.Library{}, false, nil
+	default:
+		return database.Library{}, false, err
+	}
+}
+
+// respondWithExistingLibrary answers a create request for a path that is already
+// registered. It mirrors the success path's response shape — the HTMX partial
+// when the caller came from the UI, JSON otherwise — so a second submission
+// behaves like the first one did, instead of closing no modal and returning a
+// body the UI cannot swap.
+func (h *LibraryHandler) respondWithExistingLibrary(c *fiber.Ctx, existing database.Library, user database.User) error {
+	if existing.OwnerUserID != nil && *existing.OwnerUserID == user.ID {
+		c.Set("HX-Trigger", "closeModal")
+		if isHTMXRequest(c) {
+			return h.RenderLibrariesPartial(c)
+		}
+		return c.Status(200).JSON(existing)
+	}
+	return c.Status(409).JSON(fiber.Map{
+		"error": "a library already exists at this path",
+		"existing_library": fiber.Map{
+			"id":            existing.ID,
+			"name":          existing.Name,
+			"path":          existing.Path,
+			"owner_user_id": existing.OwnerUserID,
+		},
+	})
 }
 
 // UpdateLibrary updates an existing library

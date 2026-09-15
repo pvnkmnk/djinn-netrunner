@@ -223,23 +223,31 @@ func ListMonitoredArtists(db *gorm.DB) ([]database.MonitoredArtist, error) {
 
 // CancelJob cancels a queued or running job.
 func CancelJob(db *gorm.DB, jobID uint64) error {
-	result := db.Model(&database.Job{}).
-		Where("id = ? AND state IN ?", jobID, []string{"queued", "running"}).
-		Update("state", "cancelled")
-	if result.Error != nil {
-		return result.Error
+	// One transaction: the job state and its items move together, so a failure
+	// partway through rolls back rather than leaving a job cancelled while its
+	// items are still queued for a worker that will never be told to stop.
+	// (A 'failed' item with a retry scheduled counts as pending: the job is
+	// about to stop, so that attempt will never run, and leaving it scheduled
+	// would misreport the item in the jobs UI.)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&database.Job{}).
+			Where("id = ? AND state IN ?", jobID, []string{"queued", "running"}).
+			Update("state", "cancelled")
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("job %d not found or cannot be cancelled (must be queued or running)", jobID)
+		}
+		return tx.Model(&database.JobItem{}).
+			Where("job_id = ? AND (status IN ? OR (status = ? AND next_attempt_at IS NOT NULL))",
+				jobID, []string{"queued", "running", "downloading"}, "failed").
+			Updates(map[string]interface{}{"status": "cancelled", "next_attempt_at": nil}).Error
+	})
+	if err == nil {
+		return nil
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("job %d not found or cannot be cancelled (must be queued or running)", jobID)
-	}
-	// Also cancel any pending job items. A 'failed' item with a retry scheduled
-	// counts as pending: the job is about to stop, so that attempt will never
-	// run and leaving it scheduled would misreport the item in the jobs UI.
-	db.Model(&database.JobItem{}).
-		Where("job_id = ? AND (status IN ? OR (status = ? AND next_attempt_at IS NOT NULL))",
-			jobID, []string{"queued", "running", "downloading"}, "failed").
-		Updates(map[string]interface{}{"status": "cancelled", "next_attempt_at": nil})
-	return nil
+	return fmt.Errorf("cancelling job %d: %w", jobID, err)
 }
 
 // RetryJob retries a failed job by resetting its failed items to queued.

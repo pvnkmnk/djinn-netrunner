@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -455,4 +457,51 @@ func TestCreateLibrary_DuplicatePathUnownedConflicts(t *testing.T) {
 	resp, err := app.Test(req)
 	require.NoError(t, err)
 	assert.Equal(t, 409, resp.StatusCode, "a NULL owner must not be treated as this user's library")
+}
+
+// The duplicate-path answer has to match the success path's response shape. The
+// earlier version always returned JSON, so the UI submitted the form, got a body
+// it could not swap into the modal, and appeared to do nothing.
+func TestCreateLibrary_DuplicatePathHtmxReturnsPartial(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate(db))
+
+	user := database.User{Email: "htmx@example.com", PasswordHash: "hashed", Role: "admin"}
+	require.NoError(t, db.Create(&user).Error)
+
+	tmpDir, err := os.MkdirTemp("", "netrunner-lib-htmx-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+	clean := filepath.Clean(tmpDir)
+	require.NoError(t, db.Create(&database.Library{
+		Name: "Existing", Path: clean, OwnerUserID: &user.ID,
+	}).Error)
+
+	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
+	require.NoError(t, engine.LoadFromDir())
+	app := fiber.New(fiber.Config{Views: engine})
+	handler := NewLibraryHandler(db)
+	app.Post("/api/libraries", func(c *fiber.Ctx) error {
+		c.Locals("user", user)
+		return handler.CreateLibrary(c)
+	})
+
+	body, _ := json.Marshal(map[string]string{"name": "Again", "path": tmpDir})
+	req := httptest.NewRequest("POST", "/api/libraries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HX-Request", "true")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode, "a re-submission must not 500")
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), `"existing_library"`, "HTMX must get the partial, not the JSON conflict")
+	assert.Equal(t, "closeModal", resp.Header.Get("HX-Trigger"), "the modal still has to close")
+
+	var count int64
+	require.NoError(t, db.Model(&database.Library{}).Where("path = ?", clean).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
 }
