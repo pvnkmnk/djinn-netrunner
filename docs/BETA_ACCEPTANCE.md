@@ -426,3 +426,23 @@ and then failed auth. The overlay now interpolates `${POSTGRES_PASSWORD}`, and
 pins `ENVIRONMENT: development` so a developer's local `.env` (read by the base
 compose's `env_file`) cannot put the e2e stack into production mode.
 
+
+### First real run — 211 passed, 18 skipped, 2 failed
+
+    https://github.com/pvnkmnk/djinn-netrunner/actions/runs/34954793696
+    Run E2E suite   2 failed   18 skipped   211 passed (4.9m)
+
+Two specs failed, both stale assertions rather than app defects — which is what
+an unrun suite accumulates. Neither fix was applied to the app, and in one case
+it must not be.
+
+| Spec | Asserted | Why it was wrong | Fix |
+|---|---|---|---|
+| `auth.spec.ts` | `csrfCookie.httpOnly \|\| csrfCookie.secure` | The `csrf_` cookie is deliberately **not** `httpOnly`: the double-submit pattern requires the page to read it and echo it as `X-CSRF-Token` (`layouts/base.html`, `app.js`). Satisfying this assertion would have broken every state-changing request in the UI. `secure` is unreachable too — the suite runs over plain http, where a browser will not store a `Secure` cookie. | Assert `httpOnly === false` and `sameSite === 'Lax'`. |
+| `dashboard.spec.ts` | `body.checks.gonic` | `GetHealth` reports every check except `database` only when its dependency is configured. This stack runs no media server, so no `gonic` key — and the repo has since moved to Navidrome. The assertion encoded one deployment's shape. | Assert `database` plus the contract: every reported check carries a `status`, and at most one media server is reported. |
+
+Worth recording plainly: the CSRF assertion was the kind that gets "fixed" in the
+wrong direction. It reads as a hardening requirement, so the tempting response
+is to set `CookieHTTPOnly` on the CSRF middleware — which silently breaks the
+HTMX UI while turning the test green.
+
