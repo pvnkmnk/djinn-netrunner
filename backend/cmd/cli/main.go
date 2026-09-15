@@ -356,7 +356,7 @@ func libraryCmd() *cobra.Command {
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "detect-fragments [libraryID]",
-		Short: "Detect albums split across per-credit artist folders (legacy imports)",
+		Short: "Detect albums or artists split across legacy folders (credit and case variants)",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			var roots []database.Library
@@ -381,38 +381,69 @@ func libraryCmd() *cobra.Command {
 				roots = libs
 			}
 
-			var all []services.FragmentedAlbum
+			var albums []services.FragmentedAlbum
+			var artists []services.FragmentedArtist
 			for _, lib := range roots {
-				found, err := services.DetectFragmentedAlbums(db, lib.Path)
+				frags, err := services.DetectLibraryFragments(db, lib.Path)
 				if err != nil {
 					handleError(fmt.Errorf("library %s: %w", lib.Name, err))
 					return
 				}
-				all = append(all, found...)
+				albums = append(albums, frags.Albums...)
+				artists = append(artists, frags.Artists...)
 			}
 
 			if jsonOutput {
-				printJSON(all)
+				printJSON(services.LibraryFragments{Albums: albums, Artists: artists})
 				return
 			}
-			if len(all) == 0 {
-				fmt.Println("No fragmented albums found.")
+			if len(albums) == 0 && len(artists) == 0 {
+				fmt.Println("No fragmented albums or artists found.")
 				return
 			}
-			fmt.Printf("Found %d fragmented album(s):\n\n", len(all))
-			for _, g := range all {
-				fmt.Printf("%s — %d track(s) across %d folder(s)\n", g.Album, g.TrackCount, len(g.Folders))
-				for _, f := range g.Folders {
-					marker := "    "
-					if f.IsCanonical {
-						marker = " ==>" // suggested merge target
+
+			// Artist splits come first because their repair is broader: merging the
+			// artist folder moves every album under it, so it can subsume
+			// album-level splits it does not name.
+			if len(artists) > 0 {
+				fmt.Printf("Found %d artist(s) split across case-variant folders:\n\n", len(artists))
+				for _, a := range artists {
+					fmt.Printf("%s — %d track(s) across %d folder(s)\n", a.CanonicalFolder, a.TrackCount, len(a.Fragments))
+					for _, f := range a.Fragments {
+						marker := "    "
+						if f.IsCanonical {
+							marker = " ==>" // suggested merge target
+						}
+						fmt.Printf("%s %-45s (%d track(s))\n", marker, f.Folder, f.TrackCount)
 					}
-					fmt.Printf("%s %-45s (%d track(s))\n", marker, f.ArtistFolder, f.TrackCount)
+					fmt.Printf("    merge: netrunner-cli library merge-artist <libraryID> %q [--apply]\n\n",
+						a.CanonicalFolder)
 				}
-				fmt.Printf("    merge: netrunner-cli library merge-album <libraryID> %q %q [--apply]\n\n",
-					g.Album, g.CanonicalFolder)
 			}
-			fmt.Println("Review the plan, then run merge-album WITHOUT --apply first (dry run).")
+
+			if len(albums) > 0 {
+				fmt.Printf("Found %d fragmented album(s):\n\n", len(albums))
+				for _, g := range albums {
+					fmt.Printf("%s — %d track(s) across %d folder(s) [%s]\n",
+						g.Album, g.TrackCount, len(g.Folders), g.Kind)
+					for _, f := range g.Folders {
+						marker := "    "
+						if f.IsCanonical {
+							marker = " ==>" // suggested merge target
+						}
+						// Both segments: a case-only split differs in the album
+						// folder, so printing the artist alone is ambiguous.
+						fmt.Printf("%s %s / %s (%d track(s))\n", marker, f.ArtistFolder, f.AlbumFolder, f.TrackCount)
+					}
+					fmt.Printf("    merge: netrunner-cli library merge-album <libraryID> %q %q [--apply]\n\n",
+						g.CanonicalAlbum, g.CanonicalFolder)
+				}
+			}
+
+			fmt.Println("Review the plan, then run the merge WITHOUT --apply first (dry run).")
+			if len(artists) > 0 && len(albums) > 0 {
+				fmt.Println("Merge the artist splits first, then re-run detect-fragments before merging albums.")
+			}
 		},
 	})
 
@@ -442,36 +473,45 @@ func libraryCmd() *cobra.Command {
 			if jsonOutput {
 				printJSON(report)
 			} else {
-				mode := "DRY RUN (nothing changed; pass --apply to execute)"
-				if apply {
-					mode = "APPLIED"
-				}
-				fmt.Printf("Album %q → %s [%s]\n", report.Album, report.CanonicalDir, mode)
-				fmt.Printf("  moved: %d, duplicates removed: %d, dirs removed: %d, conflicts: %d, errors: %d\n\n",
-					len(report.Moved), len(report.RemovedFiles), len(report.RemovedDirs), len(report.Conflicts), len(report.Errors))
-				for _, m := range report.Moved {
-					fmt.Printf("  MOVE  %s\n    -> %s\n", m.From, m.To)
-				}
-				for _, f := range report.RemovedFiles {
-					fmt.Printf("  DEL   %s (identical copy exists at destination)\n", f)
-				}
-				for _, d := range report.RemovedDirs {
-					fmt.Printf("  RMDIR %s\n", d)
-				}
-				for _, c := range report.Conflicts {
-					fmt.Printf("  CONFLICT  %s\n", c)
-				}
-				for _, e := range report.Errors {
-					fmt.Printf("  ERROR %s\n", e)
-				}
-				if apply && len(report.Errors) == 0 {
-					fmt.Println("\nNext: trigger a Navidrome scan so the server re-indexes (ops/docs/library-dedup-runbook.md).")
-				}
+				printMergeReport(fmt.Sprintf("Album %q → %s", report.Album, report.CanonicalDir), report, apply)
 			}
 		},
 	}
 	mergeCmd.Flags().Bool("apply", false, "execute the merge (default is a dry run)")
 	cmd.AddCommand(mergeCmd)
+
+	mergeArtistCmd := &cobra.Command{
+		Use:   "merge-artist <libraryID> <canonicalArtistFolder>",
+		Short: "Merge an artist's case-variant folders into one (dry run unless --apply)",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid library UUID: %w", err))
+				return
+			}
+			var lib database.Library
+			if err := db.First(&lib, "id = ?", id).Error; err != nil {
+				handleError(fmt.Errorf("library not found: %w", err))
+				return
+			}
+
+			apply, _ := cmd.Flags().GetBool("apply")
+			report, err := services.MergeArtistFolders(db, lib.Path, args[1], !apply)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(report)
+			} else {
+				printMergeReport(fmt.Sprintf("Artist %q → %s", args[1], report.CanonicalDir), report, apply)
+			}
+		},
+	}
+	mergeArtistCmd.Flags().Bool("apply", false, "execute the merge (default is a dry run)")
+	cmd.AddCommand(mergeArtistCmd)
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "duplicates",
@@ -605,6 +645,37 @@ func statsCmd() *cobra.Command {
 func printJSON(v interface{}) {
 	data, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(data))
+}
+
+// printMergeReport renders a merge report for both the album and the artist
+// repair. Shared so one repair cannot drift from the other's output — the
+// operator reads these to decide whether to pass --apply.
+func printMergeReport(header string, report *services.MergeReport, apply bool) {
+	mode := "DRY RUN (nothing changed; pass --apply to execute)"
+	if apply {
+		mode = "APPLIED"
+	}
+	fmt.Printf("%s [%s]\n", header, mode)
+	fmt.Printf("  moved: %d, duplicates removed: %d, dirs removed: %d, conflicts: %d, errors: %d\n\n",
+		len(report.Moved), len(report.RemovedFiles), len(report.RemovedDirs), len(report.Conflicts), len(report.Errors))
+	for _, m := range report.Moved {
+		fmt.Printf("  MOVE  %s\n    -> %s\n", m.From, m.To)
+	}
+	for _, f := range report.RemovedFiles {
+		fmt.Printf("  DEL   %s (identical copy exists at destination)\n", f)
+	}
+	for _, d := range report.RemovedDirs {
+		fmt.Printf("  RMDIR %s\n", d)
+	}
+	for _, c := range report.Conflicts {
+		fmt.Printf("  CONFLICT  %s\n", c)
+	}
+	for _, e := range report.Errors {
+		fmt.Printf("  ERROR %s\n", e)
+	}
+	if apply && len(report.Errors) == 0 {
+		fmt.Println("\nNext: trigger a media-server scan so the server re-indexes (ops/docs/library-dedup-runbook.md).")
+	}
 }
 
 func profileCmd() *cobra.Command {
