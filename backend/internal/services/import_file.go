@@ -380,15 +380,11 @@ func (h *AcquisitionHandler) moveFile(src, dst string) (cleanupErr error, copyEr
 // and artist folders after their files are imported; without this sweep the
 // staging volume grows unbounded skeletons. Best-effort, depth-capped.
 func (h *AcquisitionHandler) cleanupEmptyStagingDirs(dir string, jobID uint64, itemID *uint64) {
-	stagingRoot := "./downloads"
-	if h.cfg != nil && h.cfg.DownloadStagingPath != "" {
-		stagingRoot = h.cfg.DownloadStagingPath
-	}
-	stagingRoot, err := filepath.Abs(filepath.Clean(stagingRoot))
+	root, err := filepath.Abs(filepath.Clean(stagingRoot(h.cfg)))
 	if err != nil {
 		return
 	}
-	// stagingRoot above is absolute, so dir has to be too: filepath.Rel returns
+	// root above is absolute, so dir has to be too: filepath.Rel returns
 	// an error for a mixed absolute/relative pair, and the containment check
 	// below would then bail out before removing anything. That is how this
 	// failed silently under the default relative "./downloads" staging path —
@@ -401,7 +397,7 @@ func (h *AcquisitionHandler) cleanupEmptyStagingDirs(dir string, jobID uint64, i
 	// are genuinely inside it (a real path-relationship check — not a string
 	// prefix, which would match sibling dirs like "./downloads-backup").
 	for i := 0; i < 4; i++ {
-		rel, relErr := filepath.Rel(stagingRoot, dir)
+		rel, relErr := filepath.Rel(root, dir)
 		if relErr != nil || rel == "." || strings.HasPrefix(rel, "..") {
 			return
 		}

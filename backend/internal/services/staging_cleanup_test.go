@@ -88,8 +88,12 @@ func TestDiscardStagedDownload_EmptyPathIsIgnored(t *testing.T) {
 	require.NotPanics(t, func() { h.discardStagedDownload("", 1, nil) })
 }
 
-// Never climb out of the staging root, even when handed a path outside it.
-func TestDiscardStagedDownload_LeavesDirsOutsideStagingRoot(t *testing.T) {
+// A path outside the staging root is refused *whole*: the file is not removed
+// either. Removing it and then failing the sweep would be a silent half-measure,
+// and the contract this owner exists to keep is "only ever touch files the
+// worker staged". The guard used to cover the directory sweep only, so the
+// removal itself trusted its caller — and the number of callers grew.
+func TestDiscardStagedDownload_RefusesPathOutsideStagingRoot(t *testing.T) {
 	staging := t.TempDir()
 	h := &AcquisitionHandler{cfg: cfgWithStaging(t, staging)}
 
@@ -101,9 +105,95 @@ func TestDiscardStagedDownload_LeavesDirsOutsideStagingRoot(t *testing.T) {
 	h.discardStagedDownload(file, 1, nil)
 
 	_, err := os.Stat(file)
-	assert.True(t, os.IsNotExist(err), "the file is still removed")
+	require.NoError(t, err, "a file outside the staging root must not be removed at all")
 	_, err = os.Stat(outside)
 	require.NoError(t, err, "a directory outside the staging root must not be removed")
+	_, err = os.Stat(staging)
+	require.NoError(t, err, "the staging root itself must survive")
+}
+
+// Containment is a path relationship, not a string prefix: a sibling whose name
+// merely begins with the staging root's is still outside it.
+func TestDiscardStagedDownload_RefusesSharedPrefixSibling(t *testing.T) {
+	staging := filepath.Join(t.TempDir(), "downloads")
+	require.NoError(t, os.MkdirAll(staging, 0o755))
+	h := &AcquisitionHandler{cfg: &config.Config{DownloadStagingPath: staging}}
+
+	sibling := filepath.Join(t.TempDir(), "downloads-backup", "Some Album")
+	require.NoError(t, os.MkdirAll(sibling, 0o755))
+	file := filepath.Join(sibling, "01 - track.m4a")
+	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
+
+	h.discardStagedDownload(file, 1, nil)
+
+	_, err := os.Stat(file)
+	require.NoError(t, err, "a sibling sharing the staging root's prefix must not be touched")
+}
+
+// The guard has to resolve the default relative root exactly the way the removal
+// does, or a stock deployment would refuse every legitimate discard. This is the
+// mixed absolute/relative trap that once made the sweep silently never run.
+func TestDiscardStagedDownload_DefaultRelativeRootStillDiscards(t *testing.T) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	// Not t.TempDir(): the process cwd parks here during the test, which makes
+	// Windows TempDir cleanup flaky. Best-effort manual cleanup instead.
+	tmp, err := os.MkdirTemp("", "discard-default")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.Chdir(wd)
+		_ = os.RemoveAll(tmp)
+	})
+	require.NoError(t, os.Chdir(tmp))
+
+	albumDir := filepath.Join(tmp, "downloads", "Some Artist", "Some Album")
+	require.NoError(t, os.MkdirAll(albumDir, 0o755))
+	file := filepath.Join(albumDir, "01 - track.m4a")
+	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
+
+	// An empty staging path is the default "./downloads" relative to the cwd.
+	h := &AcquisitionHandler{cfg: &config.Config{}}
+	h.discardStagedDownload(file, 1, nil)
+
+	_, statErr := os.Stat(file)
+	assert.True(t, os.IsNotExist(statErr),
+		"a file under the default staging root must still be discarded")
+	_, statErr = os.Stat(albumDir)
+	assert.True(t, os.IsNotExist(statErr), "the emptied album directory must be swept")
+	_, statErr = os.Stat(filepath.Join(tmp, "downloads"))
+	require.NoError(t, statErr, "the staging root itself must survive")
+}
+
+// A refusal is only safe if it is visible. Declining to clean up silently is
+// indistinguishable from "there was nothing to clean up", which would let a
+// misconfigured download directory hide until the disk filled.
+func TestDiscardStagedDownload_RefusalIsLogged(t *testing.T) {
+	db := stagingImportTestDB(t)
+	staging := t.TempDir()
+	h := NewAcquisitionHandler(db, cfgWithStaging(t, staging),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	_, item := createAcquisitionTestItem(t, db)
+
+	outside := filepath.Join(t.TempDir(), "Elsewhere")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	file := filepath.Join(outside, "01 - track.m4a")
+	require.NoError(t, os.WriteFile(file, []byte("audio"), 0o644))
+
+	h.discardStagedDownload(file, item.JobID, &item.ID)
+
+	logs := jobLogMessages(t, db, item.JobID)
+	assert.Contains(t, logs, "Refused to discard", "the refusal must reach the item's log")
+	assert.Contains(t, logs, file, "the refusal must name what it refused")
+}
+
+// One owner resolves the staging root, so the download path resolver, the yt-dlp
+// output directory and the sweep's containment check cannot disagree about where
+// staging is. A disagreement is what makes an unguarded removal destructive.
+func TestStagingRoot_IsTheSingleDefaultOwner(t *testing.T) {
+	require.Equal(t, "./downloads", stagingRoot(nil))
+	require.Equal(t, "./downloads", stagingRoot(&config.Config{}))
+	require.Equal(t, "./downloads", stagingRoot(&config.Config{DownloadStagingPath: ""}))
+	require.Equal(t, "/app/downloads", stagingRoot(&config.Config{DownloadStagingPath: "/app/downloads"}))
 }
 
 // Wiring: a peer that delivers an unplayable file has its bytes deleted, and the

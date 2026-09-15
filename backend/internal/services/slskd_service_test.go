@@ -516,6 +516,23 @@ func TestResolveDownloadPath(t *testing.T) {
 	}
 }
 
+// The root has one owner (stagingRoot), so this resolver cannot drift from the
+// sweep's containment check. It used to read DownloadStagingPath itself and treat
+// an unset value as "no root at all", while the other two callers fell back to
+// "./downloads" — the disagreement class that made an unguarded removal
+// destructive.
+func TestResolveDownloadPath_UsesSharedDefaultRoot(t *testing.T) {
+	svc := NewSlskdServiceWithClient(
+		&config.Config{SlskdURL: "http://localhost:5030", SlskdAPIKey: "key"},
+		nil, testSlskdClient())
+
+	got := svc.resolveDownloadPath("john", "Music/Artist/Song.mp3")
+	want := filepath.Join("downloads", "Artist", "Song.mp3")
+	if got != want {
+		t.Errorf("resolveDownloadPath with no configured root = %q, want %q", got, want)
+	}
+}
+
 func TestResolveDownloadPath_Traversal(t *testing.T) {
 	staging := filepath.Join("/app", "downloads")
 	cfg := &config.Config{
