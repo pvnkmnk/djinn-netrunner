@@ -135,6 +135,15 @@ Weekly:
 4. Notification/quotas:
    - Webhook completion payload observed.
    - Quota warning path exercised and logged.
+5. Browser suite — **a manual pre-release step, not a required check**:
+   - `bash scripts/e2e.sh test` (or `gh workflow run e2e.yml`).
+   - It is not a `pull_request` gate: it builds every image and drives real
+     Chromium, which is too slow to sit on every PR. It runs on push to `master`
+     and on demand.
+   - Specs exist for auth, dashboard, libraries, profiles, schedules, smoke,
+     subsonic and watchlists. **`artists`, `playlists`, `jobs` and `admin` specs
+     are absent**, so a green run does not evidence DJI-426/428/429/430/433/434 —
+     check those flows by hand instead of inferring them from a green suite.
 
 Optional cleanup:
 delete from joblogs
