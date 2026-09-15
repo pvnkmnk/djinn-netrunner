@@ -55,6 +55,26 @@ open blocker.
 | 27 | Staging sweep after import | PASS | Only the in-flight download remained in `/app/downloads` |
 | 28 | Acquired tracks become visible and streamable | PASS | A scan of `/app/music` indexed 16 tracks; `getIndexes` lists Converge (12 albums); `search3`/`stream.view` returned the real bytes (7,062,156 mp3; 94,778,503 m4a, equal to the file on disk) |
 
+### Full-artist pass — 2026-09-15
+
+Re-executed against the same stack, driven by a full **PUP** discography
+acquisition (38 items) rather than a single track.
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| 29 | Full artist sync produces an acquisition job | PASS | `artist_scan` (75) succeeded; `acquisition` (76) queued 38 items |
+| 30 | Implausible results rejected before download | PASS | `Skipped 713 of 2846 results that do not look like playable audio (e.g. unsupported audio format "png")`; also `289/1621` and `280/1751` `.lrc`, `115/673` `.txt` |
+| 31 | Remotely-queued peer abandoned early | PASS | `heyheyfrapfrap queued the transfer but never started sending — trying another candidate`, twice, ~45 s after queueing instead of the full `10m0s` budget |
+| 32 | Download bytes validated before import | PASS | `beta-smoke.sh` asserts ffprobe is present and decodes a generated tone; unit tests reject a text file renamed `.mp3` and remove it |
+| 33 | Imports land in canonical album folders | PASS | Files at `/app/music/PUP/<Album>/<nn - title>.m4a`; no per-credit artist folders |
+| 34 | Tags carry a canonical album artist | PASS | `ffprobe` on an imported m4a reports `artist=PUP`, `album_artist=PUP`, `album=Morbid Stuff` |
+| 35 | Scan indexes the acquired files | PASS | Scan job 77 `succeeded`; worker logs `indexed=30 failed=0` |
+| 36 | `getIndexes` exposes resolvable artist ids | PASS | `<artist id="artist-PUP" name="PUP" albumCount="4">` — real id, and `albumCount` is distinct albums |
+| 37 | `search3` returns no nameless placeholder artist | PASS | `<artist id="artist-PUP" name="PUP" albumCount="4">`; previously `{"id":"artist-","name":"","albumCount":0}` |
+| 38 | `getIndexes` → `getArtist` round-trip | PASS | `getArtist.view?id=artist-PUP` returns a top-level `<artist>` with 4 albums, each carrying `artistId="artist-PUP"` |
+| 39 | Stream returns real audio | PASS | `stream.view` HTTP 200, `29,087,926` bytes, `audio/m4a`, magic bytes `ftypM4A` |
+| 40 | `scripts/beta-smoke.sh` (with the new ffprobe assertion) | PASS | All checks passed, including `ffprobe present in ops-worker and decoded a generated tone` |
+
 ## Prior blocker, resolved
 
 **Soulseek searches returned `401 Unauthorized`.** `SLSKD_API_KEY` was what the
@@ -66,23 +86,44 @@ route; the primary key is not. An invalid key length is a silent-looking failure
 under 16 characters slskd logs `API key must be between 16 and 255 characters`
 and exits **0**.
 
+## Findings resolved on 2026-09-15
+
+All three were reproduced on the live stack, fixed, and re-verified (rows 30–39).
+
+1. **A remotely-queued peer cost the full 10-minute budget.** slskd reports
+   `Queued, Remotely` for a peer that answers but never starts sending, and the
+   stall detector only armed once bytes moved — so the wait ran to the full
+   `WaitForDownload` timeout. `WaitForDownload` now takes `DownloadWaitOptions`
+   and abandons such a transfer after `remoteQueueGrace` (45 s) — but only when
+   another candidate remains. The last candidate waits the transfer out, since
+   abandoning it saves nothing and can fail an item that waiting would complete.
+   `stageDownloadFile` walks up to 3 candidates per item.
+2. **Subsonic artist entries carried empty ids.** The `DISTINCT artist` scan
+   landed in a struct field named `Name`, which GORM maps to the column `name`,
+   so every artist came back with an empty name and the id degenerated to a bare
+   `artist-`. Now plucked as a string list, ids come from one `artistID` helper,
+   `getArtist` returns the artist at the top level with its albums, and
+   `albumCount` counts distinct albums rather than tracks.
+3. **No validity gate on selected downloads.** Two gates now: a pre-download
+   plausibility check (size against reported bitrate/length, plus an audio
+   extension allowlist) that drops junk before spending a download, and an
+   `ffprobe` check of the downloaded bytes that removes anything not playable and
+   moves to the next candidate. A missing ffprobe is reported as
+   `ErrProbeUnavailable` and the file is imported with a warning — an
+   unconfigured probe must not reject every download.
+
 ## Open findings (not blocking)
 
-1. **A remotely-queued peer costs 10 minutes.** When a peer answers but never
-   starts sending, slskd reports `Queued, Remotely` and the worker waits out its
-   full `WaitForDownload` budget (`10m0s`) before failing the item. Because the
-   worker runs one job at a time, that stall also blocks every other queued job
-   — a discography sync can take hours. Re-selecting another candidate once a
-   transfer sits remotely-queued past a short grace period would fix it.
-2. **Subsonic artist entries carry empty ids.** `getIndexes` returns artists with
-   `"id":""`, and the `search3` artist block can come back as
-   `{"id":"artist-","name":"","albumCount":0}`. Clients that drill down via
-   `getArtist` on that id get nothing.
-3. **No minimum-size or validity gate on selected downloads.** An 8,527-byte
-   file named `.flac` from a peer was imported and indexed as a track.
-4. **A duplicate library path returns 500.** `POST /api/libraries` with an
+1. **A duplicate library path returns 500.** `POST /api/libraries` with an
    existing path surfaces the `idx_libraries_path` violation as
    `internal server error` rather than a 409 with a readable message.
+2. **The worker runs several acquisition jobs concurrently.** Three jobs
+   (`10`, `68`, `76`) were observed in `running` state with items downloading at
+   the same time under one `worker_id`, so a stalled peer blocks its own item but
+   not the whole queue. The earlier note that the worker runs one job at a time
+   no longer describes this build; the concurrency limit should be made explicit.
+3. **There is no job-cancel endpoint.** A long acquisition cannot be stopped
+   through the API; the local stack was cleared by editing item rows directly.
 
 ## Related fixes landed with this record
 

@@ -35,17 +35,39 @@ func (m *AudioMetadata) IsValid() bool {
 
 type MetadataExtractor struct {
 	tagger *FFmpegTagger
+	probe *AudioProbe
 }
 
 func NewMetadataExtractor() *MetadataExtractor {
-	return &MetadataExtractor{tagger: NewFFmpegTagger()}
+	return &MetadataExtractor{tagger: NewFFmpegTagger(), probe: NewAudioProbe()}
 }
 
 // NewMetadataExtractorWithFFmpeg returns an extractor whose M4A/OGG tag
 // writes shell out to the given ffmpeg binary (mirrors
-// NewTranscoderServiceWithFFmpeg; used by tests).
+// NewTranscoderServiceWithFFmpeg; used by tests). ffprobe is resolved from
+// PATH.
 func NewMetadataExtractorWithFFmpeg(ffmpegPath string) *MetadataExtractor {
-	return &MetadataExtractor{tagger: NewFFmpegTaggerWithFFmpeg(ffmpegPath)}
+	return NewMetadataExtractorWithTools(ffmpegPath, "")
+}
+
+// NewMetadataExtractorWithTools returns an extractor using the given ffmpeg and
+// ffprobe binaries; either may be empty to resolve that tool from PATH (used by
+// tests).
+func NewMetadataExtractorWithTools(ffmpegPath, ffprobePath string) *MetadataExtractor {
+	return &MetadataExtractor{
+		tagger: NewFFmpegTaggerWithFFmpeg(ffmpegPath),
+		probe:  NewAudioProbeWithFFprobe(ffprobePath),
+	}
+}
+
+// ProbeAudio validates that a file on disk is genuinely playable audio. It
+// returns ErrProbeUnavailable when ffprobe itself cannot be run, so callers can
+// tell "this file is bad" apart from "this deployment cannot check".
+func (e *MetadataExtractor) ProbeAudio(ctx context.Context, path string) (*ProbeResult, error) {
+	if e.probe == nil {
+		return nil, ErrProbeUnavailable
+	}
+	return e.probe.Probe(ctx, path)
 }
 
 // MinimumCoverArtSize is the minimum byte size for a valid cover art image (2KB).

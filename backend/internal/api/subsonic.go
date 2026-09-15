@@ -28,9 +28,9 @@ import (
 
 // SubsonicHandler handles Subsonic API endpoints
 type SubsonicHandler struct {
-	db           *gorm.DB
-	cfg          *config.Config
-	md5Password  string // hex(md5(SubsonicPassword)) for token verification
+	db          *gorm.DB
+	cfg         *config.Config
+	md5Password string // hex(md5(SubsonicPassword)) for token verification
 }
 
 // NewSubsonicHandler creates a new SubsonicHandler
@@ -47,21 +47,22 @@ func NewSubsonicHandler(db *gorm.DB, cfg *config.Config) *SubsonicHandler {
 // Subsonic response types
 
 type subsonicResponse struct {
-	Status          string           `xml:"status,attr" json:"status"`
-	Version         string           `xml:"version,attr" json:"version"`
-	Type            string           `xml:"type,attr" json:"type"`
-	Error           *subsonicError   `xml:"error,omitempty" json:"error,omitempty"`
-	MusicDirectory  *musicDirectory  `xml:"musicDirectory,omitempty" json:"musicDirectory,omitempty"`
-	Song            *subsonicSong    `xml:"song,omitempty" json:"song,omitempty"`
-	Album           *subsonicAlbum   `xml:"album,omitempty" json:"album,omitempty"`
-	Indexes         *subsonicIndexes `xml:"indexes,omitempty" json:"indexes,omitempty"`
-	License         *subsonicLicense `xml:"license,omitempty" json:"license,omitempty"`
-	SearchResult3   *searchResult3   `xml:"searchResult3,omitempty" json:"searchResult3,omitempty"`
-	AlbumList2      *albumList2      `xml:"albumList2,omitempty" json:"albumList2,omitempty"`
-	RandomSongs     *randomSongs     `xml:"randomSongs,omitempty" json:"randomSongs,omitempty"`
-	ScanStatus      *scanStatus      `xml:"scanStatus,omitempty" json:"scanStatus,omitempty"`
-	Playlists       *subsonicPlaylists `xml:"playlists,omitempty" json:"playlists,omitempty"`
-	Playlist        *subsonicPlaylist `xml:"playlist,omitempty" json:"playlist,omitempty"`
+	Status         string                `xml:"status,attr" json:"status"`
+	Version        string                `xml:"version,attr" json:"version"`
+	Type           string                `xml:"type,attr" json:"type"`
+	Error          *subsonicError        `xml:"error,omitempty" json:"error,omitempty"`
+	MusicDirectory *musicDirectory       `xml:"musicDirectory,omitempty" json:"musicDirectory,omitempty"`
+	Song           *subsonicSong         `xml:"song,omitempty" json:"song,omitempty"`
+	Album          *subsonicAlbum        `xml:"album,omitempty" json:"album,omitempty"`
+	Artist         *subsonicArtistDetail `xml:"artist,omitempty" json:"artist,omitempty"`
+	Indexes        *subsonicIndexes      `xml:"indexes,omitempty" json:"indexes,omitempty"`
+	License        *subsonicLicense      `xml:"license,omitempty" json:"license,omitempty"`
+	SearchResult3  *searchResult3        `xml:"searchResult3,omitempty" json:"searchResult3,omitempty"`
+	AlbumList2     *albumList2           `xml:"albumList2,omitempty" json:"albumList2,omitempty"`
+	RandomSongs    *randomSongs          `xml:"randomSongs,omitempty" json:"randomSongs,omitempty"`
+	ScanStatus     *scanStatus           `xml:"scanStatus,omitempty" json:"scanStatus,omitempty"`
+	Playlists      *subsonicPlaylists    `xml:"playlists,omitempty" json:"playlists,omitempty"`
+	Playlist       *subsonicPlaylist     `xml:"playlist,omitempty" json:"playlist,omitempty"`
 }
 
 // respond formats and sends a Subsonic response as XML or JSON based on the f parameter
@@ -78,21 +79,21 @@ type subsonicError struct {
 }
 
 type subsonicSong struct {
-	ID        string `xml:"id,attr" json:"id"`
-	Title     string `xml:"title,attr" json:"title"`
-	Artist    string `xml:"artist,attr" json:"artist"`
-	Album     string `xml:"album,attr" json:"album"`
-	Path      string `xml:"path,attr" json:"path"`
-	Track     int    `xml:"track,attr" json:"track,omitempty"`
-	Year      int    `xml:"year,attr" json:"year,omitempty"`
-	Genre     string `xml:"genre,attr" json:"genre,omitempty"`
-	Size      int64  `xml:"size,attr" json:"size,omitempty"`
-	Format    string `xml:"contentType,attr" json:"contentType,omitempty"`
-	Duration  int    `xml:"duration,attr" json:"duration,omitempty"`
-	ArtistID  string `xml:"artistId,attr" json:"artistId,omitempty"`
-	AlbumID   string `xml:"albumId,attr" json:"albumId,omitempty"`
-	CoverArt  string `xml:"coverArt,attr" json:"coverArt,omitempty"`
-	IsDir     bool   `xml:"isDir,attr" json:"isDir,omitempty"`
+	ID       string `xml:"id,attr" json:"id"`
+	Title    string `xml:"title,attr" json:"title"`
+	Artist   string `xml:"artist,attr" json:"artist"`
+	Album    string `xml:"album,attr" json:"album"`
+	Path     string `xml:"path,attr" json:"path"`
+	Track    int    `xml:"track,attr" json:"track,omitempty"`
+	Year     int    `xml:"year,attr" json:"year,omitempty"`
+	Genre    string `xml:"genre,attr" json:"genre,omitempty"`
+	Size     int64  `xml:"size,attr" json:"size,omitempty"`
+	Format   string `xml:"contentType,attr" json:"contentType,omitempty"`
+	Duration int    `xml:"duration,attr" json:"duration,omitempty"`
+	ArtistID string `xml:"artistId,attr" json:"artistId,omitempty"`
+	AlbumID  string `xml:"albumId,attr" json:"albumId,omitempty"`
+	CoverArt string `xml:"coverArt,attr" json:"coverArt,omitempty"`
+	IsDir    bool   `xml:"isDir,attr" json:"isDir,omitempty"`
 }
 
 type musicDirectory struct {
@@ -129,6 +130,15 @@ type subsonicArtist struct {
 	AlbumCount int    `xml:"albumCount,attr" json:"albumCount"`
 }
 
+// subsonicArtistDetail is the getArtist payload: the artist plus its albums.
+// Distinct from subsonicArtist, which is the bare reference used in an index.
+type subsonicArtistDetail struct {
+	ID         string          `xml:"id,attr" json:"id"`
+	Name       string          `xml:"name,attr" json:"name"`
+	AlbumCount int             `xml:"albumCount,attr" json:"albumCount"`
+	Album      []subsonicAlbum `xml:"album,omitempty" json:"album,omitempty"`
+}
+
 type subsonicLicense struct {
 	Valid bool `xml:"valid,attr" json:"valid"`
 }
@@ -153,7 +163,7 @@ type scanStatus struct {
 }
 
 type subsonicPlaylists struct {
-	XMLName   xml.Name          `xml:"playlists" json:"-"`
+	XMLName   xml.Name           `xml:"playlists" json:"-"`
 	Playlists []subsonicPlaylist `xml:"playlist" json:"playlist"`
 }
 
@@ -172,22 +182,22 @@ type subsonicPlaylist struct {
 }
 
 type subsonicChild struct {
-	XMLName   xml.Name `xml:"child" json:"-"`
-	ID        string   `xml:"id,attr" json:"id"`
-	Title     string   `xml:"title,attr" json:"title"`
-	Artist    string   `xml:"artist,attr" json:"artist"`
-	Album     string   `xml:"album,attr" json:"album"`
-	Path      string   `xml:"path,attr" json:"path"`
-	Track     int      `xml:"track,attr" json:"track,omitempty"`
-	Year      int      `xml:"year,attr" json:"year,omitempty"`
-	Genre     string   `xml:"genre,attr" json:"genre,omitempty"`
-	Size      int64    `xml:"size,attr" json:"size,omitempty"`
-	Format    string   `xml:"contentType,attr" json:"contentType,omitempty"`
-	Duration  int      `xml:"duration,attr" json:"duration,omitempty"`
-	ArtistID  string   `xml:"artistId,attr" json:"artistId,omitempty"`
-	AlbumID   string   `xml:"albumId,attr" json:"albumId,omitempty"`
-	CoverArt  string   `xml:"coverArt,attr" json:"coverArt,omitempty"`
-	IsDir     bool     `xml:"isDir,attr" json:"isDir,omitempty"`
+	XMLName  xml.Name `xml:"child" json:"-"`
+	ID       string   `xml:"id,attr" json:"id"`
+	Title    string   `xml:"title,attr" json:"title"`
+	Artist   string   `xml:"artist,attr" json:"artist"`
+	Album    string   `xml:"album,attr" json:"album"`
+	Path     string   `xml:"path,attr" json:"path"`
+	Track    int      `xml:"track,attr" json:"track,omitempty"`
+	Year     int      `xml:"year,attr" json:"year,omitempty"`
+	Genre    string   `xml:"genre,attr" json:"genre,omitempty"`
+	Size     int64    `xml:"size,attr" json:"size,omitempty"`
+	Format   string   `xml:"contentType,attr" json:"contentType,omitempty"`
+	Duration int      `xml:"duration,attr" json:"duration,omitempty"`
+	ArtistID string   `xml:"artistId,attr" json:"artistId,omitempty"`
+	AlbumID  string   `xml:"albumId,attr" json:"albumId,omitempty"`
+	CoverArt string   `xml:"coverArt,attr" json:"coverArt,omitempty"`
+	IsDir    bool     `xml:"isDir,attr" json:"isDir,omitempty"`
 }
 
 // AuthMiddleware validates Subsonic authentication parameters
@@ -316,8 +326,11 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 		if artistName == "" {
 			continue
 		}
-		firstChar := string(artistName[0])
-		if !strings.ContainsAny(firstChar, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+		// Index by the uppercased first rune: splitting a multi-byte first byte
+		// mangles non-ASCII names, and lowercase names otherwise all land in
+		// "#" instead of their letter.
+		firstChar := strings.ToUpper(string([]rune(artistName)[0]))
+		if firstChar < "A" || firstChar > "Z" {
 			firstChar = "#"
 		}
 
@@ -325,7 +338,7 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 		found := false
 		for i, idx := range indexes {
 			if idx.Name == firstChar {
-				indexes[i].Artist = append(indexes[i].Artist, subsonicArtist{ID: "", Name: artistName, AlbumCount: 0})
+				indexes[i].Artist = append(indexes[i].Artist, subsonicArtist{ID: artistID(artistName), Name: artistName})
 				found = true
 				break
 			}
@@ -333,43 +346,43 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 
 		if !found {
 			index := subsonicIndex{Name: firstChar}
-			index.Artist = append(index.Artist, subsonicArtist{ID: "", Name: artistName, AlbumCount: 0})
+			index.Artist = append(index.Artist, subsonicArtist{ID: artistID(artistName), Name: artistName})
 			indexes = append(indexes, index)
 		}
 	}
 
-	// Bolt Optimization: Consolidate track count queries for each artist.
-	// Instead of executing one COUNT query per artist (O(N)), we perform a single GROUP BY
-	// query and map the counts in memory, reducing database roundtrips from N+1 to 2.
-	var artistCounts []struct {
+	// Bolt Optimization: Consolidate the per-artist album counts into a single
+	// GROUP BY instead of one query per artist (N+1 becomes 2). AlbumCount is
+	// distinct albums, not tracks: a client renders "N albums" from it.
+	var artistAlbumCounts []struct {
 		Artist string `gorm:"column:artist"`
-		Count  int64  `gorm:"column:count"`
+		Albums int64  `gorm:"column:albums"`
 	}
 	if len(artistNames) > 0 {
 		h.db.Table("tracks").
 			Joins("JOIN libraries ON libraries.id = tracks.library_id").
 			Where("libraries.owner_user_id = ?", user.ID).
-			Select("artist, COUNT(*) as count").
+			Select("artist, COUNT(DISTINCT album) as albums").
 			Group("artist").
-			Find(&artistCounts)
+			Find(&artistAlbumCounts)
 	}
 
-	countMap := make(map[string]int64, len(artistCounts))
-	for _, ac := range artistCounts {
-		countMap[ac.Artist] = ac.Count
+	albumCountMap := make(map[string]int64, len(artistAlbumCounts))
+	for _, ac := range artistAlbumCounts {
+		albumCountMap[ac.Artist] = ac.Albums
 	}
 
 	for i := range indexes {
 		for j := range indexes[i].Artist {
-			indexes[i].Artist[j].AlbumCount = int(countMap[indexes[i].Artist[j].Name])
+			indexes[i].Artist[j].AlbumCount = int(albumCountMap[indexes[i].Artist[j].Name])
 		}
 	}
 
 	resp := &subsonicResponse{
-		Status:     "ok",
-		Version:    "1.16.1",
-		Type:       "netrunner",
-		Indexes:    &subsonicIndexes{LastModified: lastModified, Index: indexes},
+		Status:  "ok",
+		Version: "1.16.1",
+		Type:    "netrunner",
+		Indexes: &subsonicIndexes{LastModified: lastModified, Index: indexes},
 	}
 
 	return h.respond(c, resp)
@@ -423,9 +436,9 @@ func (h *SubsonicHandler) GetMusicDirectory(c *fiber.Ctx) error {
 	}
 
 	resp := &subsonicResponse{
-		Status:      "ok",
-		Version:     "1.16.1",
-		Type:        "netrunner",
+		Status:         "ok",
+		Version:        "1.16.1",
+		Type:           "netrunner",
 		MusicDirectory: &directory,
 	}
 
@@ -435,8 +448,8 @@ func (h *SubsonicHandler) GetMusicDirectory(c *fiber.Ctx) error {
 // getArtistDirectory returns a directory for an artist
 func (h *SubsonicHandler) getArtistDirectory(user database.User, artistName string) (musicDirectory, error) {
 	var albums []struct {
-		ID    string
-		Name  string
+		ID     string
+		Name   string
 		Artist string
 	}
 
@@ -453,18 +466,18 @@ func (h *SubsonicHandler) getArtistDirectory(user database.User, artistName stri
 
 	// Create directory entry
 	directory := musicDirectory{
-		ID:   "artist-" + url.PathEscape(artistName),
+		ID:   artistID(artistName),
 		Name: artistName,
 	}
 
 	// Add albums as children
 	for _, album := range albums {
 		child := subsonicSong{
-			ID:        "album-" + url.PathEscape(album.Name) + "-" + url.PathEscape(album.Artist),
-			Title:     album.Name,
-			Artist:    album.Artist,
-			Album:     album.Name,
-			IsDir:     true,
+			ID:     "album-" + url.PathEscape(album.Name) + "-" + url.PathEscape(album.Artist),
+			Title:  album.Name,
+			Artist: album.Artist,
+			Album:  album.Name,
+			IsDir:  true,
 		}
 		directory.Child = append(directory.Child, child)
 	}
@@ -495,20 +508,20 @@ func (h *SubsonicHandler) getAlbumDirectory(user database.User, albumName, artis
 	// Add tracks as children
 	for _, track := range tracks {
 		child := subsonicSong{
-			ID:        track.ID.String(),
-			Title:     track.Title,
-			Artist:    track.Artist,
-			Album:     track.Album,
-			Path:      track.Path,
-			Track:     safeDeref(track.TrackNum),
-			Year:      safeDeref(track.Year),
-			Genre:     track.Genre,
-			Size:      track.FileSize,
-			Format:    track.Format,
-			Duration:  h.getTrackDuration(track.Path),
-			ArtistID:  "",
-			AlbumID:   "",
-			CoverArt:  track.CoverURL,
+			ID:       track.ID.String(),
+			Title:    track.Title,
+			Artist:   track.Artist,
+			Album:    track.Album,
+			Path:     track.Path,
+			Track:    safeDeref(track.TrackNum),
+			Year:     safeDeref(track.Year),
+			Genre:    track.Genre,
+			Size:     track.FileSize,
+			Format:   track.Format,
+			Duration: h.getTrackDuration(track.Path),
+			ArtistID: "",
+			AlbumID:  "",
+			CoverArt: track.CoverURL,
 		}
 		directory.Child = append(directory.Child, child)
 	}
@@ -543,20 +556,20 @@ func (h *SubsonicHandler) getTrackDirectory(user database.User, trackID string) 
 
 	// Add track as child
 	child := subsonicSong{
-		ID:        track.ID.String(),
-		Title:     track.Title,
-		Artist:    track.Artist,
-		Album:     track.Album,
-		Path:      track.Path,
-		Track:     safeDeref(track.TrackNum),
-		Year:      safeDeref(track.Year),
-		Genre:     track.Genre,
-		Size:      track.FileSize,
-		Format:    track.Format,
-		Duration:  h.getTrackDuration(track.Path),
-		ArtistID:  "",
-		AlbumID:   "",
-		CoverArt:  track.CoverURL,
+		ID:       track.ID.String(),
+		Title:    track.Title,
+		Artist:   track.Artist,
+		Album:    track.Album,
+		Path:     track.Path,
+		Track:    safeDeref(track.TrackNum),
+		Year:     safeDeref(track.Year),
+		Genre:    track.Genre,
+		Size:     track.FileSize,
+		Format:   track.Format,
+		Duration: h.getTrackDuration(track.Path),
+		ArtistID: "",
+		AlbumID:  "",
+		CoverArt: track.CoverURL,
 	}
 	directory.Child = append(directory.Child, child)
 
@@ -607,24 +620,24 @@ func (h *SubsonicHandler) GetSong(c *fiber.Ctx) error {
 
 	// Create song response
 	song := &subsonicSong{
-		ID:        track.ID.String(),
-		Title:     track.Title,
-		Artist:    track.Artist,
-		Album:     track.Album,
-		Path:      track.Path,
-		Track:     safeDeref(track.TrackNum),
-		Year:      safeDeref(track.Year),
-		Genre:     track.Genre,
-		Size:      track.FileSize,
-		Format:    track.Format,
-		Duration:  h.getTrackDuration(track.Path),
-		ArtistID:  "",
-		AlbumID:   "",
-		CoverArt:  track.CoverURL,
+		ID:       track.ID.String(),
+		Title:    track.Title,
+		Artist:   track.Artist,
+		Album:    track.Album,
+		Path:     track.Path,
+		Track:    safeDeref(track.TrackNum),
+		Year:     safeDeref(track.Year),
+		Genre:    track.Genre,
+		Size:     track.FileSize,
+		Format:   track.Format,
+		Duration: h.getTrackDuration(track.Path),
+		ArtistID: "",
+		AlbumID:  "",
+		CoverArt: track.CoverURL,
 	}
 
 	resp := &subsonicResponse{
-		Status: "ok",
+		Status:  "ok",
 		Version: "1.16.1",
 		Type:    "netrunner",
 		Song:    song,
@@ -692,13 +705,73 @@ func (h *SubsonicHandler) GetAlbum(c *fiber.Ctx) error {
 	}
 
 	resp := &subsonicResponse{
-		Status: "ok",
+		Status:  "ok",
 		Version: "1.16.1",
 		Type:    "netrunner",
 		Album:   album,
 	}
 
 	return h.respond(c, resp)
+}
+
+// artistID builds the stable id for an artist name. Clients treat ids as
+// opaque, but they must round-trip through getArtist and getMusicDirectory —
+// an empty id leaves a client unable to open the artist it just listed.
+func artistID(name string) string {
+	return "artist-" + url.PathEscape(name)
+}
+
+// albumArtistID is artistID for an album's artist, tolerating an untagged one.
+func albumArtistID(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return ""
+	}
+	return artistID(name)
+}
+
+// artistAlbums lists an artist's albums with the counts and year a client needs
+// to render them, scoped to the libraries the caller owns.
+func (h *SubsonicHandler) artistAlbums(user database.User, artistName string) ([]subsonicAlbum, error) {
+	var names []string
+	if err := h.db.Table("tracks").
+		Joins("JOIN libraries ON libraries.id = tracks.library_id").
+		Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
+		Where("album <> ''").
+		Distinct("album").
+		Order("album").
+		Pluck("album", &names).Error; err != nil {
+		return nil, err
+	}
+
+	albums := make([]subsonicAlbum, 0, len(names))
+	for _, name := range names {
+		var songCount int64
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND artist = ? AND album = ?", user.ID, artistName, name).
+			Count(&songCount)
+
+		var first database.Track
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND artist = ? AND album = ?", user.ID, artistName, name).
+			Order("COALESCE(track_num, 0)").
+			First(&first)
+
+		albums = append(albums, subsonicAlbum{
+			ID:        "album-" + url.PathEscape(name) + "-" + url.PathEscape(artistName),
+			Name:      name,
+			Artist:    artistName,
+			ArtistID:  artistID(artistName),
+			SongCount: int(songCount),
+			Year:      safeDeref(first.Year),
+			Genre:     first.Genre,
+			CoverArt:  first.CoverURL,
+			Duration:  h.getAlbumDuration(user, name, artistName),
+		})
+	}
+
+	return albums, nil
 }
 
 // GetArtist handles the getArtist endpoint
@@ -724,36 +797,27 @@ func (h *SubsonicHandler) GetArtist(c *fiber.Ctx) error {
 		return h.respondError(c, 10, "Invalid artist ID")
 	}
 
-	var tracks []database.Track
-
-h.db.Table("tracks").
-		Joins("JOIN libraries ON libraries.id = tracks.library_id").
-		Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
-		Order("album").
-		Find(&tracks)
-
-	if len(tracks) == 0 {
+	albums, err := h.artistAlbums(user, artistName)
+	if err != nil {
+		return h.respondError(c, 50, "Internal server error")
+	}
+	if len(albums) == 0 {
 		return h.respondError(c, 70, "Artist not found")
 	}
 
-	// Get unique albums
-	albums := make(map[string]bool)
-	for _, track := range tracks {
-		albums[track.Album] = true
-	}
-
-	// Create artist response
-	artist := &subsonicArtist{
-		ID:         id,
-		Name:       artistName,
-		AlbumCount: len(albums),
-	}
-
+	// The Subsonic contract puts the artist at the top level, not inside an
+	// index — a client that follows getIndexes -> getArtist expects to read
+	// artist.album[] from here.
 	resp := &subsonicResponse{
-		Status: "ok",
+		Status:  "ok",
 		Version: "1.16.1",
 		Type:    "netrunner",
-		Indexes: &subsonicIndexes{Index: []subsonicIndex{{Name: "A", Artist: []subsonicArtist{*artist}}}},
+		Artist: &subsonicArtistDetail{
+			ID:         artistID(artistName),
+			Name:       artistName,
+			AlbumCount: len(albums),
+			Album:      albums,
+		},
 	}
 
 	return h.respond(c, resp)
@@ -1071,14 +1135,18 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 		Limit(songCount).
 		Find(&tracks)
 
-	// Search artists (distinct)
-	var artists []struct{ Name string }
+	// Search artists (distinct). Pluck the column: scanning "DISTINCT artist"
+	// into a struct field named Name leaves every entry empty, because GORM
+	// maps fields to snake_case column names — that is what produced artists
+	// with no name and an unresolvable id of bare "artist-".
+	var artistNames []string
 	h.db.Table("tracks").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
-		Where("libraries.owner_user_id = ? AND LOWER(artist) LIKE ?", user.ID, q).
-		Select("DISTINCT artist").
+		Where("libraries.owner_user_id = ? AND LOWER(artist) LIKE ? AND artist <> ''", user.ID, q).
+		Distinct("artist").
+		Order("artist").
 		Limit(artistCount).
-		Find(&artists)
+		Pluck("artist", &artistNames)
 
 	// Search albums (distinct album+artist)
 	var albums []struct{ Album, Artist string }
@@ -1092,19 +1160,24 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 	// Build search result
 	searchResult := &searchResult3{}
 
-	// Fill artists
-	for _, artist := range artists {
-		// Count tracks for this artist
-		var count int64
+	// Fill artists. An untagged track would otherwise surface as an artist with
+	// an empty name that no client can resolve, so skip those defensively.
+	for _, artistName := range artistNames {
+		if strings.TrimSpace(artistName) == "" {
+			continue
+		}
+
+		var albumCount int64
 		h.db.Table("tracks").
 			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artist.Name).
-			Count(&count)
+			Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
+			Select("COUNT(DISTINCT album)").
+			Scan(&albumCount)
 
 		searchResult.Artist = append(searchResult.Artist, subsonicArtist{
-			ID:         "artist-" + url.PathEscape(artist.Name),
-			Name:       artist.Name,
-			AlbumCount: int(count),
+			ID:         artistID(artistName),
+			Name:       artistName,
+			AlbumCount: int(albumCount),
 		})
 	}
 
@@ -1128,7 +1201,7 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 			ID:        "album-" + url.PathEscape(album.Album) + "-" + url.PathEscape(album.Artist),
 			Name:      album.Album,
 			Artist:    album.Artist,
-			ArtistID:  "",
+			ArtistID:  albumArtistID(album.Artist),
 			SongCount: int(songCount),
 			Year:      safeDeref(firstTrack.Year),
 			Genre:     firstTrack.Genre,
@@ -1158,9 +1231,9 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 	}
 
 	resp := &subsonicResponse{
-		Status:     "ok",
-		Version:    "1.16.1",
-		Type:       "netrunner",
+		Status:        "ok",
+		Version:       "1.16.1",
+		Type:          "netrunner",
 		SearchResult3: searchResult,
 	}
 
@@ -1274,7 +1347,7 @@ func (h *SubsonicHandler) GetRandomSongs(c *fiber.Ctx) error {
 	// Query random tracks
 	var tracks []database.Track
 
-h.db.Table("tracks").
+	h.db.Table("tracks").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
 		Where("libraries.owner_user_id = ?", user.ID).
 		Order("RANDOM()").
@@ -1323,9 +1396,9 @@ func (h *SubsonicHandler) GetScanStatus(c *fiber.Ctx) error {
 	}
 
 	resp := &subsonicResponse{
-		Status:   "ok",
-		Version:  "1.16.1",
-		Type:     "netrunner",
+		Status:     "ok",
+		Version:    "1.16.1",
+		Type:       "netrunner",
 		ScanStatus: scanStatus,
 	}
 
@@ -1435,9 +1508,9 @@ func (h *SubsonicHandler) GetPlaylists(c *fiber.Ctx) error {
 	}
 
 	return h.respond(c, &subsonicResponse{
-		Status:  "ok",
-		Version: "1.16.1",
-		Type:    "netrunner",
+		Status:    "ok",
+		Version:   "1.16.1",
+		Type:      "netrunner",
 		Playlists: &subsonicPlaylists{Playlists: result},
 	})
 }
@@ -1483,18 +1556,18 @@ func (h *SubsonicHandler) GetPlaylist(c *fiber.Ctx) error {
 	var entries []subsonicChild
 	for _, pt := range playlistTracks {
 		entries = append(entries, subsonicChild{
-			ID:        pt.Track.ID.String(),
-			Title:     pt.Track.Title,
-			Artist:    pt.Track.Artist,
-			Album:     pt.Track.Album,
-			Path:      pt.Track.Path,
-			Track:     safeDeref(pt.Track.TrackNum),
-			Year:      safeDeref(pt.Track.Year),
-			Genre:     pt.Track.Genre,
-			Size:      pt.Track.FileSize,
-			Format:    pt.Track.Format,
-			Duration:  h.getTrackDuration(pt.Track.Path),
-			CoverArt:  pt.Track.CoverURL,
+			ID:       pt.Track.ID.String(),
+			Title:    pt.Track.Title,
+			Artist:   pt.Track.Artist,
+			Album:    pt.Track.Album,
+			Path:     pt.Track.Path,
+			Track:    safeDeref(pt.Track.TrackNum),
+			Year:     safeDeref(pt.Track.Year),
+			Genre:    pt.Track.Genre,
+			Size:     pt.Track.FileSize,
+			Format:   pt.Track.Format,
+			Duration: h.getTrackDuration(pt.Track.Path),
+			CoverArt: pt.Track.CoverURL,
 		})
 	}
 

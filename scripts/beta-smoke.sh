@@ -149,6 +149,23 @@ else
     fail "ffmpeg missing from $WEB_CONTAINER — tag writes and transcoding will fail"
 fi
 
+# The acquisition pipeline probes every download with ffprobe and rejects what
+# is not playable audio. That check deliberately fails open when ffprobe is
+# missing (an unconfigured probe must not reject every download), so without an
+# assertion here a deployment would quietly stop validating and nothing would
+# say so. Prove it end to end: generate a tone, then decode it.
+if in_worker sh -c 'command -v ffprobe >/dev/null' >/dev/null 2>&1; then
+    in_worker sh -c 'ffmpeg -v error -y -f lavfi -i "sine=frequency=440:duration=1" /tmp/smoke-probe.wav' >/dev/null 2>&1
+    if in_worker sh -c 'ffprobe -v error -show_entries format=format_name -of csv=p=0 /tmp/smoke-probe.wav' 2>/dev/null | grep -q .; then
+        pass "ffprobe present in $WORKER_CONTAINER and decoded a generated tone"
+    else
+        fail "ffprobe in $WORKER_CONTAINER could not decode audio — downloads would import unvalidated"
+    fi
+    in_worker sh -c 'rm -f /tmp/smoke-probe.wav' >/dev/null 2>&1 || true
+else
+    fail "ffprobe missing from $WORKER_CONTAINER — downloads would import without validation"
+fi
+
 # ── 4. Configuration actually reached the containers ────────────────────────
 # .env is only meaningful if the services declare env_file:; a silent miss shows
 # up as a per-restart random JWT secret and a dead Subsonic API.

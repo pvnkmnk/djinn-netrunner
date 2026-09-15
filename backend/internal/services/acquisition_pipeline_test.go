@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -36,7 +35,7 @@ type mockSlskd struct {
 	SearchFunc           func(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error)
 	BrowseFunc           func(username string) ([]PeerFile, error)
 	EnqueueDownloadFunc  func(username, filename string, size int64) (string, error)
-	WaitForDownloadFunc  func(ctx context.Context, username, downloadID string, timeout time.Duration) (*Download, error)
+	WaitForDownloadFunc  func(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error)
 }
 
 func (m *mockSlskd) Search(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
@@ -60,9 +59,9 @@ func (m *mockSlskd) EnqueueDownload(username, filename string, size int64) (stri
 	return "", nil
 }
 
-func (m *mockSlskd) WaitForDownload(ctx context.Context, username, downloadID string, timeout time.Duration) (*Download, error) {
+func (m *mockSlskd) WaitForDownload(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error) {
 	if m.WaitForDownloadFunc != nil {
-		return m.WaitForDownloadFunc(ctx, username, downloadID, timeout)
+		return m.WaitForDownloadFunc(ctx, username, downloadID, opts)
 	}
 	return nil, nil
 }
@@ -118,8 +117,8 @@ func TestAcquisitionHandler_StageSelectBestResult_NoProfile(t *testing.T) {
 	p := &acquisitionPipeline{
 		item: database.JobItem{JobID: 1, ID: 1},
 		results: []SearchResult{
-			{Filename: "track1.mp3", Score: 50.0, Bitrate: &bitrate},
-			{Filename: "track2.flac", Score: 40.0},
+			{Filename: "track1.mp3", Score: 50.0, Size: 8_000_000, Bitrate: &bitrate},
+			{Filename: "track2.flac", Score: 40.0, Size: 25_000_000},
 		},
 	}
 
@@ -152,8 +151,8 @@ func TestAcquisitionHandler_StageSelectBestResult_WithProfile_Matching(t *testin
 		item: database.JobItem{JobID: 1, ID: 1},
 		profile: profile,
 		results: []SearchResult{
-			{Filename: "track1.mp3", Score: 60.0, Bitrate: &bitrateMP3},
-			{Filename: "track2.flac", Score: 50.0, Bitrate: &bitrateFLAC},
+			{Filename: "track1.mp3", Score: 60.0, Size: 8_000_000, Bitrate: &bitrateMP3},
+			{Filename: "track2.flac", Score: 50.0, Size: 25_000_000, Bitrate: &bitrateFLAC},
 		},
 	}
 
@@ -183,7 +182,7 @@ func TestAcquisitionHandler_StageSelectBestResult_WithProfile_NonMatching(t *tes
 		item: database.JobItem{JobID: 1, ID: 1},
 		profile: profile,
 		results: []SearchResult{
-			{Filename: "track1.mp3", Score: 50.0, Bitrate: &bitrateMP3}, // doesn't match profile
+			{Filename: "track1.mp3", Score: 50.0, Size: 8_000_000, Bitrate: &bitrateMP3}, // doesn't match profile
 		},
 	}
 

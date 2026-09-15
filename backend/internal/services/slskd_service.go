@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,6 +32,23 @@ const (
 	DownloadStateTimedOut     DownloadState = "TimedOut"
 	DownloadStateErrored      DownloadState = "Errored"
 	DownloadStateRejected     DownloadState = "Rejected"
+)
+
+// ErrRemoteQueueStalled reports that a peer accepted a transfer but never
+// started sending: slskd keeps the entry in a queued state and no bytes move.
+// Waiting out the whole download budget on such a peer is wasted time — and
+// because the worker runs a single job at a time, it also stalls every other
+// queued job. Callers should treat this as "try a different candidate".
+var ErrRemoteQueueStalled = errors.New("peer never started sending")
+
+// remoteQueueGrace is how long a transfer may sit queued with nothing
+// transferred before we give up on that peer — but only when another candidate
+// is available to try (see DownloadWaitOptions.HasAlternatives), and
+// downloadPollInterval is how often slskd is polled for progress. Variables
+// rather than consts so tests can shorten them.
+var (
+	remoteQueueGrace     = 45 * time.Second
+	downloadPollInterval = 5 * time.Second
 )
 
 // IsTerminal returns true if the state indicates a completed transfer.
@@ -666,14 +684,18 @@ func (s *SlskdService) resolveDownloadPath(username, remoteFilename string) stri
 
 // WaitForDownload polls slskd until the download identified by downloadID
 // reaches a terminal state. It uses the GUID returned by EnqueueDownload.
-func (s *SlskdService) WaitForDownload(ctx context.Context, username, downloadID string, timeout time.Duration) (*Download, error) {
-	ticker := time.NewTicker(5 * time.Second)
+func (s *SlskdService) WaitForDownload(ctx context.Context, username, downloadID string, opts DownloadWaitOptions) (*Download, error) {
+	timeout := opts.Timeout
+	ticker := time.NewTicker(downloadPollInterval)
 	defer ticker.Stop()
 
 	start := time.Now()
 	var lastBytes int64
 	lastProgress := time.Now()
 	stallThreshold := 90 * time.Second
+	// Track how long the transfer has sat in a queue without ever starting.
+	queuedSince := time.Now()
+	started := false
 
 	for {
 		select {
@@ -704,8 +726,19 @@ func (s *SlskdService) WaitForDownload(ctx context.Context, username, downloadID
 				return nil, fmt.Errorf("download failed: %s", msg)
 			}
 
+			inProgress := strings.Contains(string(d.State), string(DownloadStateInProgress))
+
+			// A peer that queued us but never started sending would otherwise
+			// consume the entire timeout. Give up quickly so the caller can try
+			// another candidate (see ErrRemoteQueueStalled) — but only when there
+			// is another candidate; otherwise the wait is worth seeing through.
+			if opts.HasAlternatives && !inProgress && !started && d.BytesTransferred == 0 && time.Since(queuedSince) > remoteQueueGrace {
+				return nil, fmt.Errorf("%w: slskd state %q after %v", ErrRemoteQueueStalled, d.State, remoteQueueGrace)
+			}
+
 			// Stalled download detection
-			if strings.Contains(string(d.State), string(DownloadStateInProgress)) {
+			if inProgress {
+				started = true
 				if d.BytesTransferred > lastBytes {
 					lastBytes = d.BytesTransferred
 					lastProgress = time.Now()

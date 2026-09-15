@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -42,6 +44,7 @@ type acquisitionPipeline struct {
 	profile    *database.QualityProfile
 	results    []SearchResult
 	best       SearchResult
+	candidates []SearchResult // results that passed the plausibility gate, best first
 	download   string     // path after download completes
 	albumFiles []PeerFile // files found during album-mode browse
 }// ExecuteItem runs the acquisition pipeline for a single job item.
@@ -227,7 +230,33 @@ func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip
 		return true, nil
 	}
 
-	p.best = p.results[0]
+	// Reject results that cannot be real audio before spending a download on
+	// them. Peers list truncated rips, placeholders and files renamed to match
+	// the query, and a bad pick lands in the library as a first-class track.
+	var rejected int
+	var firstReason string
+	for _, r := range p.results {
+		reason := candidateRejectionReason(r)
+		if reason == "" {
+			p.candidates = append(p.candidates, r)
+			continue
+		}
+		if rejected == 0 {
+			firstReason = reason
+		}
+		rejected++
+	}
+
+	if len(p.candidates) == 0 {
+		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("no usable candidate among %d results (e.g. %s)", len(p.results), firstReason))
+		return true, nil
+	}
+
+	if rejected > 0 {
+		h.Log(p.item.JobID, "WARN", fmt.Sprintf("Skipped %d of %d results that do not look like playable audio (e.g. %s)", rejected, len(p.results), firstReason), &p.item.ID)
+	}
+
+	p.best = p.candidates[0]
 
 	// Check if the best result matches the profile requirements
 	if p.profile != nil {
@@ -247,6 +276,68 @@ func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip
 
 	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Selected: %s (score: %.1f)", p.best.Filename, p.best.Score), &p.item.ID)
 	return false, nil
+}
+
+// minPlausibleSize returns the smallest size, in bytes, that a real audio file
+// of this format can plausibly have. When the peer reports both a bitrate and a
+// length, half the expected size is used as the floor so implausible files are
+// caught even for formats with no sensible default.
+func minPlausibleSize(bitrateKbps, lengthSec int) int64 {
+	floor := int64(256 << 10) // 256 KiB — shorter than any real track
+	if lengthSec > 0 && lengthSec <= 6*60*60 && bitrateKbps > 0 {
+		expected := int64(lengthSec) * int64(bitrateKbps) * 1000 / 8
+		if half := expected / 2; half > floor {
+			floor = half
+		}
+	}
+	return floor
+}
+
+// candidateRejectionReason explains why a search result should not be downloaded,
+// or returns "" when the result looks like playable audio. Kept deliberately
+// blunt: it filters out the obviously fake, not the merely unpreferred.
+func candidateRejectionReason(r SearchResult) string {
+	name := strings.TrimSpace(filepath.Base(strings.ReplaceAll(r.Filename, "\\", "/")))
+	if name == "" || name == "." || name == "/" {
+		return "no filename"
+	}
+
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
+	switch ext {
+	case "mp3", "flac", "m4a", "mp4", "aac", "ogg", "opus", "wav", "aiff", "wma":
+	default:
+		return fmt.Sprintf("unsupported audio format %q", ext)
+	}
+
+	bitrate, length := 0, 0
+	if r.Bitrate != nil {
+		bitrate = *r.Bitrate
+	}
+	if r.Length != nil {
+		length = *r.Length
+	}
+
+	min := minPlausibleSize(bitrate, length)
+	if r.Size < min {
+		return fmt.Sprintf("implausibly small %s file (%s, expected at least %s)", ext, humanBytes(r.Size), humanBytes(min))
+	}
+	return ""
+}
+
+// humanBytes renders a byte count for job logs.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	value := float64(n)
+	for _, suffix := range []string{"KiB", "MiB", "GiB"} {
+		value /= unit
+		if value < unit {
+			return fmt.Sprintf("%.1f %s", value, suffix)
+		}
+	}
+	return fmt.Sprintf("%.1f TiB", value/unit)
 }
 
 // stageAlbumBrowse attempts to discover the full album from the best result's peer.
@@ -328,31 +419,105 @@ func (h *AcquisitionHandler) stageAlbumBrowse(p *acquisitionPipeline) {
 	}
 }
 
-// stageDownloadFile queues the download and waits for completion.
+// downloadTimeout bounds a single candidate's transfer; downloadAttempts bounds
+// how many candidates one item tries before it is failed.
+const (
+	downloadTimeout  = 10 * time.Minute
+	downloadAttempts = 3
+)
+
+// stageDownloadFile queues a download and waits for it, moving on to the next
+// best candidate when a peer cannot deliver. A peer that accepts the transfer
+// but never starts sending used to consume the entire timeout, and because the
+// worker runs one job at a time, that also stalled every other queued job.
 func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip bool, err error) {
-	downloadID, err := h.slskd.EnqueueDownload(p.best.Username, p.best.Filename, p.best.Size)
-	if err != nil {
-		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download enqueue failed: %v", err))
-		return true, nil
+	candidates := p.candidates
+	if len(candidates) == 0 {
+		// Defensive: selection either populates candidates or fails the item.
+		candidates = []SearchResult{p.best}
+	}
+	if len(candidates) > downloadAttempts {
+		candidates = candidates[:downloadAttempts]
 	}
 
-	h.db.Model(&p.item).Updates(map[string]interface{}{
-		"status":            "downloading",
-		"slskd_search_id":   "completed",
-		"slskd_download_id": downloadID,
-	})
+	var failures []string
+	for i, candidate := range candidates {
+		downloadID, err := h.slskd.EnqueueDownload(candidate.Username, candidate.Filename, candidate.Size)
+		if err != nil {
+			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Could not queue %s: %v", candidate.Filename, err), &p.item.ID)
+			failures = append(failures, fmt.Sprintf("%s: enqueue failed: %v", candidate.Username, err))
+			continue
+		}
 
-	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Download queued (id: %s)", downloadID), &p.item.ID)
+		h.db.Model(&p.item).Updates(map[string]interface{}{
+			"status":            "downloading",
+			"slskd_search_id":   "completed",
+			"slskd_download_id": downloadID,
+		})
 
-	download, err := h.slskd.WaitForDownload(p.ctx, p.best.Username, downloadID, 10*time.Minute)
-	if err != nil {
-		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed or timed out: %v", err))
-		return true, nil
+		h.Log(p.item.JobID, "INFO", fmt.Sprintf("Download queued from %s (id: %s)", candidate.Username, downloadID), &p.item.ID)
+
+		// A peer may still deliver later, so one that queues the transfer and goes
+		// silent can be abandoned early. The last candidate is allowed to wait the
+		// transfer out, since abandoning it saves nothing.
+		waitOpts := DownloadWaitOptions{
+			Timeout:         downloadTimeout,
+			HasAlternatives: i < len(candidates)-1,
+		}
+		download, err := h.slskd.WaitForDownload(p.ctx, candidate.Username, downloadID, waitOpts)
+		if err == nil {
+			if reason := h.rejectUnplayableDownload(p, candidate, download); reason != "" {
+				failures = append(failures, reason)
+				continue
+			}
+			h.Log(p.item.JobID, "OK", "Download completed", &p.item.ID)
+			p.download = download.LocalPath
+			return false, nil
+		}
+
+		if errors.Is(err, ErrRemoteQueueStalled) {
+			h.Log(p.item.JobID, "WARN", fmt.Sprintf("%s queued the transfer but never started sending — trying another candidate", candidate.Username), &p.item.ID)
+			failures = append(failures, fmt.Sprintf("%s: never started sending", candidate.Username))
+		} else {
+			h.Log(p.item.JobID, "WARN", fmt.Sprintf("Download from %s failed: %v", candidate.Username, err), &p.item.ID)
+			failures = append(failures, fmt.Sprintf("%s: %v", candidate.Username, err))
+		}
 	}
 
-	h.Log(p.item.JobID, "OK", "Download completed", &p.item.ID)
-	p.download = download.LocalPath
-	return false, nil
+	h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed for all %d candidate(s): %s", len(candidates), strings.Join(failures, "; ")))
+	return true, nil
+}
+
+// rejectUnplayableDownload runs ffprobe over a completed transfer and removes
+// the file when it is not playable audio, returning the reason to record on the
+// item (empty when the file is good). Peers serve truncated rips and renamed
+// non-audio; the pre-download gate only sees advertised metadata, so this is the
+// check against the actual bytes. A rejection is treated as a candidate failure
+// rather than an item failure, so a better peer can still satisfy the item.
+//
+// When ffprobe is unavailable the file is accepted and the gap is logged: an
+// unconfigured probe must not reject every download.
+func (h *AcquisitionHandler) rejectUnplayableDownload(p *acquisitionPipeline, candidate SearchResult, download *Download) string {
+	if h.ext == nil || download == nil || download.LocalPath == "" {
+		return ""
+	}
+
+	result, err := h.ext.ProbeAudio(p.ctx, download.LocalPath)
+	if errors.Is(err, ErrProbeUnavailable) {
+		h.Log(p.item.JobID, "WARN", fmt.Sprintf("Cannot validate %s — importing without an ffprobe check (%v)", filepath.Base(download.LocalPath), err), &p.item.ID)
+		return ""
+	}
+	if err != nil {
+		// Drop it so a bad file cannot be imported later or linger in staging.
+		if rmErr := os.Remove(download.LocalPath); rmErr != nil && !os.IsNotExist(rmErr) {
+			h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Could not remove rejected file: %v", rmErr), &p.item.ID)
+		}
+		h.Log(p.item.JobID, "WARN", fmt.Sprintf("%s delivered an unplayable file — rejected: %v", candidate.Username, err), &p.item.ID)
+		return fmt.Sprintf("%s: unplayable file: %v", candidate.Username, err)
+	}
+
+	h.Log(p.item.JobID, "DEBUG", fmt.Sprintf("Validated %s (%s, %s, %s)", filepath.Base(download.LocalPath), result.FormatName, humanBytes(result.SizeBytes), result.Duration), &p.item.ID)
+	return ""
 }
 
 // stageImportAndEnrich imports the downloaded file and enriches metadata.
