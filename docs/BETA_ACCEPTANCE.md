@@ -114,6 +114,21 @@ All three were reproduced on the live stack, fixed, and re-verified (rows 30–3
 
 ## Open findings (not blocking)
 
+0. **Case-only differences split an album or artist across folders.** A full PUP
+   acquisition produced both `/app/music/PUP/Who Will Look After The Dogs/` and
+   `/app/music/PUP/Who Will Look After the Dogs/`, plus `/app/music/Pup/` beside
+   `/app/music/PUP/` for the same artist. Peers tag the same album with different
+   capitalisation, and the canonical folder is built from the tag verbatim, so
+   the album fragments exactly as it did with per-track credits. Folder and
+   comparison logic needs case-insensitive folding (or a canonical form) rather
+   than the raw tag.
+0b. **Staging keeps non-empty leftovers.** 54 directories remained under
+   `/app/downloads` after the run, 13 of them non-empty. `cleanupEmptyStagingDirs`
+   only removes directories that are already empty, so anything left by an item
+   that ended as `abandoned`, `completed (duplicate album)` or `failed (no
+   results)` — or by a cancelled transfer — stays on disk indefinitely. Row 27
+   recorded the sweep as clean at a moment when no such item had yet run.
+
 1. **A duplicate library path returns 500.** `POST /api/libraries` with an
    existing path surfaces the `idx_libraries_path` violation as
    `internal server error` rather than a 409 with a readable message.
