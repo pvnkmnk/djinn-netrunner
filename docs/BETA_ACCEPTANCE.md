@@ -155,3 +155,136 @@ All three were reproduced on the live stack, fixed, and re-verified (rows 30–3
   `config.yaml` with `environment: production` booted with an ephemeral secret.
 - `ALLOW_PRIVATE_TARGETS` is now set for both app services; without it the SSRF
   dialer rejects the compose service name that every backend call uses.
+## Clean-slate bring-up — 2026-09-15
+
+The thing under test here is `docs/BETA_DEPLOYMENT.md` itself. The stack was
+destroyed to **zero volumes**, the repository was **cloned fresh** at the commit
+below, a new `.env` was built by following step 1, and then only the documented
+commands were run — acquire, import, scan, Subsonic browse, stream. Wherever a
+step needed a hand edit, an undocumented variable, or manual SQL, the docs or the
+code were fixed instead and the run repeated.
+
+| Field | Value |
+|---|---|
+| Commit | `3d7240a` (`docs/beta-clean-slate-bringup`) |
+| Stack | `docker-compose.yml` + `docker-compose.beta.yml` |
+| Date | 2026-09-15 |
+| Host | Windows + Docker Desktop, Docker 29.7.2 |
+| Clone | fresh `git clone` into an empty directory, no inherited `.env` or volumes |
+| Environment loaded | `ENVIRONMENT=production`, `CONFIG_ENV=production`, `SUBSONIC_ENABLED=true` |
+| `SLSKD_API_KEY` | freshly generated, 32 chars |
+| ffmpeg (app image) | 6.1.2 |
+| PostgreSQL | 16.15 |
+| Go (host, for the test suite) | 1.27.0 |
+| Media server | none — NetRunner serves its own Subsonic API (`NAVIDROME_URL` unset) |
+
+### Commands, with observed output
+
+Teardown to zero, then a fresh clone:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.beta.yml --profile media-server down -v --remove-orphans
+# Volume djinn-netrunner_netrunner-music Removed ... (all six removed)
+docker volume ls | grep netrunner     # ZERO
+
+git clone --branch docs/beta-clean-slate-bringup <repo> djinn-netrunner
+cp .env.beta.example .env             # then change every change_me_ value
+docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d --build
+```
+
+Bring-up reached healthy on its own:
+
+| Check | Observed |
+|---|---|
+| `GET /api/health` | `{"status":"ok","checks":{"database":{"status":"ok"},"disk":{"status":"ok",...},"slskd":{"status":"ok"}}}` |
+| `exec ops-web env` | `SUBSONIC_ENABLED=true`, `CONFIG_ENV=production`, `JWT_SECRET=<set>` |
+| `POST /api/auth/register` | `201` |
+| `POST /api/auth/login` | `302` + `session_id` cookie (HTMX-first, not JSON) |
+| `GET /api/watchlists` | `200` |
+| same cookie after `restart ops-web` | `200` — sessions survive, so `JWT_SECRET` reached the process |
+| `GET /rest/ping.view?u=<email>&p=<password>` | `<subsonicResponse status="ok" ...>` |
+
+The acquisition leg, in order:
+
+| Step | Observed |
+|---|---|
+| `POST /api/libraries {"path":"/app/music"}` | `201`, `owner_user_id=2` |
+| the same request again | `200` with the **same** library id — idempotent, not a bare 500 |
+| `POST /api/artists {"name":"PUP"}` | `201`, MusicBrainz id resolved, no API key needed |
+| `POST /api/artists/<id>/sync` | `{"artist":"PUP","job_id":1,"status":"sync_queued"}` |
+| job 1 `artist_scan` | `succeeded` |
+| job 2 `acquisition` | `running`, 38 items |
+| worker log | `Skipped 258 of 1487 results that do not look like playable audio (e.g. unsupported audio format "jpg")` |
+| worker log | `Validated 01 CUDDLY.flac (flac, 22.0 MiB, 1m51.815057s)` |
+| worker log | `mawst queued the transfer but never started sending — trying another candidate` (45s, not 10m) |
+| worker log | `Imported: /app/music/PUP/The Dream Is Over/01 - If This Tour Doesn't Kill You, I Will.mp3` |
+| `POST /api/jobs/2/cancel` | `{"job_id":2,"status":"cancelled"}` |
+| job 2 after 20s | state `cancelled`, summary `Cancelled by request`, `finished_at` set, 31 queued items `cancelled`, 6 already-imported items left `imported` |
+| worker log | `Download from evilnick failed: context canceled` then `Job cancelled, stopping` then `Finished job ... state=cancelled` |
+| `POST /api/libraries/<id>/scan` | `{"job_id":3,"message":"scan job queued"}` |
+| job 3 `scan` | `succeeded` |
+| `SELECT count(*) FROM tracks` | `6` |
+
+Browse and stream the acquisition's output:
+
+| Step | Observed |
+|---|---|
+| `getIndexes.view` | `artist id="artist-PUP" albumCount="5"`, plus `artist-Pent%20Up%20Pup` (the credited album artist on that release) |
+| `getArtist.view&id=artist-PUP` | 5 albums, each with `artistId="artist-PUP"` |
+| `getAlbum.view&id=album-Morbid Stuff/PUP` | `<song id="21fd8648-..." title="See You At Your Funeral" ... artistId="artist-PUP" albumId="album-Morbid Stuff/PUP">` |
+| `stream.view&id=21fd8648-...` | `http:200 bytes:30672869 type:audio/m4a`, magic `ftypM4A` |
+| `ffprobe` on the streamed bytes | `mov,mp4,m4a,3gp,3g2,mj2`, `duration=220.133333`, `bit_rate=1114701` |
+| `ffprobe` on the library file | byte-identical: same duration, same size, same bitrate |
+
+A second sync enqueued another acquisition. Cancelling it produced no scan, which
+is how a real gap surfaced — see *Findings* below; after the fix the worker
+logged both halves of the recovery:
+
+```
+INFO Finalized orphaned cancellation worker_id=worker-86b5e4cd job_id=7 job_type=acquisition
+INFO Queued library scan after acquisition library_id=2b050a1a-... path=/app/music job_id=10
+```
+
+### Final state
+
+| Item | Value |
+|---|---|
+| Containers | `netrunner-postgres`, `netrunner-slskd`, `ops-web`, `ops-worker` — all `healthy` |
+| Volumes | six, all created during this run (`postgres-data`, `music`, `downloads`, `slskd-data`, `config`, `logs`) |
+| Jobs | `artist_scan` x2 `succeeded`; `acquisition` x3 `cancelled`; `scan` x2 `succeeded`; `release_monitor` x3 `succeeded` |
+| Library | 8 tracks, 3 artists, 8 albums indexed; 8 audio files under `/app/music` |
+| Folders | canonical album-artist folders (`/app/music/PUP/<Album>/`, `/app/music/Pent Up Pup/FURGAG/`); no per-credit fragmentation |
+| Staging | 12 leftover directories in `/app/downloads` (see open findings) |
+
+### Findings, all fixed in this commit
+
+Every one of these was hit by the run, not found by reading code.
+
+| # | Symptom | Cause | Fix |
+|---|---|---|---|
+| 1 | `POST /api/libraries` at an existing path returned a bare `500` | the unique index on `libraries.path` was left to fail, so the collision surfaced as an internal error and the operator had to re-point `owner_user_id` in SQL | resolve it in the handler: `200` with the existing row when the caller owns it, `409` naming that row otherwise |
+| 2 | `POST /api/jobs/:id/cancel` returned `200` and did nothing | the endpoint wrote `cancelled`, and no running worker ever re-read that state; `finishJob` then overwrote it | the worker probes the row each tick, cancels the in-flight context, and finishes as `cancelled` without overwriting it |
+| 3 | a cancelled job's aborted item showed `failed` with a retry scheduled that nothing would ever run | the item sweep treated only queued/running/downloading as pending | a `failed` item with `next_attempt_at` is pending work; cancel stops it and clears the schedule |
+| 4 | cancelling an acquisition finalized it without refreshing the index, so its imports stayed invisible | `finishCancelledJob` is a second finalizer and skipped the post-acquisition work | it now runs the same release bookkeeping and index refresh as `finishJob` |
+| 5 | a job cancelled after a worker restart stayed `cancelled` with no `finished_at` and no summary, forever | no worker owned it, so no job goroutine ever ran the teardown | a janitor in the tick loop finalizes `cancelled` jobs that are finished-at-less and not in this worker's active set |
+| 6 | `getAlbum` returned `songCount` with no `<song>` children, so artist to album to track dead-ended with no id to stream | the album response was built without its tracks | `getAlbum` carries its songs, sharing one track-to-song rendering with `getSong` |
+| 7 | an acquisition's imports never appeared without a manual scan | the post-acquisition refresh could only talk to an external media server, so on the simplest beta it always failed | with no media server configured it queues a local `scan` job for the library at `MUSIC_LIBRARY`, skipping one already pending |
+| 8 | the documented CSRF refresh silently wiped the session cookie, so the next request `403`d | `curl -s -c $JAR` without `-b` rewrites the jar from scratch; harmless only where a fresh jar precedes it | both refresh lines now pass `-b $JAR -c $JAR`, and the `403` troubleshooting row explains why |
+| 9 | `NAVIDROME_ADMIN_PASSWORD` you set was silently replaced by a placeholder | `.env.beta.example` declared the variable twice and compose's `env_file` takes the last occurrence | the duplicate is gone; the variable is declared once, empty, matching its comment |
+
+Two smaller documentation gaps the run also exposed: `login` answers `302` with a
+Set-Cookie rather than JSON, and a `+` in an email address is a space in a query
+string, so Subsonic requests need it URL-encoded. Both are now noted.
+
+### Open findings (not blocking)
+
+- **Staging directories accumulate.** 12 directories remained in `/app/downloads`
+  after the cancelled acquisitions. The sweep only removes directories that are
+  already empty, and a cancelled transfer leaves partial files behind, so they
+  persist. Tracked as DJI-490.
+- **A cancelled item is reported but not retried.** By design — a cancel is the
+  user's decision — but it means a partly-acquired release stays partly acquired
+  until the next sync re-enqueues it.
+- **`getAlbum` songs report `duration="0"` and an empty `contentType`.** The
+  stream and the file are both correct; only these two attributes are unpopulated
+  for tracks whose `format`/duration the scanner did not record.
