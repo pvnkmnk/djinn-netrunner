@@ -680,4 +680,67 @@ the record being written; the snapshot table above is left as it stood at the en
 of the run. `docker exec netrunner-postgres` is used rather than
 `docker compose exec postgres` because the container name and the compose service
 name differ — see the note above.
+### False-positive control, recorded from a live run — 2026-09-15
 
+The repair procedure's step 4 asks for the false-positive control to be confirmed
+before anything is merged, and this record had no row for it: the guard was covered
+by `TestDetectFragmentedAlbums_StillIgnoresUnrelatedSameNameAlbums`, but never
+observed against a real library. Both halves are recorded here in one run, because
+a negative alone cannot be told apart from a detector that has quietly stopped
+working.
+
+A throwaway library was seeded *beside* the real one — a separate library at
+`/tmp/ctl-fixture`, so the live library was never touched — and `detect-fragments`
+was run once over both:
+
+| Pair | Expectation | Observed |
+|---|---|---|
+| `Band A/Greatest Hits` + `Band B/GREATEST HITS` | not flagged — unrelated artists sharing an album name | **absent from the report** |
+| `Some Artist/Best Of` + `Some Artist/BEST OF` | flagged — one artist, case-only album split | `BEST OF` / `Best Of`, `Kind: case_album`, `TrackCount: 2` |
+| the real library at `/app/music` | no fragments (Task 3 repaired it) | `"albums": null, "artists": null` |
+
+The negative control is the sharp one. Grouping folds the album name, so both pairs
+land in a single group and the *artist agreement* clause is the only thing that can
+reject the first pair — and that clause is exactly what a bare case check would have
+accepted, moving `Band B`'s track underneath `Band A`. Seeing the second pair flagged
+in the same run is what proves the clause is not merely rejecting everything.
+
+```
+$ docker exec ops-web /tmp/netrunner-cli library detect-fragments --json
+[
+  {
+    "library_id": "11111111-1111-1111-1111-111111111111",
+    "library_name": "CTL fixture",
+    "albums": [
+      {
+        "Album": "BEST OF",
+        "CanonicalAlbum": "BEST OF",
+        "Kind": "case_album",
+        "TrackCount": 2,
+        "CanonicalFolder": "Some Artist",
+        "Folders": [
+          { "ArtistFolder": "Some Artist", "AlbumFolder": "BEST OF", "TrackCount": 1, "IsCanonical": true },
+          { "ArtistFolder": "Some Artist", "AlbumFolder": "Best Of", "TrackCount": 1, "IsCanonical": false }
+        ]
+      }
+    ],
+    "artists": null
+  },
+  {
+    "library_id": "b864b6db-63cf-4e7c-971f-e335713afded",
+    "library_name": "Music",
+    "albums": null,
+    "artists": null
+  }
+]
+```
+
+The fixture is removed afterwards — the library row and its four track rows deleted,
+`/tmp/ctl-fixture` removed — leaving the stack at one library and nine tracks, exactly
+as it was.
+
+One detail worth reading deliberately rather than as a defect: `CanonicalAlbum` is
+`BEST OF`, not `Best Of`. With no acquisition history to consult, resolution falls
+through to the filesystem's *sorted* order, which puts the uppercase folder first.
+That is the documented order (history, then filesystem, then the tag verbatim) doing
+what it says; it simply has no history to prefer here.

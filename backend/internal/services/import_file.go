@@ -50,11 +50,18 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		if err := h.db.Where("file_hash = ?", hash).First(&existing).Error; err == nil {
 			metrics.AcquisitionDedupTotal.WithLabelValues("hash").Inc()
 			h.Log(jobID, "OK", fmt.Sprintf("File already acquired (ID: %d). Skipping.", existing.ID), &itemID)
-			h.db.Model(&item).Updates(map[string]interface{}{
+			// The status write is checked, like the other two dedup branches. If
+			// it fails the item is never marked terminal, so nothing re-claims it
+			// and no retry is scheduled: the worker would report success while
+			// the row sat in `running`. The staged file itself is the import
+			// stage's business — see stageImportAndEnrich.
+			if err := h.db.Model(&item).Updates(map[string]interface{}{
 				"status":      "completed (duplicate hash)",
 				"finished_at": time.Now(),
 				"final_path":  existing.FinalPath,
-			})
+			}).Error; err != nil {
+				return fmt.Errorf("hash dedup: marking item completed: %w", err)
+			}
 			return nil
 		}
 	}
@@ -145,10 +152,10 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 				return fmt.Errorf("recording dedup: marking item completed: %w", err)
 			}
 			// The staged file is redundant — the library already holds this
-			// recording. Discard it exactly as the album-level branch below does.
-			// This branch used to return without any cleanup, so its downloads sat
-			// in staging forever while the album branch's did not (DJI-492).
-			h.discardStagedDownload(downloadPath, jobID, &itemID)
+			// recording. It is discarded by the import stage's boundary, which
+			// every non-import exit passes through (see stageImportAndEnrich).
+			// This branch once returned with no cleanup at all, so its downloads
+			// sat in staging forever while the album branch's did not (DJI-492).
 			return nil
 		}
 	}
@@ -211,9 +218,9 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 			}).Error; err != nil {
 				return fmt.Errorf("album dedup: marking item completed: %w", err)
 			}
-			// The staged file is now redundant — discard it and sweep the album
-			// folder it leaves empty, so staging does not grow unbounded.
-			h.discardStagedDownload(downloadPath, jobID, &itemID)
+			// The staged file is now redundant: the import stage's boundary
+			// discards it and sweeps the album folder it emptied, so staging does
+			// not grow unbounded (see stageImportAndEnrich).
 			return nil
 		}
 	}
