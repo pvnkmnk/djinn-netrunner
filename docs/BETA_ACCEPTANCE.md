@@ -469,10 +469,28 @@ The beta criterion, executed against `master` after PR #231 merged. Task 3
 | Go (host, for the suite) | 1.27.0 |
 | Media server | none — NetRunner serves its own Subsonic API |
 
-### Proving the running binary is the merge commit, not a stale image
+### Proving the running binary came from the merge commit, not a stale image
 
-Rebuilding is not evidence that the rebuild *took*. The worker's own binary was
-probed for string literals that exist only at `5d29d29` (#231):
+Rebuilding is not evidence that the rebuild *took*. Two separate things were
+checked, and it is worth being precise about what each one establishes.
+
+**What the build consumed.** The clone was moved onto the merge commit and left
+clean before anything was built, so the build input is identified by its own
+revision rather than by a timestamp:
+
+```
+$ git rev-parse HEAD          # in the deployment clone
+5d29d29...
+$ git status --short
+                              # empty
+```
+
+`docker compose up -d --build` then built the images from that working tree in
+the same sequence, and `docker image inspect` shows them created during this run.
+
+**What is actually running.** The literal strings introduced by #231 are present
+in the worker's binary, which rules out a container still serving a pre-#231
+image:
 
 ```
 $ docker compose ... exec -T ops-worker sh -c "grep -ac 'Staging cleanup failed' /app/netrunner-worker"
@@ -485,8 +503,16 @@ $ ... "grep -ac 'canonical identity lookup failed' /app/netrunner-worker"
 
 `ops-web` reports 0 for all three — those symbols live in the worker's
 acquisition path. The component that matters for every clause below is the
-worker, and it carries the merged code. The images were built during this run
-from the synced checkout.
+worker.
+
+**The limit of the marker check.** A string appearing in a binary does not by
+itself prove *which* revision produced it: two builds whose source both contain
+those literals look identical here. The provenance above rests on the clean tree
+at `5d29d29` plus the build that followed it; the greps corroborate that the
+running binary is not older than #231. What would make the claim airtight is an
+image revision baked in at build time (`org.opencontainers.image.revision`), which
+these images do not carry — worth adding, but that is a change to the build rather
+than to this record.
 
 ### Matrix (continues from row 40)
 
