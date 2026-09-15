@@ -3,18 +3,25 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func setupWorkerTestDB(t *testing.T) *WorkerOrchestrator {
 	t.Helper()
-	cfg := &config.Config{DatabaseURL: ":memory:"}
+	// File-backed, not ":memory:": the worker queries the database from
+	// goroutines (per-item processing, the post-acquisition index refresh), and
+	// an in-memory SQLite database gives every pooled connection its own empty
+	// copy, so a second concurrent query fails with "no such table".
+	dsn := filepath.Join(t.TempDir(), "worker-test.db")
+	cfg := &config.Config{DatabaseURL: dsn}
 	db, err := database.Connect(cfg)
 	if err != nil {
 		t.Fatalf("db connect: %v", err)
@@ -22,6 +29,13 @@ func setupWorkerTestDB(t *testing.T) *WorkerOrchestrator {
 	if err := database.Migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	// Close before the temp dir is removed: Windows refuses to delete a
+	// directory that still has the database file open.
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	return NewWorkerOrchestrator(cfg, db)
 }
 
@@ -87,11 +101,45 @@ func TestTriggerLibraryScan_NoClients(t *testing.T) {
 	// (NewWorkerOrchestrator creates the library client when a URL is configured)
 	w.library = nil
 
+	// No external media server and no library row at the configured music path:
+	// there is nothing to scan, and the error must say which path was expected.
 	ok, err := w.triggerLibraryScan()
 
 	require.False(t, ok)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no library server configured")
+	require.Contains(t, err.Error(), "no library registered at")
+}
+
+// The simplest beta configures no external media server, so the old code could
+// never refresh the index after an acquisition and imported tracks stayed
+// invisible until someone scanned by hand. With no library client the worker
+// must queue a local scan for the library at the configured music path.
+func TestTriggerLibraryScan_WithoutLibraryClientQueuesLocalScan(t *testing.T) {
+	w := setupWorkerTestDB(t)
+	w.library = nil
+	w.cfg.MusicLibraryPath = t.TempDir()
+
+	lib := database.Library{Name: "Music", Path: w.cfg.MusicLibraryPath}
+	require.NoError(t, w.db.Create(&lib).Error)
+
+	ok, err := w.triggerLibraryScan()
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var jobs []database.Job
+	require.NoError(t, w.db.Find(&jobs).Error)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, "scan", jobs[0].Type)
+	assert.Equal(t, "queued", jobs[0].State)
+	assert.Equal(t, lib.ID.String(), jobs[0].ScopeID)
+
+	// A second call must not pile up scans of the same files.
+	ok, err = w.triggerLibraryScan()
+	require.NoError(t, err)
+	assert.False(t, ok, "a scan is already queued for this library")
+	var count int64
+	require.NoError(t, w.db.Model(&database.Job{}).Where("job_type = ?", "scan").Count(&count).Error)
+	assert.EqualValues(t, 1, count)
 }
 
 // TestCheckQuotaAlerts_NilServices tests that checkQuotaAlerts does not panic
@@ -1197,12 +1245,12 @@ func TestFinalizeAcquisition_ReleasesWriteBack(t *testing.T) {
 
 	mkRel := func(title, status string) database.TrackedRelease {
 		rel := database.TrackedRelease{
-			ID:                        uuid.New(),
-			ArtistID:                  artist.ID,
+			ID:             uuid.New(),
+			ArtistID:       artist.ID,
 			ReleaseGroupID: "rg-" + title,
-			Title:                     title,
-			ReleaseType:               "Album",
-			Status:                    status,
+			Title:          title,
+			ReleaseType:    "Album",
+			Status:         status,
 		}
 		require.NoError(t, w.db.Create(&rel).Error)
 		return rel

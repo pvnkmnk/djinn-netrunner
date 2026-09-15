@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -363,4 +365,143 @@ func TestUpdateLibrary_ValidPath(t *testing.T) {
 	var updated database.Library
 	require.NoError(t, db.First(&updated, "id = ?", lib.ID).Error)
 	assert.Equal(t, filepath.Clean(tmpDir2), updated.Path)
+}
+
+// ---- Duplicate-path handling (the bring-up used to 500 here) ----
+
+// A second library on a path the caller already owns is the documented
+// bring-up re-running against an existing volume: it must hand back the
+// existing library instead of colliding on the unique path index.
+func TestCreateLibrary_DuplicatePathSameOwnerIsIdempotent(t *testing.T) {
+	app, db, user := setupLibraryTestApp(t)
+
+	tmpDir, err := os.MkdirTemp("", "netrunner-lib-dup-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	body, _ := json.Marshal(map[string]string{"name": "First", "path": tmpDir})
+	req := httptest.NewRequest("POST", "/api/libraries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 201, resp.StatusCode)
+
+	var first database.Library
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&first))
+
+	body, _ = json.Marshal(map[string]string{"name": "Second", "path": tmpDir})
+	req = httptest.NewRequest("POST", "/api/libraries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var returned database.Library
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&returned))
+	assert.Equal(t, first.ID, returned.ID, "must return the existing library, not a new one")
+	assert.Equal(t, "First", returned.Name)
+	require.NotNil(t, returned.OwnerUserID)
+	assert.Equal(t, user.ID, *returned.OwnerUserID)
+
+	var count int64
+	require.NoError(t, db.Model(&database.Library{}).Where("path = ?", filepath.Clean(tmpDir)).Count(&count).Error)
+	assert.EqualValues(t, 1, count, "no second row may be created")
+}
+
+// A path already registered by someone else is a genuine conflict, and the
+// error must name the existing library so the caller can act on it.
+func TestCreateLibrary_DuplicatePathOtherOwnerConflicts(t *testing.T) {
+	app, db, _ := setupLibraryTestApp(t)
+
+	tmpDir, err := os.MkdirTemp("", "netrunner-lib-conflict-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	other := database.User{Email: "other@example.com", PasswordHash: "hashed", Role: "user"}
+	require.NoError(t, db.Create(&other).Error)
+	existing := database.Library{Name: "Someone Elses", Path: filepath.Clean(tmpDir), OwnerUserID: &other.ID}
+	require.NoError(t, db.Create(&existing).Error)
+
+	body, _ := json.Marshal(map[string]string{"name": "Mine", "path": tmpDir})
+	req := httptest.NewRequest("POST", "/api/libraries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 409, resp.StatusCode)
+
+	var result map[string]interface{}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	assert.Contains(t, result["error"], "already exists at this path")
+	existingInfo, ok := result["existing_library"].(map[string]interface{})
+	require.True(t, ok, "the conflict must identify the existing library")
+	assert.Equal(t, existing.ID.String(), existingInfo["id"])
+}
+
+// A library owned by nobody (owner_user_id NULL) is still a path conflict for
+// a non-admin caller: the row exists and the unique index will not budge.
+func TestCreateLibrary_DuplicatePathUnownedConflicts(t *testing.T) {
+	app, db, _ := setupLibraryTestApp(t)
+
+	tmpDir, err := os.MkdirTemp("", "netrunner-lib-unowned-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	orphan := database.Library{Name: "Legacy", Path: filepath.Clean(tmpDir)}
+	require.NoError(t, db.Create(&orphan).Error)
+
+	body, _ := json.Marshal(map[string]string{"name": "Mine", "path": tmpDir})
+	req := httptest.NewRequest("POST", "/api/libraries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 409, resp.StatusCode, "a NULL owner must not be treated as this user's library")
+}
+
+// The duplicate-path answer has to match the success path's response shape. The
+// earlier version always returned JSON, so the UI submitted the form, got a body
+// it could not swap into the modal, and appeared to do nothing.
+func TestCreateLibrary_DuplicatePathHtmxReturnsPartial(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate(db))
+
+	user := database.User{Email: "htmx@example.com", PasswordHash: "hashed", Role: "admin"}
+	require.NoError(t, db.Create(&user).Error)
+
+	tmpDir, err := os.MkdirTemp("", "netrunner-lib-htmx-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+	clean := filepath.Clean(tmpDir)
+	require.NoError(t, db.Create(&database.Library{
+		Name: "Existing", Path: clean, OwnerUserID: &user.ID,
+	}).Error)
+
+	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
+	require.NoError(t, engine.LoadFromDir())
+	app := fiber.New(fiber.Config{Views: engine})
+	handler := NewLibraryHandler(db)
+	app.Post("/api/libraries", func(c *fiber.Ctx) error {
+		c.Locals("user", user)
+		return handler.CreateLibrary(c)
+	})
+
+	body, _ := json.Marshal(map[string]string{"name": "Again", "path": tmpDir})
+	req := httptest.NewRequest("POST", "/api/libraries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HX-Request", "true")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode, "a re-submission must not 500")
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), `"existing_library"`, "HTMX must get the partial, not the JSON conflict")
+	assert.Equal(t, "closeModal", resp.Header.Get("HX-Trigger"), "the modal still has to close")
+
+	var count int64
+	require.NoError(t, db.Model(&database.Library{}).Where("path = ?", clean).Count(&count).Error)
+	assert.EqualValues(t, 1, count)
 }

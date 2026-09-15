@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -222,6 +223,7 @@ func (w *WorkerOrchestrator) Start() {
 		}
 
 		w.claimAndProcess()
+		w.finalizeOrphanedCancellations()
 		w.processActiveJobsRoundRobin()
 
 		// Wait for next tick OR wakeup notification
@@ -570,8 +572,36 @@ func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
 	w.jobMutex.Unlock()
 
 	for _, id := range activeIDs {
+		// Probe the row outside the mutex: a job can be cancelled at any moment
+		// (POST /api/jobs/:id/cancel flips it to 'cancelled') and nothing else
+		// re-reads that state. Without this probe the work runs to completion
+		// and finishJob overwrites the state, so the endpoint would be a no-op.
+		cancelled, probeErr := w.jobCancelled(id)
+		if probeErr != nil {
+			// Unknown state: dispatch nothing until the row can be read, or the
+			// job may be cancelled in the same breath as it is given more work.
+			slog.Error("Could not read job state; leaving it idle this tick", "worker_id", w.workerID, "job_id", id, "error", probeErr)
+			continue
+		}
+
 		w.jobMutex.Lock()
 		jc, ok := w.activeJobs[id]
+		if ok && cancelled {
+			// Abort whatever the job is doing — an in-flight download, a
+			// provider call — then get out of the way. If a goroutine is
+			// mid-item it owns the teardown: its own finish path releases the
+			// scope lock and, seeing the 'cancelled' row, leaves the state
+			// alone. Tearing the job down here as well would release the scope
+			// lock while that goroutine is still working under it.
+			jc.cancel()
+			processing := jc.processing
+			w.jobMutex.Unlock()
+			if !processing {
+				slog.Info("Job cancelled, stopping", "worker_id", w.workerID, "job_id", jc.job.ID, "job_type", jc.job.Type)
+				w.finishCancelledJob(jc)
+			}
+			continue
+		}
 		if ok && (jc.processing || (jc.wakeAt != nil && time.Now().Before(*jc.wakeAt))) {
 			// Busy, or sleeping until an item retry's backoff elapses.
 			w.jobMutex.Unlock()
@@ -698,6 +728,158 @@ func (w *WorkerOrchestrator) scheduleWake(jc *jobContext, delay time.Duration, r
 
 	w.db.Model(&database.Job{}).Where("id = ?", jc.job.ID).Update("summary", reason)
 	slog.Info("Acquisition job sleeping", "worker_id", w.workerID, "job_id", jc.job.ID, "reason", reason, "wake_in", delay.Round(time.Second))
+}
+
+// queuePostAcquisitionRefresh triggers a library index refresh after an
+// acquisition that reached a state at which it may have imported something, so
+// new tracks appear without waiting for a manual or scheduled scan. A cancelled
+// acquisition counts: whatever it imported before the cancel is on disk, and
+// leaving it invisible is exactly the bug this closes.
+func (w *WorkerOrchestrator) queuePostAcquisitionRefresh(jobID uint64, jobType, finalState string) {
+	if jobType != "acquisition" {
+		return
+	}
+	switch finalState {
+	case "succeeded", "partial", "cancelled":
+	default:
+		return
+	}
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		if ok, err := w.triggerLibraryScan(); err != nil {
+			slog.Warn("Post-acquisition library refresh failed", "job_id", jobID, "error", err)
+		} else if !ok {
+			slog.Info("Post-acquisition library refresh not needed", "job_id", jobID)
+		}
+	}()
+}
+
+// finalizeOrphanedCancellations stamps jobs that were cancelled while no worker
+// owned them. A cancel request writes the state directly, and after a worker
+// restart the in-process job is gone, so no job goroutine ever runs the
+// teardown: the row would sit 'cancelled' with no finished_at and no summary,
+// looking unfinished forever in the jobs UI.
+func (w *WorkerOrchestrator) finalizeOrphanedCancellations() {
+	type cancelledJob struct {
+		ID   uint64
+		Type string
+	}
+	var jobs []cancelledJob
+	if err := w.db.Model(&database.Job{}).
+		Select("id, job_type AS type").
+		Where("state = ? AND finished_at IS NULL", "cancelled").
+		Scan(&jobs).Error; err != nil {
+		slog.Error("Could not list cancelled jobs needing finalization", "worker_id", w.workerID, "error", err)
+		return
+	}
+
+	for _, job := range jobs {
+		// Never touch a job this worker is still tearing down itself. Another
+		// worker's active set is invisible here, which is why the claim below is
+		// a conditional write rather than this check alone.
+		w.jobMutex.Lock()
+		_, active := w.activeJobs[job.ID]
+		w.jobMutex.Unlock()
+		if active {
+			continue
+		}
+
+		if !w.finalizeCancellation(job.ID) {
+			continue
+		}
+
+		if job.Type == "acquisition" {
+			w.finalizeAcquisition(job.ID, nil)
+			w.queuePostAcquisitionRefresh(job.ID, job.Type, "cancelled")
+		}
+
+		slog.Info("Finalized orphaned cancellation", "worker_id", w.workerID, "job_id", job.ID, "job_type", job.Type)
+	}
+}
+
+// finalizeCancellation stops every item still pending on a cancelled job and
+// stamps its finished_at and summary, in one transaction so a failure cannot
+// leave the job terminal while items are still claimed. It reports whether this
+// caller is the one that finished the job: the job update is conditional on
+// finished_at still being NULL, so when another worker got there first this
+// affects no rows and the caller must not repeat the follow-up work (the
+// finished_at probe alone is racy, and the follow-up queues a scan job).
+func (w *WorkerOrchestrator) finalizeCancellation(jobID uint64) bool {
+	now := time.Now()
+	claimed := false
+	err := w.db.Transaction(func(tx *gorm.DB) error {
+		// Items the request already cancelled are terminal; anything still
+		// claimed must not stay 'running' forever. A 'failed' item with a retry
+		// scheduled is pending work too — once the job is finished nothing will
+		// ever claim it, so it must not advertise an attempt that cannot happen.
+		if err := tx.Model(&database.JobItem{}).
+			Where("job_id = ? AND (status IN ? OR (status = ? AND next_attempt_at IS NOT NULL))",
+				jobID, []string{"queued", "running", "downloading"}, "failed").
+			Updates(map[string]interface{}{"status": "cancelled", "next_attempt_at": nil}).Error; err != nil {
+			return fmt.Errorf("stopping pending items: %w", err)
+		}
+
+		res := tx.Model(&database.Job{}).
+			Where("id = ? AND state = ? AND finished_at IS NULL", jobID, "cancelled").
+			Updates(map[string]interface{}{"finished_at": &now, "summary": "Cancelled by request"})
+		if res.Error != nil {
+			return fmt.Errorf("finishing the job: %w", res.Error)
+		}
+		claimed = res.RowsAffected > 0
+		return nil
+	})
+	if err != nil {
+		slog.Error("Failed to finalize cancelled job", "worker_id", w.workerID, "job_id", jobID, "error", err)
+		return false
+	}
+	return claimed
+}
+
+// jobCancelled reports whether a job's row is currently in the 'cancelled'
+// state. Cancel requests write that state directly (see agent.CancelJob); the
+// worker has no other way to learn about them, so this is how a running job is
+// stopped. A job that has vanished (deleted) is not cancelled.
+// A read failure is reported, never folded into "not cancelled": treating an
+// unknown state as a green light is how a cancelled job gets dispatched more
+// work or has its cancellation overwritten.
+func (w *WorkerOrchestrator) jobCancelled(jobID uint64) (bool, error) {
+	var states []string
+	if err := w.db.Model(&database.Job{}).Where("id = ?", jobID).Pluck("state", &states).Error; err != nil {
+		return false, err
+	}
+	return len(states) > 0 && states[0] == "cancelled", nil
+}
+
+// finishCancelledJob tears down a cancelled job that no goroutine is working
+// on: drop it from the active set, release its scope lock, cancel anything
+// still claimed, and leave the 'cancelled' state the request wrote in place.
+func (w *WorkerOrchestrator) finishCancelledJob(jc *jobContext) {
+	w.jobMutex.Lock()
+	delete(w.activeJobs, jc.job.ID)
+	runningCount := len(w.activeJobs)
+	w.jobMutex.Unlock()
+
+	w.lockManager.ReleaseLock(context.Background(), jc.lockKey)
+
+	// One transaction: a failure that left the job terminal while items were
+	// still claimed would strand them, since nothing revisits a finished job's
+	// items. Notifications and metrics wait until it commits.
+	w.finalizeCancellation(jc.job.ID)
+
+	w.notificationService.NotifyJobCompletion(jc.job.ID, jc.job.Type, "cancelled", "Cancelled by request", w.workerID)
+	metrics.JobsProcessedTotal.WithLabelValues(jc.job.Type, "cancelled").Inc()
+	metrics.JobsRunning.Set(float64(runningCount))
+
+	if jc.job.Type == "acquisition" {
+		// Same bookkeeping as a job that finished on its own: releases it did
+		// acquire must stop being 'wanted', or the next sync re-downloads them,
+		// and whatever it imported has to become visible.
+		w.finalizeAcquisition(jc.job.ID, nil)
+		w.queuePostAcquisitionRefresh(jc.job.ID, jc.job.Type, "cancelled")
+	}
+
+	slog.Info("Finished job", "worker_id", w.workerID, "job_id", jc.job.ID, "state", "cancelled")
 }
 
 // countRunningItems counts items of a job currently claimed by any worker —
@@ -910,6 +1092,21 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	if jc.job.Type == "acquisition" {
 		finalState, summary = w.finalizeAcquisition(jobID, err)
 	}
+	// A cancel that landed while this job was finishing is the user's intent, so
+	// it wins over the derived outcome: reporting a cancelled job as 'succeeded'
+	// would be wrong, and failing it on the abort we caused (context cancelled)
+	// would be misleading.
+	cancelled, probeErr := w.jobCancelled(jobID)
+	if probeErr != nil {
+		// The state is unknown. Keep the derived outcome rather than guess, but
+		// say so: the conditional write below still cannot clobber a cancel.
+		slog.Error("Could not read job state while finalizing", "worker_id", w.workerID, "job_id", jobID, "error", probeErr)
+	}
+	if cancelled {
+		finalState = "cancelled"
+		summary = "Cancelled by request"
+		err = nil
+	}
 
 	now := time.Now()
 	updates := map[string]interface{}{
@@ -921,24 +1118,29 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	if err != nil {
 		updates["error_detail"] = err.Error()
 	}
-	w.db.Model(&database.Job{}).Where("id = ?", jobID).Updates(updates)
+	// Conditional write: a cancel can land between the probe above and here, and
+	// it must win. `state <> 'cancelled'` makes that outcome unattempted rather
+	// than overwritten, and the branch below re-asserts the user's intent.
+	res := w.db.Model(&database.Job{}).
+		Where("id = ? AND state <> ?", jobID, "cancelled").
+		Updates(updates)
+	if res.Error != nil {
+		slog.Error("Failed to finalize job", "worker_id", w.workerID, "job_id", jobID, "error", res.Error)
+	} else if res.RowsAffected == 0 {
+		finalState = "cancelled"
+		summary = "Cancelled by request"
+		if fin := w.db.Model(&database.Job{}).
+			Where("id = ? AND state = ? AND finished_at IS NULL", jobID, "cancelled").
+			Updates(map[string]interface{}{
+				"finished_at": &now, "summary": summary, "error_detail": "",
+			}); fin.Error != nil {
+			slog.Error("Failed to record the cancellation", "worker_id", w.workerID, "job_id", jobID, "error", fin.Error)
+		}
+	}
 
 	w.notificationService.NotifyJobCompletion(jobID, jc.job.Type, finalState, summary, w.workerID)
 
-	// Trigger library index refresh after an acquisition that imported anything
-	// (fully or partially) so new tracks appear in the streaming server without
-	// waiting for a manual or scheduled scan.
-	if (finalState == "succeeded" || finalState == "partial") && jc.job.Type == "acquisition" {
-		w.wg.Add(1)
-		go func() {
-			defer w.wg.Done()
-			if ok, err := w.triggerLibraryScan(); err != nil {
-				slog.Warn("Post-acquisition library refresh failed", "job_id", jobID, "error", err)
-			} else if !ok {
-				slog.Warn("Post-acquisition library refresh returned non-ok", "job_id", jobID)
-			}
-		}()
-	}
+	w.queuePostAcquisitionRefresh(jobID, jc.job.Type, finalState)
 
 	// Record metrics
 	metrics.JobsProcessedTotal.WithLabelValues(jc.job.Type, finalState).Inc()
@@ -1007,12 +1209,61 @@ func main() {
 	worker.Stop()
 }
 
-// triggerLibraryScan triggers a scan on the configured library server.
+// triggerLibraryScan makes freshly imported tracks visible to a client.
+//
+// With an external media server configured (NAVIDROME_URL / GONIC_URL) it asks
+// that server to rescan. Without one — the simplest beta, where NetRunner serves
+// its own Subsonic API off its own database — there is nothing to ask, and the
+// old behaviour was to return an error, so an acquisition's tracks stayed
+// invisible until someone triggered a scan by hand. Queue a local scan job for
+// the configured music library instead.
 func (w *WorkerOrchestrator) triggerLibraryScan() (bool, error) {
 	if w.library != nil {
 		return w.library.TriggerScan()
 	}
-	return false, fmt.Errorf("no library server configured (set NAVIDROME_URL or GONIC_URL)")
+
+	libPath := filepath.Clean(w.cfg.MusicLibraryPath)
+	var libraries []database.Library
+	if err := w.db.Where("path = ?", libPath).Find(&libraries).Error; err != nil {
+		return false, fmt.Errorf("looking up the music library: %w", err)
+	}
+	if len(libraries) == 0 {
+		return false, fmt.Errorf("no library registered at %s (create one over the API, or set NAVIDROME_URL)", libPath)
+	}
+
+	scanned := false
+	for _, lib := range libraries {
+		// The queued job is its own mutex: one scan per library at a time, so a
+		// burst of acquisitions cannot pile up scans of the same files. There is
+		// no unique index behind it, so two workers racing this check can both
+		// enqueue — deliberately accepted rather than solved with a constraint,
+		// because the loser is a redundant scan of unchanged files, and a worker
+		// that failed to queue one would leave imports invisible.
+		var pending int64
+		w.db.Model(&database.Job{}).
+			Where("job_type = ? AND scope_type = ? AND scope_id = ? AND state IN ?",
+				"scan", "library", lib.ID.String(), []string{"queued", "running"}).
+			Count(&pending)
+		if pending > 0 {
+			continue
+		}
+
+		job := database.Job{
+			Type:        "scan",
+			State:       "queued",
+			ScopeType:   "library",
+			ScopeID:     lib.ID.String(),
+			RequestedAt: time.Now(),
+			CreatedBy:   "worker",
+		}
+		if err := w.db.Create(&job).Error; err != nil {
+			return false, fmt.Errorf("queueing the library scan: %w", err)
+		}
+		slog.Info("Queued library scan after acquisition", "library_id", lib.ID, "path", lib.Path, "job_id", job.ID)
+		scanned = true
+	}
+
+	return scanned, nil
 }
 
 // monitorJobInterval is how often a new release_monitor job is enqueued.

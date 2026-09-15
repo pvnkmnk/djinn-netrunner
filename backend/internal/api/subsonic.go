@@ -112,6 +112,10 @@ type subsonicAlbum struct {
 	Genre     string `xml:"genre,attr" json:"genre,omitempty"`
 	CoverArt  string `xml:"coverArt,attr" json:"coverArt,omitempty"`
 	Duration  int    `xml:"duration,attr" json:"duration,omitempty"`
+	// getAlbum carries its tracks inline as <song> children. Without them a
+	// client can browse artist -> album but never reach a track to stream: the
+	// album's songCount says one exists and nothing hands over its id.
+	Song []subsonicSong `xml:"song,omitempty" json:"song,omitempty"`
 }
 
 type subsonicIndexes struct {
@@ -617,7 +621,26 @@ func (h *SubsonicHandler) GetSong(c *fiber.Ctx) error {
 	}
 
 	// Create song response
-	song := &subsonicSong{
+	song := h.trackToSong(track, albumID(track.Album, track.Artist), track.Artist)
+
+	resp := &subsonicResponse{
+		Status:  "ok",
+		Version: "1.16.1",
+		Type:    "netrunner",
+		Song:    &song,
+	}
+
+	return h.respond(c, resp)
+}
+
+// trackToSong renders a library track as a Subsonic song, with the album and
+// artist ids a client needs to navigate back up from it. Shared by getSong and
+// getAlbum so both hand out the same, streamable ids.
+func (h *SubsonicHandler) trackToSong(track database.Track, albumIDValue, artistName string) subsonicSong {
+	if artistName == "" {
+		artistName = track.Artist
+	}
+	return subsonicSong{
 		ID:       track.ID.String(),
 		Title:    track.Title,
 		Artist:   track.Artist,
@@ -629,19 +652,10 @@ func (h *SubsonicHandler) GetSong(c *fiber.Ctx) error {
 		Size:     track.FileSize,
 		Format:   track.Format,
 		Duration: h.getTrackDuration(track.Path),
-		ArtistID: "",
-		AlbumID:  "",
+		ArtistID: albumArtistID(artistName),
+		AlbumID:  albumIDValue,
 		CoverArt: track.CoverURL,
 	}
-
-	resp := &subsonicResponse{
-		Status:  "ok",
-		Version: "1.16.1",
-		Type:    "netrunner",
-		Song:    song,
-	}
-
-	return h.respond(c, resp)
 }
 
 // GetAlbum handles the getAlbum endpoint
@@ -675,12 +689,6 @@ func (h *SubsonicHandler) GetAlbum(c *fiber.Ctx) error {
 		return h.respondError(c, 70, "Album not found")
 	}
 
-	// Calculate total duration
-	totalDuration := 0
-	for _, track := range tracks {
-		totalDuration += h.getTrackDuration(track.Path)
-	}
-
 	// Create album response
 	album := &subsonicAlbum{
 		ID:        id,
@@ -691,7 +699,14 @@ func (h *SubsonicHandler) GetAlbum(c *fiber.Ctx) error {
 		Year:      safeDeref(tracks[0].Year),
 		Genre:     tracks[0].Genre,
 		CoverArt:  tracks[0].CoverURL,
-		Duration:  totalDuration,
+	}
+
+	// Populate the track list (and total duration) from the same rows, so the
+	// ids a client gets here are the ones stream.view accepts.
+	for _, track := range tracks {
+		song := h.trackToSong(track, id, artistName)
+		album.Song = append(album.Song, song)
+		album.Duration += song.Duration
 	}
 
 	resp := &subsonicResponse{

@@ -326,3 +326,31 @@ func createBrowseTestTracks(t *testing.T, db *gorm.DB, artist, album string, n i
 		require.NoError(t, db.Create(&track).Error)
 	}
 }
+
+// getAlbum has to hand over its tracks. With only songCount and no <song>
+// children, the documented artist -> album -> track browse path dead-ends: the
+// client is told a track exists and given no id it can stream. Found by walking
+// that path against a clean stack.
+func TestSubsonic_GetAlbum_ReturnsStreamableSongs(t *testing.T) {
+	db, handler := setupSubsonicDBHandlerTest(t)
+	createBrowseTestTracks(t, db, "Test Artist", "Test Album", 3)
+
+	var track database.Track
+	require.NoError(t, db.Where("album = ? AND artist = ?", "Test Album", "Test Artist").
+		Order("track_num").First(&track).Error)
+
+	app := fiber.New()
+	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
+
+	resp, err := app.Test(httptest.NewRequest("GET",
+		"/getAlbum?id="+url.QueryEscape(albumID("Test Album", "Test Artist"))+"&u=test@example.com&p=testpass123", nil))
+	require.NoError(t, err)
+	body := string(subsonicGetRespBody(resp))
+
+	assert.Contains(t, body, "<song ", "getAlbum must list its tracks")
+	assert.Contains(t, body, "id=\""+track.ID.String()+"\"",
+		"the song id must be the one stream.view accepts")
+	assert.Contains(t, body, "albumId=\""+albumID("Test Album", "Test Artist")+"\"",
+		"each song needs the album id so a client can navigate back up")
+	assert.Contains(t, body, "artistId=\""+artistID("Test Artist")+"\"")
+}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
@@ -1049,4 +1050,41 @@ func TestGetStatsSummary(t *testing.T) {
 		assert.Equal(t, int64(1536000), summary.Library.TotalSize) // 1024KB + 512KB
 		assert.InDelta(t, 1536000.0/(1024*1024), summary.Library.TotalSizeMB, 0.001)
 	})
+}
+
+// A 'failed' item with a retry scheduled is pending work, not a terminal
+// outcome: cancelling the job must stop it, or the UI keeps promising a retry
+// that can never run.
+func TestCancelJob_CancelsItemsAwaitingRetry(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	assert.NoError(t, err)
+	assert.NoError(t, db.AutoMigrate(&database.Job{}, &database.JobItem{}))
+
+	job := database.Job{Type: "acquisition", State: "running", RequestedAt: time.Now()}
+	assert.NoError(t, db.Create(&job).Error)
+
+	retryAt := time.Now().Add(time.Minute)
+	items := []database.JobItem{
+		{JobID: job.ID, TrackTitle: "queued", Status: "queued"},
+		{JobID: job.ID, TrackTitle: "retry pending", Status: "failed", NextAttemptAt: &retryAt},
+		{JobID: job.ID, TrackTitle: "really failed", Status: "failed"},
+		{JobID: job.ID, TrackTitle: "imported", Status: "imported"},
+	}
+	for i := range items {
+		assert.NoError(t, db.Create(&items[i]).Error)
+	}
+
+	assert.NoError(t, CancelJob(db, job.ID))
+
+	load := func(title string) database.JobItem {
+		var it database.JobItem
+		assert.NoError(t, db.First(&it, "track_title = ?", title).Error)
+		return it
+	}
+	assert.Equal(t, "cancelled", load("queued").Status)
+	pendingRetry := load("retry pending")
+	assert.Equal(t, "cancelled", pendingRetry.Status)
+	assert.Nil(t, pendingRetry.NextAttemptAt)
+	assert.Equal(t, "failed", load("really failed").Status, "a real failure is not a cancel")
+	assert.Equal(t, "imported", load("imported").Status, "an imported track keeps its outcome")
 }

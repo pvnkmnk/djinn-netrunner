@@ -105,6 +105,7 @@ type AcquisitionItemStats struct {
 	Total     int64 // every item in the job
 	Succeeded int64 // imported into the library (incl. already-indexed/duplicate skips)
 	Failed    int64 // permanently failed after retries (abandoned)
+	Cancelled int64 // cancelled by a cancel request — terminal, not pending
 	Pending   int64 // queued/running/failed-with-backoff — not yet terminal
 }
 
@@ -120,7 +121,8 @@ func acquisitionItemStats(db *gorm.DB, jobID uint64) AcquisitionItemStats {
 		Select("COUNT(*) AS total, " +
 			"SUM(CASE WHEN status = 'imported' OR status LIKE 'completed%' THEN 1 ELSE 0 END) AS succeeded, " +
 			"SUM(CASE WHEN status = 'abandoned' OR status = 'failed (no results)' THEN 1 ELSE 0 END) AS failed, " +
-			"SUM(CASE WHEN status != 'imported' AND status != 'abandoned' AND status != 'failed (no results)' AND status NOT LIKE 'completed%' THEN 1 ELSE 0 END) AS pending").
+			"SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled, " +
+			"SUM(CASE WHEN status != 'imported' AND status != 'abandoned' AND status != 'failed (no results)' AND status != 'cancelled' AND status NOT LIKE 'completed%' THEN 1 ELSE 0 END) AS pending").
 		Scan(&stats)
 	return stats
 }
@@ -137,6 +139,10 @@ func classifyAcquisitionOutcome(s AcquisitionItemStats) (state string, summary s
 		// Failing loudly (instead of reporting success for nothing happening)
 		// is the whole point of honest finalization.
 		return "failed", "No items queued (anomalous: job created without items)"
+	case s.Cancelled > 0 && s.Pending == 0:
+		// Cancellation is terminal and never a retry: reporting it as pending
+		// would promise work that nothing will do again.
+		return "cancelled", fmt.Sprintf("Cancelled with %d/%d items acquired", s.Succeeded, s.Total)
 	case s.Pending > 0:
 		return "partial", fmt.Sprintf("%d/%d items pending retry", s.Pending, s.Total)
 	case s.Succeeded == s.Total:
