@@ -71,8 +71,16 @@ func (h *AcquisitionHandler) resolveCanonicalArtist(artist string) string {
 		}
 	}
 
+	// Library folder names are sanitised, so "AC/DC" is stored as "AC-DC" and the
+	// filesystem comparison has to use the sanitised form. The database keeps the
+	// raw artist name, so the query above must NOT use this key.
+	folderKey := key
+	if h.ext != nil {
+		folderKey = CanonicalKey(h.ext.SanitizeFilename(artist))
+	}
+
 	for _, name := range sortedSubdirs(h.libraryRoot()) {
-		if CanonicalKey(name) == key {
+		if CanonicalKey(name) == folderKey {
 			return name
 		}
 	}
@@ -121,19 +129,30 @@ func (h *AcquisitionHandler) resolveCanonicalAlbum(artist, album string) string 
 }
 
 // findExistingAlbumAcquisition returns the earliest acquisition that already
-// holds this artist+album, ignoring the exact file we just hashed. It is the
-// single owner of the album (release-group) dedup lookup: case is folded on
-// both sides, so a re-acquire whose tags differ only by case is recognised as
-// the album the library already holds rather than importing a second copy.
-func (h *AcquisitionHandler) findExistingAlbumAcquisition(artist, album, fileHash string) (*database.Acquisition, error) {
+// holds this album, ignoring the exact file we just hashed. It is the single
+// owner of the album (release-group) dedup lookup: case is folded on both
+// sides, so a re-acquire whose tags differ only by case is recognised as the
+// album the library already holds rather than importing a second copy.
+//
+// Both the canonical album artist and the per-track artist are matched. The
+// import resolves the album artist to key the lookup, but a row records
+// metadata.Artist - the track artist - so a multi-credit track ("X & Y" tagged
+// under album artist "X") would never match its own album otherwise.
+func (h *AcquisitionHandler) findExistingAlbumAcquisition(albumArtist, trackArtist, album, fileHash string) (*database.Acquisition, error) {
 	if h.db == nil {
 		return nil, errors.New("acquisition handler has no database")
 	}
 
+	primaryArtist := CanonicalKey(albumArtist)
+	secondaryArtist := CanonicalKey(trackArtist)
+	if secondaryArtist == "" {
+		secondaryArtist = primaryArtist
+	}
+
 	var existing database.Acquisition
 	err := h.db.
-		Where("LOWER(TRIM(artist)) = ? AND LOWER(TRIM(album)) = ? AND (file_hash = '' OR file_hash IS NULL OR file_hash != ?)",
-			CanonicalKey(artist), CanonicalKey(album), fileHash).
+		Where("(LOWER(TRIM(artist)) = ? OR LOWER(TRIM(artist)) = ?) AND LOWER(TRIM(album)) = ? AND (file_hash = '' OR file_hash IS NULL OR file_hash != ?)",
+			primaryArtist, secondaryArtist, CanonicalKey(album), fileHash).
 		Order("id ASC").
 		First(&existing).Error
 	if err != nil {

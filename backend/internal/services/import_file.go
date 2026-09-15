@@ -173,7 +173,7 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		// The lookup folds case on both sides and returns the earliest match, so a
 		// case-only difference is recognised as the album the library already
 		// holds and the row reported to the caller is the canonical one (DJI-489).
-		existing, err := h.findExistingAlbumAcquisition(albumArtist, metadata.Album, hash)
+		existing, err := h.findExistingAlbumAcquisition(albumArtist, metadata.Artist, metadata.Album, hash)
 		if err == nil {
 			metrics.AcquisitionDedupTotal.WithLabelValues("artist_album").Inc()
 			h.Log(jobID, "OK", fmt.Sprintf("Album already acquired (existing acquisition #%d at %s). Skipping track.",

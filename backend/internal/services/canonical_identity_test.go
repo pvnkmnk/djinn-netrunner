@@ -155,7 +155,7 @@ func TestFindExistingAlbumAcquisition_FoldsCase(t *testing.T) {
 	seedAcquisition(t, db, "PUP", "The Unraveling Of Puptheband",
 		filepath.Join(root, "PUP", "The Unraveling Of Puptheband", "12 - PUPTHEBAND Inc. Is Filing For Bankruptcy.mp3"))
 
-	found, err := h.findExistingAlbumAcquisition("PUP", "The Unraveling Of Puptheband", "different-hash")
+	found, err := h.findExistingAlbumAcquisition("PUP", "PUP", "The Unraveling Of Puptheband", "different-hash")
 	require.NoError(t, err)
 	require.Equal(t, first.ID, found.ID, "the earliest acquisition is the canonical one")
 
@@ -172,12 +172,46 @@ func TestFindExistingAlbumAcquisition_SameFileIsNotAnAlbumDuplicate(t *testing.T
 		filepath.Join(root, "PUP", "Morbid Stuff", "01 - Track.mp3"))
 	require.NoError(t, db.Model(acq).Update("file_hash", "abc123").Error)
 
-	_, err := h.findExistingAlbumAcquisition("PUP", "Morbid Stuff", "abc123")
+	_, err := h.findExistingAlbumAcquisition("PUP", "PUP", "Morbid Stuff", "abc123")
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound, "the exact file just installed is not a duplicate of itself")
 
-	found, err := h.findExistingAlbumAcquisition("PUP", "Morbid Stuff", "some-other-hash")
+	found, err := h.findExistingAlbumAcquisition("PUP", "PUP", "Morbid Stuff", "some-other-hash")
 	require.NoError(t, err)
 	require.Equal(t, acq.ID, found.ID)
+}
+
+// A row records metadata.Artist (the track artist) while the import keys the
+// lookup on the canonical album artist, so a multi-credit track would never
+// match its own album unless the lookup folds both identities together.
+func TestFindExistingAlbumAcquisition_MatchesTrackArtistAgainstAlbumArtist(t *testing.T) {
+	h, db, root := newCanonicalIdentityHandler(t)
+	credit := "Every Time I Die & Daryl Palumbo"
+	row := seedAcquisition(t, db, credit, "Gutter Phenomenon",
+		filepath.Join(root, "Every Time I Die", "Gutter Phenomenon", "02 - Choke-Son.mp3"))
+
+	found, err := h.findExistingAlbumAcquisition("Every Time I Die", credit, "Gutter Phenomenon", "different-hash")
+	require.NoError(t, err, "the album artist lookup must see the row stored under the track credit")
+	require.Equal(t, row.ID, found.ID)
+
+	// And the same row is found when the row holds the album artist instead.
+	h2, db2, root2 := newCanonicalIdentityHandler(t)
+	row2 := seedAcquisition(t, db2, "Every Time I Die", "Gutter Phenomenon",
+		filepath.Join(root2, "Every Time I Die", "Gutter Phenomenon", "02 - Choke-Son.mp3"))
+
+	found, err = h2.findExistingAlbumAcquisition("Every Time I Die", credit, "Gutter Phenomenon", "other-hash")
+	require.NoError(t, err)
+	require.Equal(t, row2.ID, found.ID)
+}
+
+// Folder names are sanitised, so an artist tagged "AC/DC" lives in "AC-DC" and
+// the filesystem lookup has to compare the sanitised form.
+func TestResolveCanonicalArtist_MatchesSanitisedFolderName(t *testing.T) {
+	h, _, root := newCanonicalIdentityHandler(t)
+	mkLibraryDirs(t, root, "AC-DC", "Back In Black")
+
+	require.Equal(t, "AC-DC", h.resolveCanonicalArtist("AC/DC"),
+		"the existing sanitised folder casing must win over the raw tag")
+	require.Equal(t, "Back In Black", h.resolveCanonicalAlbum("AC-DC", "Back In Black"))
 }
 
 // Resolution and path building must compose into the canonical folder — the
