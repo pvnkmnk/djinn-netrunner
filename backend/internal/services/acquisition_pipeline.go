@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -34,7 +35,6 @@ func NewAcquisitionHandler(db *gorm.DB, cfg *config.Config, slskd SlskdClient, m
 	return &AcquisitionHandler{BaseHandler: BaseHandler{db: db}, cfg: cfg, slskd: slskd, mb: mb, aid: aid, ext: ext, library: library, discogs: discogs, cache: cache, lyrics: lyrics, transcoder: transcoder, ytdlp: ytdlp}
 }
 
-
 // acquisitionPipeline carries state between pipeline stages.
 type acquisitionPipeline struct {
 	ctx        context.Context
@@ -44,9 +44,9 @@ type acquisitionPipeline struct {
 	results    []SearchResult
 	best       SearchResult
 	candidates []SearchResult // results that passed the plausibility gate, best first
-	download   string     // path after download completes
-	albumFiles []PeerFile // files found during album-mode browse
-}// ExecuteItem runs the acquisition pipeline for a single job item.
+	download   string         // path after download completes
+	albumFiles []PeerFile     // files found during album-mode browse
+} // ExecuteItem runs the acquisition pipeline for a single job item.
 // Stages are named and independently testable:
 //  1. loadItemContext     — load job, item, profile from DB
 //  2. checkLibraryIndex   — skip if already in library
@@ -549,10 +549,36 @@ func (h *AcquisitionHandler) rejectUnplayableDownload(p *acquisitionPipeline, ca
 }
 
 // stageImportAndEnrich imports the downloaded file and enriches metadata.
+//
+// It is also the single boundary that guarantees a staged download does not
+// survive an import that did not happen. importFile reports most of its terminal
+// outcomes by returning nil — a duplicate by hash, a duplicate album, an item it
+// failed — and a successful import is the only one that *moves* the file out of
+// staging. So the staged path still existing after the call is proof that
+// nothing imported it, and leaving it there is how one discography run
+// accumulated whole directories of downloads no item would ever claim (DJI-490)
+// while a retry re-downloads from scratch rather than reusing them.
+//
+// The decision lives here rather than in each branch because this is the only
+// place that knows both the staged path and the outcome — importFile has exactly
+// one caller and is unexported. It routes through discardStagedDownload, the
+// single owner of "this staged file will never be imported": that owner removes
+// only this item's own file and sweeps only directories it emptied, so a sibling
+// track another item still has to import is never taken with it.
 func (h *AcquisitionHandler) stageImportAndEnrich(ctx context.Context, p *acquisitionPipeline) error {
 	var coverArtSources []string
 	if p.profile != nil {
 		coverArtSources = parseCoverArtSources(p.profile.CoverArtSources)
 	}
-	return h.importFile(ctx, p.item.JobID, p.item.ID, p.download, p.item, coverArtSources, p.profile)
+
+	err := h.importFile(ctx, p.item.JobID, p.item.ID, p.download, p.item, coverArtSources, p.profile)
+
+	// Still present means it was not imported. A download that was moved into the
+	// library is not at risk: the stat fails against the old path and nothing is
+	// removed. An empty path also stats as missing, so it is skipped.
+	if _, statErr := os.Stat(p.download); statErr == nil {
+		h.discardStagedDownload(p.download, p.item.JobID, &p.item.ID)
+	}
+
+	return err
 }

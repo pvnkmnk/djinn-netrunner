@@ -6,9 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // discardStagedDownload is the single owner for "this staged file will never be
@@ -178,4 +181,134 @@ func TestCleanupEmptyStagingDirs_AcceptsRelativeDir(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "the emptied artist dir must be swept too")
 	_, err = os.Stat(staging)
 	require.NoError(t, err, "the staging root itself must survive")
+}
+
+// stagingImportTestDB is file-backed rather than ":memory:". A memory DSN gives
+// each *pooled connection* its own empty database, so the hash lookup these
+// tests exercise could land on a connection that cannot see the seeded row —
+// and the test would then pass without ever reaching the branch it is about.
+func stagingImportTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	dsn := filepath.Join(t.TempDir(), "staging_import_test.db")
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate(db))
+
+	// Windows will not delete the TempDir while the DB file is still open.
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	return db
+}
+
+func newStagingImportHandler(t *testing.T) (*AcquisitionHandler, *gorm.DB, string) {
+	t.Helper()
+
+	db := stagingImportTestDB(t)
+	staging := t.TempDir()
+	handler := NewAcquisitionHandler(db, &config.Config{DownloadStagingPath: staging},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.ext = NewMetadataExtractor()
+
+	return handler, db, staging
+}
+
+// stageStagedFile writes a download into staging and returns its path plus the
+// album directory holding it, mirroring what a peer leaves behind.
+func stageStagedFile(t *testing.T, staging string) (string, string) {
+	t.Helper()
+
+	albumDir := filepath.Join(staging, "Some Artist", "Some Album")
+	require.NoError(t, os.MkdirAll(albumDir, 0o755))
+	staged := filepath.Join(albumDir, "01 - track.mp3")
+	require.NoError(t, os.WriteFile(staged, []byte("already in the library"), 0o644))
+
+	return staged, albumDir
+}
+
+// assertStagingIsEmptyExceptRoot asserts the whole skeleton a download left
+// behind is gone: the file, its album folder, and the artist folder.
+func assertStagingIsEmptyExceptRoot(t *testing.T, staging, staged, albumDir, why string) {
+	t.Helper()
+
+	_, err := os.Stat(staged)
+	assert.True(t, os.IsNotExist(err), "%s: the staged file must be removed", why)
+	_, err = os.Stat(albumDir)
+	assert.True(t, os.IsNotExist(err), "%s: the emptied album directory must be swept", why)
+	_, err = os.Stat(filepath.Join(staging, "Some Artist"))
+	assert.True(t, os.IsNotExist(err), "%s: the emptied artist directory must be swept", why)
+	_, err = os.Stat(staging)
+	require.NoError(t, err, "%s: the staging root itself must survive", why)
+}
+
+// A hash duplicate is the commonest duplicate there is — the same bytes
+// downloaded twice. That branch marks the item completed and imports nothing, so
+// the staged download is pure residue; before the import stage enforced this at
+// its boundary, nothing removed it (the DJI-490 class, on the branch that never
+// got the DJI-492 treatment).
+func TestStageImportAndEnrich_HashDuplicateLeavesNoStagedDownload(t *testing.T) {
+	handler, db, staging := newStagingImportHandler(t)
+	_, item := createAcquisitionTestItem(t, db)
+	staged, albumDir := stageStagedFile(t, staging)
+
+	hash, err := handler.ext.HashFile(staged)
+	require.NoError(t, err)
+	require.NotEmpty(t, hash)
+	require.NoError(t, db.Create(&database.Acquisition{
+		JobID:        item.JobID,
+		JobItemID:    item.ID,
+		Artist:       "Some Artist",
+		Album:        "Some Album",
+		TrackTitle:   "Track",
+		OriginalPath: staged,
+		FinalPath:    filepath.Join(t.TempDir(), "Some Artist", "Some Album", "01 - track.mp3"),
+		FileHash:     hash,
+	}).Error)
+
+	p := &acquisitionPipeline{ctx: context.Background(), item: item, download: staged}
+
+	require.NoError(t, handler.stageImportAndEnrich(p.ctx, p))
+
+	// The branch really was taken. Without this the test would also pass when
+	// the file was imported instead — which removes it from staging for an
+	// entirely different reason than the one under test.
+	var got database.JobItem
+	require.NoError(t, db.First(&got, item.ID).Error)
+	require.Equal(t, "completed (duplicate hash)", got.Status)
+
+	assertStagingIsEmptyExceptRoot(t, staging, staged, albumDir, "hash duplicate")
+}
+
+// A failed import is the other half of the same guarantee. importFile fails the
+// item (scheduling a retry) and returns nil, leaving the download in staging —
+// and the retry restarts the pipeline from the search stage, so it downloads
+// again and never claims that file. The exit is terminal for the file even
+// though the item will be tried again.
+func TestStageImportAndEnrich_FailedImportLeavesNoStagedDownload(t *testing.T) {
+	handler, db, staging := newStagingImportHandler(t)
+	_, item := createAcquisitionTestItem(t, db)
+
+	// The canonical-identity lookup reads `acquisitions`. Without the table it
+	// reports a *failed query*, which must abort the import rather than be read
+	// as "this artist is new" — the abort path is what leaves a staged file.
+	require.NoError(t, db.Migrator().DropTable(&database.Acquisition{}))
+
+	// The lookup only runs when the item carries an album, so give it one.
+	require.NoError(t, db.Model(&database.JobItem{}).Where("id = ?", item.ID).
+		Updates(map[string]interface{}{"album": "Some Album", "track_title": "Track"}).Error)
+	require.NoError(t, db.First(&item, item.ID).Error)
+
+	staged, albumDir := stageStagedFile(t, staging)
+	p := &acquisitionPipeline{ctx: context.Background(), item: item, download: staged}
+
+	require.NoError(t, handler.stageImportAndEnrich(p.ctx, p))
+
+	// The item really did fail, so this is not the success path in disguise.
+	var got database.JobItem
+	require.NoError(t, db.First(&got, item.ID).Error)
+	require.Equal(t, "failed", got.Status)
+
+	assertStagingIsEmptyExceptRoot(t, staging, staged, albumDir, "failed import")
 }
