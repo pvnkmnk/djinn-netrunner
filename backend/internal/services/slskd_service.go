@@ -421,7 +421,6 @@ func (s *SlskdService) Search(query string, timeout int, profile *database.Quali
 		}
 	}
 
-
 	// Batch fetch peer reputations to avoid N+1 query problem
 	peerReputations := make(map[string]database.PeerReputation)
 	if s.db != nil {
@@ -680,7 +679,7 @@ func (s *SlskdService) CancelDownload(username, downloadID string) error {
 // slskd strips the peer's share root and intermediate directories, keeping
 // only the immediate parent directory and the file.
 func (s *SlskdService) resolveDownloadPath(username, remoteFilename string) string {
-	staging := s.cfg.DownloadStagingPath
+	staging := stagingRoot(s.cfg)
 	// Convert Windows-style backslash paths to local forward slashes.
 	localRelative := strings.ReplaceAll(remoteFilename, "\\", "/")
 	// Remove any leading slashes or @@-prefixed path components.

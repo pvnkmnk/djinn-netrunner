@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -263,11 +264,14 @@ func TestAcquisitionHandler_StageDownloadFile_RejectsUnplayableFileAndTriesNext(
 	requireProbeTools(t)
 
 	db := setupPipelineTestDB(t)
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	// The rejected bytes are discarded, and the discard refuses any path outside
+	// the staging root — so the fixture has to sit inside the configured one.
+	staging := t.TempDir()
+	handler := NewAcquisitionHandler(db, &config.Config{DownloadStagingPath: staging},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handler.ext = NewMetadataExtractor() // real ffprobe from PATH
 	_, item := createAcquisitionTestItem(t, db)
 
-	staging := t.TempDir()
 	junk := filepath.Join(staging, "not-audio.mp3")
 	require.NoError(t, os.WriteFile(junk, []byte("<html>404 Not Found</html>"), 0o644))
 	real := filepath.Join(staging, "real.wav")

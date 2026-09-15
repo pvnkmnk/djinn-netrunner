@@ -189,10 +189,7 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 
 	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Trying yt-dlp fallback: %s", p.item.SourceURL), &p.item.ID)
 
-	outputDir := h.cfg.DownloadStagingPath
-	if outputDir == "" {
-		outputDir = "./downloads"
-	}
+	outputDir := stagingRoot(h.cfg)
 
 	audioFormat := "flac"
 	if p.profile != nil && p.profile.AllowedFormats != "" {
