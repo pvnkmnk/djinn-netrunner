@@ -1195,17 +1195,44 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 		Limit(artistCount).
 		Pluck("artist", &artistNames)
 
-	// Search albums (distinct album+artist)
-	var albums []struct{ Album, Artist string }
+	// Search albums (aggregated metadata and track counts in a single query to eliminate N+1 DB calls)
+	var albumRows []struct {
+		Album     string
+		Artist    string
+		Year      *int
+		Genre     string
+		SongCount int
+		CoverArt  string
+	}
 	h.db.Table("tracks").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
 		Where("libraries.owner_user_id = ? AND LOWER(album) LIKE ?", user.ID, q).
-		Select("DISTINCT album, artist").
+		Select("album, artist, MAX(year) as year, MAX(genre) as genre, COUNT(*) as song_count, MAX(cover_url) as cover_art").
+		Group("album, artist").
 		Limit(albumCount).
-		Find(&albums)
+		Find(&albumRows)
 
 	// Build search result
 	searchResult := &searchResult3{}
+
+	// Bolt Optimization: Batch fetch artist album counts in a single query to eliminate loop-based DB roundtrips.
+	artistAlbumCounts := make(map[string]int)
+	if len(artistNames) > 0 {
+		var counts []struct {
+			Artist string
+			Albums int
+		}
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND artist IN ?", user.ID, artistNames).
+			Where("album <> ''").
+			Select("artist, COUNT(DISTINCT album) as albums").
+			Group("artist").
+			Find(&counts)
+		for _, r := range counts {
+			artistAlbumCounts[r.Artist] = r.Albums
+		}
+	}
 
 	// Fill artists. An untagged track would otherwise surface as an artist with
 	// an empty name that no client can resolve, so skip those defensively.
@@ -1214,48 +1241,24 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 			continue
 		}
 
-		var albumCount int64
-		if err := h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
-			Where("album <> ''").
-			Select("COUNT(DISTINCT album)").
-			Scan(&albumCount).Error; err != nil {
-			return h.respondError(c, 50, "Internal server error")
-		}
-
 		searchResult.Artist = append(searchResult.Artist, subsonicArtist{
 			ID:         artistID(artistName),
 			Name:       artistName,
-			AlbumCount: int(albumCount),
+			AlbumCount: artistAlbumCounts[artistName],
 		})
 	}
 
-	// Fill albums
-	for _, album := range albums {
-		// Count songs for this album
-		var songCount int64
-		h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, album.Album, album.Artist).
-			Count(&songCount)
-
-		// Get year from first track
-		var firstTrack database.Track
-		h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, album.Album, album.Artist).
-			First(&firstTrack)
-
+	// Fill albums using pre-aggregated query rows
+	for _, album := range albumRows {
 		searchResult.Album = append(searchResult.Album, subsonicAlbum{
 			ID:        albumID(album.Album, album.Artist),
 			Name:      album.Album,
 			Artist:    album.Artist,
 			ArtistID:  albumArtistID(album.Artist),
-			SongCount: int(songCount),
-			Year:      safeDeref(firstTrack.Year),
-			Genre:     firstTrack.Genre,
-			CoverArt:  firstTrack.CoverURL,
+			SongCount: album.SongCount,
+			Year:      safeDeref(album.Year),
+			Genre:     album.Genre,
+			CoverArt:  album.CoverArt,
 			Duration:  h.getAlbumDuration(user, album.Album, album.Artist),
 		})
 	}
