@@ -34,7 +34,9 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	h.Log(jobID, "INFO", "Importing to library", &itemID)
 
 	if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
-		h.failItem(jobID, itemID, fmt.Sprintf("Downloaded file not found: %s", downloadPath))
+		if failErr := h.failItem(jobID, itemID, fmt.Sprintf("Downloaded file not found: %s", downloadPath)); failErr != nil {
+			return fmt.Errorf("record the missing-staged-file failure: %w", failErr)
+		}
 		return nil
 	}
 
@@ -198,7 +200,9 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 			// would derive the path from whatever these tags say and risk creating
 			// the case-variant sibling this resolution exists to prevent, so fail
 			// the item instead — failItem schedules the retry.
-			h.failItem(jobID, itemID, fmt.Sprintf("Canonical identity lookup failed: %v", err))
+			if failErr := h.failItem(jobID, itemID, fmt.Sprintf("Canonical identity lookup failed: %v", err)); failErr != nil {
+				return fmt.Errorf("record the identity-lookup failure: %w", failErr)
+			}
 			return nil
 		}
 		metadata.AlbumArtist, metadata.Album = canonicalArtist, canonicalAlbum
@@ -254,7 +258,9 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	// Move file
 	cleanupErr, copyErr := h.moveFile(downloadPath, finalPath)
 	if copyErr != nil {
-		h.failItem(jobID, itemID, fmt.Sprintf("Failed to move file: %v", copyErr))
+		if failErr := h.failItem(jobID, itemID, fmt.Sprintf("Failed to move file: %v", copyErr)); failErr != nil {
+			return fmt.Errorf("record the move failure: %w", failErr)
+		}
 		return nil
 	}
 	if cleanupErr != nil {

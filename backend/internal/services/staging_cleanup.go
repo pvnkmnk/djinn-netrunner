@@ -318,7 +318,12 @@ func (h *AcquisitionHandler) cleanupEmptyStagingDirs(dir string, jobID uint64, i
 	// prefix, which would match sibling dirs like "./downloads-backup").
 	for i := 0; i < 4; i++ {
 		rel, relErr := filepath.Rel(root, dir)
-		if relErr != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		// The escape check must match the parent path component, not a bare
+		// ".." prefix: filepath.Rel yields ".." and "..\sibling" for outside paths,
+		// but "...And You Will Know Us" is a child whose name merely starts with
+		// dots. Only ".." alone or a "../"-prefixed rel escapes the root.
+		if relErr != nil || rel == "." || rel == ".." ||
+			strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return
 		}
 		entries, err := os.ReadDir(dir)
