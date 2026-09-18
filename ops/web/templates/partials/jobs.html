@@ -1,19 +1,28 @@
 <div class="jobs-region">
-    <div class="filters" hx-get="/partials/jobs" hx-target="#jobs-list" hx-trigger="change">
-        <select name="job_type" aria-label="Filter by job type">
-            <option value="">All Types</option>
-            <option value="sync">Sync</option>
-            <option value="scan">Scan</option>
-            <option value="acquisition">Acquisition</option>
-            <option value="enrich">Enrich</option>
+    <!-- Three things here are load-bearing, and all three were wrong before:
+         the triggers sit on the selects (on the wrapper div htmx 1.9 fired
+         nothing, so the dropdowns were dead controls); the swap targets the
+         region, because this partial *is* the region and rendering it into
+         #jobs-list nested a copy of the filters on every change; and the
+         current values are marked selected so the response reflects the
+         filter instead of resetting the dropdowns. -->
+    <div class="filters">
+        <select name="job_type" aria-label="Filter by job type"
+                hx-get="/partials/jobs" hx-target="#jobs-region" hx-swap="innerHTML" hx-trigger="change" hx-include="closest .filters">
+            <option value=""{% if JobType == "" %} selected{% endif %}>All Types</option>
+            <option value="sync"{% if JobType == "sync" %} selected{% endif %}>Sync</option>
+            <option value="scan"{% if JobType == "scan" %} selected{% endif %}>Scan</option>
+            <option value="acquisition"{% if JobType == "acquisition" %} selected{% endif %}>Acquisition</option>
+            <option value="enrich"{% if JobType == "enrich" %} selected{% endif %}>Enrich</option>
         </select>
-        <select name="state" aria-label="Filter by job state">
-            <option value="">All States</option>
-            <option value="queued">Queued</option>
-            <option value="running">Running</option>
-            <option value="succeeded">Succeeded</option>
-            <option value="partial">Partial</option>
-            <option value="failed">Failed</option>
+        <select name="state" aria-label="Filter by job state"
+                hx-get="/partials/jobs" hx-target="#jobs-region" hx-swap="innerHTML" hx-trigger="change" hx-include="closest .filters">
+            <option value=""{% if State == "" %} selected{% endif %}>All States</option>
+            <option value="queued"{% if State == "queued" %} selected{% endif %}>Queued</option>
+            <option value="running"{% if State == "running" %} selected{% endif %}>Running</option>
+            <option value="succeeded"{% if State == "succeeded" %} selected{% endif %}>Succeeded</option>
+            <option value="partial"{% if State == "partial" %} selected{% endif %}>Partial</option>
+            <option value="failed"{% if State == "failed" %} selected{% endif %}>Failed</option>
         </select>
     </div>
     

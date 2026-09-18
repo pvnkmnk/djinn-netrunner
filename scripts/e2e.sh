@@ -94,7 +94,11 @@ start_stack() {
     ensure_env_file
     check_deps
     echo -e "${YELLOW}Starting e2e stack (no tests)...${NC}"
-    "$E2E_DIR/setup-test-db.sh"
+    # setup-test-db.sh addresses compose with paths relative to e2e/, so it has to
+    # run from there (Playwright's webServer already does; this command did not,
+    # which made 'scripts/e2e.sh up' fail with "couldn't find env file").
+    cd "$E2E_DIR"
+    ./setup-test-db.sh
     echo -e "${GREEN}Stack is up on http://localhost:8080${NC}"
 }
 

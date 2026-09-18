@@ -426,6 +426,54 @@ and then failed auth. The overlay now interpolates `${POSTGRES_PASSWORD}`, and
 pins `ENVIRONMENT: development` so a developer's local `.env` (read by the base
 compose's `env_file`) cannot put the e2e stack into production mode.
 
+### The suite as a local gate - 2026-09-18
+
+Running it by hand on the operator's machine is what the documentation promised and
+what did not work, in three ways worth recording.
+
+**It could destroy the beta deployment.** `docker-compose.e2e.yml` set no project
+name and no container names, and both are global: the suite therefore shared the
+beta stack's project *and* its named volumes, so `down -v` deleted the beta library,
+and its `ops-web` authenticated against a database whose stored role password
+predated `.env.e2e` - crash-looping on
+`password authentication failed for user "musicops"` against a stack that otherwise
+looked healthy. The overlay now pins `name: netrunner-e2e` and gives every service an
+`e2e-` container name. Both stacks publish 8080, so only one can be up at a time:
+stop the beta stack (without `-v`) before running the suite.
+
+**On Windows it could not start at all.** Playwright runs `webServer.command`
+through `cmd.exe`, which reads `./setup-test-db.sh` as a program name
+(`'.' is not recognized as an internal or external command`), and Git for Windows
+keeps `bash` outside the PATH `cmd.exe` sees. `e2e/playwright.config.ts` now resolves
+Git's bash explicitly on Windows, and `scripts/e2e.sh up` runs the setup script from
+`e2e/` the way Playwright does - it had invoked it from the repo root while the script
+addresses compose with `e2e/`-relative paths, so the command failed with
+`couldn't find env file`.
+
+**Four specs were missing** (`artists.spec.ts`, `playlists.spec.ts`, `jobs.spec.ts`,
+`admin.spec.ts`), which is what DJI-476 step 3 asked for. They exposed three defects,
+each fixed here rather than written down as expected behaviour:
+
+| Defect | What it did | Fix |
+|---|---|---|
+| Jobs filters were dead controls | `hx-trigger="change"` sat on the wrapper `div`, so htmx 1.9 never fired: selecting a value sent no request at all | the triggers moved onto each `select` |
+| Filtering nested the controls | the filter's swap targeted `#jobs-list` while the endpoint renders the whole region, so every change inserted a second copy of the filters inside the list | swap targets `#jobs-region`, and the response marks the current values `selected` |
+| Duplicate region id | the playlists partial declared the same `id="playlists-region"` as the section it is swapped into, so id selectors matched two elements | the partial no longer claims the id |
+
+One defect is filed rather than fixed: htmx's `hx-push-url="true"` on the admin nav
+pushes the *partial* URL (`/partials/admin/users`), which is not a page route, so
+reloading the admin panel after choosing a section 404s. Fixing it means page routes
+per section, which is a design decision rather than a spec fix.
+
+Observed on a local run of the whole suite at this commit:
+
+```
+$ cd e2e && npx playwright test
+  18 skipped
+  255 passed (4.2m)
+```
+
+
 
 ### First real run — 211 passed, 18 skipped, 2 failed
 

@@ -1,5 +1,39 @@
+# E2E overlay.
+#
+# Two identities are pinned here, both for the same reason: this stack must never
+# be able to reach the beta deployment on the same machine.
+#
+# * `name:` sets the compose project. Without it the project defaults to the
+#   checkout directory, so the suite shared the beta stack's named volumes:
+#   `down -v` would delete the beta library, and ops-web authenticated against a
+#   database whose stored role password predated .env.e2e, which crash-looped it
+#   on 'password authentication failed for user musicops'.
+# * `container_name` is overridden for every service the base file names, because
+#   container names are global. Sharing them meant the e2e stack could only start
+#   after the beta stack's containers were gone, and left containers mislabelled
+#   between projects when it did not.
+#
+# The suite's own `docker exec` targets follow these names (see
+# e2e/fixtures/auth.fixture.ts). Port 8080 is still shared with the beta stack;
+# only one of the two can be up, which is why the acceptance docs stop the beta
+# stack before running the suite.
+name: netrunner-e2e
+
 services:
+  postgres:
+    container_name: e2e-postgres
+
+  slskd:
+    container_name: e2e-slskd
+
+  volume-init:
+    container_name: e2e-volume-init
+
+  caddy:
+    container_name: e2e-caddy
+
   ops-web:
+    container_name: e2e-ops-web
     ports:
       - "8080:8080"
     environment:
@@ -21,3 +55,6 @@ services:
       # behave identically in CI, where no `.env` exists at all.
       ENVIRONMENT: development
       CONFIG_ENV: development
+
+  ops-worker:
+    container_name: e2e-ops-worker
