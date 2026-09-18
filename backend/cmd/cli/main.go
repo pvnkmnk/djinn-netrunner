@@ -762,6 +762,9 @@ func printTagRepairReport(libraryRoot string, report *services.TagRepairReport, 
 	if apply {
 		fmt.Printf("\n  backed up: %d -> %s, rewritten: %d\n", report.BackedUp, report.BackupDir, report.Rewritten)
 	}
+	for _, stale := range report.Stale {
+		fmt.Printf("  STALE %s (identity changed since the plan; left untouched)\n", stale)
+	}
 	for _, failure := range report.Failures {
 		fmt.Printf("  ERROR %s\n", failure)
 	}

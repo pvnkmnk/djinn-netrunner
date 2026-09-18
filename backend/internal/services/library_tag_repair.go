@@ -39,6 +39,15 @@ type TagFix struct {
 	AlbumTo         string `json:"album_to,omitempty"`
 	TrackArtistFrom string `json:"track_artist_from,omitempty"`
 	TrackArtistTo   string `json:"track_artist_to,omitempty"`
+
+	// Source* is the identity the plan was derived from. Detection and apply
+	// are separate commands, so the file is revalidated against these before
+	// anything is copied or written: a file an import replaced in between must
+	// not be restamped with canonical values resolved for the track that used
+	// to be at that path.
+	SourceAlbumArtist string `json:"source_album_artist,omitempty"`
+	SourceAlbum       string `json:"source_album,omitempty"`
+	SourceTrackArtist string `json:"source_track_artist,omitempty"`
 }
 
 // TagRepairReport is the plan a dry run prints and the record of an apply run.
@@ -61,7 +70,11 @@ type TagRepairReport struct {
 	BackupDir             string   `json:"backup_dir,omitempty"`
 	BackedUp              int      `json:"backed_up"`
 	Rewritten             int      `json:"rewritten"`
-	Failures              []string `json:"failures,omitempty"`
+	// Stale lists files whose identity changed between the plan and the apply.
+	// They are left exactly as they are: this plan's targets were resolved for
+	// a different track.
+	Stale    []string `json:"stale,omitempty"`
+	Failures []string `json:"failures,omitempty"`
 }
 
 // PlanIdentityTagRepair reports every library file whose identity tags disagree
@@ -133,13 +146,16 @@ func PlanIdentityTagRepair(db *gorm.DB, ext *MetadataExtractor, libraryRoot stri
 			continue
 		}
 		report.Fixes = append(report.Fixes, TagFix{
-			File:            rel,
-			AlbumArtistFrom: differing(meta.AlbumArtist, canonicalArtist),
-			AlbumArtistTo:   differing(canonicalArtist, meta.AlbumArtist),
-			AlbumFrom:       differing(meta.Album, canonicalAlbum),
-			AlbumTo:         differing(canonicalAlbum, meta.Album),
-			TrackArtistFrom: differing(meta.Artist, correctedTrackArtist(meta.Artist, canonicalArtist)),
-			TrackArtistTo:   differing(correctedTrackArtist(meta.Artist, canonicalArtist), meta.Artist),
+			File:              rel,
+			SourceAlbumArtist: meta.AlbumArtist,
+			SourceAlbum:       meta.Album,
+			SourceTrackArtist: meta.Artist,
+			AlbumArtistFrom:   differing(meta.AlbumArtist, canonicalArtist),
+			AlbumArtistTo:     differing(canonicalArtist, meta.AlbumArtist),
+			AlbumFrom:         differing(meta.Album, canonicalAlbum),
+			AlbumTo:           differing(canonicalAlbum, meta.Album),
+			TrackArtistFrom:   differing(meta.Artist, correctedTrackArtist(meta.Artist, canonicalArtist)),
+			TrackArtistTo:     differing(correctedTrackArtist(meta.Artist, canonicalArtist), meta.Artist),
 		})
 	}
 
@@ -152,9 +168,12 @@ func PlanIdentityTagRepair(db *gorm.DB, ext *MetadataExtractor, libraryRoot stri
 }
 
 // ApplyIdentityTagRepair rewrites the files in a plan, copying each one into
-// backupDir first. The tagger re-reads each file before writing, so a stale
-// plan cannot corrupt a file that changed since detection and a second apply is
-// a no-op.
+// backupDir first. Detection and apply are separate commands, so every file is
+// revalidated against the identity the plan recorded for it before it is copied
+// or written: a file that changed in between is left untouched and reported as
+// stale rather than restamped with canonical values resolved for another track.
+// The tagger re-reads the file before writing too, which makes a second apply a
+// no-op.
 func ApplyIdentityTagRepair(ctx context.Context, ext *MetadataExtractor, libraryRoot, backupDir string, report *TagRepairReport) error {
 	if ext == nil {
 		return fmt.Errorf("identity tag repair: metadata extractor is required to write tags")
@@ -181,6 +200,10 @@ func ApplyIdentityTagRepair(ctx context.Context, ext *MetadataExtractor, library
 
 	for _, fix := range report.Fixes {
 		src := filepath.Join(libraryRoot, fix.File)
+		if fixSourceChanged(ext, src, fix) {
+			report.Stale = append(report.Stale, fix.File)
+			continue
+		}
 		dst := filepath.Join(absBackup, fix.File)
 		if err := copyFileForBackup(src, dst); err != nil {
 			report.Failures = append(report.Failures, fmt.Sprintf("%s: backup failed: %v", fix.File, err))
@@ -209,6 +232,19 @@ func DefaultTagBackupDir(libraryRoot string, now time.Time) string {
 		abs = libraryRoot
 	}
 	return filepath.Join(filepath.Dir(abs), fmt.Sprintf("%s-backup-%s", filepath.Base(abs), now.UTC().Format("20060102T150405Z")))
+}
+
+// fixSourceChanged reports whether the file's identity still matches the one the
+// plan recorded for it. A file that cannot be read counts as changed: the plan
+// cannot be applied to something it no longer recognises.
+func fixSourceChanged(ext *MetadataExtractor, path string, fix TagFix) bool {
+	meta, err := ext.Extract(path)
+	if err != nil {
+		return true
+	}
+	return meta.AlbumArtist != fix.SourceAlbumArtist ||
+		meta.Album != fix.SourceAlbum ||
+		meta.Artist != fix.SourceTrackArtist
 }
 
 // correctedTrackArtist is the artist tag the repair would write: the canonical

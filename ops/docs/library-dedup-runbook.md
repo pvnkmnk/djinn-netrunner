@@ -179,6 +179,11 @@ What it does and does not do:
   invent a name the library has never used.
 - **Only files that actually change** are rewritten, and only those are backed up. A file the
   library has no opinion about is left alone.
+- **A file that changed since the dry run is skipped, not written.** Detection and apply are
+  separate commands, so every file's identity is revalidated against the one the plan recorded
+  for it: a track an import replaced in between is reported under `stale` (`--json`) or as
+  `STALE` (text output) instead of being restamped with another track's canonical values.
+  Re-run the plan and apply again to pick those files up.
 - **Album tags are corrected for casing only.** The library answers an album's casing from a
   folder when it has no history for it, and folder names are sanitised (`Triple J: Like a
   Version` lives in `Triple J- Like a Version`), so a substantive album difference is listed

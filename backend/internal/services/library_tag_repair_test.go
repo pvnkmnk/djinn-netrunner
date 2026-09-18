@@ -262,3 +262,44 @@ func TestPlanIdentityTagRepair_ReportsASanitisedFolderNameWithoutRewritingIt(t *
 		filepath.Join(t.TempDir(), "backup"), plan))
 	require.Equal(t, before, fileHash(t, path))
 }
+
+// TestApplyIdentityTagRepair_LeavesAFileThatChangedSinceThePlan pins the guard
+// that makes the dry-run/apply split safe. The plan is written by one command and
+// applied by another, so a file an import replaced in between carries a different
+// identity — writing this plan's canonical values onto it would rename another
+// track rather than correct casing.
+func TestApplyIdentityTagRepair_LeavesAFileThatChangedSinceThePlan(t *testing.T) {
+	requireProbeTools(t)
+	requireFFmpeg(t)
+
+	db := repairTestDB(t)
+	seedCanonicalHistory(t, db, "PUP", "PUP")
+	root := t.TempDir()
+	_, drifted := seedDriftedLibrary(t, root)
+
+	ext := NewMetadataExtractor()
+	plan, err := PlanIdentityTagRepair(db, ext, root)
+	require.NoError(t, err)
+	require.Len(t, plan.Fixes, 1)
+
+	// An import lands a different track at the same path between the two commands.
+	require.NoError(t, os.Remove(drifted))
+	generateTestAudio(t, filepath.Dir(drifted), filepath.Base(drifted),
+		"-metadata", "album_artist=Another Band", "-metadata", "album=Another Album",
+		"-metadata", "artist=Another Band", "-metadata", "title=Another Track")
+	replacedBefore := fileHash(t, drifted)
+
+	require.NoError(t, ApplyIdentityTagRepair(context.Background(), ext, root, t.TempDir(), plan))
+
+	require.Equal(t, []string{filepath.Join("PUP", "PUP", filepath.Base(drifted))}, plan.Stale,
+		"a file whose identity changed must be reported, not silently rewritten")
+	require.Zero(t, plan.Rewritten)
+	require.Zero(t, plan.BackedUp, "nothing is copied for a file that is left untouched")
+	require.Empty(t, plan.Failures)
+
+	require.Equal(t, replacedBefore, fileHash(t, drifted), "the replacement's bytes must be untouched")
+	m := readTagFile(drifted)
+	require.NotNil(t, m)
+	require.Equal(t, "Another Band", m.AlbumArtist(), "a stale plan must not rename another track")
+	require.Equal(t, "Another Album", m.Album())
+}
