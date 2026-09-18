@@ -525,7 +525,7 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 		}
 		download, err := h.slskd.WaitForDownload(p.ctx, candidate.Username, downloadID, waitOpts)
 		if err == nil {
-			reason, fatalErr := h.rejectUnplayableDownload(p, candidate, download)
+			reason, fatalErr := h.rejectUnusableDownload(p, candidate, download)
 			if fatalErr != nil {
 				return true, fatalErr
 			}
@@ -597,6 +597,61 @@ func (h *AcquisitionHandler) rejectUnplayableDownload(p *acquisitionPipeline, ca
 	h.discardStagedDownload(p.ctx, download.LocalPath, p.item.JobID, &p.item.ID)
 	h.Log(p.item.JobID, "WARN", fmt.Sprintf("%s delivered an unplayable file — rejected: %v", candidate.Username, err), &p.item.ID)
 	return fmt.Sprintf("%s: unplayable file: %v", candidate.Username, err), nil
+}
+
+// rejectUnusableDownload is the post-download gate: every check that reads the
+// downloaded bytes runs here, and the reason to record on the item is returned
+// (empty when the file is good). A reason is a candidate failure rather than an
+// item failure, so the next peer still gets a chance to satisfy the item; a
+// fatal error is reserved for the job itself going away, so a shutdown cannot
+// delete a good download.
+//
+// The checks are ordered what-the-bytes-*are* before what-they-*are-of*: a file
+// that is not audio at all gets the clearer reason, and the identity check runs
+// on bytes ffprobe has already accepted.
+func (h *AcquisitionHandler) rejectUnusableDownload(p *acquisitionPipeline, candidate SearchResult, download *Download) (string, error) {
+	if h.ext == nil || download == nil || download.LocalPath == "" {
+		return "", nil
+	}
+
+	reason, err := h.rejectUnplayableDownload(p, candidate, download)
+	if reason != "" || err != nil {
+		return reason, err
+	}
+	return h.rejectMismatchedDownload(p, candidate, download)
+}
+
+// rejectMismatchedDownload checks that a completed transfer is *the recording
+// the item asked for*, not merely playable audio, and removes it when it is
+// confidently something else.
+//
+// Both gates that preceded this one only establish that a file *is* audio: the
+// pre-download plausibility check reads advertised metadata, and ffprobe reads
+// the bytes. Neither establishes that the file *is the audio that was asked
+// for*, so a peer serving an unrelated track whose filename matches the query
+// reached the library, organised under its own embedded tags (DJI-495).
+//
+// The judgement itself lives in canonical_identity.go, the owner of "is this the
+// same artist/album?". Tags this build cannot read are a check that could not
+// run, not evidence against the file: the download is accepted and the gap is
+// logged, mirroring how an absent ffprobe is handled.
+func (h *AcquisitionHandler) rejectMismatchedDownload(p *acquisitionPipeline, candidate SearchResult, download *Download) (string, error) {
+	meta, err := h.ext.Extract(download.LocalPath)
+	if err != nil {
+		h.Log(p.item.JobID, "WARN", fmt.Sprintf("Cannot check %s against the request — importing without an identity check (%v)", filepath.Base(download.LocalPath), err), &p.item.ID)
+		return "", nil
+	}
+
+	mismatch := identityMismatch(&p.item, meta)
+	if mismatch == "" {
+		return "", nil
+	}
+
+	// Same owner as every other rejection, so the file is removed and the
+	// directories it emptied are swept with it rather than left behind (DJI-490).
+	h.discardStagedDownload(p.ctx, download.LocalPath, p.item.JobID, &p.item.ID)
+	h.Log(p.item.JobID, "WARN", fmt.Sprintf("%s delivered a file that does not match the request — rejected: %s", candidate.Username, mismatch), &p.item.ID)
+	return fmt.Sprintf("%s: does not match the request: %s", candidate.Username, mismatch), nil
 }
 
 // stageImportAndEnrich imports the downloaded file and enriches metadata.

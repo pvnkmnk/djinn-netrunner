@@ -583,7 +583,7 @@ and `artist-Pup` (1 album) for the same artist. DJI-489 canonicalised the
 folder and the dedup key; the tag axis still carries the raw peer value. This is
 the same defect class on the axis that decides what a client actually sees.
 
-**OPEN (not blocking) — nothing checks that the downloaded file matches what was requested.** Job 3 item 1 requested `artist=PUP, album=PUP, track_title=PUP` and imported:
+**RESOLVED (DJI-495) — nothing checked that the downloaded file matches what was requested.** Job 3 item 1 requested `artist=PUP, album=PUP, track_title=PUP` and imported:
 
 ```
 /app/music/Noriyuki Iwadare/Ace Attorney Investigations: Miles Edgeworth
@@ -595,6 +595,32 @@ passed the plausibility and `ffprobe` gates, and the importer organised it by it
 own embedded tags, leaving a second and entirely unrelated artist in the library.
 The existing gates validate that a file *is playable audio*, not that it *is the
 audio that was asked for*.
+
+**Resolved by the download-identity gate.** `rejectUnusableDownload`
+(`backend/internal/services/acquisition_pipeline.go`) now runs the `ffprobe` check
+and then a tag comparison whose judgement lives in `canonical_identity.go`
+(`identityMismatch`) — the same owner as the case and credit folding. A file is
+rejected only when *both* axes the item carries look like something else: the
+artist axis read from the file's album artist, the album axis from the item, and
+the title as the second axis when the item has no album. One axis differs
+legitimately all the time (guest credits, case and punctuation drift, release
+qualifiers, various-artists layouts), and a check that cannot run — an unreadable
+tag set — is never evidence against a download. A rejected file goes through
+`discardStagedDownload`, the same owner as the unplayable and duplicate outcomes,
+and the item walks to the next candidate.
+
+Evidence:
+`TestAcquisitionHandler_StageDownloadFile_RejectsMismatchedFileAndTriesNext`
+reproduces this run's case on real bytes — the request `PUP`/`PUP`/`PUP` against a
+peer file tagged `Noriyuki Iwadare` / *Ace Attorney Investigations: Miles
+Edgeworth Original Soundtrack* / *Shi-Long Lang - Speak Up, Pup!* — and asserts
+the file is removed from staging while the next peer's valid track is imported.
+`TestIdentityMismatch` pins the tolerance as well as the rejection, including
+that the junk title's own word "pup" is not what decides it. Mutation checks,
+each restored: disabling the comparison, unfolding case, dropping the album axis,
+treating an empty request field as a disagreement, treating an untagged file as a
+disagreement, and leaving the gate unwired from the download path each turn a
+test red.
 
 **Observation, not a finding:** `ffprobe` prints `[png @ …] chunk too big` for the
 embedded cover on that mp3. Harmless here, but it is the same family of
