@@ -21,3 +21,7 @@
 ## 2026-08-14 - [Accessibility: HTMX Modal Dialog Roles]
 **Learning:** HTMX modal templates injected dynamically into a shared container must declare `role="dialog"`, `aria-modal="true"`, and `aria-labelledby="modal-title"` directly on the modal card component. Without these ARIA attributes in the partial template markup, screen readers treat the newly swapped DOM subtree as generic content instead of an accessible modal dialog, failing to announce its presence and title upon focus movement.
 **Action:** Always include `role="dialog"`, `aria-modal="true"`, and `aria-labelledby="modal-title"` on modal card templates served via HTMX partials.
+
+## 2026-09-17 - [Accessibility: HTMX Modal Focus Management]
+**Learning:** When modals are loaded asynchronously via HTMX partial swaps, initial focus must be explicitly shifted to the first interactive form control input (such as text fields or selects) rather than generic focusable elements like the modal close button (`×`). Additionally, saving `lastFocusedElement` (`document.activeElement`) prior to showing the modal and restoring focus upon closure ensures predictable keyboard navigation.
+**Action:** Prioritize focusing interactive form controls over close controls when opening modals, and always capture and restore `lastFocusedElement`.

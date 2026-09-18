@@ -13,16 +13,32 @@ function getCookie(name) {
 // Modal management
 let lastFocusedElement = null;
 
+function focusFirstModalElement(container) {
+    const formInput = container.querySelector(
+        'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])'
+    );
+    if (formInput) {
+        formInput.focus();
+        return;
+    }
+    const focusable = container.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length > 0) {
+        focusable[0].focus();
+    }
+}
+
 function closeModal() {
     const container = document.getElementById('modal-container');
     if (container) {
         container.classList.remove('active');
         container.innerHTML = '';
         // Restore focus to the element that was focused before modal opened
-        if (lastFocusedElement) {
+        if (lastFocusedElement && document.body.contains(lastFocusedElement)) {
             lastFocusedElement.focus();
-            lastFocusedElement = null;
         }
+        lastFocusedElement = null;
     }
 }
 
@@ -30,7 +46,9 @@ function openModal(html) {
     const container = document.getElementById('modal-container');
     if (container) {
         // Save the currently focused element before opening modal
-        lastFocusedElement = document.activeElement;
+        if (!lastFocusedElement) {
+            lastFocusedElement = document.activeElement;
+        }
         
         // NOTE: DOMParser prevents <script> execution but inline handlers
         // (onerror, onclick, etc.) in the parsed HTML remain active once
@@ -47,24 +65,21 @@ function openModal(html) {
         // Trigger reflow
         container.offsetHeight;
         container.classList.add('active');
-        
-        // Focus the first focusable element inside the modal
-        const focusable = container.querySelectorAll(
-            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusable.length > 0) {
-            focusable[0].focus();
-        }
+        focusFirstModalElement(container);
     }
 }
 
 function openModalFromHTMX() {
     var container = document.getElementById('modal-container');
     if (container) {
+        if (!lastFocusedElement) {
+            lastFocusedElement = document.activeElement;
+        }
         // HTMX already swapped the modal content into #modal-container with
         // proper bindings. Just show the container — no cloning needed.
         container.offsetHeight; // force reflow for CSS transition
         container.classList.add('active');
+        focusFirstModalElement(container);
     }
 }
 
