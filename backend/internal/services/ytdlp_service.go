@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -55,7 +56,7 @@ func NewYtdlpService() *YtdlpService {
 }
 
 // DownloadAudio extracts audio from a URL using yt-dlp
-func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (string, error) {
+func (s *YtdlpService) DownloadAudio(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 	// Validate input
 	if rawURL == "" {
 		return "", errors.New("URL is required")
@@ -99,7 +100,7 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 	// boundary rather than a check at this seam. It is recorded as a decision for
 	// the single-operator beta — the feed URLs are the operator's own — and it is
 	// the point to revisit before this entrance serves untrusted feeds.
-	resolved, err := resolveRedirectTarget(s.targetClient(), parsed.String())
+	resolved, err := resolveRedirectTarget(ctx, s.targetClient(), parsed.String())
 	if err != nil {
 		if errors.Is(err, ErrDisallowedDestination) {
 			return "", fmt.Errorf("refusing source URL: %w", err)
@@ -152,7 +153,9 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 	// SECURITY: s.ytdlpPath is set from YTDLP_PATH env var at startup (not user input).
 	// All user-supplied values (URL, format) are validated/whitelisted above.
 	// The "--" separator before the URL prevents argument injection.
-	cmd := exec.Command(s.ytdlpPath, args...)
+	// CommandContext, so a cancelled job stops the download rather than waiting
+	// out the transfer.
+	cmd := exec.CommandContext(ctx, s.ytdlpPath, args...)
 
 	// Capture stdout and stderr separately -- yt-dlp may emit warnings on stderr
 	// (e.g. "your version is old") that would pollute the --print filepath on stdout.

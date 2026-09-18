@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -72,7 +73,7 @@ func TestResolveRedirectTarget_RefusesPrivateHop(t *testing.T) {
 		"http://93.184.216.34/start": {status: http.StatusFound, location: "http://10.0.0.5/secret"},
 	}}
 
-	final, err := resolveRedirectTarget(guardedClient(canned), "http://93.184.216.34/start")
+	final, err := resolveRedirectTarget(context.Background(), guardedClient(canned), "http://93.184.216.34/start")
 
 	require.Error(t, err, "a hop into a private range must fail the walk")
 	assert.ErrorIs(t, err, ErrDisallowedDestination,
@@ -89,7 +90,7 @@ func TestResolveRedirectTarget_FollowsPublicChain(t *testing.T) {
 		"http://93.184.216.34/start": {status: http.StatusMovedPermanently, location: "http://93.184.216.35/real.mp3"},
 	}}
 
-	final, err := resolveRedirectTarget(guardedClient(canned), "http://93.184.216.34/start")
+	final, err := resolveRedirectTarget(context.Background(), guardedClient(canned), "http://93.184.216.34/start")
 
 	require.NoError(t, err, "a public redirect chain must resolve")
 	assert.Equal(t, "http://93.184.216.35/real.mp3", final)
@@ -103,7 +104,7 @@ func TestResolveRedirectTarget_RefusesOverlongChain(t *testing.T) {
 		"http://93.184.216.34/loop": {status: http.StatusFound, location: "http://93.184.216.34/loop"},
 	}}
 
-	final, err := resolveRedirectTarget(guardedClient(canned), "http://93.184.216.34/loop")
+	final, err := resolveRedirectTarget(context.Background(), guardedClient(canned), "http://93.184.216.34/loop")
 
 	require.Error(t, err, "an endless chain must not be walked")
 	assert.NotErrorIs(t, err, ErrDisallowedDestination,
@@ -123,7 +124,7 @@ func TestResolveRedirectTarget_ChecksTheHostItEndsOn(t *testing.T) {
 	// check of the final host.
 	client := &http.Client{Transport: canned, CheckRedirect: hopBoundCheck}
 
-	_, err := resolveRedirectTarget(client, "http://93.184.216.34/start")
+	_, err := resolveRedirectTarget(context.Background(), client, "http://93.184.216.34/start")
 
 	assert.ErrorIs(t, err, ErrDisallowedDestination)
 }

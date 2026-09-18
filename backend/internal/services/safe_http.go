@@ -316,8 +316,8 @@ func newRedirectResolvingClient(timeout time.Duration) *http.Client {
 //
 // The body is never read: this asks for the destination, not the content, and
 // the downloader still does the downloading.
-func resolveRedirectTarget(client *http.Client, rawURL string) (string, error) {
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+func resolveRedirectTarget(ctx context.Context, client *http.Client, rawURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("build request for %s: %w", rawURL, err)
 	}

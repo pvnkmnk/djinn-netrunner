@@ -109,13 +109,13 @@ func (m *mockLibrary) TriggerScan() (bool, error) {
 }
 
 type mockYtdlp struct {
-	DownloadAudioFunc   func(rawURL, outputDir, audioFormat string) (string, error)
+	DownloadAudioFunc   func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error)
 	IsYtdlpAvailableFunc func() bool
 }
 
-func (m *mockYtdlp) DownloadAudio(rawURL, outputDir, audioFormat string) (string, error) {
+func (m *mockYtdlp) DownloadAudio(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 	if m.DownloadAudioFunc != nil {
-		return m.DownloadAudioFunc(rawURL, outputDir, audioFormat)
+		return m.DownloadAudioFunc(ctx, rawURL, outputDir, audioFormat)
 	}
 	return "", nil
 }
@@ -462,7 +462,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_Success(t *testing.T) {
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
-		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 			if rawURL == "https://youtube.com/watch?v=test" {
 				return "/downloads/test.flac", nil
 			}
@@ -501,7 +501,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_NoSourceURL(t *testing.T) {
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
-		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 			t.Error("DownloadAudio should not be called when SourceURL is empty")
 			return "", nil
 		},
@@ -530,7 +530,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpUnavailable(t *testing.T) {
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return false },
-		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 			t.Error("DownloadAudio should not be called when ytdlp unavailable")
 			return "", nil
 		},
@@ -556,7 +556,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_DownloadError(t *testing.T) {
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
-		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 			return "", errors.New("download failed")
 		},
 	}
@@ -575,6 +575,14 @@ func TestAcquisitionHandler_StageYtdlpFallback_DownloadError(t *testing.T) {
 	if ok {
 		t.Error("expected ok=false (download error)")
 	}
+
+	// An ordinary failure must be schedulable: the search stage left this item as
+	// "failed (no results)", which has no next_attempt_at and is never re-claimed,
+	// so logging the error alone would strand the item.
+	var stored database.JobItem
+	require.NoError(t, db.First(&stored, item.ID).Error)
+	assert.Equal(t, "failed", stored.Status)
+	require.NotNil(t, stored.NextAttemptAt, "an ordinary failure must be scheduled for retry")
 }
 
 func TestAcquisitionHandler_StageYtdlpFallback_YtdlpNil(t *testing.T) {
@@ -827,7 +835,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_DiscardsAFileItCannotRecord(t *te
 
 	handler.ytdlp = &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
-		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 			return output, nil
 		},
 	}
@@ -851,7 +859,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_RefusedDestinationIsSurfaced(t *t
 
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
-		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 			return "", fmt.Errorf("refusing source URL: %w: target internal.example resolves to private IP 10.0.0.5", ErrDisallowedDestination)
 		},
 	}
@@ -906,7 +914,7 @@ func TestAcquisitionHandler_ExecuteItem_RefusedDestinationAbandonsTheItem(t *tes
 	}
 	handler.ytdlp = &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
-		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 			return "", fmt.Errorf("refusing source URL: %w: target internal.example resolves to private IP 10.0.0.5", ErrDisallowedDestination)
 		},
 	}
@@ -926,4 +934,52 @@ func TestAcquisitionHandler_ExecuteItem_RefusedDestinationAbandonsTheItem(t *tes
 	nextID, claimErr := NewJobItemProcessor(db, handler).ClaimNextItem(job.ID)
 	require.NoError(t, claimErr)
 	assert.Zero(t, nextID, "an abandoned item is never re-claimed")
+}
+
+// abandonItem is a write, and it fails two ways: the item cannot be loaded, or the
+// terminal state cannot be written. Both must reach the caller — the item keeps a
+// claimable status, so reporting success would hide a verdict that was never
+// recorded. This covers the load failure; the update failure is below.
+func TestAcquisitionHandler_AbandonItem_ReportsLoadFailure(t *testing.T) {
+	db := setupPipelineTestDB(t)
+
+	handler := NewAcquisitionHandler(db, &config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
+	require.NoError(t, db.Create(&job).Error)
+	item := database.JobItem{JobID: job.ID, Status: "queued", Sequence: 1}
+	require.NoError(t, db.Create(&item).Error)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	err = handler.abandonItem(job.ID, item.ID, "a verdict that cannot be written")
+
+	require.Error(t, err, "an unrecorded abandonment must not look like success")
+	assert.Contains(t, err.Error(), "abandon")
+}
+
+// The update path, which a closed database cannot reach: registering a GORM update
+// callback fails the UPDATE while SELECTs keep working, which is exactly the
+// condition the finding named. Without the error propagation this passes silently
+// and the item is left running with a verdict nobody recorded.
+func TestAcquisitionHandler_AbandonItem_ReportsUpdateFailure(t *testing.T) {
+	db := setupPipelineTestDB(t)
+
+	handler := NewAcquisitionHandler(db, &config.Config{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
+	require.NoError(t, db.Create(&job).Error)
+	item := database.JobItem{JobID: job.ID, Status: "running", Sequence: 1}
+	require.NoError(t, db.Create(&item).Error)
+
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("fail_updates_for_test", func(tx *gorm.DB) {
+		tx.AddError(errors.New("update refused"))
+	}))
+
+	err := handler.abandonItem(job.ID, item.ID, "a verdict that cannot be written")
+
+	require.Error(t, err, "a write that failed must not be reported as a recorded verdict")
+	assert.Contains(t, err.Error(), "record the abandonment")
 }

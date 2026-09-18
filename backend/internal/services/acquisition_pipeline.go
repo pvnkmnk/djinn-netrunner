@@ -101,8 +101,9 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 			// and handing it to the downloader anyway is the hole this closes. Record
 			// it terminally and visibly, rather than leaving a retry scheduled
 			// behind a log line.
-			h.abandonItem(p.item.JobID, p.item.ID, refused.Error())
-			return nil
+			// abandonItem returns the write error, so a terminal verdict that could
+			// not be persisted is reported rather than passing for success.
+			return h.abandonItem(p.item.JobID, p.item.ID, refused.Error())
 		}
 		if ok {
 			// The fallback is the import stage's second entrance, so it passes the
@@ -116,8 +117,7 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 				return gateErr
 			}
 			if reason != "" {
-				h.abandonItem(p.item.JobID, p.item.ID, reason)
-				return nil
+				return h.abandonItem(p.item.JobID, p.item.ID, reason)
 			}
 			p.download = downloaded
 			return h.stageImportAndEnrich(ctx, p)
@@ -247,7 +247,7 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 		}
 	}
 
-	downloaded, err := h.ytdlp.DownloadAudio(p.item.SourceURL, outputDir, audioFormat)
+	downloaded, err := h.ytdlp.DownloadAudio(ctx, p.item.SourceURL, outputDir, audioFormat)
 	if err != nil {
 		h.Log(p.item.JobID, "WARN", fmt.Sprintf("yt-dlp fallback failed: %v", err), &p.item.ID)
 		// The guard refusing a destination is not a download failure to retry:
@@ -256,6 +256,12 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 		if errors.Is(err, ErrDisallowedDestination) {
 			return "", false, fmt.Errorf("yt-dlp refused a disallowed source URL: %w", err)
 		}
+		// An ordinary failure cannot just be logged: the search stage leaves the
+		// item as "failed (no results)", which carries no next_attempt_at and so
+		// is never re-claimed. failItem is the one owner of "this attempt failed,
+		// here is what happens next" — a scheduled retry, or abandonment once the
+		// job's attempt limit is reached.
+		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("yt-dlp fallback failed: %v", err))
 		return "", false, nil
 	}
 
