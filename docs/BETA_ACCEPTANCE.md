@@ -597,7 +597,11 @@ The existing gates validate that a file *is playable audio*, not that it *is the
 audio that was asked for*.
 
 **Resolved by the download-identity gate.** `rejectUnusableDownload`
-(`backend/internal/services/acquisition_pipeline.go`) now runs the `ffprobe` check
+(`backend/internal/services/download_gate.go`) is that gate, and **both entrances
+to the import stage call it**: the Soulseek candidate loop, and the yt-dlp
+fallback, which previously reached the import stage with no check at all — an
+audit of the merged fix found the requested coverage half-applied for exactly that
+reason. It runs the `ffprobe` check
 and then a tag comparison whose judgement lives in `canonical_identity.go`
 (`identityMismatch`) — the same owner as the case and credit folding. A file is
 rejected only when *both* axes the item carries look like something else: the
@@ -625,6 +629,12 @@ each restored: disabling the comparison, unfolding case, dropping the album axis
 treating an empty request field as a disagreement, treating an untagged file as a
 disagreement, and leaving the gate unwired from the download path each turn a
 test red.
+
+The fallback entrance is pinned separately:
+`TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo` drives the whole
+pipeline through it with a playable but unrelated file and asserts the file is
+discarded, the item fails with a reason naming `yt-dlp`, and the library stays
+empty. Removing the gate call, or ignoring its verdict, turns that test red.
 
 **Observation, not a finding:** `ffprobe` prints `[png @ …] chunk too big` for the
 embedded cover on that mp3. Harmless here, but it is the same family of

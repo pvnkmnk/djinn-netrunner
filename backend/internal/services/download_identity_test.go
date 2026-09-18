@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
@@ -295,4 +296,112 @@ func TestAcquisitionHandler_StageDownloadFile_RejectsMismatchedFileAndTriesNext(
 	assert.Contains(t, logs, "delivered a file that does not match the request — rejected")
 	assert.Contains(t, logs, "Noriyuki Iwadare")
 	assert.Contains(t, logs, "junk-peer")
+}
+
+// A caller with no staged path is a gap, not a pass: the gate has nothing to
+// read, so it must say so rather than returning silently as though the file had
+// been checked.
+func TestRejectUnusableDownload_LogsWhenThereIsNoPathToCheck(t *testing.T) {
+	db := setupPipelineTestDB(t)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.ext = NewMetadataExtractor()
+
+	_, item := createAcquisitionTestItem(t, db)
+	p := &acquisitionPipeline{ctx: context.Background(), item: item}
+
+	reason, err := handler.rejectUnusableDownload(p, "yt-dlp", "")
+	require.NoError(t, err)
+	assert.Empty(t, reason, "a missing path is not evidence against a download")
+
+	assert.Contains(t, jobLogMessages(t, db, item.JobID), "No staged path to verify")
+}
+
+// ---------------------------------------------------------------------------
+// The import stage has two entrances, and both are gated
+// ---------------------------------------------------------------------------
+
+// The pipeline reaches the import stage from the Soulseek candidate loop and from
+// the yt-dlp fallback. The fallback used to return straight into the import stage
+// with no check at all, so the same defect class the gate exists to stop — a
+// playable file that is a different work — could still be imported through it
+// (found by DJI-495's audit).
+//
+// This drives the whole pipeline through that entrance: Soulseek finds nothing,
+// the fallback returns a real, playable, correctly tagged file for a different
+// work, and it must be rejected, discarded, and never reach the library.
+func TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo(t *testing.T) {
+	requireProbeTools(t)
+
+	db := setupPipelineTestDB(t)
+	staging := t.TempDir()
+	libraryRoot := t.TempDir()
+
+	handler := NewAcquisitionHandler(db, &config.Config{
+		DownloadStagingPath: staging,
+		MusicLibraryPath:    libraryRoot,
+	}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.ext = NewMetadataExtractor() // real ffprobe and real tag reads
+
+	job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
+	require.NoError(t, db.Create(&job).Error)
+
+	item := database.JobItem{
+		JobID: job.ID, Status: "queued", Sequence: 1,
+		NormalizedQuery: "PUP PUP",
+		Artist:          "PUP", Album: "PUP", TrackTitle: "PUP",
+		SourceURL: "https://example.invalid/watch?v=off-target",
+	}
+	require.NoError(t, db.Create(&item).Error)
+	require.NoError(t, db.First(&item, item.ID).Error)
+
+	offTarget := generateTestAudio(t, staging, "off-target.flac",
+		"-metadata", "artist=Noriyuki Iwadare",
+		"-metadata", "album_artist=Noriyuki Iwadare",
+		"-metadata", "album=Ace Attorney Investigations: Miles Edgeworth Original Soundtrack",
+		"-metadata", "title=Shi-Long Lang - Speak Up, Pup!")
+
+	// Soulseek finds nothing, which is exactly when the fallback runs.
+	handler.slskd = &mockSlskd{
+		SearchFunc: func(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
+			return nil, nil
+		},
+	}
+	handler.ytdlp = &mockYtdlp{
+		IsYtdlpAvailableFunc: func() bool { return true },
+		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+			return offTarget, nil
+		},
+	}
+
+	require.NoError(t, handler.ExecuteItem(context.Background(), job.ID, item.ID))
+
+	// The gate ran on this entrance, and the rejection names the entrance it came
+	// through.
+	var stored database.JobItem
+	require.NoError(t, db.First(&stored, item.ID).Error)
+	assert.Equal(t, "failed", stored.Status,
+		"a rejected fallback download must fail the item, not be imported")
+	assert.Contains(t, stored.FailureReason, "does not match the request")
+	assert.Contains(t, stored.FailureReason, "yt-dlp",
+		"the reason must say which entrance the rejection came from")
+
+	// The bytes are gone from staging, through the same owner as every other
+	// rejection.
+	_, statErr := os.Stat(offTarget)
+	assert.True(t, os.IsNotExist(statErr),
+		"a rejected fallback file must be discarded so it can never be imported")
+
+	// And nothing reached the library.
+	imported := 0
+	require.NoError(t, filepath.WalkDir(libraryRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			imported++
+		}
+		return nil
+	}))
+	assert.Zero(t, imported,
+		"an unrelated file must not be imported through the fallback entrance")
 }
