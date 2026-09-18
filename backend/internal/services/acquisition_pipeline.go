@@ -96,15 +96,17 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 		// Soulseek found nothing — try yt-dlp fallback if source URL exists
 		if downloaded, ok := h.stageYtdlpFallback(ctx, p); ok {
 			// The fallback is the import stage's second entrance, so it passes the
-			// same gate the Soulseek download does. There is no next candidate
-			// behind it, so a rejection is terminal for the item rather than a
-			// reason to try another source.
+			// same gate the Soulseek download does. A rejection here is recorded as
+			// terminal on the first attempt: there is no next candidate behind the
+			// fallback, and a retry would fetch the same URL and reach the same
+			// verdict, so scheduling one only re-downloads a file this gate has
+			// already refused.
 			reason, gateErr := h.rejectUnusableDownload(p, "yt-dlp", downloaded)
 			if gateErr != nil {
 				return gateErr
 			}
 			if reason != "" {
-				h.failItem(p.item.JobID, p.item.ID, reason)
+				h.abandonItem(p.item.JobID, p.item.ID, reason)
 				return nil
 			}
 			p.download = downloaded

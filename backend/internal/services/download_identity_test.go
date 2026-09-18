@@ -379,8 +379,11 @@ func TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo(t *testing.T) {
 	// through.
 	var stored database.JobItem
 	require.NoError(t, db.First(&stored, item.ID).Error)
-	assert.Equal(t, "failed", stored.Status,
-		"a rejected fallback download must fail the item, not be imported")
+	assert.Equal(t, "abandoned", stored.Status,
+		"a rejected fallback download is terminal: a retry would fetch the same URL and reach the same verdict")
+	assert.Nil(t, stored.NextAttemptAt,
+		"a permanent verdict must not leave a retry scheduled")
+	assert.NotNil(t, stored.FinishedAt)
 	assert.Contains(t, stored.FailureReason, "does not match the request")
 	assert.Contains(t, stored.FailureReason, "yt-dlp",
 		"the reason must say which entrance the rejection came from")
@@ -404,4 +407,10 @@ func TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo(t *testing.T) {
 	}))
 	assert.Zero(t, imported,
 		"an unrelated file must not be imported through the fallback entrance")
+
+	// And it is terminal: the worker claims only queued items and failed ones
+	// whose backoff has passed, so an abandoned item is never picked up again.
+	nextID, claimErr := NewJobItemProcessor(db, handler).ClaimNextItem(job.ID)
+	require.NoError(t, claimErr)
+	assert.Zero(t, nextID, "a permanent verdict must not be re-claimable")
 }
