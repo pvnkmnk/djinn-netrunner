@@ -22,12 +22,21 @@ canonical album artist and dedups on it), but the legacy damage stays on disk un
 
 ## Tools
 
-Two CLI subcommands (in `netrunner-cli`):
+The library tooling lives in `netrunner-cli`, which ships in the worker image. Run it
+in the running container (the compose service is `ops-worker`):
+
+```bash
+docker exec ops-worker ./netrunner-cli library detect-fragments
+```
+
+The examples below show the bare command for brevity — prefix each with
+`docker exec ops-worker ./` when your shell is on the host.
 
 | Command | Purpose |
 |---|---|
 | `library detect-fragments [libraryID]` | List every album folder that spans multiple per-credit artist folders. Read-only. Omit the ID to scan all libraries. |
 | `library merge-album <libraryID> <albumFolder> <canonicalArtistFolder> [--apply]` | Merge one album's fragments into the canonical folder. **Dry run by default** — `--apply` executes. |
+| `library repair-tags <libraryID> [--apply] [--backup-dir DIR]` | Rewrite identity **tags** that disagree with the library's casing (see below). **Dry run by default** — `--apply` copies each rewritten file to the backup first. |
 
 Both commands support the global `--json` flag for machine-readable output.
 
@@ -64,7 +73,7 @@ docker run --rm -v netrunner_music:/data -v "$PWD/backups:/backup" alpine \
 ### 2. Detect the fragmentation
 
 ```bash
-docker exec netrunner-worker netrunner-cli library detect-fragments
+docker exec ops-worker ./netrunner-cli library detect-fragments
 ```
 
 Example output:
@@ -148,6 +157,57 @@ track count and one cover image.
 netrunner-cli library detect-fragments   # expect: No fragmented albums found.
 ```
 
+## Repairing tags, not folders — one artist listed twice
+
+A client groups by **tag**, not by folder. A library whose imports predate the identity-tag write
+(DJI-494) can hold two files tagged `Pup` and `PUP` inside an already-canonical folder: nothing on
+disk looks wrong, and the client still lists the artist twice.
+
+```bash
+# Plan only: what would change, and the artist count a client shows
+netrunner-cli library repair-tags <libraryID>
+
+# Apply (each rewritten file is copied to <library-root>-backup-<timestamp> first)
+netrunner-cli library repair-tags <libraryID> --apply
+netrunner-cli library repair-tags <libraryID> --apply --backup-dir /backups/identity-tags
+```
+
+What it does and does not do:
+
+- **The canonical source is the library's own committed casing** — the acquisition history first,
+  then the folders on disk — through the same resolver the import path uses, so the repair cannot
+  invent a name the library has never used.
+- **Only files that actually change** are rewritten, and only those are backed up. A file the
+  library has no opinion about is left alone.
+- **Album tags are corrected for casing only.** The library answers an album's casing from a
+  folder when it has no history for it, and folder names are sanitised (`Triple J: Like a
+  Version` lives in `Triple J- Like a Version`), so a substantive album difference is listed
+  under `left_alone` in `--json` rather than written — it is a wrong-file signal, not casing.
+- **A genuine credit survives.** A track artist that is not the album artist (`artist=Daryl
+  Palumbo` under album artist `Every Time I Die`) is a collaboration, not a casing mistake, and is
+  never rewritten; only a track artist that *is* the album artist with different casing is
+  corrected.
+- **A backup directory inside the library root is refused**, because the media server would index
+  it as a second copy of every track. The default is a timestamped sibling of the library root.
+- **Formats:** mp3, flac, m4a, ogg/opus — every container the tagger can re-mux. Embedded cover art
+  survives the rewrite (verified for mp3 and flac).
+- **A partial run exits non-zero**: any file whose write failed is listed under `ERROR`.
+
+Re-index and verify the count the client shows:
+
+```bash
+netrunner-cli library scan <libraryID>
+curl -s -u "admin:PASS" "http://navidrome:4533/rest/startScan.view?u=admin&p=PASS&v=1.16.1&c=netrunner&f=json" | jq '.["subsonic-response"].status'
+
+# Artist count a Subsonic client lists, before and after
+curl -s -u "admin:PASS" "http://navidrome:4533/rest/getArtists.view?u=admin&p=PASS&v=1.16.1&c=netrunner&f=json" \
+  | jq '[.["subsonic-response"].artists.index[].artist[].name] | length'
+```
+
+> **Ogg/Opus note.** Ogg-family comments live on the *stream*. A format-level ffmpeg `-metadata`
+> write is accepted without error and the old value stays in the file, so identity writes for those
+> containers are issued as `-metadata:s:a:0`.
+
 ## Edge cases & notes
 
 - **"Greatest Hits" by two different bands is *not* flagged.** Detection requires the observed
@@ -173,3 +233,5 @@ netrunner-cli library detect-fragments   # expect: No fragmented albums found.
 - PR #223 — tag writes via ffmpeg (replaces audiometa, whose MP4 parser crashed on real-world cover atoms)
 - `netrunner-cli library duplicates` — MB-recording-level duplicates (different concern,
   quality-aware replacement is tracked as DJI-366)
+- DJI-494 — identity tags written on every imported format, and a wrong value corrected rather
+  than skipped (`library repair-tags` for the files already on disk)

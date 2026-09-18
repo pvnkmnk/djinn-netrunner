@@ -19,8 +19,9 @@ import (
 // audio files; two minutes is generous headroom.
 const tagWriteTimeout = 2 * time.Minute
 
-// FFmpegTagger writes container-level metadata (album artist, cover art) to
-// M4A/OGG files by shelling out to ffmpeg. This replaces the audiometa
+// FFmpegTagger writes container-level metadata (album artist, album, track
+// artist, cover art) to mp3, flac, M4A and OGG files by shelling out to
+// ffmpeg. This replaces the audiometa
 // library, whose MP4 parser panicked on real-world covr atoms; ffmpeg's
 // demuxer/muxer handles the same files without crashing.
 //
@@ -47,13 +48,34 @@ func NewFFmpegTaggerWithFFmpeg(ffmpegPath string) *FFmpegTagger {
 	return &FFmpegTagger{FFmpegPath: ffmpegPath}
 }
 
-// mapMuxer returns the ffmpeg output muxer for a file extension.
+// mapMuxer returns the ffmpeg output muxer for an extension whose tags the
+// tagger can write with a lossless re-mux: the four containers the acquisition
+// pipeline imports. mp3 and flac belong here because an identity tag the peer
+// cased differently is what a client lists (DJI-494) — folder casing alone
+// does not fix it.
 func mapMuxer(ext string) (string, bool) {
 	switch strings.ToLower(ext) {
 	case ".m4a", ".mp4", ".m4b":
 		return "ipod", true // ipod muxer = strict MP4/M4A
 	case ".ogg", ".opus", ".oga":
 		return "ogg", true
+	case ".mp3":
+		return "mp3", true
+	case ".flac":
+		return "flac", true
+	default:
+		return "", false
+	}
+}
+
+// coverArtMuxer is the subset of mapMuxer whose cover art EmbedCoverArt can
+// attach as a picture stream. mp3 and flac are deliberately absent: the
+// extractor embeds their art with the id3v2 and flac libraries, so reaching
+// here with those formats is a caller bug rather than art to stream-copy.
+func coverArtMuxer(ext string) (string, bool) {
+	switch strings.ToLower(ext) {
+	case ".m4a", ".mp4", ".m4b", ".ogg", ".opus", ".oga":
+		return mapMuxer(ext)
 	default:
 		return "", false
 	}
@@ -161,21 +183,81 @@ func oggCoverMetadata(artData []byte) ([]string, error) {
 	return []string{"-metadata", "METADATA_BLOCK_PICTURE=" + base64.StdEncoding.EncodeToString(block.Data)}, nil
 }
 
-// StampAlbumArtist sets ALBUMARTIST on M4A/OGG files that do not already
-// carry one. The pre-check reads the existing tag with dhowden/tag (pure Go,
-// panic-free) and keeps the common already-stamped case a no-op, so the
-// ffmpeg write only runs on files that actually need it.
-func (t *FFmpegTagger) StampAlbumArtist(ctx context.Context, filePath, albumArtist string) error {
-	if albumArtist == "" {
-		return nil
-	}
+// AlbumTagIdentity is the canonical identity to write into a file's tags. An
+// empty field means "leave that tag alone".
+type AlbumTagIdentity struct {
+	// AlbumArtist is the artist the library files the album under. A value that
+	// disagrees is corrected even when the file already carries an album artist
+	// — a per-track credit such as "Every Time I Die & Daryl Palumbo" is the
+	// fragmentation this exists to stop, and the peer's casing is the rest
+	// (DJI-494).
+	AlbumArtist string
+	// Album is the canonical album name.
+	Album string
+	// TrackArtist is written only when the file's artist tag already matches it
+	// case-insensitively, so correcting the peer's casing never erases a real
+	// credit for another performer.
+	TrackArtist string
+}
+
+// NormalizeAlbumIdentity makes a file's identity tags match want: a tag that
+// already matches is left untouched (a re-import is not a rewrite), and a tag
+// that disagrees is corrected rather than skipped — skipping the case-wrong
+// value is exactly what left one artist listed twice (DJI-494).
+func (t *FFmpegTagger) NormalizeAlbumIdentity(ctx context.Context, filePath string, want AlbumTagIdentity) error {
 	if _, ok := mapMuxer(filepath.Ext(filePath)); !ok {
-		return fmt.Errorf("unsupported extension for albumartist stamp: %s", filepath.Ext(filePath))
+		return fmt.Errorf("unsupported extension for identity tag write: %s", filepath.Ext(filePath))
 	}
-	if m := readTagFile(filePath); m != nil && m.AlbumArtist() != "" {
+	args := tagCorrectionArgs(readTagFile(filePath), want, filepath.Ext(filePath))
+	if len(args) == 0 {
 		return nil
 	}
-	return t.runTagWrite(ctx, filePath, nil, []string{"-metadata", "album_artist=" + albumArtist})
+	return t.runTagWrite(ctx, filePath, nil, args)
+}
+
+// tagCorrectionArgs is the entire decision about what to write, kept pure so
+// it is testable without ffmpeg: given the file's current tags (nil when the
+// file cannot be parsed) and the canonical identity, it returns the
+// `-metadata k=v` arguments for the fields that actually disagree. Unreadable
+// tags mean there is nothing to compare against, so the canonical values are
+// written — the same outcome as a file that carries no tags at all.
+//
+// The metadata level is per container, and getting it wrong is invisible:
+// Ogg-family comments live on the stream, so a format-level `-metadata` write
+// is accepted with no error and the old value stays in the file (verified
+// against ffmpeg 9.0.1 — it only appeared to work when the file had no stream
+// tags at all, which is why the previous album-artist stamp silently did
+// nothing on a tagged Ogg). Every other supported container stores tags at the
+// format level.
+func tagCorrectionArgs(cur tag.Metadata, want AlbumTagIdentity, ext string) []string {
+	key := "-metadata"
+	switch strings.ToLower(ext) {
+	case ".ogg", ".opus", ".oga":
+		key = "-metadata:s:a:0"
+	}
+
+	var args []string
+	if want.AlbumArtist != "" && (cur == nil || cur.AlbumArtist() != want.AlbumArtist) {
+		args = append(args, key, "album_artist="+want.AlbumArtist)
+	}
+	// The album is corrected only when the difference is casing (or the tag
+	// is empty). The library resolves an album's casing from the folder when
+	// it has no history for it, and folder names are sanitised — writing
+	// "Triple J- Like a Version, Volume 13" over a correct
+	// "Triple J: Like a Version, Volume 13" would lose the real punctuation.
+	// A substantive difference is a wrong-file signal for the download gate,
+	// not something to paper over here.
+	if want.Album != "" && (cur == nil || cur.Album() == "" ||
+		(cur.Album() != want.Album && strings.EqualFold(cur.Album(), want.Album))) {
+		args = append(args, key, "album="+want.Album)
+	}
+	// A case-only difference only: an artist tag that is not the album artist
+	// is a credit for someone else, not a casing mistake.
+	if want.TrackArtist != "" && cur != nil && cur.Artist() != want.TrackArtist &&
+		strings.EqualFold(cur.Artist(), want.TrackArtist) {
+		args = append(args, key, "artist="+want.TrackArtist)
+	}
+	return args
 }
 
 // EmbedCoverArt attaches artData as front cover art to an M4A/OGG file.
@@ -185,7 +267,7 @@ func (t *FFmpegTagger) StampAlbumArtist(ctx context.Context, filePath, albumArti
 // Vorbis comment, because the OGG muxer cannot carry a picture stream.
 func (t *FFmpegTagger) EmbedCoverArt(ctx context.Context, filePath string, artData []byte) error {
 	ext := filepath.Ext(filePath)
-	if _, ok := mapMuxer(ext); !ok {
+	if _, ok := coverArtMuxer(ext); !ok {
 		return fmt.Errorf("unsupported extension for cover art embedding: %s", ext)
 	}
 	if m := readTagFile(filePath); m != nil && m.Picture() != nil {

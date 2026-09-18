@@ -635,6 +635,12 @@ The fallback entrance is pinned separately:
 pipeline through it with a playable but unrelated file and asserts the file is
 discarded, the item fails with a reason naming `yt-dlp`, and the library stays
 empty. Removing the gate call, or ignoring its verdict, turns that test red.
+That evidence is a **test result, not a run**, and the difference matters here:
+the fallback entrance cannot be driven on a real stack at all, because no
+production code path writes `jobitems.source_url` (only `_test.go` does, and the
+live stack has 0 of 122 items carrying one). The 2026-09-18 section at the end of
+this record has the measurements, the observed `job_logs` lines for both
+entrances, and the retry behaviour that output exposes.
 
 **Observation, not a finding:** `ffprobe` prints `[png @ …] chunk too big` for the
 embedded cover on that mp3. Harmless here, but it is the same family of
@@ -784,3 +790,89 @@ One detail worth reading deliberately rather than as a defect: `CanonicalAlbum` 
 through to the filesystem's *sorted* order, which puts the uppercase folder first.
 That is the documented order (history, then filesystem, then the tag verbatim) doing
 what it says; it simply has no history to prefer here.
+
+## DJI-494 tag writes and the download gate, at merged master — 2026-09-18
+
+Run at `79ab403` (`master`). Two stacks are involved, and the distinction is the
+point of this section: a **clean-slate** stack, brought up from
+`docs/BETA_DEPLOYMENT.md` alone with fresh volumes, and the long-lived **live**
+stack, whose library predates the DJI-494 fix and is where the repair's
+before-and-after had to be measured.
+
+| Field | Value |
+|---|---|
+| Commit | `79ab403` (master) |
+| Clean-slate project | `beta-slate`, `docker-compose.yml` + `docker-compose.beta.yml` |
+| Clean-slate volumes at start | **zero** — brought up fresh for this run |
+| Clean-slate `.env` | rebuilt from `.env.beta.example` by the documented step |
+| Live stack | `djinn-netrunner`, 7 volumes, **122** `jobitems`, `/app/music` library |
+| Images | built from `79ab403` during this run |
+
+| # | Clause | Result | Observed |
+|---|---|---|---|
+| 74 | The documented steps alone bring up a working stack | PASS | clean-slate `beta-slate`: `scripts/beta-smoke.sh` → `Beta smoke: all checks passed.` — 28 checks, including ffmpeg/ffprobe present, a non-template `JWT_SECRET`/`SUBSONIC_PASSWORD` in **both** app containers, a session surviving an `ops-web` restart, both Subsonic auth schemes, a library created and owned by the caller, 3/3 fixtures indexed with persisted paths, and `stream.view` returning 20599 bytes of audio |
+| 75 | DJI-494: the canonical album artist **and** album are written on every supported format | PASS | live library `/app/music/PUP/PUP/07 - Lionheart.mp3` → `TAG:artist=PUP`, `TAG:album_artist=PUP`, `TAG:album=PUP`. The file is an **mp3** — one of the two formats the tag write previously skipped outright, and the exact file named in the issue |
+| 76 | DJI-494: a wrong existing value is corrected rather than skipped | PASS | the same file carried the peer's casing before this run. Every audio file under `/app/music/PUP` now reads `album_artist=PUP`, and a sweep of every mp3 in the library for `artist=Pup` or `album_artist=Pup` reports none |
+| 77 | DJI-494: a Subsonic client stops listing one artist twice | PASS | `getIndexes.view` artist list: Agoraphobic Nosebleed, Chelsea Wolfe, Converge, Converge & Chelsea Wolfe, Converge, Chelsea Wolfe, Noriyuki Iwadare, Overcast, **PUP** — one `PUP`, no `Pup`. `select count(distinct artist) from tracks` → **8** (was 9); `select artist, count(*) from tracks where artist ilike 'pup%'` → `PUP|15` only |
+| 78 | Dry-run repair finds the disagreement and writes nothing | PASS | `library repair-tags --dry-run` reported the corrections to make and left every file's bytes unchanged |
+| 79 | The repair applies with a backup and reports before/after counts | PASS | pre-repair copies preserved under the mounted `/backups` volume and verified against hashes taken before the write; afterwards 8 artists with `Pup` gone, then a scan so the client's index re-read the files |
+| 80 | The repaired state is durable | PASS | re-queried on the restarted live stack after the run: still `count(distinct artist) = 8`, `PUP|15`, and no `Pup` row |
+
+One detail worth reading deliberately rather than as a defect, because it looks
+like one: the folder for *Who Will Look After the Dogs?* is sanitised to
+`Who Will Look After the Dogs` while its `album` tag keeps the `?`. The folder
+name and the tag cannot be literally equal, since `?` is not a legal path
+character; the tag carries the canonical name and the folder carries the
+sanitised one. That is the intended split, not drift the repair should chase.
+
+### The gate's clauses were not driven live, and why
+
+The two clauses the matrix carries for the download-identity gate — *a playable
+file that is a different work is refused on the Soulseek path*, and *the same on
+the yt-dlp fallback entrance* — were **not** driven on either stack in this run.
+That is a coverage gap, recorded as one. Each entrance is unreachable on a real
+stack for a reason this run established rather than assumed:
+
+| Entrance | Why it could not be driven live |
+|---|---|
+| Soulseek candidate loop | A refusal needs a real peer to serve a mismatched file *at a chosen moment*. The one time this happened organically it produced the original defect (the `Noriyuki Iwadare` track imported under a `PUP` request). There is no seam to request a mismatched peer on demand, and the query cannot be chosen to force one — a peer only appears in results when its filename matches the query, which is the same signal the gate uses. |
+| yt-dlp fallback | **No production code path writes `jobitems.source_url`.** The entrance is gated correctly, but nothing can reach it: a search of the backend finds the field written only in `_test.go`, and the live stack counts **0 of 122** job items carrying one despite having imported 43 tracks. Driving it live would require hand-inserting an item, which is a fixture, not a flow. |
+
+What exists instead is test evidence, and it is labelled as such rather than
+presented as a run. The tests drive the real pipeline through each entrance with
+real audio bytes and a live `ffprobe`:
+
+```
+$ go test -count=1 -v -run 'IdentityMismatch|YtdlpFallbackIsGated|MismatchedFileAndTriesNext' ./internal/services/
+--- PASS: TestAcquisitionHandler_StageDownloadFile_RejectsMismatchedFileAndTriesNext (2.78s)
+--- PASS: TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo (1.22s)
+--- PASS: TestIdentityMismatch (0.00s)
+ok  github.com/pvnkmnk/netrunner/backend/internal/services  4.178s
+```
+
+Both refusals name the entrance they came through, in the item's own log:
+
+```
+WARN  junk-peer delivered a file that does not match the request — rejected:
+      asked for artist "PUP" / album "PUP", file is tagged artist
+      "Noriyuki Iwadare" / album "Ace Attorney Investigations: Miles Edgeworth
+      Original Soundtrack"
+ERR   yt-dlp: does not match the request: asked for artist "PUP" / album "PUP",
+      file is tagged artist "Noriyuki Iwadare" / album "…"
+```
+
+**Open finding this output exposes, recorded rather than fixed here.** The
+fallback rejection is persisted as `status="failed"` with `retry_count=1` and
+`next_attempt_at` one minute out, so the item is *retried* up to `max_attempts`
+rather than being terminal — while the comment above the call site describes it
+as terminal for the item. A retry re-runs the same fallback against the same
+`source_url` and re-downloads the same off-target file. Filed separately.
+
+### Environment hand-off
+
+| Item | State |
+|---|---|
+| Clean-slate project `beta-slate` | torn down with `down -v`: **7 volumes → 0**, network removed |
+| Live stack `djinn-netrunner` | `.env` restored from the pre-run backup and byte-identical to it; all four containers `healthy` on it, which also proves the restored value matches the volume's stored credential |
+| Live volumes | all seven intact; the repaired library and the pre-repair backup under `/backups` are preserved |
+| Live children of the run | none — the run's own jobs are terminal and its staging directory is empty |
