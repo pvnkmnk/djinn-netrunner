@@ -124,6 +124,22 @@ func TestIdentityMismatch(t *testing.T) {
 			contains: "asked for artist",
 		},
 		{
+			// An album-less item has only the title left, and this file carries no
+			// title tag: Extract filled it from the file's name, which the peer
+			// chose. Rejecting on that would throw away a valid download because of
+			// a filename, so a title that came from the name is an axis the check
+			// does not have.
+			name: "a title the extractor took from the filename is not evidence",
+			item: database.JobItem{Artist: "Converge", TrackTitle: "Concubine"},
+			meta: AudioMetadata{
+				Artist:            "Noriyuki Iwadare",
+				AlbumArtist:       "Noriyuki Iwadare",
+				Album:             "Ace Attorney Investigations: Miles Edgeworth Original Soundtrack",
+				Title:             "01 - track",
+				TitleFromFilename: true,
+			},
+		},
+		{
 			// An untagged peer file is not evidence of anything. Rejecting it
 			// would throw away real downloads over a missing tag.
 			name: "untagged file is never a mismatch",

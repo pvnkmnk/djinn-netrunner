@@ -380,6 +380,16 @@ func identityMismatch(item *database.JobItem, meta *AudioMetadata) string {
 		// artist and album are present and disagreeing, a coincidental shared word
 		// in the title must not put an unrelated track back on its way to the
 		// library.
+		//
+		// A title the extractor took from the file's *name* is not the file's own
+		// metadata — the peer chose that name, precisely to match the query — so
+		// with no album there is nothing left to compare. Rejecting on it would
+		// discard a valid download over a filename, and accepting on it would only
+		// look like verification.
+		if meta.TitleFromFilename {
+			return ""
+		}
+
 		requested := item.TrackTitle
 		if strings.TrimSpace(requested) == "" {
 			requested = item.NormalizedQuery
