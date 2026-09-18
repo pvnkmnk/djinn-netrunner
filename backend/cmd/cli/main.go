@@ -552,6 +552,13 @@ func libraryCmd() *cobra.Command {
 
 			if jsonOutput {
 				printJSON(report)
+				// A partial run is not a success here either. The report above stays
+				// the only document on stdout and the reason goes to stderr, so a
+				// parser still reads valid JSON while a script sees the status.
+				if len(report.Failures) > 0 {
+					fmt.Fprintf(os.Stderr, "Error: %d file(s) could not be repaired\n", len(report.Failures))
+					osExit(1)
+				}
 				return
 			}
 			printTagRepairReport(lib.Path, report, apply)
@@ -564,7 +571,7 @@ func libraryCmd() *cobra.Command {
 		},
 	}
 	repairTagsCmd.Flags().Bool("apply", false, "execute the repair (default is a dry run)")
-	repairTagsCmd.Flags().String("backup-dir", "", "directory to copy each rewritten file into (default: a timestamped sibling of the library root)")
+	repairTagsCmd.Flags().String("backup-dir", "", "directory to copy each rewritten file into (default: a timestamped directory under /backups when mounted, else a sibling of the library root)")
 	cmd.AddCommand(repairTagsCmd)
 
 	cmd.AddCommand(&cobra.Command{

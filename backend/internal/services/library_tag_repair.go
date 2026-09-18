@@ -122,10 +122,21 @@ func PlanIdentityTagRepair(db *gorm.DB, ext *MetadataExtractor, libraryRoot stri
 			canonicalArtist, canonicalAlbum = resolvedArtist, resolvedAlbum
 		}
 
-		before[meta.AlbumArtist] = struct{}{}
-		before[meta.Artist] = struct{}{}
-		after[canonicalArtist] = struct{}{}
-		after[correctedTrackArtist(meta.Artist, canonicalArtist)] = struct{}{}
+		// Named artists only: an untagged file would otherwise be counted as
+		// an artist of its own, and the before/after numbers would disagree
+		// with what a client lists.
+		if meta.AlbumArtist != "" {
+			before[meta.AlbumArtist] = struct{}{}
+		}
+		if meta.Artist != "" {
+			before[meta.Artist] = struct{}{}
+		}
+		if canonicalArtist != "" {
+			after[canonicalArtist] = struct{}{}
+		}
+		if trackArtist := correctedTrackArtist(meta.Artist, canonicalArtist); trackArtist != "" {
+			after[trackArtist] = struct{}{}
+		}
 
 		// A substantive album disagreement is reported, not corrected: the
 		// canonical value may itself be a sanitised folder name.
@@ -211,6 +222,14 @@ func ApplyIdentityTagRepair(ctx context.Context, ext *MetadataExtractor, library
 		}
 		report.BackedUp++
 
+		// Revalidate again immediately before the write: the copy above is a
+		// second window in which an import can replace the file, and a tag write
+		// is not something re-running the plan undoes.
+		if fixSourceChanged(ext, src, fix) {
+			report.Stale = append(report.Stale, fix.File)
+			continue
+		}
+
 		if err := ext.NormalizeAlbumTags(ctx, src, AlbumTagIdentity{
 			AlbumArtist: fix.AlbumArtistTo,
 			Album:       fix.AlbumTo,
@@ -224,14 +243,27 @@ func ApplyIdentityTagRepair(ctx context.Context, ext *MetadataExtractor, library
 	return nil
 }
 
+// PersistentTagBackupRoot is the volume a deployment keeps backups on.
+const PersistentTagBackupRoot = "/backups"
+
 // DefaultTagBackupDir returns the backup location for a library: a timestamped
-// sibling of its root, so it is outside the library and cannot be indexed.
+// directory on the persistent volume when one is mounted, otherwise a
+// timestamped sibling of the library root. Outside the library either way, so
+// the media server cannot index a second copy of every track.
+//
+// The volume is preferred because a sibling of the library root is still
+// inside the container: in Compose it disappears when the container is
+// recreated, which is the one moment the backup is needed.
 func DefaultTagBackupDir(libraryRoot string, now time.Time) string {
+	stamp := now.UTC().Format("20060102T150405Z")
+	if info, err := os.Stat(PersistentTagBackupRoot); err == nil && info.IsDir() {
+		return filepath.Join(PersistentTagBackupRoot, "identity-tags-"+stamp)
+	}
 	abs, err := filepath.Abs(libraryRoot)
 	if err != nil {
 		abs = libraryRoot
 	}
-	return filepath.Join(filepath.Dir(abs), fmt.Sprintf("%s-backup-%s", filepath.Base(abs), now.UTC().Format("20060102T150405Z")))
+	return filepath.Join(filepath.Dir(abs), fmt.Sprintf("%s-backup-%s", filepath.Base(abs), stamp))
 }
 
 // fixSourceChanged reports whether the file's identity still matches the one the

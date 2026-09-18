@@ -303,3 +303,27 @@ func TestApplyIdentityTagRepair_LeavesAFileThatChangedSinceThePlan(t *testing.T)
 	require.Equal(t, "Another Band", m.AlbumArtist(), "a stale plan must not rename another track")
 	require.Equal(t, "Another Album", m.Album())
 }
+
+// TestPlanIdentityTagRepair_DoesNotCountUnnamedFiles pins the rule the
+// before/after numbers rest on: a client lists named artists, so a file with
+// no artist tags is not an artist of its own. Counting it inflates the
+// "before" number and makes the headline disagree with what a client shows.
+func TestPlanIdentityTagRepair_DoesNotCountUnnamedFiles(t *testing.T) {
+	requireProbeTools(t)
+	requireFFmpeg(t)
+
+	db := repairTestDB(t)
+	seedCanonicalHistory(t, db, "PUP", "PUP")
+	root := t.TempDir()
+	seedDriftedLibrary(t, root)
+
+	generateTestAudio(t, filepath.Join(root, "PUP", "PUP"), "03 - Untitled.mp3",
+		"-metadata", "title=Untitled")
+
+	plan, err := PlanIdentityTagRepair(db, NewMetadataExtractor(), root)
+	require.NoError(t, err)
+
+	require.Equal(t, 3, plan.Scanned)
+	require.Equal(t, 3, plan.DistinctArtistsBefore, "an untagged file is not an artist")
+	require.Equal(t, 1, plan.DistinctArtistsAfter)
+}
