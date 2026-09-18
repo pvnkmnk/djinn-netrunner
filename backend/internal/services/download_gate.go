@@ -37,13 +37,24 @@ import (
 // against the candidate and tries the next peer; the yt-dlp entrance has no
 // alternative source, so it fails the item with the same reason.
 //
-// When a check cannot run — no ffprobe binary, an empty path, tags this build
-// cannot read — the file is accepted and the gap is logged, never rejected. That
-// is a property of the check, not of the caller, which is why it lives here: a
-// deployment without ffprobe must not reject every download it makes, and a peer
-// that forgot a tag must not have its file thrown away.
+// When a check cannot run — no ffprobe binary, tags this build cannot read, a
+// caller with no staged path — the file is accepted and the gap is logged, never
+// rejected. That is a property of the check, not of the caller, which is why it
+// lives here: a deployment without ffprobe must not reject every download it
+// makes, and a peer that forgot a tag must not have its file thrown away.
 func (h *AcquisitionHandler) rejectUnusableDownload(p *acquisitionPipeline, source, path string) (string, error) {
-	if h.ext == nil || path == "" {
+	if h.ext == nil {
+		// Not reachable in a deployed worker: the extractor is wired at
+		// construction. There is no runtime gap here to report.
+		return "", nil
+	}
+	if path == "" {
+		// A caller with no staged path has nothing for either check to read. It
+		// does not import — importFile fails a path it cannot stat — but the
+		// skipped checks are worth a diagnostic rather than an assumption, or a
+		// fallback that reported success with no path would traverse both
+		// entrances without leaving a trace.
+		h.Log(p.item.JobID, "WARN", "No staged path to verify — no post-download check ran", &p.item.ID)
 		return "", nil
 	}
 

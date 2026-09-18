@@ -298,6 +298,24 @@ func TestAcquisitionHandler_StageDownloadFile_RejectsMismatchedFileAndTriesNext(
 	assert.Contains(t, logs, "junk-peer")
 }
 
+// A caller with no staged path is a gap, not a pass: the gate has nothing to
+// read, so it must say so rather than returning silently as though the file had
+// been checked.
+func TestRejectUnusableDownload_LogsWhenThereIsNoPathToCheck(t *testing.T) {
+	db := setupPipelineTestDB(t)
+	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.ext = NewMetadataExtractor()
+
+	_, item := createAcquisitionTestItem(t, db)
+	p := &acquisitionPipeline{ctx: context.Background(), item: item}
+
+	reason, err := handler.rejectUnusableDownload(p, "yt-dlp", "")
+	require.NoError(t, err)
+	assert.Empty(t, reason, "a missing path is not evidence against a download")
+
+	assert.Contains(t, jobLogMessages(t, db, item.JobID), "No staged path to verify")
+}
+
 // ---------------------------------------------------------------------------
 // The import stage has two entrances, and both are gated
 // ---------------------------------------------------------------------------
