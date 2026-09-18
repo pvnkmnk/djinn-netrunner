@@ -153,6 +153,55 @@ Cycle A targeted the foundation layer — Docker packaging, CI/CD, dependency he
 
 ---
 
+## Beta Hardening — September 2026 (PRs #202-#244)
+
+The repository had a feature-complete UI and a working acquisition pipeline that had
+never been proven on a real deployment. This wave is what it took to get from "all CI
+green" to "a beta that acquires, imports, streams and repairs a real library", and
+most of it came from running the thing and hitting what the tests did not.
+
+**What ran, and why.** An end-to-end run against the operator's Docker Desktop stack
+found that a vanilla `docker compose up` never received `.env` (random session secret,
+no Subsonic password), that slskd rejected every search with 401, and that no
+media-server client existed in the worker (#226, #229, #470-series issues). Each of
+those was invisible to a green test suite because the tests construct their own
+configuration.
+
+**What the pipeline got wrong with real peers.** A peer that answered a search and
+never sent anything stalled the queue for the full wait budget (#228); an 8.5 KB
+"track" was imported (#228); and an unrelated recording whose filename contained the
+requested word was imported under a green acceptance run — the finding that produced
+the download-identity gate, now on both entrances into the import stage (#239, #240).
+
+**What the library got wrong.** Albums were fragmented across per-credit artist
+folders (#219), then across case-only differences (#230, #231); a repaired folder
+still carried the wrong tag, so a Subsonic client listed one artist twice (#241). Each
+fix came with the repair tooling for libraries already built: the album merge (#222,
+#224) and `library repair-tags` (#241), both dry-run first and backed up.
+
+**What staging accumulated.** Leftover directories survived because the sweep only
+removed empty ones (#231), a permissions mismatch stopped slskd writing at all (#220),
+and every non-import exit leaked its download until a single owning discard path and a
+janitor that reclaims unowned entries replaced the per-branch removals (#233, #234,
+#235, #236).
+
+**What was made verifiable.** `docs/BETA_ACCEPTANCE.md` records each clause with the
+command that tested it and the output it observed (#229, #232, #241); the browser suite
+became a real gate that runs in CI and locally, with the four missing spec files added
+and the e2e stack given its own compose identity so it cannot touch a beta deployment
+(#244).
+
+**Decisions recorded rather than deferred.** `jobitems.source_url` had no production
+writer, so the yt-dlp fallback was gated but unreachable; the feed path now populates
+it, keeping the swarm first and the gate authoritative (#243).
+
+Evidence: `docs/BETA_ACCEPTANCE.md` (acceptance matrix and run records),
+`docs/BETA_DEPLOYMENT.md` (deployment steps), `ops/docs/library-dedup-runbook.md`
+(repair procedures). Issue-level detail lives in Linear (`DJI-###`, project
+*NetRunner Beta Readiness*).
+
+---
+
 ## Current State
 
 ### Working

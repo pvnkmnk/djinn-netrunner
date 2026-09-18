@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Beta deployment assets: `docker-compose.beta.yml`, `.env.beta.example` and
+  `docs/BETA_DEPLOYMENT.md`, so a beta can be brought up from a clone instead of
+  reverse-engineered from a running stack (#229, #236)
+- `docs/BETA_ACCEPTANCE.md`: the acceptance matrix and its evidence, with each row
+  naming the command and the output it observed (#229, #232, #241)
+- Subsonic surface a client can actually browse: stable artist ids, `getArtist`, and
+  no empty-named placeholder artist in `search3` (#209, #210, #215, #228)
+- Repair tooling for the libraries earlier versions built: fragmented-album merge with
+  a runbook (#222, #224) and canonical identity tag repair
+  (`netrunner-cli library repair-tags`, dry run -> backup -> apply) (#241)
+- Staged-download ownership plus a janitor that reclaims what no live item owns
+  (#235, #236)
+- Browser suite in CI and locally: `scripts/e2e.sh`, `.env.e2e.example`, and the
+  artists/playlists/jobs/admin specs (#244)
+- `netrunner-cli` in the runtime image and a `netrunner-backups` volume, because the
+  documented repair commands and their backups did not exist in a deployment (#241)
+
+### Changed
+- The worker talks to a Subsonic-compatible media server: Navidrome joins the
+  integration stack and gonic becomes optional (#209, #215)
+- Acquisition outcomes are honest: `failed`, `partial` and `abandoned` replace silent
+  success, and a gate rejection is terminal instead of retried (#211, #242)
+- Artist and album identity is canonical everywhere - folders, tags and dedup fold
+  case and credits the same way (#219, #230, #231, #241)
+- Configuration fails fast: production refuses to boot without `JWT_SECRET`,
+  `SUBSONIC_PASSWORD` or the media-server URL rather than degrading (#229)
+
+### Fixed
+- `SLSKD_API_KEY` never reached slskd, so every search returned 401 (#226)
+- A peer queued remotely stalled the whole job queue for the full wait budget (#228)
+- Junk and implausible downloads reached the library; a minimum-size and `ffprobe`
+  gate plus a download-identity check now refuse anything that is not the requested
+  recording, on both entrances into the import stage (#228, #239, #240)
+- `audiometa` panicked on MP4 `covr`; tag writes moved to `ffmpeg -c copy`, which also
+  fixed M4A/OGG writes (#223)
+- Staging accumulated leftovers: the sweep only removed empty directories, a
+  permissions mismatch left slskd unable to write, and the discard path assumed a
+  staging root it never enforced (#220, #231, #233, #234)
+- A duplicate library path returned a bare 500 instead of 409 (#229)
+- Sessions were invalidated on every restart because `JWT_SECRET` never reached the
+  process (#229)
+- The jobs filters were dead controls: `hx-trigger` on the wrapper div never fired in
+  htmx 1.9, and the filtered swap nested a second copy of the filters inside the list
+  (#244)
+- The e2e suite shared the beta deployment's compose project, so its `down -v` deleted
+  the beta library (#244)
+
 ## [v0.0.1] - 2026-06-16
 
 ### Infrastructure
@@ -28,8 +78,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Release
 - Initial public release v0.0.1
-
-## [Unreleased]
 
 ## [0.0.1] — 2026-05-XX
 
