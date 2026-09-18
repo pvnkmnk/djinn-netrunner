@@ -66,18 +66,21 @@ test.describe('Admin Feature (DJI-432)', () => {
     await expect(page.locator('#admin-content th')).toHaveCount(3);
   });
 
-  test('6. Section partials answer directly and swap into the panel', async ({ adminPage: page }) => {
+  test('6. A section swap pushes a page URL, and the partial still answers directly', async ({ adminPage: page }) => {
     await page.goto('/admin');
 
-    const partial = page.waitForResponse(resp => resp.url().includes('/partials/admin/users') && resp.status() === 200);
-    await page.locator('nav.admin-nav a:has-text("Users")').click();
+    const partial = page.waitForResponse(resp => resp.url().includes('/partials/admin/audit') && resp.status() === 200);
+    await page.locator('nav.admin-nav a:has-text("Audit Log")').click();
     await partial;
 
-    // Deliberately not asserting the address bar: hx-push-url="true" makes htmx
-    // push the *request* URL (/partials/admin/users), which is not a page route,
-    // so a reload of it 404s. That is a defect in the nav, not a contract to
-    // pin here — it is filed separately.
-    await expect(page.locator('#admin-content')).toContainText('Users');
+    // hx-push-url="true" made htmx push the *request* URL
+    // (/partials/admin/audit), which is not a page route, so the address bar
+    // pointed at nothing reloadable (DJI-499). It must name the page.
+    //
+    // waitForURL, not page.url(): the push lands with the swap, so reading
+    // the location right after the response is a race.
+    await page.waitForURL(url => url.pathname === '/admin' && url.searchParams.get('section') === 'audit');
+    await expect(page.locator('#admin-content h3')).toHaveText('Audit Log');
 
     const direct = await page.request.get('/partials/admin/config');
     expect(direct.status()).toBe(200);
@@ -109,5 +112,26 @@ test.describe('Admin Feature (DJI-432)', () => {
       const response = await page.request.get(path);
       expect(response.status(), `${path} must be admin-only`).toBe(403);
     }
+  });
+
+  test('10. A section URL survives a reload (DJI-499)', async ({ adminPage: page }) => {
+    const response = await page.goto('/admin?section=config');
+    expect(response?.status()).toBe(200);
+
+    // Rendered server-side, not only swapped in, so the panel is never empty
+    // on a load that did not come from a click.
+    await expect(page.locator('#admin-content h3')).toHaveText('System Config');
+
+    await page.reload();
+
+    await expect(page.locator('#admin-content h3')).toHaveText('System Config');
+    expect(page.url()).toContain('section=config');
+  });
+
+  test('11. An unknown section still renders the panel (DJI-499)', async ({ adminPage: page }) => {
+    const response = await page.goto('/admin?section=does-not-exist');
+
+    expect(response?.status()).toBe(200);
+    await expect(page.locator('#admin-content h3')).toHaveText('Users');
   });
 });

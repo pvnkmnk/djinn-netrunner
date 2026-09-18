@@ -37,11 +37,71 @@ func (h *AdminHandler) AdminOnly(c *fiber.Ctx) error {
 	return c.Next()
 }
 
-// AdminPage renders the admin dashboard page
+// The admin panel's sections. The names are also the `?section=` values the nav
+// pushes, so a panel URL can be bookmarked and reloaded.
+const (
+	adminSectionUsers  = "users"
+	adminSectionAudit  = "audit"
+	adminSectionConfig = "config"
+)
+
+// userView is a template-friendly user row (LastLoginAt dereferenced, since a
+// nil pointer renders as the zero time rather than "never").
+type userView struct {
+	ID          uint64
+	Email       string
+	Role        string
+	CreatedAt   time.Time
+	LastLoginAt time.Time
+}
+
+// adminSection is the single owner of what an admin section is: which partial
+// renders it and which data that partial needs. The page embeds a section so a
+// reload shows it; the partial endpoints serve the same bytes to htmx. Routing
+// both through here is what stops the two paths disagreeing about a section.
+func (h *AdminHandler) adminSection(section string) (string, fiber.Map) {
+	switch section {
+	case adminSectionAudit:
+		var entries []database.AuditLog
+		h.db.Order("created_at DESC").Limit(50).Find(&entries)
+		return "partials/admin_audit", fiber.Map{"Section": section, "Entries": entries}
+	case adminSectionConfig:
+		var settings []database.Setting
+		h.db.Order("key ASC").Find(&settings)
+		return "partials/admin_config", fiber.Map{"Section": section, "Settings": settings}
+	default:
+		var users []database.User
+		h.db.Select("id, email, role, created_at, last_login_at").Find(&users)
+		views := make([]userView, len(users))
+		for i, u := range users {
+			var lastLogin time.Time
+			if u.LastLoginAt != nil {
+				lastLogin = *u.LastLoginAt
+			}
+			views[i] = userView{ID: u.ID, Email: u.Email, Role: u.Role, CreatedAt: u.CreatedAt, LastLoginAt: lastLogin}
+		}
+		return "partials/admin_users", fiber.Map{"Section": adminSectionUsers, "Users": views}
+	}
+}
+
+// normalizeAdminSection maps a `?section=` value onto a real section, falling
+// back to users so a hand-edited or stale URL still renders a panel.
+func normalizeAdminSection(section string) string {
+	switch section {
+	case adminSectionUsers, adminSectionAudit, adminSectionConfig:
+		return section
+	default:
+		return adminSectionUsers
+	}
+}
+
+// AdminPage renders the admin dashboard with the selected section already in
+// place, so the URL the nav pushes is a real page that survives a reload.
 func (h *AdminHandler) AdminPage(c *fiber.Ctx) error {
-	return c.Render("pages/admin", fiber.Map{
-		"Page": "admin",
-	})
+	section := normalizeAdminSection(c.Query("section"))
+	_, data := h.adminSection(section)
+	data["Page"] = "admin"
+	return c.Render("pages/admin", data)
 }
 
 // GET /api/admin/users — list all users (sensitive fields excluded)
@@ -308,46 +368,20 @@ func (h *AdminHandler) logAudit(action string, c *fiber.Ctx, targetType, targetI
 
 // GET /partials/admin/users — renders users list partial
 func (h *AdminHandler) RenderUsersPartial(c *fiber.Ctx) error {
-	var users []database.User
-	h.db.Select("id, email, role, created_at, last_login_at").Find(&users)
-
-	// Convert to template-friendly struct (dereference LastLoginAt pointer)
-	type UserView struct {
-		ID          uint64
-		Email       string
-		Role        string
-		CreatedAt   time.Time
-		LastLoginAt time.Time // value type, zero value for nil
-	}
-	views := make([]UserView, len(users))
-	for i, u := range users {
-		var lastLogin time.Time
-		if u.LastLoginAt != nil {
-			lastLogin = *u.LastLoginAt
-		}
-		views[i] = UserView{
-			ID:          u.ID,
-			Email:       u.Email,
-			Role:        u.Role,
-			CreatedAt:   u.CreatedAt,
-			LastLoginAt: lastLogin,
-		}
-	}
-	return c.Render("partials/admin_users", fiber.Map{"Users": views})
+	partial, data := h.adminSection(adminSectionUsers)
+	return c.Render(partial, data)
 }
 
 // GET /partials/admin/audit — renders audit log partial
 func (h *AdminHandler) RenderAuditPartial(c *fiber.Ctx) error {
-	var entries []database.AuditLog
-	h.db.Order("created_at DESC").Limit(50).Find(&entries)
-	return c.Render("partials/admin_audit", fiber.Map{"Entries": entries})
+	partial, data := h.adminSection(adminSectionAudit)
+	return c.Render(partial, data)
 }
 
 // GET /partials/admin/config — renders system config partial
 func (h *AdminHandler) RenderConfigPartial(c *fiber.Ctx) error {
-	var settings []database.Setting
-	h.db.Order("key ASC").Find(&settings)
-	return c.Render("partials/admin_config", fiber.Map{"Settings": settings})
+	partial, data := h.adminSection(adminSectionConfig)
+	return c.Render(partial, data)
 }
 
 // GET /partials/admin/config-edit — renders inline edit row for a config setting
