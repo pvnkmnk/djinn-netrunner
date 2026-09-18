@@ -1,9 +1,14 @@
 package services
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestYtdlpService_DownloadAudio tests the DownloadAudio method
@@ -30,7 +35,7 @@ func TestYtdlpService_DownloadAudio(t *testing.T) {
 	testURL := "https://www.youtube.com/watch?v=dQw4w9WgXcQ" // Rick Astley - Never Gonna Give You Up
 
 	// Test downloading audio
-	outputPath, err := s.DownloadAudio(testURL, tmpDir, "mp3")
+	outputPath, err := s.DownloadAudio(context.Background(), testURL, tmpDir, "mp3")
 	if err != nil {
 		t.Fatalf("DownloadAudio failed: %v", err)
 	}
@@ -56,19 +61,19 @@ func TestYtdlpService_DownloadAudio_InvalidInput(t *testing.T) {
 	s := NewYtdlpService()
 
 	// Test empty URL
-	_, err := s.DownloadAudio("", "/tmp", "mp3")
+	_, err := s.DownloadAudio(context.Background(), "", "/tmp", "mp3")
 	if err == nil {
 		t.Error("Expected error for empty URL")
 	}
 
 	// Test empty output directory
-	_, err = s.DownloadAudio("https://example.com", "", "mp3")
+	_, err = s.DownloadAudio(context.Background(), "https://example.com", "", "mp3")
 	if err == nil {
 		t.Error("Expected error for empty output directory")
 	}
 
 	// Test non-existent output directory
-	_, err = s.DownloadAudio("https://example.com", "/non/existent/dir", "mp3")
+	_, err = s.DownloadAudio(context.Background(), "https://example.com", "/non/existent/dir", "mp3")
 	if err == nil {
 		t.Error("Expected error for non-existent output directory")
 	}
@@ -129,13 +134,80 @@ func TestYtdlpService_DownloadAudio_RefusesPrivateTargets(t *testing.T) {
 
 	for _, target := range targets {
 		t.Run(target, func(t *testing.T) {
-			_, err := s.DownloadAudio(target, dir, "flac")
+			_, err := s.DownloadAudio(context.Background(), target, dir, "flac")
 			if err == nil {
 				t.Fatalf("DownloadAudio(%q) was handed to yt-dlp instead of refused", target)
 			}
 			if !strings.Contains(err.Error(), "refusing source URL") || !strings.Contains(err.Error(), "private IP") {
 				t.Fatalf("DownloadAudio(%q) refused for the wrong reason: %v", target, err)
 			}
+			// The pipeline treats a guard refusal as terminal and an ordinary
+			// download failure as retryable, so the type matters, not just the text.
+			if !errors.Is(err, ErrDisallowedDestination) {
+				t.Fatalf("DownloadAudio(%q) was not refused as a disallowed destination: %v", target, err)
+			}
 		})
 	}
+}
+
+// A name that will not resolve is not a refusal. It has to stay an ordinary
+// failure so a transient DNS outage retries — but the URL is still never handed
+// to the downloader unchecked.
+func TestYtdlpService_DownloadAudio_UnresolvableHostIsNotARefusal(t *testing.T) {
+	s := NewYtdlpService()
+
+	_, err := s.DownloadAudio(context.Background(), "http://netrunner-nonexistent-host.invalid/track.mp3", t.TempDir(), "flac")
+
+	require.Error(t, err)
+	if errors.Is(err, ErrDisallowedDestination) {
+		t.Fatalf("an unresolvable host must not be reported as a guard refusal: %v", err)
+	}
+	if !strings.Contains(err.Error(), "could not resolve") {
+		t.Fatalf("the failure must say the chain could not be resolved: %v", err)
+	}
+}
+
+// The walk has to happen on the real path, not only in the walker's own tests:
+// a refusal on a *redirect target* must reach the caller as a guard refusal.
+// Deleting the walk from DownloadAudio turns this red, because the private hop
+// stops being seen at all.
+func TestYtdlpService_DownloadAudio_RefusesAPrivateRedirectTarget(t *testing.T) {
+	canned := &cannedTransport{hops: map[string]cannedHop{
+		"http://93.184.216.34/start": {status: http.StatusFound, location: "http://10.0.0.5/secret"},
+	}}
+	s := NewYtdlpService()
+	s.resolveClient = guardedClient(canned)
+
+	_, err := s.DownloadAudio(context.Background(), "http://93.184.216.34/start", t.TempDir(), "flac")
+
+	require.Error(t, err)
+	if !errors.Is(err, ErrDisallowedDestination) {
+		t.Fatalf("a private redirect target must be refused as a disallowed destination: %v", err)
+	}
+	if !strings.Contains(err.Error(), "refusing source URL") {
+		t.Fatalf("the refusal must name what it refused: %v", err)
+	}
+	// The guard refuses the hop before it is even attempted, so the private URL
+	// never reaches the transport — the point is that it is not followed.
+	if strings.Contains(strings.Join(canned.seen, " "), "10.0.0.5") {
+		t.Fatalf("the refused hop must not be followed, got %v", canned.seen)
+	}
+}
+
+// And the chain is walked before the downloader runs: with a legitimate chain,
+// the guard requests the redirect target itself. Deleting the walk leaves this
+// list empty (the private-target case above would also go quiet).
+func TestYtdlpService_DownloadAudio_WalksTheChainBeforeHandover(t *testing.T) {
+	canned := &cannedTransport{hops: map[string]cannedHop{
+		"http://93.184.216.34/start": {status: http.StatusMovedPermanently, location: "http://93.184.216.35/real.mp3"},
+	}}
+	s := NewYtdlpService()
+	s.resolveClient = guardedClient(canned)
+
+	// Ignored: yt-dlp is not installed on the test host, so the download itself
+	// fails after the walk. The walk is what this asserts.
+	_, _ = s.DownloadAudio(context.Background(), "http://93.184.216.34/start", t.TempDir(), "flac")
+
+	require.Contains(t, canned.seen, "http://93.184.216.35/real.mp3",
+		"the redirect target must be requested by the guard before the downloader runs")
 }

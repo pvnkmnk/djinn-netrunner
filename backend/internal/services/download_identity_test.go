@@ -368,7 +368,7 @@ func TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo(t *testing.T) {
 	}
 	handler.ytdlp = &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
-		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
 			return offTarget, nil
 		},
 	}

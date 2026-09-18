@@ -45,6 +45,6 @@ type SubsonicClientInterface interface {
 
 // YtdlpClientInterface defines the interface for yt-dlp audio extraction operations.
 type YtdlpClientInterface interface {
-	DownloadAudio(rawURL, outputDir, audioFormat string) (string, error)
+	DownloadAudio(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error)
 	IsYtdlpAvailable() bool
 }

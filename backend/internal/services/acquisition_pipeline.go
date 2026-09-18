@@ -94,7 +94,18 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 		return err
 	} else if skip {
 		// Soulseek found nothing — try yt-dlp fallback if source URL exists
-		if downloaded, ok := h.stageYtdlpFallback(ctx, p); ok {
+		downloaded, ok, refused := h.stageYtdlpFallback(ctx, p)
+		if refused != nil {
+			// The guard refused the destination. That is a verdict about the
+			// item's own source URL — resolving it again reaches the same answer —
+			// and handing it to the downloader anyway is the hole this closes. Record
+			// it terminally and visibly, rather than leaving a retry scheduled
+			// behind a log line.
+			// abandonItem returns the write error, so a terminal verdict that could
+			// not be persisted is reported rather than passing for success.
+			return h.abandonItem(p.item.JobID, p.item.ID, refused.Error())
+		}
+		if ok {
 			// The fallback is the import stage's second entrance, so it passes the
 			// same gate the Soulseek download does. A rejection here is recorded as
 			// terminal on the first attempt: there is no next candidate behind the
@@ -106,8 +117,7 @@ func (h *AcquisitionHandler) ExecuteItem(ctx context.Context, jobID uint64, item
 				return gateErr
 			}
 			if reason != "" {
-				h.abandonItem(p.item.JobID, p.item.ID, reason)
-				return nil
+				return h.abandonItem(p.item.JobID, p.item.ID, reason)
 			}
 			p.download = downloaded
 			return h.stageImportAndEnrich(ctx, p)
@@ -209,15 +219,20 @@ func (h *AcquisitionHandler) stageSearchSoulseek(p *acquisitionPipeline) (skip b
 }
 
 // stageYtdlpFallback attempts to download via yt-dlp when Soulseek finds nothing.
-// Returns (downloadPath, true) on success or ("", false) if not applicable/failed.
-func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisitionPipeline) (string, bool) {
+//
+// The third return value is non-nil only for a permanent refusal — the download
+// guard declined the destination — which the caller records as terminal. An
+// ordinary download failure stays a failure, so a transient outage still retries.
+// Returns (downloadPath, true, nil) on success and ("", false, nil) when it is not
+// applicable or simply failed.
+func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisitionPipeline) (string, bool, error) {
 	if h.ytdlp == nil || p.item.SourceURL == "" {
-		return "", false
+		return "", false, nil
 	}
 
 	if !h.ytdlp.IsYtdlpAvailable() {
 		h.Log(p.item.JobID, "DEBUG", "yt-dlp not installed, skipping fallback", &p.item.ID)
-		return "", false
+		return "", false, nil
 	}
 
 	h.Log(p.item.JobID, "INFO", fmt.Sprintf("Trying yt-dlp fallback: %s", p.item.SourceURL), &p.item.ID)
@@ -232,10 +247,22 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 		}
 	}
 
-	downloaded, err := h.ytdlp.DownloadAudio(p.item.SourceURL, outputDir, audioFormat)
+	downloaded, err := h.ytdlp.DownloadAudio(ctx, p.item.SourceURL, outputDir, audioFormat)
 	if err != nil {
 		h.Log(p.item.JobID, "WARN", fmt.Sprintf("yt-dlp fallback failed: %v", err), &p.item.ID)
-		return "", false
+		// The guard refusing a destination is not a download failure to retry:
+		// the same URL resolves the same way, so surface it for the caller to
+		// record terminally instead of burning the item's attempts.
+		if errors.Is(err, ErrDisallowedDestination) {
+			return "", false, fmt.Errorf("yt-dlp refused a disallowed source URL: %w", err)
+		}
+		// An ordinary failure cannot just be logged: the search stage leaves the
+		// item as "failed (no results)", which carries no next_attempt_at and so
+		// is never re-claimed. failItem is the one owner of "this attempt failed,
+		// here is what happens next" — a scheduled retry, or abandonment once the
+		// job's attempt limit is reached.
+		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("yt-dlp fallback failed: %v", err))
+		return "", false, nil
 	}
 
 	h.Log(p.item.JobID, "OK", fmt.Sprintf("yt-dlp downloaded: %s", filepath.Base(downloaded)), &p.item.ID)
@@ -259,10 +286,10 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 		// what the ownership record exists to prevent.
 		h.Log(p.item.JobID, "WARN", fmt.Sprintf("Could not record the fallback download on the item: %v", updateErr), &p.item.ID)
 		h.discardStagedDownload(ctx, downloaded, p.item.JobID, &p.item.ID)
-		return "", false
+		return "", false, nil
 	}
 
-	return downloaded, true
+	return downloaded, true, nil
 }
 
 // stageSelectBestResult picks the top-scored result and validates it against the profile.

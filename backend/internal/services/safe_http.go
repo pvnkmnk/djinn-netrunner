@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -37,6 +38,30 @@ func init() {
 		parsedCIDRs = append(parsedCIDRs, network)
 	}
 }
+
+// ErrDisallowedDestination marks a URL the guard refused: an address that
+// resolved into a private range. It is a permanent verdict about that URL, so
+// callers record it terminally instead of retrying the same address.
+var ErrDisallowedDestination = errors.New("ssrf: disallowed destination")
+
+// disallowedDestinationError carries the guard's own wording while matching
+// ErrDisallowedDestination, so existing messages (which tests and operators
+// read) stay exactly as they were.
+type disallowedDestinationError struct{ msg string }
+
+func (e *disallowedDestinationError) Error() string { return e.msg }
+
+func (e *disallowedDestinationError) Unwrap() error { return ErrDisallowedDestination }
+
+// refusedDestination builds one of those refusals.
+func refusedDestination(msg string) error {
+	return &disallowedDestinationError{msg: msg}
+}
+
+// redirectHopLimit bounds the chain the handover walk will follow. A longer
+// chain fails rather than being walked: an unbounded redirect chain is exactly
+// what a guard cannot afford to follow.
+const redirectHopLimit = 10
 
 // isPrivateIP returns true if ip is in a private/loopback/link-local range.
 func isPrivateIP(ip net.IP) bool {
@@ -80,7 +105,7 @@ func checkPublicHost(host string) error {
 	}
 	for _, ip := range ips {
 		if isPrivateIP(ip) {
-			return fmt.Errorf("ssrf: target %s resolves to private IP %s", host, ip.String())
+			return refusedDestination(fmt.Sprintf("ssrf: target %s resolves to private IP %s", host, ip.String()))
 		}
 	}
 	return nil
@@ -121,7 +146,7 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 		break
 	}
 	if safeIP == nil {
-		return nil, fmt.Errorf("ssrf: no public IP found for %s", host)
+		return nil, refusedDestination(fmt.Sprintf("ssrf: no public IP found for %s", host))
 	}
 	var d net.Dialer
 	return d.DialContext(ctx, network, net.JoinHostPort(safeIP.String(), port))
@@ -260,4 +285,62 @@ func SafeGet(rawURL string) (*http.Response, error) {
 	}
 
 	return client.Get(rawURL)
+}
+
+// hopBoundCheck is the hop bound the handover walk uses. It is separate from
+// the client so the bound is testable without a network.
+func hopBoundCheck(req *http.Request, via []*http.Request) error {
+	if len(via) >= redirectHopLimit {
+		return fmt.Errorf("redirect chain longer than %d hops", redirectHopLimit)
+	}
+	return nil
+}
+
+// newRedirectResolvingClient builds the client used before a URL is handed to a
+// tool that makes its own connections: the repository's safe transport, so every
+// hop is dialed through safeDialContext, plus the hop bound above.
+func newRedirectResolvingClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout:       timeout,
+		Transport:     safeTransport,
+		CheckRedirect: hopBoundCheck,
+	}
+}
+
+// resolveRedirectTarget walks rawURL's redirect chain and returns the final URL,
+// so a downloader that follows redirects on its own can be handed a destination
+// that has already been checked. Every hop is dialed through safeDialContext —
+// the repository's one guard for outbound connections — so a hop to a private
+// address fails the walk instead of being followed, and the refusal is
+// ErrDisallowedDestination rather than an ordinary transport error.
+//
+// The body is never read: this asks for the destination, not the content, and
+// the downloader still does the downloading.
+func resolveRedirectTarget(ctx context.Context, client *http.Client, rawURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("build request for %s: %w", rawURL, err)
+	}
+	// Ask for no bytes: the chain is all this needs, and a media file behind
+	// these URLs can be large.
+	req.Header.Set("Range", "bytes=0-0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		// Either the guard refused a hop or the chain could not be walked at
+		// all; the caller decides which of those is permanent.
+		return "", err
+	}
+	defer resp.Body.Close() // never read: the downloader fetches the content
+
+	final := resp.Request.URL
+	if final == nil {
+		return "", fmt.Errorf("resolve %s: no final URL", rawURL)
+	}
+	// The chain's last hop was dialed, not necessarily re-resolved; check the
+	// name it ended on for the same reason the first host is checked.
+	if err := checkPublicHost(final.Hostname()); err != nil {
+		return "", fmt.Errorf("redirect target %s: %w", final.Host, err)
+	}
+	return final.String(), nil
 }
