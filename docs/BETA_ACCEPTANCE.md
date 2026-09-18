@@ -604,7 +604,9 @@ rejected only when *both* axes the item carries look like something else: the
 artist axis read from the file's album artist, the album axis from the item, and
 the title as the second axis when the item has no album — though not a title that
 `Extract` took from the file's name, since the peer chose that name to match the
-query. One axis differs
+query. Words that cannot identify a recording — articles, conjunctions, release
+qualifiers — are ignored, so a shared "the" cannot make two unrelated artists agree
+and leave the album axis unconsulted. One axis differs
 legitimately all the time (guest credits, case and punctuation drift, release
 qualifiers, various-artists layouts), and a check that cannot run — an unreadable
 tag set — is never evidence against a download. A rejected file goes through

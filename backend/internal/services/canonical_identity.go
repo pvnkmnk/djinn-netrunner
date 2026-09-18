@@ -284,19 +284,45 @@ func sortedSubdirs(dir string) []string {
 // the same thing — and because the fold has to be the same one the dedup key
 // uses, or the two disagree about what a name is.
 
-// identityTokens folds a name to the words that identify it: case folded by
-// CanonicalKey, then split on anything that is not a letter or a digit.
+// identityStopWords are words that cannot identify a recording: articles,
+// conjunctions, prepositions, pronouns, and the qualifiers a peer appends to a
+// name — "(Live)", "Remastered", "feat. X". They are skipped when building
+// tokens.
 //
-// Nothing is dropped. A parenthesised qualifier — "(Live)", "[Remastered]" — is
-// kept as a word, and so is "feat.", because agreement below is "any shared
-// word": keeping words can only let two names agree more readily, while
-// shrinking them can only manufacture a mismatch. Stripping "(Live)" from a
-// peer's tag, for instance, would turn "Morbid Stuff (Live)" into a
-// disagreement with a request for "Morbid Stuff".
+// This is required rather than cosmetic, because agreement below is "any shared
+// word": keeping them would let a single generic word carry a whole axis.
+// "The National" and "The Beatles" share "the", so without this list the artist
+// axis would agree and the album axis would never be consulted — the exact
+// shape of false acceptance this gate exists to prevent.
+//
+// Dropping words can only ever make a comparison stricter, which is safe here
+// because identityDisagrees treats a side with no words left as having no
+// evidence: an artist called "(Live)" folds to nothing and can never cause a
+// rejection.
+var identityStopWords = map[string]bool{
+	"a": true, "an": true, "and": true, "the": true, "of": true, "for": true,
+	"to": true, "in": true, "on": true, "at": true, "by": true, "is": true,
+	"i": true, "it": true, "my": true, "we": true, "you": true,
+	"feat": true, "featuring": true, "ft": true, "with": true,
+	"remaster": true, "remastered": true, "remastering": true,
+	"live": true, "deluxe": true, "edition": true, "version": true,
+	"mix": true, "remix": true, "bonus": true, "single": true, "track": true,
+}
+
+// identityTokens folds a name to the words that identify it: case folded by
+// CanonicalKey, split on anything that is not a letter or a digit, and filtered
+// of the words that carry no identity (identityStopWords).
 func identityTokens(s string) []string {
-	return strings.FieldsFunc(CanonicalKey(s), func(r rune) bool {
+	var tokens []string
+	for _, word := range strings.FieldsFunc(CanonicalKey(s), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
+	}) {
+		if identityStopWords[word] {
+			continue
+		}
+		tokens = append(tokens, word)
+	}
+	return tokens
 }
 
 // identityDisagrees reports whether two folded names share no identifying word.

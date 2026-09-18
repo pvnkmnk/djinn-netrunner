@@ -88,6 +88,34 @@ func TestIdentityMismatch(t *testing.T) {
 			},
 		},
 		{
+			// "The National" and "The Beatles" share only the word "the". If a
+			// generic connector could carry an axis, the artist axis would agree
+			// here and the album axis would never be consulted.
+			name: "a shared generic word does not make two artists the same",
+			item: database.JobItem{Artist: "The National", Album: "Boxer", TrackTitle: "Fake Empire"},
+			meta: AudioMetadata{
+				Artist:      "The Beatles",
+				AlbumArtist: "The Beatles",
+				Album:       "Abbey Road",
+				Title:       "Come Together",
+			},
+			reject:   true,
+			contains: "The Beatles",
+		},
+		{
+			// ... and the album axis still rescues a file when the artists
+			// differ: the rule is "both axes disagree", not "the artist must
+			// match".
+			name: "an album match still identifies a file whose artist differs",
+			item: database.JobItem{Artist: "The National", Album: "Boxer", TrackTitle: "Fake Empire"},
+			meta: AudioMetadata{
+				Artist:      "The Beatles",
+				AlbumArtist: "The Beatles",
+				Album:       "Boxer",
+				Title:       "Fake Empire",
+			},
+		},
+		{
 			// The deliberate limit of the rule: one axis agreeing in full is
 			// taken as identification. A peer's wrong album tag is far commoner
 			// than a peer serving a different artist's track, and rejecting here
@@ -188,11 +216,13 @@ func TestIdentityMismatch(t *testing.T) {
 func TestIdentityTokens(t *testing.T) {
 	assert.Equal(t, []string{"shi", "long", "lang", "speak", "up", "pup"},
 		identityTokens("Shi-Long Lang - Speak Up, Pup!"))
-	// Qualifiers are kept, deliberately: they are words a legitimate tag is
-	// allowed to carry on top of the words the request used.
-	assert.Equal(t, []string{"morbid", "stuff", "live"}, identityTokens("Morbid Stuff (Live)"))
-	assert.Equal(t, []string{"who", "will", "look", "after", "the", "dogs", "deluxe", "edition"},
+	// Qualifiers and connectors are removed: none of them can identify a
+	// recording, and any one of them is enough to make two names "agree".
+	assert.Equal(t, []string{"morbid", "stuff"}, identityTokens("Morbid Stuff (Live)"))
+	assert.Equal(t, []string{"who", "will", "look", "after", "dogs"},
 		identityTokens("Who Will Look After the Dogs? (Deluxe Edition)"))
+	assert.Empty(t, identityTokens("The With (Live)"),
+		"a name of nothing but connectors and qualifiers carries no identity")
 	assert.Empty(t, identityTokens("   "), "a blank name carries no words to compare")
 }
 
