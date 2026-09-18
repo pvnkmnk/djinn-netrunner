@@ -178,9 +178,22 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	// album rather than a second folder.
 	//
 	// Adopt the casing the library already uses for this artist+album before the
-	// dedup key and the library path are derived from it.
-	if metadata.AlbumArtist != "" && metadata.Album != "" {
-		canonicalArtist, canonicalAlbum, err := h.resolveCanonicalIdentity(metadata.AlbumArtist, metadata.Album)
+	// dedup key and the library path are derived from it. The lookup is keyed on
+	// the acquisition target — the monitored artist, and the album the item names
+	// — not on the peer's tags: a per-credit album artist ("Every Time I Die &
+	// Daryl Palumbo") keys a lookup that matches nothing, so the credit became
+	// the library's canonical identity for that album and every tag written from
+	// it (DJI-494). The file's tags remain the input for an item that carries no
+	// artist of its own.
+	identityArtist, identityAlbum := metadata.AlbumArtist, metadata.Album
+	if item.Artist != "" {
+		identityArtist = item.Artist
+	}
+	if item.Album != "" {
+		identityAlbum = item.Album
+	}
+	if identityArtist != "" && identityAlbum != "" {
+		canonicalArtist, canonicalAlbum, err := h.resolveCanonicalIdentity(identityArtist, identityAlbum)
 		if err != nil {
 			// The library's committed casing could not be read. Importing anyway
 			// would derive the path from whatever these tags say and risk creating
@@ -253,9 +266,21 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		h.cleanupEmptyStagingDirs(filepath.Dir(downloadPath), jobID, &itemID)
 	}
 
-	// Stamp the canonical album artist so library grouping is stable.
-	if err := h.ext.NormalizeAlbumTags(ctx, finalPath, metadata.AlbumArtist); err != nil {
-		h.Log(jobID, "WARN", fmt.Sprintf("Album-artist stamp failed: %v", err), &itemID)
+	// Stamp the canonical identity into the file's tags, not just the folder:
+	// a client groups by tag, so a canonical folder holding a peer-cased tag
+	// still lists one artist twice (DJI-494). The library's committed casing
+	// wins when resolution found it; otherwise the monitored artist the item
+	// was enqueued for is the canonical one.
+	canonicalArtist := metadata.AlbumArtist
+	if canonicalArtist == "" {
+		canonicalArtist = item.Artist
+	}
+	if err := h.ext.NormalizeAlbumTags(ctx, finalPath, AlbumTagIdentity{
+		AlbumArtist: canonicalArtist,
+		Album:       metadata.Album,
+		TrackArtist: canonicalArtist,
+	}); err != nil {
+		h.Log(jobID, "WARN", fmt.Sprintf("Identity tag normalization failed: %v", err), &itemID)
 	}
 
 	// Attempt to fetch and embed cover art with fallback chain

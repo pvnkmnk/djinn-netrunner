@@ -100,10 +100,11 @@ services:
     image: alpine:3
     container_name: netrunner-volume-init
     user: "0:0"
-    command: ["sh", "-c", "chown -R 1000:1000 /slskd-data /downloads && echo 'volume-init: ownership OK'"]
+    command: ["sh", "-c", "chown -R 1000:1000 /slskd-data /downloads /backups && echo 'volume-init: ownership OK'"]
     volumes:
       - netrunner-slskd-data:/slskd-data
       - netrunner-downloads:/downloads
+      - netrunner-backups:/backups
     restart: "no"
 
   caddy:
@@ -159,6 +160,9 @@ services:
       - netrunner-logs:/app/logs
       - netrunner-downloads:/app/downloads
       - netrunner-music:/app/music
+      # Library repair (netrunner-cli) copies every file it rewrites before
+      # writing; a backup inside the container is lost on recreate.
+      - netrunner-backups:/backups
     depends_on:
       volume-init:
         condition: service_completed_successfully
@@ -203,6 +207,9 @@ services:
       - netrunner-logs:/app/logs
       - netrunner-downloads:/app/downloads
       - netrunner-music:/app/music
+      # Library repair (netrunner-cli) copies every file it rewrites before
+      # writing; a backup inside the container is lost on recreate.
+      - netrunner-backups:/backups
     depends_on:
       volume-init:
         condition: service_completed_successfully
@@ -231,3 +238,4 @@ volumes:
   netrunner-logs:
   netrunner-downloads:
   netrunner-music:
+  netrunner-backups:

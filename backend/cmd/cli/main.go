@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/agent"
@@ -505,6 +507,73 @@ func libraryCmd() *cobra.Command {
 	mergeArtistCmd.Flags().Bool("apply", false, "execute the merge (default is a dry run)")
 	cmd.AddCommand(mergeArtistCmd)
 
+	repairTagsCmd := &cobra.Command{
+		Use:   "repair-tags <libraryID>",
+		Short: "Rewrite identity tags that disagree with the library's casing (dry run unless --apply)",
+		Long: "Finds files whose album artist, album or track artist disagrees with the casing the\n" +
+			"library already uses, and rewrites those tags. A client groups by tag, so a canonical\n" +
+			"folder holding a peer-cased tag still lists one artist twice (DJI-494). Every file that\n" +
+			"will be rewritten is copied into --backup-dir before the write; a backup inside the\n" +
+			"library root is refused, because the media server would index it as a second copy.\n\n" +
+			"For a whole-library operation, take the volume snapshot in\n" +
+			"ops/docs/library-dedup-runbook.md first: the backup here covers only the rewritten files.",
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			id, err := uuid.Parse(args[0])
+			if err != nil {
+				handleError(fmt.Errorf("invalid library UUID: %w", err))
+				return
+			}
+			var lib database.Library
+			if err := db.First(&lib, "id = ?", id).Error; err != nil {
+				handleError(fmt.Errorf("library not found: %w", err))
+				return
+			}
+
+			apply, _ := cmd.Flags().GetBool("apply")
+			backupDir, _ := cmd.Flags().GetString("backup-dir")
+
+			ext := services.NewMetadataExtractor()
+			report, err := services.PlanIdentityTagRepair(db, ext, lib.Path)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if apply {
+				if backupDir == "" {
+					backupDir = services.DefaultTagBackupDir(lib.Path, time.Now())
+				}
+				if err := services.ApplyIdentityTagRepair(cmd.Context(), ext, lib.Path, backupDir, report); err != nil {
+					handleError(err)
+					return
+				}
+			}
+
+			if jsonOutput {
+				printJSON(report)
+				// A partial run is not a success here either. The report above stays
+				// the only document on stdout and the reason goes to stderr, so a
+				// parser still reads valid JSON while a script sees the status.
+				if len(report.Failures) > 0 {
+					fmt.Fprintf(os.Stderr, "Error: %d file(s) could not be repaired\n", len(report.Failures))
+					osExit(1)
+				}
+				return
+			}
+			printTagRepairReport(lib.Path, report, apply)
+
+			// A partial run is not a success: a script must not read an
+			// unrewritten file as a clean library.
+			if len(report.Failures) > 0 {
+				handleError(fmt.Errorf("%d file(s) could not be repaired", len(report.Failures)))
+			}
+		},
+	}
+	repairTagsCmd.Flags().Bool("apply", false, "execute the repair (default is a dry run)")
+	repairTagsCmd.Flags().String("backup-dir", "", "directory to copy each rewritten file into (default: a timestamped directory under /backups when mounted, else a sibling of the library root)")
+	cmd.AddCommand(repairTagsCmd)
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "duplicates",
 		Short: "List suspected duplicate recordings by MusicBrainz recording ID",
@@ -667,6 +736,50 @@ func printMergeReport(header string, report *services.MergeReport, apply bool) {
 	}
 	if apply && len(report.Errors) == 0 {
 		fmt.Println("\nNext: trigger a media-server scan so the server re-indexes (ops/docs/library-dedup-runbook.md).")
+	}
+}
+
+// printTagRepairReport renders the identity-tag repair plan, so the operator can
+// judge the artist-count change before passing --apply.
+func printTagRepairReport(libraryRoot string, report *services.TagRepairReport, apply bool) {
+	mode := "DRY RUN (nothing changed; pass --apply to execute)"
+	if apply {
+		mode = "APPLIED"
+	}
+	fmt.Printf("Identity tags for %s [%s]\n", libraryRoot, mode)
+	fmt.Printf("  scanned: %d, unreadable: %d, files to rewrite: %d\n",
+		report.Scanned, report.Unreadable, len(report.Fixes))
+	fmt.Printf("  artists a client lists: %d -> %d\n", report.DistinctArtistsBefore, report.DistinctArtistsAfter)
+	if len(report.ArtistsRemoved) > 0 {
+		fmt.Printf("  no longer listed: %s\n", strings.Join(report.ArtistsRemoved, ", "))
+	}
+	fmt.Println()
+	for _, f := range report.Fixes {
+		fmt.Printf("  FIX   %s\n", f.File)
+		if f.AlbumArtistFrom != "" {
+			fmt.Printf("      album_artist %q -> %q\n", f.AlbumArtistFrom, f.AlbumArtistTo)
+		}
+		if f.AlbumFrom != "" {
+			fmt.Printf("      album        %q -> %q\n", f.AlbumFrom, f.AlbumTo)
+		}
+		if f.TrackArtistFrom != "" {
+			fmt.Printf("      artist       %q -> %q\n", f.TrackArtistFrom, f.TrackArtistTo)
+		}
+	}
+	if apply {
+		fmt.Printf("\n  backed up: %d -> %s, rewritten: %d\n", report.BackedUp, report.BackupDir, report.Rewritten)
+	}
+	for _, stale := range report.Stale {
+		fmt.Printf("  STALE %s (identity changed since the plan; left untouched)\n", stale)
+	}
+	for _, failure := range report.Failures {
+		fmt.Printf("  ERROR %s\n", failure)
+	}
+	if len(report.Fixes) > 0 && (apply && len(report.Failures) == 0) {
+		fmt.Println("\nNext: trigger a media-server scan so the server re-reads the tags (ops/docs/library-dedup-runbook.md).")
+	}
+	if !apply {
+		fmt.Println("\nRe-run with --apply to rewrite these tags (files are copied to a backup first).")
 	}
 }
 

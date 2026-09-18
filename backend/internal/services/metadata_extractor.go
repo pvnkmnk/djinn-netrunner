@@ -123,28 +123,27 @@ func (e *MetadataExtractor) embedGeneric(ctx context.Context, filePath string, a
 	return e.tagger.EmbedCoverArt(ctx, filePath, artData)
 }
 
-// NormalizeAlbumTags stamps a canonical ALBUMARTIST onto a downloaded file so
-// media servers group a multi-credit album under one artist instead of
-// fragmenting it per-track (observed live: "Every Time I Die & Daryl Palumbo"
-// folders splitting one album three ways). The monitored artist is the
-// canonical album artist because acquisition items are keyed on it. When the
-// file already carries an ALBUMARTIST tag it is left untouched.
+// NormalizeAlbumTags makes a downloaded file's identity tags match the
+// canonical identity, so a media server groups the album under one artist and
+// one album instead of splitting it per-track credit or per casing (observed
+// live: the same artist listed twice, "PUP" beside "Pup"). The monitored
+// artist is the canonical album artist because acquisition items are keyed on
+// it, and the folder alone cannot do this job — a client reads tags.
+//
+// Every container the tagger can re-mux is covered (mp3, flac, m4a, ogg), and
+// a wrong value is corrected rather than skipped. ID3v2/FLAC kept their
+// ALBUMARTIST out of reach of the pure-Go libs here, which is why the writes
+// go through the ffmpeg tagger; see FFmpegTagger.NormalizeAlbumIdentity.
 // Best-effort: tagging errors are logged, never fail the import.
-func (e *MetadataExtractor) NormalizeAlbumTags(ctx context.Context, filePath, albumArtist string) error {
-	if albumArtist == "" {
+func (e *MetadataExtractor) NormalizeAlbumTags(ctx context.Context, filePath string, want AlbumTagIdentity) error {
+	if want.AlbumArtist == "" && want.Album == "" && want.TrackArtist == "" {
 		return nil
 	}
-	ext := strings.ToLower(filepath.Ext(filePath))
-	switch ext {
-	case ".m4a", ".ogg":
-		return e.tagger.StampAlbumArtist(ctx, filePath, albumArtist)
-	default:
-		// MP3/FLAC: the underlying libs here do not expose ALBUMARTIST
-		// writing cleanly; the canonical folder layout below still groups
-		// the album for media servers.
-		slog.Debug("albumartist stamp not supported for format", "ext", ext)
+	if _, ok := mapMuxer(filepath.Ext(filePath)); !ok {
+		slog.Debug("identity tags not writable for format", "ext", filepath.Ext(filePath))
 		return nil
 	}
+	return e.tagger.NormalizeAlbumIdentity(ctx, filePath, want)
 }
 
 func (e *MetadataExtractor) embedMP3(filePath string, artData []byte) error {

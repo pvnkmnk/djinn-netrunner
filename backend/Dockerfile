@@ -14,9 +14,13 @@ RUN go mod download
 # Copy all source code
 COPY backend/ ./
 
-# Build both binaries
+# Build the operator binaries. netrunner-cli ships too: the repair runbooks
+# (ops/docs/library-dedup-runbook.md, ops/docs/disaster-recovery.md) run it
+# against a deployed stack, and without it here the operator has to copy a
+# host binary into the container by hand.
 RUN go build -o netrunner-server ./cmd/server/main.go && \
-    go build -o netrunner-worker ./cmd/worker/main.go
+    go build -o netrunner-worker ./cmd/worker/main.go && \
+    go build -o netrunner-cli ./cmd/cli/main.go
 
 # Copy web assets from ops directory
 COPY ops/web/static ./static
@@ -41,12 +45,13 @@ WORKDIR /app
 # Copy binaries from builder
 COPY --from=builder /app/netrunner-server ./
 COPY --from=builder /app/netrunner-worker ./
+COPY --from=builder /app/netrunner-cli ./
 COPY --from=builder /app/static ./static
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/entrypoint.sh /entrypoint.sh
 
 # Make binaries and entrypoint executable
-RUN chmod +x netrunner-server netrunner-worker /entrypoint.sh
+RUN chmod +x netrunner-server netrunner-worker netrunner-cli /entrypoint.sh
 
 # Create necessary directories with correct ownership
 RUN mkdir -p /app/config /app/data /app/logs /app/downloads /app/music && \
