@@ -63,17 +63,27 @@ type safeAddressValidator struct {
 }
 
 func (v *safeAddressValidator) RoundTrip(req *http.Request) (*http.Response, error) {
-	host := req.URL.Hostname()
+	if err := checkPublicHost(req.URL.Hostname()); err != nil {
+		return nil, err
+	}
+	return v.next.RoundTrip(req)
+}
+
+// checkPublicHost resolves host and refuses it if it resolves to a private
+// address. It is the one implementation of "is this destination allowed",
+// shared by the request-path guard above and by callers that hand a URL to
+// a tool which makes its own connections (see YtdlpService.DownloadAudio).
+func checkPublicHost(host string) error {
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		return nil, fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
+		return fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}
 	for _, ip := range ips {
 		if isPrivateIP(ip) {
-			return nil, fmt.Errorf("ssrf: target %s resolves to private IP %s", host, ip.String())
+			return fmt.Errorf("ssrf: target %s resolves to private IP %s", host, ip.String())
 		}
 	}
-	return v.next.RoundTrip(req)
+	return nil
 }
 
 // SafeGet performs an HTTP GET after verifying the target does not resolve to a
