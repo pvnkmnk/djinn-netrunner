@@ -294,3 +294,48 @@ func (h *AcquisitionHandler) discardStagedDownload(ctx context.Context, path str
 	h.cleanupEmptyStagingDirs(filepath.Dir(path), jobID, itemID)
 	return true
 }
+
+// cleanupEmptyStagingDirs removes now-empty directories from dir up to (but
+// not including) stagingRoot. Whole-album downloads leave behind empty album
+// and artist folders after their files are imported; without this sweep the
+// staging volume grows unbounded skeletons. Best-effort, depth-capped.
+func (h *AcquisitionHandler) cleanupEmptyStagingDirs(dir string, jobID uint64, itemID *uint64) {
+	root, err := filepath.Abs(filepath.Clean(stagingRoot(h.cfg)))
+	if err != nil {
+		return
+	}
+	// root above is absolute, so dir has to be too: filepath.Rel returns
+	// an error for a mixed absolute/relative pair, and the containment check
+	// below would then bail out before removing anything. That is how this
+	// failed silently under the default relative "./downloads" staging path —
+	// the sweep never ran at all, while an absolute path worked fine.
+	dir, err = filepath.Abs(filepath.Clean(dir))
+	if err != nil {
+		return
+	}
+	// Never climb above the staging root, and only touch directories that
+	// are genuinely inside it (a real path-relationship check — not a string
+	// prefix, which would match sibling dirs like "./downloads-backup").
+	for i := 0; i < 4; i++ {
+		rel, relErr := filepath.Rel(root, dir)
+		// The escape check must match the parent path component, not a bare
+		// ".." prefix: filepath.Rel yields ".." and "..\sibling" for outside paths,
+		// but "...And You Will Know Us" is a child whose name merely starts with
+		// dots. Only ".." alone or a "../"-prefixed rel escapes the root.
+		if relErr != nil || rel == "." || rel == ".." ||
+			strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			return
+		}
+		if err := os.Remove(dir); err != nil {
+			return
+		}
+		if h.db != nil && jobID != 0 {
+			h.Log(jobID, "DEBUG", fmt.Sprintf("Removed empty staging dir: %s", dir), itemID)
+		}
+		dir = filepath.Dir(dir)
+	}
+}

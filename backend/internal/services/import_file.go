@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +34,9 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	h.Log(jobID, "INFO", "Importing to library", &itemID)
 
 	if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
-		h.failItem(jobID, itemID, fmt.Sprintf("Downloaded file not found: %s", downloadPath))
+		if failErr := h.failItem(jobID, itemID, fmt.Sprintf("Downloaded file not found: %s", downloadPath)); failErr != nil {
+			return fmt.Errorf("record the missing-staged-file failure: %w", failErr)
+		}
 		return nil
 	}
 
@@ -199,7 +200,9 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 			// would derive the path from whatever these tags say and risk creating
 			// the case-variant sibling this resolution exists to prevent, so fail
 			// the item instead — failItem schedules the retry.
-			h.failItem(jobID, itemID, fmt.Sprintf("Canonical identity lookup failed: %v", err))
+			if failErr := h.failItem(jobID, itemID, fmt.Sprintf("Canonical identity lookup failed: %v", err)); failErr != nil {
+				return fmt.Errorf("record the identity-lookup failure: %w", failErr)
+			}
 			return nil
 		}
 		metadata.AlbumArtist, metadata.Album = canonicalArtist, canonicalAlbum
@@ -255,7 +258,9 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	// Move file
 	cleanupErr, copyErr := h.moveFile(downloadPath, finalPath)
 	if copyErr != nil {
-		h.failItem(jobID, itemID, fmt.Sprintf("Failed to move file: %v", copyErr))
+		if failErr := h.failItem(jobID, itemID, fmt.Sprintf("Failed to move file: %v", copyErr)); failErr != nil {
+			return fmt.Errorf("record the move failure: %w", failErr)
+		}
 		return nil
 	}
 	if cleanupErr != nil {
@@ -398,133 +403,4 @@ func (h *AcquisitionHandler) moveFile(src, dst string) (cleanupErr error, copyEr
 	out.Close()
 	in.Close()
 	return os.Remove(src), nil
-}
-
-// cleanupEmptyStagingDirs removes now-empty directories from dir up to (but
-// not including) stagingRoot. Whole-album downloads leave behind empty album
-// and artist folders after their files are imported; without this sweep the
-// staging volume grows unbounded skeletons. Best-effort, depth-capped.
-func (h *AcquisitionHandler) cleanupEmptyStagingDirs(dir string, jobID uint64, itemID *uint64) {
-	root, err := filepath.Abs(filepath.Clean(stagingRoot(h.cfg)))
-	if err != nil {
-		return
-	}
-	// root above is absolute, so dir has to be too: filepath.Rel returns
-	// an error for a mixed absolute/relative pair, and the containment check
-	// below would then bail out before removing anything. That is how this
-	// failed silently under the default relative "./downloads" staging path —
-	// the sweep never ran at all, while an absolute path worked fine.
-	dir, err = filepath.Abs(filepath.Clean(dir))
-	if err != nil {
-		return
-	}
-	// Never climb above the staging root, and only touch directories that
-	// are genuinely inside it (a real path-relationship check — not a string
-	// prefix, which would match sibling dirs like "./downloads-backup").
-	for i := 0; i < 4; i++ {
-		rel, relErr := filepath.Rel(root, dir)
-		if relErr != nil || rel == "." || strings.HasPrefix(rel, "..") {
-			return
-		}
-		entries, err := os.ReadDir(dir)
-		if err != nil || len(entries) > 0 {
-			return
-		}
-		if err := os.Remove(dir); err != nil {
-			return
-		}
-		if h.db != nil && jobID != 0 {
-			h.Log(jobID, "DEBUG", fmt.Sprintf("Removed empty staging dir: %s", dir), itemID)
-		}
-		dir = filepath.Dir(dir)
-	}
-}
-
-// noResultsItem records a terminal "nothing was found" outcome for an item.
-// Unlike failItem, it does not schedule retries: a search that returned no
-// results is a definitive answer for this attempt cycle, and pretending it is
-// a transient failure would both spam the peer network with pointless
-// searches and (previously) leave items cycling instead of finalizing.
-func (h *AcquisitionHandler) noResultsItem(jobID uint64, itemID uint64, reason string) {
-	h.Log(jobID, "ERR", reason, &itemID)
-	h.db.Model(&database.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
-		"status":         "failed (no results)",
-		"failure_reason": reason,
-		"finished_at":    time.Now(),
-	})
-}
-
-func (h *AcquisitionHandler) failItem(jobID uint64, itemID uint64, reason string) {
-	h.Log(jobID, "ERR", reason, &itemID)
-
-	var item database.JobItem
-	if err := h.db.First(&item, itemID).Error; err != nil {
-		slog.Error("Failed to find item for failure update", "job_id", jobID, "item_id", itemID, "error", err)
-		return
-	}
-
-	// Check job-level max attempts to determine if item should be abandoned
-	var job database.Job
-	abandoned := false
-	if err := h.db.First(&job, jobID).Error; err == nil {
-		maxAttempts := job.MaxAttempts
-		if maxAttempts <= 0 {
-			maxAttempts = 3 // safety default
-		}
-		if item.RetryCount+1 >= maxAttempts {
-			abandoned = true
-		}
-	}
-
-	if abandoned {
-		slog.Warn("Item exceeded max retries, abandoning", "job_id", jobID, "item_id", itemID, "retries", item.RetryCount+1)
-		h.db.Model(&database.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
-			"status":         "abandoned",
-			"failure_reason": reason,
-			"retry_count":    item.RetryCount + 1,
-			"finished_at":    time.Now(),
-		})
-		return
-	}
-
-	backoff := database.CalculateBackoff(item.RetryCount)
-	nextAttempt := time.Now().Add(backoff)
-
-	h.db.Model(&database.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
-		"status":          "failed",
-		"failure_reason":  reason,
-		"retry_count":     item.RetryCount + 1,
-		"next_attempt_at": &nextAttempt,
-		"finished_at":     time.Now(),
-	})
-}
-
-// abandonItem records a verdict the pipeline can prove is permanent, so the
-// item is finished on the first attempt instead of being scheduled for retries
-// that would repeat the same work and reach the same conclusion. `abandoned` is
-// the status for that: ClaimNextItem takes only queued items and failed ones
-// whose backoff has passed, and the item accounting already counts it as
-// permanently failed.
-// It returns the error when the verdict cannot be written, so a caller cannot
-// report success for a terminal state that was never recorded.
-func (h *AcquisitionHandler) abandonItem(jobID uint64, itemID uint64, reason string) error {
-	h.Log(jobID, "ERR", reason, &itemID)
-
-	var item database.JobItem
-	if err := h.db.First(&item, itemID).Error; err != nil {
-		slog.Error("Failed to find item for abandonment", "job_id", jobID, "item_id", itemID, "error", err)
-		return fmt.Errorf("load item %d to abandon it: %w", itemID, err)
-	}
-	slog.Warn("Item abandoned on a permanent verdict",
-		"job_id", jobID, "item_id", itemID, "attempt", item.RetryCount+1, "reason", reason)
-	if err := h.db.Model(&database.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
-		"status":          "abandoned",
-		"failure_reason":  reason,
-		"retry_count":     item.RetryCount + 1,
-		"next_attempt_at": nil,
-		"finished_at":     time.Now(),
-	}).Error; err != nil {
-		return fmt.Errorf("record the abandonment of item %d: %w", itemID, err)
-	}
-	return nil
 }

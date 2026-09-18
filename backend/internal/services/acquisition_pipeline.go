@@ -202,14 +202,18 @@ func (h *AcquisitionHandler) stageSearchSoulseek(p *acquisitionPipeline) (skip b
 	results, err := h.slskd.Search(p.item.NormalizedQuery, 30, p.profile)
 	if err != nil {
 		// A transport failure is retryable — use the standard failure path.
-		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Soulseek search failed: %v", err))
+		if failErr := h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Soulseek search failed: %v", err)); failErr != nil {
+			return true, fmt.Errorf("record the search failure: %w", failErr)
+		}
 		return true, nil
 	}
 	if len(results) == 0 {
 		// Genuinely nothing found. Retrying in a few minutes will not conjure
 		// results, so record a terminal no-results outcome instead of cycling
 		// the item through the retry machinery.
-		h.noResultsItem(p.item.JobID, p.item.ID, "No results found")
+		if err := h.noResultsItem(p.item.JobID, p.item.ID, "No results found"); err != nil {
+			return true, fmt.Errorf("record the no-results verdict: %w", err)
+		}
 		return true, nil
 	}
 
@@ -261,7 +265,11 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 		// is never re-claimed. failItem is the one owner of "this attempt failed,
 		// here is what happens next" — a scheduled retry, or abandonment once the
 		// job's attempt limit is reached.
-		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("yt-dlp fallback failed: %v", err))
+		// is the one owner of "this attempt failed, here is what happens next" — a scheduled retry, or abandonment once the
+		// job's attempt limit is reached.
+		if failErr := h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("yt-dlp fallback failed: %v", err)); failErr != nil {
+			return "", false, fmt.Errorf("record the fallback failure: %w", failErr)
+		}
 		return "", false, nil
 	}
 
@@ -298,7 +306,9 @@ func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip
 		// Defensive: the search stage classifies empty results itself, so this
 		// only triggers if stages are reordered. Guarding here keeps an index
 		// panic from killing the item without a terminal status.
-		h.noResultsItem(p.item.JobID, p.item.ID, "No results found")
+		if err := h.noResultsItem(p.item.JobID, p.item.ID, "No results found"); err != nil {
+			return true, fmt.Errorf("record the no-results verdict: %w", err)
+		}
 		return true, nil
 	}
 
@@ -320,7 +330,9 @@ func (h *AcquisitionHandler) stageSelectBestResult(p *acquisitionPipeline) (skip
 	}
 
 	if len(p.candidates) == 0 {
-		h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("no usable candidate among %d results (e.g. %s)", len(p.results), firstReason))
+		if err := h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("no usable candidate among %d results (e.g. %s)", len(p.results), firstReason)); err != nil {
+			return true, fmt.Errorf("record the all-candidates-rejected verdict: %w", err)
+		}
 		return true, nil
 	}
 
@@ -595,7 +607,9 @@ func (h *AcquisitionHandler) stageDownloadFile(p *acquisitionPipeline) (skip boo
 		}
 	}
 
-	h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed for all %d candidate(s): %s", len(candidates), strings.Join(failures, "; ")))
+	if err := h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("Download failed for all %d candidate(s): %s", len(candidates), strings.Join(failures, "; "))); err != nil {
+		return true, fmt.Errorf("record the download failure: %w", err)
+	}
 	return true, nil
 }
 

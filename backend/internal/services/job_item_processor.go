@@ -92,7 +92,9 @@ func (p *JobItemProcessor) ProcessItem(ctx context.Context, workerID string, job
 		// Record the failure on the item so it cannot be left 'running' forever:
 		// nothing ever re-claims a running item, and an unclaimed terminal-less
 		// item would keep the job from ever finalizing honestly.
-		p.acqHandler.failItem(jobID, itemID, fmt.Sprintf("Item execution error: %v", execErr))
+		if failErr := p.acqHandler.failItem(jobID, itemID, fmt.Sprintf("Item execution error: %v", execErr)); failErr != nil {
+			slog.Error("Could not record the item failure", "worker_id", workerID, "job_id", jobID, "item_id", itemID, "error", failErr)
+		}
 	} else {
 		metrics.ItemsProcessedTotal.WithLabelValues("success").Inc()
 	}
