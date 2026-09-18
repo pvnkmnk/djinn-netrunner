@@ -127,7 +127,12 @@ func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
 		return c.SendString("<div class=\"error\">Error loading jobs.</div>")
 	}
 
+	// The filters are part of this partial, so the response has to carry what
+	// was asked for: without it the swap resets the dropdowns to their defaults
+	// and the operator cannot tell what they are looking at.
 	return c.Render("partials/jobs", fiber.Map{
 		"jobs": jobs,
+		"JobType": jobType,
+		"State":   state,
 	})
 }

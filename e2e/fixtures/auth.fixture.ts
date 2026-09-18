@@ -53,9 +53,9 @@ async function ensureUserExists(page: Page, user: { email: string; password: str
 
 function promoteAdminUser(): void {
   try {
-    // Try docker exec with the known container name first
+    // Try docker exec with the e2e overlay container name first (see docker-compose.e2e.yml)
     execSync(
-      `docker exec netrunner-postgres psql -U musicops -d musicops_test -c "UPDATE users SET role='admin' WHERE email='e2e-admin@netrunner.dev';"`,
+      `docker exec e2e-postgres psql -U musicops -d musicops_test -c "UPDATE users SET role='admin' WHERE email='e2e-admin@netrunner.dev';"`,
       { timeout: 15000, stdio: 'pipe' }
     );
   } catch (e1: any) {
