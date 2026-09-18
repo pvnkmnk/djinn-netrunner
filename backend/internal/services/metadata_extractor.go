@@ -27,6 +27,12 @@ type AudioMetadata struct {
 	Year        int
 	Format      string
 	FileSize    int64
+	// TitleFromFilename reports that Title was not read from the file's tags:
+	// Extract fell back to the file's name. That name is chosen by the peer —
+	// and chosen to match the search query — so a caller deciding whether a
+	// download *is* the requested recording must treat it as a signal it does
+	// not have, never as evidence.
+	TitleFromFilename bool
 }
 
 func (m *AudioMetadata) IsValid() bool {
@@ -216,9 +222,12 @@ func (e *MetadataExtractor) Extract(path string) (*AudioMetadata, error) {
 		metadata.FileSize = info.Size()
 	}
 
-	// Fallback for missing title
+	// Fallback for missing title. Flagged because it is not the file's own
+	// metadata: the flag is what stops the download-identity check from
+	// rejecting a file over the name the peer chose for it.
 	if metadata.Title == "" {
 		metadata.Title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		metadata.TitleFromFilename = true
 	}
 
 	return metadata, nil

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
@@ -270,4 +271,160 @@ func sortedSubdirs(dir string) []string {
 	sort.Strings(names)
 
 	return names
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity of a *download*: is this file the recording that was requested?
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Library identity above answers "where does this belong?"; the helpers below
+// answer a different question the pipeline asks earlier: "is this the audio that
+// was asked for?". They live here because the judgement is the same kind — two
+// artist/album names that differ only in case, punctuation or a guest credit are
+// the same thing — and because the fold has to be the same one the dedup key
+// uses, or the two disagree about what a name is.
+
+// identityStopWords are words that cannot identify a recording: articles,
+// conjunctions, prepositions, pronouns, and the qualifiers a peer appends to a
+// name — "(Live)", "Remastered", "feat. X". They are skipped when building
+// tokens.
+//
+// This is required rather than cosmetic, because agreement below is "any shared
+// word": keeping them would let a single generic word carry a whole axis.
+// "The National" and "The Beatles" share "the", so without this list the artist
+// axis would agree and the album axis would never be consulted — the exact
+// shape of false acceptance this gate exists to prevent.
+//
+// Dropping words can only ever make a comparison stricter, which is safe here
+// because identityDisagrees treats a side with no words left as having no
+// evidence: an artist called "(Live)" folds to nothing and can never cause a
+// rejection.
+var identityStopWords = map[string]bool{
+	"a": true, "an": true, "and": true, "the": true, "of": true, "for": true,
+	"to": true, "in": true, "on": true, "at": true, "by": true, "is": true,
+	"i": true, "it": true, "my": true, "we": true, "you": true,
+	"feat": true, "featuring": true, "ft": true, "with": true,
+	"remaster": true, "remastered": true, "remastering": true,
+	"live": true, "deluxe": true, "edition": true, "version": true,
+	"mix": true, "remix": true, "bonus": true, "single": true, "track": true,
+}
+
+// identityTokens folds a name to the words that identify it: case folded by
+// CanonicalKey, split on anything that is not a letter or a digit, and filtered
+// of the words that carry no identity (identityStopWords).
+func identityTokens(s string) []string {
+	var tokens []string
+	for _, word := range strings.FieldsFunc(CanonicalKey(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if identityStopWords[word] {
+			continue
+		}
+		tokens = append(tokens, word)
+	}
+	return tokens
+}
+
+// identityDisagrees reports whether two folded names share no identifying word.
+//
+// It answers false — "no disagreement" — whenever either side has no words at
+// all, so a name that is empty or nothing but punctuation is never evidence
+// against a download. Matching whole words rather than substrings is
+// load-bearing: "pup" is a real word inside "Speak Up, Pup!", the coincidence
+// that let an unrelated track through the earlier gates, and it is why the
+// acceptance run's case is caught by the axes rather than by that word.
+func identityDisagrees(requested, actual string) bool {
+	want := identityTokens(requested)
+	if len(want) == 0 {
+		return false
+	}
+
+	have := make(map[string]bool)
+	for _, token := range identityTokens(actual) {
+		have[token] = true
+	}
+	if len(have) == 0 {
+		return false
+	}
+
+	for _, token := range want {
+		if have[token] {
+			return false
+		}
+	}
+	return true
+}
+
+// identityMismatch compares a downloaded file's own tags against what the item
+// asked for and returns a reason when the file is confidently a different
+// recording, or "" when it may be imported.
+//
+// Why this exists: Soulseek search is fuzzy and peers serve junk, so a peer can
+// hand back a completely unrelated track whose filename happens to contain the
+// query's words. It passes the plausibility gate and ffprobe — both of which only
+// establish that a file *is* playable audio — is imported, and because the
+// importer organises a file by its own embedded tags it lands as a second,
+// unrelated artist in the library (DJI-495).
+//
+// The comparison is deliberately one-sided: a file is the requested audio unless
+// *both* axes the item carries look like something else. One axis differs
+// legitimately all the time — guest credits ("X & Y" against "X"), case and
+// punctuation drift, live/remaster qualifiers, a various-artists track tagged
+// with its own artist rather than the album artist. Requiring both to disagree
+// is what lets the gate be decisive about genuinely unrelated audio without
+// discarding valid downloads.
+//
+// The artist axis reads the file's *album* artist first: that is the album-level
+// credit the importer itself groups by, not a per-track guest credit.
+func identityMismatch(item *database.JobItem, meta *AudioMetadata) string {
+	if item == nil || meta == nil {
+		return ""
+	}
+
+	actualArtist := strings.TrimSpace(meta.AlbumArtist)
+	if actualArtist == "" {
+		actualArtist = meta.Artist
+	}
+
+	if !identityDisagrees(item.Artist, actualArtist) {
+		return ""
+	}
+
+	// The artist differs, so a second axis decides. Only an axis the item
+	// actually carries can veto: an empty request field is no evidence, not a
+	// disagreement, which is why the album path is chosen rather than tested.
+	if strings.TrimSpace(item.Album) != "" {
+		// When the album agrees the file is still the release that was
+		// requested: a various-artists compilation is tagged with the track's own
+		// artist but was requested by the album it appears on.
+		if !identityDisagrees(item.Album, meta.Album) {
+			return ""
+		}
+	} else {
+		// No album on the item, so the title becomes the second axis. This is the
+		// only case where the title can rescue a file, deliberately: when both
+		// artist and album are present and disagreeing, a coincidental shared word
+		// in the title must not put an unrelated track back on its way to the
+		// library.
+		//
+		// A title the extractor took from the file's *name* is not the file's own
+		// metadata — the peer chose that name, precisely to match the query — so
+		// with no album there is nothing left to compare. Rejecting on it would
+		// discard a valid download over a filename, and accepting on it would only
+		// look like verification.
+		if meta.TitleFromFilename {
+			return ""
+		}
+
+		requested := item.TrackTitle
+		if strings.TrimSpace(requested) == "" {
+			requested = item.NormalizedQuery
+		}
+		if !identityDisagrees(requested, meta.Title) {
+			return ""
+		}
+	}
+
+	return fmt.Sprintf("asked for artist %q / album %q, file is tagged artist %q / album %q",
+		item.Artist, item.Album, actualArtist, meta.Album)
 }
