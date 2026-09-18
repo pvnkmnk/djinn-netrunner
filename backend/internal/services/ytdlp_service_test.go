@@ -2,6 +2,7 @@ package services
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -79,4 +80,62 @@ func TestYtdlpService_IsYtdlpAvailable(t *testing.T) {
 	// This test just ensures the method doesn't panic
 	// The actual availability depends on the system
 	_ = s.IsYtdlpAvailable()
+}
+
+// TestCheckPublicHost pins the judgement the fallback shares with the request-path
+// guard. IP literals keep it deterministic: no DNS, no network.
+func TestCheckPublicHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string
+		refused bool
+	}{
+		{"loopback", "127.0.0.1", true},
+		{"loopback v6", "::1", true},
+		{"metadata service", "169.254.169.254", true},
+		{"rfc1918", "10.0.0.5", true},
+		{"docker network peer", "172.17.0.2", true},
+		{"public", "93.184.216.34", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkPublicHost(tt.host)
+			if tt.refused && err == nil {
+				t.Fatalf("checkPublicHost(%q) allowed a private destination", tt.host)
+			}
+			if !tt.refused && err != nil {
+				t.Fatalf("checkPublicHost(%q) refused a public destination: %v", tt.host, err)
+			}
+		})
+	}
+}
+
+// A feed can put anything in source_url, and the fallback now reaches yt-dlp for
+// every item that carries one. Without the destination check this test fails on
+// the error message (the call proceeds to exec instead of refusing), which is the
+// mutation this guards.
+func TestYtdlpService_DownloadAudio_RefusesPrivateTargets(t *testing.T) {
+	s := NewYtdlpService()
+	dir := t.TempDir()
+
+	targets := []string{
+		"http://127.0.0.1:8080/admin",
+		"http://localhost:5030/api/v0/transfers",
+		"http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+		"http://10.0.0.5/track.mp3",
+		"http://[::1]/track.mp3",
+	}
+
+	for _, target := range targets {
+		t.Run(target, func(t *testing.T) {
+			_, err := s.DownloadAudio(target, dir, "flac")
+			if err == nil {
+				t.Fatalf("DownloadAudio(%q) was handed to yt-dlp instead of refused", target)
+			}
+			if !strings.Contains(err.Error(), "refusing source URL") || !strings.Contains(err.Error(), "private IP") {
+				t.Fatalf("DownloadAudio(%q) refused for the wrong reason: %v", target, err)
+			}
+		})
+	}
 }

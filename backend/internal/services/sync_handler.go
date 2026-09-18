@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -120,6 +121,12 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 
 	h.Log(jobID, "OK", fmt.Sprintf("Created acquisition job #%d", acqJob.ID), nil)
 
+	// A provider that exposes a page URL for a track (the RSS/Bandcamp feed
+	// path) hands it over as source_link. The pipeline consults it only when
+	// Soulseek returns nothing, so a swarm miss still has a way to fetch the
+	// track, and the download gate — not the absence of a URL — decides
+	// whether what it fetched may be imported.
+
 	// Create job items
 	// Bolt Optimization: Batch create job items to reduce database roundtrips
 	var jobItems []database.JobItem
@@ -132,6 +139,7 @@ func (h *SyncHandler) Execute(ctx context.Context, jobID uint64, job database.Jo
 			Album:           t["album"],
 			TrackTitle:      t["title"],
 			CoverArtURL:     t["cover_art_url"],
+			SourceURL:       strings.TrimSpace(t["source_link"]),
 			Status:          "queued",
 			OwnerUserID:     ownerUserID,
 		}

@@ -683,12 +683,14 @@ The fallback entrance is pinned separately:
 pipeline through it with a playable but unrelated file and asserts the file is
 discarded, the item fails with a reason naming `yt-dlp`, and the library stays
 empty. Removing the gate call, or ignoring its verdict, turns that test red.
-That evidence is a **test result, not a run**, and the difference matters here:
-the fallback entrance cannot be driven on a real stack at all, because no
-production code path writes `jobitems.source_url` (only `_test.go` does, and the
-live stack has 0 of 122 items carrying one). The 2026-09-18 section at the end of
-this record has the measurements, the observed `job_logs` lines for both
-entrances, and the retry behaviour that output exposes.
+That evidence is a **test result, not a run**, and the difference still matters: at
+the time of the run the fallback entrance could not be driven on a real stack at
+all, because no production code path wrote `jobitems.source_url` (only `_test.go`
+did, and the live stack had 0 of 122 items carrying one). That reason is now
+*historical* rather than current — see *DJI-498 — giving the fallback entrance a
+production writer* at the end of this record for the fix and what it does and does
+not prove. The 2026-09-18 section below has the measurements, the observed
+`job_logs` lines for both entrances, and the retry behaviour that output exposes.
 
 **Observation, not a finding:** `ffprobe` prints `[png @ …] chunk too big` for the
 embedded cover on that mp3. Harmless here, but it is the same family of
@@ -884,7 +886,7 @@ stack for a reason this run established rather than assumed:
 | Entrance | Why it could not be driven live |
 |---|---|
 | Soulseek candidate loop | A refusal needs a real peer to serve a mismatched file *at a chosen moment*. The one time this happened organically it produced the original defect (the `Noriyuki Iwadare` track imported under a `PUP` request). There is no seam to request a mismatched peer on demand, and the query cannot be chosen to force one — a peer only appears in results when its filename matches the query, which is the same signal the gate uses. |
-| yt-dlp fallback | **No production code path writes `jobitems.source_url`.** The entrance is gated correctly, but nothing can reach it: a search of the backend finds the field written only in `_test.go`, and the live stack counts **0 of 122** job items carrying one despite having imported 43 tracks. Driving it live would require hand-inserting an item, which is a fixture, not a flow. |
+| yt-dlp fallback | **Dormant when the run was recorded:** no production code path wrote `jobitems.source_url` (only `_test.go` did, and the live stack counted **0 of 122** items carrying one despite having imported 43 tracks), so the entrance was gated but unreachable. DJI-498 has since given it a writer — watchlist sync now carries the provider's `source_link` onto the item — but the clause is still **not driven live**, and hand-inserting a row would be a fixture rather than a flow. Driving it needs a feed entry the swarm cannot satisfy plus working yt-dlp egress, which is a future run's work. |
 
 What exists instead is test evidence, and it is labelled as such rather than
 presented as a run. The tests drive the real pipeline through each entrance with
@@ -928,3 +930,43 @@ the change.
 | Live stack `djinn-netrunner` | `.env` restored from the pre-run backup and byte-identical to it; all four containers `healthy` on it, which also proves the restored value matches the volume's stored credential |
 | Live volumes | all seven intact; the repaired library and the pre-repair backup under `/backups` are preserved |
 | Live children of the run | none — the run's own jobs are terminal and its staging directory is empty |
+
+### DJI-498 — giving the fallback entrance a production writer (2026-09-18)
+
+**Decision: wire it up, not retire it.** The entrance was dormant for a missing
+writer, not for being unwanted. `yt-dlp` is deliberately provisioned in the runtime
+image, the RSS provider already emits a `source_link` for every feed item, and the
+Bandcamp feed howto documents that watchlist type as supported — so retiring it would
+have deleted a documented capability whose only defect was one missing field
+assignment. The RSS source type (`rss_feed`) reaches `RSSProvider.FetchTracks`, which
+returns `source_link` for every item; that key had simply never been stored.
+
+**What changed.** `SyncHandler.Execute` now sets
+`SourceURL: strings.TrimSpace(t["source_link"])` on each job item it creates, so a
+feed watchlist reaches the fallback. Ordering is unchanged and deliberate: the
+pipeline only consults the URL when Soulseek returns nothing, so the swarm stays the
+first choice, and the download-identity gate — not the absence of a URL — decides what
+may be imported.
+
+**Evidence — test evidence, not a run.** The wiring is proven at the seam that was
+missing (a feed provider's item reaching the created job item), not by hand-inserting
+a row:
+
+```
+$ go test -count=1 -v -run TestSyncHandlerCarriesProviderSourceURL ./internal/services/
+=== RUN   TestSyncHandlerCarriesProviderSourceURL
+--- PASS: TestSyncHandlerCarriesProviderSourceURL (0.01s)
+ok  github.com/pvnkmnk/netrunner/backend/internal/services  0.114s
+```
+
+The test registers a stub feed provider (one track with a page URL, one without) and
+asserts the first item carries the URL while the second does not invent one. Mutating
+the map key (`source_link` → `not_the_link_key`) turns it red with
+`expected: "https://example.invalid/album/pup"` /
+*the provider's page URL must reach the item or the fallback entrance is unreachable*.
+
+**Still not driven live in this run,** and the row above says so: proving the refusal
+on this entrance needs a real feed entry the swarm cannot satisfy *and* yt-dlp network
+egress from the stack, then a download that is playable but a different work. That is a
+run of its own; wiring the writer is what made it possible, and the gate itself is
+already pinned by `TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo`.

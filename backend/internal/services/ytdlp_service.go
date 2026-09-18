@@ -52,6 +52,17 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", errors.New("URL must use http or https scheme")
 	}
+	// SECURITY: yt-dlp makes its own connections, so the repository's safe
+	// transports never see them, and it follows redirects on its own. A source
+	// URL here comes from a watchlist feed (jobitems.source_url), so it is
+	// attacker-influenced: refuse a destination that resolves to a private
+	// address before handing it to the extractor. Redirects out of an allowed
+	// destination remain a known gap — closing that needs an egress proxy, not a
+	// check here — see DJI-500.
+	if err := checkPublicHost(parsed.Hostname()); err != nil {
+		return "", fmt.Errorf("refusing source URL: %w", err)
+	}
+
 	// Reconstruct URL from parsed components to ensure it's clean
 	url := parsed.String()
 
