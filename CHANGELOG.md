@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.0.2-beta.1] - 2026-09-18
+
 ### Added
 - Beta deployment assets: `docker-compose.beta.yml`, `.env.beta.example` and
   `docs/BETA_DEPLOYMENT.md`, so a beta can be brought up from a clone instead of
@@ -153,5 +155,6 @@ Initial release of Djinn NetRunner.
 - Dependency bump: `gofiber/fiber/v2` to v2.52.13 (CVE-2026-42554)
 - Docs reconciliation: `.env.example`, AGENTS.md, ARCHITECTURE.md alignment with runtime behavior
 
-[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-beta.1...HEAD
+[v0.0.2-beta.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-b...v0.0.2-beta.1
 [0.0.1]: https://github.com/pvnkmnk/djinn-netrunner/releases/tag/v0.0.1
