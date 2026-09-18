@@ -17,6 +17,10 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 
 ### Operators
 - docs/RUNBOOK.md — operational procedures and failure modes.
+- docs/BETA_DEPLOYMENT.md — bringing up a beta deployment from a clone.
+- CHANGELOG.md — what changed in each release, newest first.
+- docs/BETA_ACCEPTANCE.md — the acceptance matrix, with the output each row observed.
+- docs/project-history.md — how the project got here, wave by wave, with PR links.
 
 ## What to read when
 - Install: README.md, docs/RUNBOOK.md
@@ -29,3 +33,7 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - Update docs/ARCHITECTURE.md when adding services, changing concurrency, or modifying schema/locks.
 - Update docs/UIIMPLEMENTATION.md when changing HTMX patterns, attach modes, or WebSocket streaming.
 - Update docs/RUNBOOK.md when new failure modes or operational procedures are discovered.
+- Update CHANGELOG.md in the same PR that changes behaviour: the `[Unreleased]` section
+  is the only place a release is described, and it is what a beta operator reads.
+- Add a dated section to docs/project-history.md at the end of a wave, linking the PRs.
+  It is the only narrative record of why a change was made.
