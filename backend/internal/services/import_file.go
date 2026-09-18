@@ -498,3 +498,28 @@ func (h *AcquisitionHandler) failItem(jobID uint64, itemID uint64, reason string
 		"finished_at":     time.Now(),
 	})
 }
+
+// abandonItem records a verdict the pipeline can prove is permanent, so the
+// item is finished on the first attempt instead of being scheduled for retries
+// that would repeat the same work and reach the same conclusion. `abandoned` is
+// the status for that: ClaimNextItem takes only queued items and failed ones
+// whose backoff has passed, and the item accounting already counts it as
+// permanently failed.
+func (h *AcquisitionHandler) abandonItem(jobID uint64, itemID uint64, reason string) {
+	h.Log(jobID, "ERR", reason, &itemID)
+
+	var item database.JobItem
+	if err := h.db.First(&item, itemID).Error; err != nil {
+		slog.Error("Failed to find item for abandonment", "job_id", jobID, "item_id", itemID, "error", err)
+		return
+	}
+	slog.Warn("Item abandoned on a permanent verdict",
+		"job_id", jobID, "item_id", itemID, "attempt", item.RetryCount+1, "reason", reason)
+	h.db.Model(&database.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
+		"status":          "abandoned",
+		"failure_reason":  reason,
+		"retry_count":     item.RetryCount + 1,
+		"next_attempt_at": nil,
+		"finished_at":     time.Now(),
+	})
+}

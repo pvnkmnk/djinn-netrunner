@@ -861,12 +861,16 @@ ERR   yt-dlp: does not match the request: asked for artist "PUP" / album "PUP",
       file is tagged artist "Noriyuki Iwadare" / album "…"
 ```
 
-**Open finding this output exposes, recorded rather than fixed here.** The
-fallback rejection is persisted as `status="failed"` with `retry_count=1` and
-`next_attempt_at` one minute out, so the item is *retried* up to `max_attempts`
-rather than being terminal — while the comment above the call site describes it
-as terminal for the item. A retry re-runs the same fallback against the same
-`source_url` and re-downloads the same off-target file. Filed separately.
+**Finding this output exposed, since fixed.** The fallback rejection was
+persisted as `status="failed"` with `retry_count=1` and `next_attempt_at` one
+minute out, so the item was *retried* up to `max_attempts` rather than being
+terminal, while the comment above the call site described it as terminal: a
+retry re-runs the same fallback against the same `source_url` and re-downloads
+the same off-target file. A rejection on that entrance is now recorded on the
+first attempt as `abandoned` — the status the worker never re-claims, and which
+the item accounting already treats as permanently failed — and the comment says
+what the code does. Filed as DJI-497; the harness output quoted above predates
+the change.
 
 ### Environment hand-off
 
