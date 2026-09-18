@@ -161,11 +161,15 @@ green" to "a beta that acquires, imports, streams and repairs a real library", a
 most of it came from running the thing and hitting what the tests did not.
 
 **What ran, and why.** An end-to-end run against the operator's Docker Desktop stack
-found that a vanilla `docker compose up` never received `.env` (random session secret,
-no Subsonic password), that slskd rejected every search with 401, and that no
-media-server client existed in the worker (#226, #229, #470-series issues). Each of
-those was invisible to a green test suite because the tests construct their own
-configuration.
+found three things a green test suite could not see, because the tests construct their
+own configuration: a vanilla `docker compose up` never received `.env`, so the process
+ran with a per-restart random session secret and no Subsonic password (DJI-470); the
+slskd API key reached the app containers but not slskd, so every search returned 401
+(DJI-484, #226); and the deployed stack configured no media server at all, so the
+worker's library client stayed nil (DJI-472). The client itself was not new — a gonic
+client existed — but it was one vendor's client, unwired in practice; the wave
+generalised it into a single Subsonic client and pointed the stack at Navidrome
+(#208-#215, #229).
 
 **What the pipeline got wrong with real peers.** A peer that answered a search and
 never sent anything stalled the queue for the full wait budget (#228); an 8.5 KB
