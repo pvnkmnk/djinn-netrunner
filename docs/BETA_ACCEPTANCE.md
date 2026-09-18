@@ -970,3 +970,14 @@ on this entrance needs a real feed entry the swarm cannot satisfy *and* yt-dlp n
 egress from the stack, then a download that is playable but a different work. That is a
 run of its own; wiring the writer is what made it possible, and the gate itself is
 already pinned by `TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo`.
+
+**An egress control this decision made necessary (PR #243).** Wiring an
+attacker-influenced URL onto the item put the extractor on a real path for the first
+time: yt-dlp makes its own connections, so the repository's safe transports never see
+them, and it followed redirects on its own after only a scheme check. `DownloadAudio`
+now refuses a destination that resolves to a private address, calling the same
+`checkPublicHost` the request-path guard uses rather than a second copy of that
+judgement. Redirects *out of* an allowed destination remain a gap — that hop happens
+inside yt-dlp, so no check at this seam can see it — recorded as DJI-500 rather than
+left implicit, and worth knowing before a future run drives this clause: a feed entry
+pointed at a private address is refused, but one that redirects there is not.
