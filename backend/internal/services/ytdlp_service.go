@@ -4,17 +4,37 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// targetResolveTimeout bounds the pre-flight walk of a source URL's redirect
+// chain. It is deliberately short: it resolves a destination, it does not download.
+const targetResolveTimeout = 20 * time.Second
 
 // YtdlpService handles yt-dlp based audio extraction
 type YtdlpService struct {
 	ytdlpPath string // path to yt-dlp binary
 	jsRuntime string // JS runtime for yt-dlp extraction (e.g., "node")
+
+	// resolveClient walks a source URL's redirect chain before handover. Nil
+	// means the production client (safe transport plus hop bound); tests set it
+	// to exercise the walk without a network, so removing the walk from
+	// DownloadAudio is visible to the suite rather than silently safe-looking.
+	resolveClient *http.Client
+}
+
+// targetClient is the client the pre-flight walk uses.
+func (s *YtdlpService) targetClient() *http.Client {
+	if s.resolveClient != nil {
+		return s.resolveClient
+	}
+	return newRedirectResolvingClient(targetResolveTimeout)
 }
 
 // NewYtdlpService creates a new yt-dlp service with auto-detected binary path
@@ -55,16 +75,42 @@ func (s *YtdlpService) DownloadAudio(rawURL, outputDir, audioFormat string) (str
 	// SECURITY: yt-dlp makes its own connections, so the repository's safe
 	// transports never see them, and it follows redirects on its own. A source
 	// URL here comes from a watchlist feed (jobitems.source_url), so it is
-	// attacker-influenced: refuse a destination that resolves to a private
-	// address before handing it to the extractor. Redirects out of an allowed
-	// destination remain a known gap — closing that needs an egress proxy, not a
-	// check here — see DJI-500.
+	// attacker-influenced, which is why the destination is checked twice: the
+	// host the URL names, and then the chain that host answers with.
 	if err := checkPublicHost(parsed.Hostname()); err != nil {
-		return "", fmt.Errorf("refusing source URL: %w", err)
+		if errors.Is(err, ErrDisallowedDestination) {
+			return "", fmt.Errorf("refusing source URL: %w", err)
+		}
+		// Not a refusal, just a name that would not resolve. Still not a URL to
+		// hand over unchecked.
+		return "", fmt.Errorf("could not resolve source URL host %q: %w", parsed.Hostname(), err)
 	}
 
-	// Reconstruct URL from parsed components to ensure it's clean
-	url := parsed.String()
+	// SECURITY: the first hop being public says nothing about where the download
+	// ends up, because the extractor follows redirects itself. Walk the chain
+	// here first — every hop dialed through safeDialContext — and hand over the
+	// URL that was actually checked. A hop that resolves privately refuses the
+	// download; a chain that cannot be walked at all is also not handed over,
+	// since the guard cannot vouch for a hop it never saw.
+	//
+	// What this cannot see: redirects the downloader encounters on its own after
+	// handover. yt-dlp exposes no hop bound (`--max-redirects` does not exist) and
+	// a `--proxy` would mean running a validating proxy, which is an egress
+	// boundary rather than a check at this seam. It is recorded as a decision for
+	// the single-operator beta — the feed URLs are the operator's own — and it is
+	// the point to revisit before this entrance serves untrusted feeds.
+	resolved, err := resolveRedirectTarget(s.targetClient(), parsed.String())
+	if err != nil {
+		if errors.Is(err, ErrDisallowedDestination) {
+			return "", fmt.Errorf("refusing source URL: %w", err)
+		}
+		return "", fmt.Errorf("could not resolve %q before downloading it: %w", parsed.Host, err)
+	}
+
+	// The resolved URL is what the downloader is given: it is the chain member
+	// that was checked, and asking the extractor to follow the chain again would
+	// be asking it to walk hops this guard never saw.
+	url := resolved
 
 	// Check if output directory exists
 	if _, err := os.Stat(outputDir); os.IsNotExist(err) {

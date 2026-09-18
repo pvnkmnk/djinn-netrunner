@@ -977,7 +977,17 @@ time: yt-dlp makes its own connections, so the repository's safe transports neve
 them, and it followed redirects on its own after only a scheme check. `DownloadAudio`
 now refuses a destination that resolves to a private address, calling the same
 `checkPublicHost` the request-path guard uses rather than a second copy of that
-judgement. Redirects *out of* an allowed destination remain a gap — that hop happens
-inside yt-dlp, so no check at this seam can see it — recorded as DJI-500 rather than
-left implicit, and worth knowing before a future run drives this clause: a feed entry
-pointed at a private address is refused, but one that redirects there is not.
+judgement.
+
+**The redirect half, closed across the chain (DJI-500).** A first hop being public said
+nothing about where the download ended up, so the handover now walks the chain first:
+`resolveRedirectTarget` dials every hop through `safeDialContext` and the downloader
+receives the URL that was actually checked, with a private hop refusing the download
+outright (a chain that cannot be walked at all is not handed over either). Two things
+are deliberately not claimed. A chain longer than ten hops fails rather than being
+walked. And hops the downloader takes *after* handover stay outside any pre-flight
+check, because yt-dlp exposes no hop bound — `--max-redirects` does not exist; that
+was checked against the binary rather than assumed — and constraining them needs an
+egress boundary (a validating proxy). That boundary is the decision recorded here as
+not justified for a single-operator beta whose feed URLs are the operator's own, and
+it is the point to revisit before this entrance serves untrusted feeds.

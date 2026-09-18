@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -479,7 +480,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_Success(t *testing.T) {
 
 	p := &acquisitionPipeline{item: item}
 
-	downloaded, ok := handler.stageYtdlpFallback(context.Background(), p)
+	downloaded, ok, _ := handler.stageYtdlpFallback(context.Background(), p)
 	if !ok {
 		t.Error("expected ok=true (download succeeded)")
 	}
@@ -515,7 +516,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_NoSourceURL(t *testing.T) {
 
 	p := &acquisitionPipeline{item: item}
 
-	downloaded, ok := handler.stageYtdlpFallback(context.Background(), p)
+	downloaded, ok, _ := handler.stageYtdlpFallback(context.Background(), p)
 	if ok {
 		t.Error("expected ok=false (no SourceURL)")
 	}
@@ -544,7 +545,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpUnavailable(t *testing.T) {
 
 	p := &acquisitionPipeline{item: item}
 
-	_, ok := handler.stageYtdlpFallback(context.Background(), p)
+	_, ok, _ := handler.stageYtdlpFallback(context.Background(), p)
 	if ok {
 		t.Error("expected ok=false (ytdlp unavailable)")
 	}
@@ -570,7 +571,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_DownloadError(t *testing.T) {
 
 	p := &acquisitionPipeline{item: item}
 
-	_, ok := handler.stageYtdlpFallback(context.Background(), p)
+	_, ok, _ := handler.stageYtdlpFallback(context.Background(), p)
 	if ok {
 		t.Error("expected ok=false (download error)")
 	}
@@ -588,7 +589,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_YtdlpNil(t *testing.T) {
 
 	p := &acquisitionPipeline{item: item}
 
-	_, ok := handler.stageYtdlpFallback(context.Background(), p)
+	_, ok, _ := handler.stageYtdlpFallback(context.Background(), p)
 	if ok {
 		t.Error("expected ok=false (ytdlp nil)")
 	}
@@ -831,7 +832,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_DiscardsAFileItCannotRecord(t *te
 		},
 	}
 
-	downloaded, ok := handler.stageYtdlpFallback(context.Background(),
+	downloaded, ok, _ := handler.stageYtdlpFallback(context.Background(),
 		&acquisitionPipeline{ctx: context.Background(), item: item})
 
 	assert.False(t, ok, "a fallback whose path cannot be recorded must not continue")
@@ -840,4 +841,89 @@ func TestAcquisitionHandler_StageYtdlpFallback_DiscardsAFileItCannotRecord(t *te
 	assert.True(t, os.IsNotExist(err), "the unattributable file must be discarded, not left in staging")
 	_, err = os.Stat(filepath.Join(staging, "Fallback Artist"))
 	assert.True(t, os.IsNotExist(err), "and the directories it emptied must be swept with it")
+}
+
+// A refused destination is a permanent verdict about the item's own source URL:
+// the same URL resolves the same way, so the stage must surface it rather than
+// swallow it into a retryable failure.
+func TestAcquisitionHandler_StageYtdlpFallback_RefusedDestinationIsSurfaced(t *testing.T) {
+	db := setupPipelineTestDB(t)
+
+	ytdlpMock := &mockYtdlp{
+		IsYtdlpAvailableFunc: func() bool { return true },
+		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+			return "", fmt.Errorf("refusing source URL: %w: target internal.example resolves to private IP 10.0.0.5", ErrDisallowedDestination)
+		},
+	}
+
+	cfg := &config.Config{DownloadStagingPath: t.TempDir()}
+	handler := NewAcquisitionHandler(db, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, ytdlpMock)
+
+	job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
+	require.NoError(t, db.Create(&job).Error)
+	item := database.JobItem{
+		JobID: job.ID, Status: "failed", Sequence: 1,
+		SourceURL: "http://internal.example/track.mp3",
+	}
+	require.NoError(t, db.Create(&item).Error)
+	require.NoError(t, db.First(&item, item.ID).Error)
+
+	downloaded, ok, refusal := handler.stageYtdlpFallback(context.Background(), &acquisitionPipeline{item: item})
+
+	assert.Empty(t, downloaded)
+	assert.False(t, ok)
+	require.ErrorIs(t, refusal, ErrDisallowedDestination,
+		"the stage must surface a guard refusal for the caller to record terminally")
+}
+
+// And the caller records it through the existing terminal path, so the refusal is
+// visible on the item and is not re-claimed for another attempt.
+func TestAcquisitionHandler_ExecuteItem_RefusedDestinationAbandonsTheItem(t *testing.T) {
+	db := setupPipelineTestDB(t)
+
+	handler := NewAcquisitionHandler(db, &config.Config{
+		DownloadStagingPath: t.TempDir(),
+		MusicLibraryPath:    t.TempDir(),
+	}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
+	require.NoError(t, db.Create(&job).Error)
+
+	item := database.JobItem{
+		JobID: job.ID, Status: "queued", Sequence: 1,
+		NormalizedQuery: "PUP PUP",
+		Artist:          "PUP", Album: "PUP", TrackTitle: "PUP",
+		SourceURL: "http://internal.example/track.mp3",
+	}
+	require.NoError(t, db.Create(&item).Error)
+	require.NoError(t, db.First(&item, item.ID).Error)
+
+	// Soulseek finds nothing, which is exactly when the fallback runs.
+	handler.slskd = &mockSlskd{
+		SearchFunc: func(query string, timeout int, profile *database.QualityProfile) ([]SearchResult, error) {
+			return nil, nil
+		},
+	}
+	handler.ytdlp = &mockYtdlp{
+		IsYtdlpAvailableFunc: func() bool { return true },
+		DownloadAudioFunc: func(rawURL, outputDir, audioFormat string) (string, error) {
+			return "", fmt.Errorf("refusing source URL: %w: target internal.example resolves to private IP 10.0.0.5", ErrDisallowedDestination)
+		},
+	}
+
+	require.NoError(t, handler.ExecuteItem(context.Background(), job.ID, item.ID))
+
+	var stored database.JobItem
+	require.NoError(t, db.First(&stored, item.ID).Error)
+	assert.Equal(t, "abandoned", stored.Status,
+		"a refused destination is terminal: a retry resolves the same URL the same way")
+	assert.Nil(t, stored.NextAttemptAt,
+		"a permanent verdict must not leave a retry scheduled")
+	assert.NotNil(t, stored.FinishedAt)
+	assert.Contains(t, stored.FailureReason, "disallowed",
+		"the refusal must be visible on the item, not only in the log")
+
+	nextID, claimErr := NewJobItemProcessor(db, handler).ClaimNextItem(job.ID)
+	require.NoError(t, claimErr)
+	assert.Zero(t, nextID, "an abandoned item is never re-claimed")
 }
