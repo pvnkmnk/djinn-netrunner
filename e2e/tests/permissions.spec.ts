@@ -46,10 +46,11 @@ test.describe('Permissions & edge cases (DJI-434)', () => {
       expect(list.status()).toBe(403);
       const audit = await authenticatedPage.request.get('/api/admin/audit');
       expect(audit.status()).toBe(403);
-      // A mutating admin call from a non-admin must not create anything
-      // (403 here is the role check or the CSRF gate — either way nothing moves).
+      // A mutating admin call from a non-admin must not create anything —
+      // even with CSRF satisfied, the role check alone refuses it.
       const create = await authenticatedPage.request.post('/api/admin/users', {
         data: { email: 'escalated@netrunner.dev', password: 'nope12345', role: 'admin' },
+        headers: { 'X-CSRF-Token': await getCsrfToken(authenticatedPage) },
       });
       expect(create.status()).toBe(403);
     });
@@ -79,8 +80,11 @@ test.describe('Permissions & edge cases (DJI-434)', () => {
       expect(direct.status()).toBeGreaterThanOrEqual(400);
       expect(direct.status()).toBeLessThan(500);
 
-      // And mutation from the wrong owner is refused.
-      const del = await authenticatedPage.request.delete(`/api/playlists/${pid}`);
+      // And mutation from the wrong owner is refused — with CSRF satisfied,
+      // the 4xx is specifically the ownership check.
+      const del = await authenticatedPage.request.delete(`/api/playlists/${pid}`, {
+        headers: { 'X-CSRF-Token': await getCsrfToken(authenticatedPage) },
+      });
       expect(del.status()).toBeGreaterThanOrEqual(400);
       expect(del.status()).toBeLessThan(500);
     });
