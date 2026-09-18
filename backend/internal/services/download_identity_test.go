@@ -10,6 +10,7 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // ---------------------------------------------------------------------------
@@ -227,6 +228,48 @@ func TestIdentityTokens(t *testing.T) {
 	assert.Empty(t, identityTokens("   "), "a blank name carries no words to compare")
 }
 
+// ---------------------------------------------------------------------------
+// Shared fixtures for the download-gate tests
+// ---------------------------------------------------------------------------
+
+// newGateTestHandler builds a handler whose staging root is a fresh temp dir,
+// with real ffprobe/tag reads — the only dependencies the gate tests need.
+func newGateTestHandler(t *testing.T, db *gorm.DB) *AcquisitionHandler {
+	t.Helper()
+	handler := NewAcquisitionHandler(db, &config.Config{DownloadStagingPath: t.TempDir()},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.ext = NewMetadataExtractor() // real ffprobe and real tag reads
+	return handler
+}
+
+// newGateTestJobItem persists a running acquisition job with a PUP/PUP/PUP item
+// (the request the acceptance run recorded) and reloads the item the way the
+// pipeline does, then returns both.
+func newGateTestJobItem(t *testing.T, db *gorm.DB, status string) (database.Job, database.JobItem) {
+	t.Helper()
+	job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
+	require.NoError(t, db.Create(&job).Error)
+	item := database.JobItem{
+		JobID: job.ID, Status: status, Sequence: 1,
+		NormalizedQuery: "PUP PUP",
+		Artist:          "PUP", Album: "PUP", TrackTitle: "PUP",
+	}
+	require.NoError(t, db.Create(&item).Error)
+	require.NoError(t, db.First(&item, item.ID).Error)
+	return job, item
+}
+
+// generateOffTargetAudio writes a real, playable flac tagged with the exact
+// metadata the acceptance run recorded for the wrong work.
+func generateOffTargetAudio(t *testing.T, dir string) string {
+	t.Helper()
+	return generateTestAudio(t, dir, "off-target.flac",
+		"-metadata", "artist=Noriyuki Iwadare",
+		"-metadata", "album_artist=Noriyuki Iwadare",
+		"-metadata", "album=Ace Attorney Investigations: Miles Edgeworth Original Soundtrack",
+		"-metadata", "title=Shi-Long Lang - Speak Up, Pup!")
+}
+
 // The whole gate, on real bytes: a peer serving an unrelated track (tagged with
 // what the acceptance run recorded) must be discarded, and the item must walk on
 // to a peer that has the requested audio rather than failing.
@@ -236,30 +279,15 @@ func TestAcquisitionHandler_StageDownloadFile_RejectsMismatchedFileAndTriesNext(
 	db := setupPipelineTestDB(t)
 	// The rejected bytes are discarded, and the discard refuses any path outside
 	// the staging root — so the fixture has to sit inside the configured one.
-	staging := t.TempDir()
-	handler := NewAcquisitionHandler(db, &config.Config{DownloadStagingPath: staging},
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	handler.ext = NewMetadataExtractor() // real ffprobe and real tag reads
+	handler := newGateTestHandler(t, db)
+	staging := handler.cfg.DownloadStagingPath
 
-	job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
-	require.NoError(t, db.Create(&job).Error)
-	// The request the acceptance run recorded: thin enough that "Pup" in a
-	// filename satisfies the search.
-	item := database.JobItem{
-		JobID: job.ID, Status: "running", NormalizedQuery: "PUP",
-		Artist: "PUP", Album: "PUP", TrackTitle: "PUP", Sequence: 1,
-	}
-	require.NoError(t, db.Create(&item).Error)
-	require.NoError(t, db.First(&item, item.ID).Error)
+	job, item := newGateTestJobItem(t, db, "running")
 
 	wanted := generateTestAudio(t, staging, "wanted.flac",
 		"-metadata", "artist=PUP", "-metadata", "album_artist=PUP",
 		"-metadata", "album=PUP", "-metadata", "title=PUP")
-	offTarget := generateTestAudio(t, staging, "off-target.flac",
-		"-metadata", "artist=Noriyuki Iwadare",
-		"-metadata", "album_artist=Noriyuki Iwadare",
-		"-metadata", "album=Ace Attorney Investigations: Miles Edgeworth Original Soundtrack",
-		"-metadata", "title=Shi-Long Lang - Speak Up, Pup!")
+	offTarget := generateOffTargetAudio(t, staging)
 
 	handler.slskd = &mockSlskd{
 		EnqueueDownloadFunc: func(username, filename string, size int64) (string, error) {
@@ -303,8 +331,7 @@ func TestAcquisitionHandler_StageDownloadFile_RejectsMismatchedFileAndTriesNext(
 // been checked.
 func TestRejectUnusableDownload_LogsWhenThereIsNoPathToCheck(t *testing.T) {
 	db := setupPipelineTestDB(t)
-	handler := NewAcquisitionHandler(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	handler.ext = NewMetadataExtractor()
+	handler := newGateTestHandler(t, db)
 
 	_, item := createAcquisitionTestItem(t, db)
 	p := &acquisitionPipeline{ctx: context.Background(), item: item}
@@ -333,32 +360,19 @@ func TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo(t *testing.T) {
 	requireProbeTools(t)
 
 	db := setupPipelineTestDB(t)
-	staging := t.TempDir()
 	libraryRoot := t.TempDir()
 
-	handler := NewAcquisitionHandler(db, &config.Config{
-		DownloadStagingPath: staging,
-		MusicLibraryPath:    libraryRoot,
-	}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	handler.ext = NewMetadataExtractor() // real ffprobe and real tag reads
+	handler := newGateTestHandler(t, db)
+	handler.cfg.MusicLibraryPath = libraryRoot
+	// The gate discards a rejected download through the staging-root owner, so
+	// the fixture must be generated inside the handler's own staging root.
+	staging := handler.cfg.DownloadStagingPath
 
-	job := database.Job{Type: "acquisition", State: "running", MaxAttempts: 3}
-	require.NoError(t, db.Create(&job).Error)
+	job, item := newGateTestJobItem(t, db, "queued")
+	item.SourceURL = "https://example.invalid/watch?v=off-target"
+	require.NoError(t, db.Save(&item).Error)
 
-	item := database.JobItem{
-		JobID: job.ID, Status: "queued", Sequence: 1,
-		NormalizedQuery: "PUP PUP",
-		Artist:          "PUP", Album: "PUP", TrackTitle: "PUP",
-		SourceURL: "https://example.invalid/watch?v=off-target",
-	}
-	require.NoError(t, db.Create(&item).Error)
-	require.NoError(t, db.First(&item, item.ID).Error)
-
-	offTarget := generateTestAudio(t, staging, "off-target.flac",
-		"-metadata", "artist=Noriyuki Iwadare",
-		"-metadata", "album_artist=Noriyuki Iwadare",
-		"-metadata", "album=Ace Attorney Investigations: Miles Edgeworth Original Soundtrack",
-		"-metadata", "title=Shi-Long Lang - Speak Up, Pup!")
+	offTarget := generateOffTargetAudio(t, staging)
 
 	// Soulseek finds nothing, which is exactly when the fallback runs.
 	handler.slskd = &mockSlskd{
