@@ -148,7 +148,7 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   re-proven weekly by `.github/workflows/mutation.yml`. Browser behavior
   mutations (remove admin gate) still need an image rebuild + spec run
   (templates are baked into the image) — see Linear DJI-434.
-- **A workflow that has never run will fail on its first scheduled fire.**
+- **A workflow that has never run may fail on its first scheduled fire.**
   Dispatch `workflow_dispatch`-able workflows once right after merge: the
   mutation workflow needed three runner-only fixes before its first green
   run (2026-09-19, run 35471332835), none reproducible locally.
