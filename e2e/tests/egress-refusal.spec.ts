@@ -73,9 +73,9 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
         sawDenial = true;
       }
 
-      // The only break: the job reached a terminal state. Breaking earlier
-      // (on log text) would race the retry scheduler — the job still has
-      // attempts to burn after the first denial.
+      // The only break: the job reached its required final state. The probe
+      // proves a refusal, so the job must end FAILED — a later retry
+      // succeeding or an external cancel must not read as a pass.
       // NOTE: the Job model has no json tags, so Go marshals fields as
       // "ID"/"State" — read both casings.
       const jobsRes = await page.request.get(`/api/jobs/`, { headers: { 'X-CSRF-Token': csrf } });
@@ -83,7 +83,11 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
         const jobs = (await jobsRes.json()) as Array<Record<string, unknown>>;
         const job = jobs.find(j => (j['ID'] ?? j['id']) === jobId);
         const state = String(job?.['State'] ?? job?.['state'] ?? '');
-        if (['succeeded', 'failed', 'cancelled'].includes(state)) {
+        if (state === 'failed') {
+          itemState = state;
+          break;
+        }
+        if (['succeeded', 'cancelled'].includes(state)) {
           itemState = state;
           break;
         }
@@ -99,9 +103,10 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
       'the fallback failure must name the proxy denial (Tunnel connection failed / ProxyError) — without the boundary yt-dlp would download the file and only the identity gate would refuse it'
     ).toBe(true);
 
-    // Part 3: the item terminated without importing. The job ends failed with
-    // a failed item (not imported, not retrying).
-    expect(itemState, 'the seeded job must reach a terminal state').toMatch(/failed|succeeded|cancelled/);
+    // Part 3: the item terminated in the required way — refused, not
+    // imported, and the job FAILED (not succeeded by a fluke or cancelled by
+    // an outside hand).
+    expect(itemState, 'the seeded job must fail after the proxy refusal').toBe('failed');
     const failureLine = (await page.request.get(`/partials/job-logs?job_id=${jobId}`, {
       headers: { 'X-CSRF-Token': csrf },
     }).then(r => r.text())).split('\n').find(l => /yt-dlp fallback failed/i.test(l));

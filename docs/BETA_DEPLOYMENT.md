@@ -261,7 +261,7 @@ only the account password is accepted.
 | Deduplicate a pre-existing library | `ops/docs/library-dedup-runbook.md` |
 | Reach it from another host | The beta port binds to `127.0.0.1` because it serves plain HTTP with session cookies and Subsonic credentials. Put the `edge` profile's Caddy in front, or set `BETA_BIND_ADDR=0.0.0.0` behind your own TLS terminator. `NAVIDROME_BIND_ADDR` works the same way for the optional media server. |
 | Cancel a running job | `POST /api/jobs/:id/cancel` (CSRF header required). The worker aborts within one item and finishes the job as `cancelled`, keeping what it had already imported. |
-| yt-dlp egress boundary | The overlay runs an `egress-proxy` sidecar (squid) that denies private/loopback ranges at connect time for every hop yt-dlp takes, and the worker points yt-dlp at it via `YTDLP_PROXY`. Extraction sites live in `ops/squid/allowed-domains.txt` — extend it when a feed needs a host the allowlist refuses. |
+| yt-dlp egress boundary | The overlay runs an `egress-proxy` sidecar (squid) that denies private/loopback ranges at connect time for every hop yt-dlp takes, and the worker points yt-dlp at it via `YTDLP_PROXY`. Extraction sites live in `ops/squid/allowed-domains.txt` — after editing it, apply with `docker compose -f docker-compose.yml -f docker-compose.beta.yml restart egress-proxy` (a plain `up -d` leaves the running squid on its old in-memory allowlist). |
 | Tear down (keep data) | `docker compose ... down` |
 | Destroy (lose everything) | `docker compose ... down -v` |
 
