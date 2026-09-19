@@ -25,7 +25,38 @@ services:
     ports: !reset []
 
   slskd:
-    container_name: e2e-slskd
+    # E2E-only: replace slskd with a stand-in (ops/fake-slskd) that speaks the
+    # API surface the worker calls, so specs choose what the "Soulseek network"
+    # answers — including a peer serving a deliberately mismatched file (the
+    # Soulseek entrance's wrong-work refusal has no other seam: a real peer
+    # only shows up in results when its filename matches the query, which is
+    # the same signal the gate uses). See ops/fake-slskd/entrypoint.py.
+    #
+    # The BASE file's container is named netrunner-slskd and SLSKD_URL points
+    # at that name, so the stand-in KEEPS it — renaming the container would
+    # break every lookup the worker makes. The downloads mount is the same
+    # shared staging volume, so "completed" transfers are the pre-generated
+    # fixture sitting where the worker imports from.
+    container_name: netrunner-slskd
+    build:
+      context: ./ops/fake-slskd
+    environment:
+      SLSKD_API_KEY: ${SLSKD_API_KEY}
+      FAKE_DOWNLOADS_DIR: /downloads
+    volumes:
+      - netrunner-downloads:/downloads
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    healthcheck:
+      # 127.0.0.1, not localhost: localhost resolves to ::1 first in this
+      # image, and the stand-in binds v4 only — a healthcheck to "localhost"
+      # refuses forever while the server is fine.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5030/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   volume-init:
     container_name: e2e-volume-init
