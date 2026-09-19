@@ -30,6 +30,10 @@ ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=440:duration=20" \
   -c:a flac "$OUT"
 
 echo "serving ${OUT} (tags: ${TAG_ARTIST} / ${TAG_ALBUM}) on :8080"  # probe expects zero shared words with its request
+
+# Compose healthcheck target: the container is ready exactly when this answers.
+# Without it the worker could claim the probe job while ffmpeg is still writing
+# the FLAC, and the spec's download would 404.
 cd /srv/audio
 # busybox httpd: single binary, no install, serves cwd. Runs foreground.
 exec httpd -f -p 8080

@@ -107,7 +107,7 @@ services:
       egress-proxy:
         condition: service_healthy
       audio-probe:
-        condition: service_started
+        condition: service_healthy
     # The wrong-work refusal probe (see audio-probe below). /etc/hosts pins the
     # probe's name to ONE address — the documentation-IPv6 one — in the
     # resolver of every component that must agree on it: the worker's SSRF
@@ -143,6 +143,15 @@ services:
     container_name: e2e-audio-probe
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
+    # Ready means the FLAC exists and httpd answers — the entrypoint generates
+    # the file at start, and service_started alone would let the worker claim
+    # the probe job mid-generation.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/wrong-work.flac"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     networks:
       probe-doc-v6:
         ipv6_address: 2001:db8:aa::10

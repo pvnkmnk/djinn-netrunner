@@ -206,16 +206,15 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
       .get(`/partials/job-logs?job_id=${jobId}`, { headers: { 'X-CSRF-Token': csrf } })
       .then(r => r.text())
       .then(t => t.split('\n').find(l => /does not match the request/.test(l)));
-    expect(failureLine, 'the refusal line must name yt-dlp as the source').toMatch(/yt-dlp/);
-
-    // Nothing may have reached the library. There is no acquisitions JSON
-    // route, so the proof goes through the real library surface: create a
-    // library, scan it, and list its tracks — the same flow a Subsonic    // client's view is built from.
-    const libPath = `/tmp/wrong-work-probe-${Date.now()}`;
-    await page.request.post('/api/test/create-dir', {
-      data: { path: libPath },
-      headers: { 'X-CSRF-Token': csrf },
-    });
+    expect(failureLine, 'the refusal line must name yt-dlp as the source').toMatch(/yt-dlp/);    // Nothing may have reached the library. The import stage writes below
+    // MUSIC_LIBRARY (the worker's libraryRoot), so the assertion must scan
+    // THAT directory — a random /tmp path would always be empty and the
+    // assertion would pass vacuously. The container's own music root is
+    // mounted into ops-web too, so registering it as a library and scanning
+    // it exercises the same flow a Subsonic client's view is built from.
+    // The scan target is empty in a fresh DB; a seed could only have filled
+    // it if the gate had let the file import.
+    const libPath = '/app/music';
     const libRes = await page.request.post('/api/libraries', {
       data: { name: 'Wrong Work Probe', path: libPath },
       headers: { 'X-CSRF-Token': csrf },
@@ -226,10 +225,12 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
       headers: { 'X-CSRF-Token': csrf },
     });
     expect(scanRes.status()).toBe(202);
-    // Wait for the scan job to finish, then list the tracks it indexed.
+    // Wait for the scan job to reach a terminal state, then require SUCCEEDED
+    // before listing tracks: a failed/cancelled scan proves nothing about the
+    // library's contents, and listing early would read as an empty library.
     const scanDeadline = Date.now() + 30_000;
-    let scanDone = false;
-    while (Date.now() < scanDeadline && !scanDone) {
+    let scanState = '';
+    while (Date.now() < scanDeadline && scanState === '') {
       await page.waitForTimeout(2000);
       const jobs = await page.request.get('/api/jobs/', { headers: { 'X-CSRF-Token': csrf } }).then(r =>
         r.status() === 200 ? (r.json() as Array<Record<string, unknown>>) : []
@@ -239,11 +240,13 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
              String(j['ScopeID'] ?? j['scope_id'] ?? '') === String(libId)
       );
       const state = String(scanJob?.['State'] ?? scanJob?.['state'] ?? '');
-      if (['failed', 'succeeded', 'cancelled'].includes(state)) scanDone = true;
+      if (['failed', 'succeeded', 'cancelled'].includes(state)) scanState = state;
     }
+    expect(scanState, 'the library scan must have completed').toBe('succeeded');
     const tracks = await page.request
       .get(`/api/libraries/${libId}/tracks`, { headers: { 'X-CSRF-Token': csrf } })
       .then(r => (r.status() === 200 ? (r.json() as Array<Record<string, unknown>>) : []));
     expect(tracks, 'nothing from the refused download may reach the library').toHaveLength(0);
   });
 });
+
