@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.0.3] - 2026-09-19
+
+### Added
+- The Soulseek entrance's wrong-work refusal, driven live (#259): the e2e
+  overlay replaces slskd with a stand-in (`ops/fake-slskd`) speaking exactly
+  the API surface the worker calls, serving a real FLAC tagged for a
+  different work; plausibility and playability pass, the identity gate
+  refuses, the library stays clean. The `ga-probes` suite also drives the
+  multi-hop post-handover refusal live (DJI-500's documented residual): a
+  hop the downloader performs itself is denied by the egress boundary, and
+  the allowlist is documented as a default-deny feature
+- Success-path proof for the boundary (C10): a matching Soulseek download
+  passes the gate, imports, and is visible via the library API (#259)
+- Automated mutation proofs (C9): `scripts/mutation-check.sh` applies a
+  targeted mutation, expects the probe to FAIL, restores, and requires a
+  passing control run; wired as a weekly scheduled CI workflow (#260)
+  and proven on a real runner through three CI-environment fixes (#261,
+  #262, #263). Covers the identity gate, the egress boundary, and — new
+  this release — the success path (#267)
+- Worker job-concurrency limit is env-configurable (`MAX_CONCURRENT_JOBS`,
+  documented default, SQLite warning kept) (#256)
+
+### Changed
+- The e2e test-helper endpoints moved out of `cmd/server/main.go` into
+  `internal/api/testapi`, conditionally registered behind
+  `E2E_ENABLE_TEST_API`, with contract tests pinning the endpoint surface;
+  the fake slskd's peer roster is configurable at seed time, so a new
+  acceptance clause no longer needs a fixture-code change (#266)
+- `ops/audio-probe` split into one role per file (wrong-work server, flip
+  server, success source) behind a thin dispatcher (#267)
+
+### Fixed
+- Probe scope IDs based on `UnixNano` collide on Windows (~15ms clock
+  granularity), reintroducing advisory-lock contention; a process-unique
+  sequence suffix disambiguates them (#266, caught by the new contract test)
+- Worker-driven e2e specs died on Playwright's 30s default timeout in CI
+  while passing locally with an ad-hoc flag; per-test timeouts make the
+  suite CI-safe on its own (#260)
+- The wrong-work refusal probe's library assertion demanded a globally
+  empty scan and could pass or fail on residue from another spec; it now
+  scopes on the refused download's identity (#260)
+- `ops/fake-slskd/entrypoint.py` had two statements fused on one line
+  (CRLF-glue failure mode from #266); the crash looped any rebuild of the
+  stand-in until fixed (#267)
+- The mutation harness false-greened three ways before CI caught them:
+  a Python 3 stub that exits 0, `Built` without recreate reusing the
+  pre-mutation binary, and Actions' ambient `CI=true` flipping
+  `reuseExistingServer` off mid-cycle (#260, #262, #263)
+
 ## [v0.0.2] - 2026-09-19
 
 ### Added
@@ -184,7 +233,8 @@ Initial release of Djinn NetRunner.
 - Dependency bump: `gofiber/fiber/v2` to v2.52.13 (CVE-2026-42554)
 - Docs reconciliation: `.env.example`, AGENTS.md, ARCHITECTURE.md alignment with runtime behavior
 
-[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.3...HEAD
+[v0.0.3]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2...v0.0.3
 [v0.0.2]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-beta.1...v0.0.2
 [v0.0.2-beta.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-b...v0.0.2-beta.1
 [0.0.1]: https://github.com/pvnkmnk/djinn-netrunner/releases/tag/v0.0.1
