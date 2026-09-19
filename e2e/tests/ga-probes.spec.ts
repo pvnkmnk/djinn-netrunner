@@ -90,6 +90,9 @@ async function jobLogs(page: Page, csrf: string, jobId: number): Promise<string>
 test.describe('GA gap closers', () => {
 
   test('Soulseek entrance: a peer serving a different work is refused by the identity gate', async ({ adminPage }) => {
+    // Worker lifecycle + post-terminal DB poll exceed Playwright's 30s
+    // default; the poll loops below need the headroom.
+    test.setTimeout(300_000);
     const page = adminPage;
     const csrf = await getCsrfToken(page);
     await cleanProbeResidue(page, csrf);
@@ -162,6 +165,7 @@ test.describe('GA gap closers', () => {
   });
 
   test('success path: a matching Soulseek download imports and becomes visible in the library', async ({ adminPage }) => {
+    test.setTimeout(300_000);
     const page = adminPage;
     const csrf = await getCsrfToken(page);
     await cleanProbeResidue(page, csrf);
@@ -220,6 +224,7 @@ test.describe('GA gap closers', () => {
   });
 
   test('multi-hop: a post-handover redirect to a private address is refused by the boundary', async ({ adminPage }) => {
+    test.setTimeout(300_000);
     const page = adminPage;
     const csrf = await getCsrfToken(page);
     const { jobId } = await seedProbe(page, csrf, {

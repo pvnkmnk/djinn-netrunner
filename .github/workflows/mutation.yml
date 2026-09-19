@@ -1,0 +1,61 @@
+name: Mutation checks
+
+# Re-proves on a schedule that the e2e probes still BITE: each run applies a
+# targeted mutation to the behavior under test, expects the probe spec to
+# FAIL with it, restores, and requires a passing control run
+# (scripts/mutation-check.sh owns that cycle). A probe that passes with its
+# subject mutated is testing nothing — this workflow is what keeps that
+# regression from landing silently between manual runs.
+
+on:
+  schedule:
+    # Mondays 04:00 UTC — off-hours for the operator's local machine.
+    - cron: '0 4 * * 1'
+  workflow_dispatch: {}
+
+# One full cycle (setup → gate → boundary) at a time; a manual dispatch
+# during a scheduled run must not stack two full runs.
+concurrency:
+  group: mutation-check
+  cancel-in-progress: false
+
+jobs:
+  mutations-bite:
+    # Both mutations in one job: they share the bring-up (env, seeded DB,
+    # full stack, Playwright deps), which is the expensive part on a runner.
+    name: probe mutations bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # mutation-check.sh only rebuilds ops-worker — it assumes the rest of
+      # the stack is already up and seeded, exactly as a local run leaves it.
+      # e2e.sh up does the same bring-up Playwright's webServer does
+      # (env from the checked-in template, build, create-DB, seed).
+      - name: Bring up the e2e stack
+        run: bash scripts/e2e.sh up
+
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Gate mutation must turn the Soulseek probe red
+        run: bash scripts/mutation-check.sh gate
+
+      - name: Boundary mutation must turn the multi-hop probe red
+        run: bash scripts/mutation-check.sh boundary
+
+      - name: Upload probe results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-check-results
+          path: e2e/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

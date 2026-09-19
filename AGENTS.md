@@ -113,9 +113,36 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   vacuous. Local runs seed probes via the gated
   `POST /api/test/seed-fallback-refusal`; clean probe rows between runs (the
   spec does not delete them).
-- Mutation-proof procedures for browser behavior (remove admin gate, remove
-  `YTDLP_PROXY`) are recorded in Linear (DJI-434/DJI-501), not automated —
-  rebuild the stack with the mutation, run the spec, restore, rebuild.
+- The `reuseExistingServer: !CI` shortcut hides stale code: a rebuilt seed
+  endpoint never reaches a running stack (Playwright skips setup when healthy).
+  After backend/template changes, `docker compose ... up -d --build ops-web
+  ops-worker` before trusting a run against new code.
+- **GA-gap probes** (`e2e/tests/ga-probes.spec.ts`, PR #259) drive three live
+  clauses: Soulseek-entrance wrong-work refusal, success path → library, and
+  multi-hop post-handover refusal. `POST /api/test/seed-*` endpoints (gated
+  `E2E_ENABLE_TEST_API`) create the items and accept `max_attempts` so a
+  deterministic probe skips the ~5-min retry ladder.
+- **`ops/fake-slskd`** replaces slskd in the e2e overlay — keep the container
+  name `netrunner-slskd` (overlay renames break `SLSKD_URL`'s DNS resolution).
+  It re-stages its peer file **at enqueue time**: the pipeline's terminal
+  discard deletes staged bytes, so startup-only staging leaves later runs
+  stat-failing. Fixture FLACs carry a unique comment tag (deterministic ffmpeg
+  bytes hit the hash-duplicate path on rerun); a decoy must disagree with the
+  request on **both** artist and album axes — one equal axis reads as
+  "duplicate recording", not refusal.
+- The multi-hop flip endpoint is **request-shaped, not a counter**: the
+  guard's pre-handover walk sends `Range: bytes=0-0` (yt-dlp sends none), so
+  answer that with 200 and everything else with 302→RFC1918. A counter gets
+  consumed by attempt 1 and attempt 2's walk records the *pre-flight* refusal
+  — the wrong layer, catchable only by asserting the wording.
+- `scripts/mutation-check.sh <gate|boundary>` automates mutation proofs:
+  snapshot the file, mutate, expect spec FAIL, restore **from the snapshot,
+  not `git checkout --`** (the latter wipes unrelated uncommitted work), then
+  require a passing control run. Route Playwright output to a file — exit
+  codes through `tail` pipelines see tail's status, not playwright's.
+- Egress-proxy mutations are automated for the gate and boundary; browser
+  behavior mutations (remove admin gate) still need an image rebuild + spec
+  run (templates are baked into the image) — see Linear DJI-434.
 
 ## API & data contracts (non-obvious)
 
