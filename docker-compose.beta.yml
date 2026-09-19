@@ -43,10 +43,42 @@ services:
     restart: unless-stopped
     logging: *beta-logging
 
+  # Validating egress boundary for yt-dlp (DJI-501). The downloader follows its
+  # own redirects after the app's pre-flight check hands the URL over; this
+  # sidecar denies private/loopback/link-local ranges at connect time, so a hop
+  # to an internal address fails inside yt-dlp instead of being contacted.
+  # No ports are published (compose-network-only) and the destination allowlist
+  # in ops/squid/ constrains what it will fetch. To bypass the boundary, set
+  # YTDLP_PROXY= in .env -- not recommended; the sidecar is the point of the
+  # overlay.
+  egress-proxy:
+    image: ubuntu/squid:latest
+    container_name: netrunner-egress-proxy
+    volumes:
+      - ./ops/squid/squid.conf:/etc/squid/squid.conf:ro
+      - ./ops/squid/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro
+    # Readiness, not just start: a worker claiming a job before squid accepts
+    # connections would burn a retry attempt on a proxy-connect error.
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '< /dev/tcp/127.0.0.1/3128'"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+    logging: *beta-logging
+
   ops-worker:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       CONFIG_ENV: ${CONFIG_ENV:-production}
+      # No-colon ${VAR-default}: unset picks the sidecar, an explicit empty
+      # value means direct egress. Only yt-dlp is routed; the app's own
+      # traffic (postgres, slskd, providers) is unaffected.
+      YTDLP_PROXY: ${YTDLP_PROXY-http://egress-proxy:3128}
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
     restart: unless-stopped
     logging: *beta-logging
 

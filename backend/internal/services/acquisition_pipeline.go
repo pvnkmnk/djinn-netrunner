@@ -265,8 +265,6 @@ func (h *AcquisitionHandler) stageYtdlpFallback(ctx context.Context, p *acquisit
 		// is never re-claimed. failItem is the one owner of "this attempt failed,
 		// here is what happens next" — a scheduled retry, or abandonment once the
 		// job's attempt limit is reached.
-		// is the one owner of "this attempt failed, here is what happens next" — a scheduled retry, or abandonment once the
-		// job's attempt limit is reached.
 		if failErr := h.failItem(p.item.JobID, p.item.ID, fmt.Sprintf("yt-dlp fallback failed: %v", err)); failErr != nil {
 			return "", false, fmt.Errorf("record the fallback failure: %w", failErr)
 		}

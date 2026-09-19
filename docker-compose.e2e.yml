@@ -22,6 +22,7 @@ name: netrunner-e2e
 services:
   postgres:
     container_name: e2e-postgres
+    ports: !reset []
 
   slskd:
     container_name: e2e-slskd
@@ -56,5 +57,39 @@ services:
       ENVIRONMENT: development
       CONFIG_ENV: development
 
+  # The same validating egress boundary as the beta overlay, under the e2e
+  # naming rules. This overlay merges with the BASE compose, not the beta one,
+  # so the service is defined here in full rather than overridden. The static
+  # deny list already covers RFC1918 (the compose network's own ranges
+  # included); only yt-dlp is routed, so the stack's internal traffic
+  # (postgres, slskd) is unaffected. The public-internet allowlist keeps the
+  # refusal probe honest: a disallowed hop is denied by the boundary, not by
+  # an offline stack.
+  egress-proxy:
+    image: ubuntu/squid:latest
+    container_name: e2e-egress-proxy
+    volumes:
+      - ./ops/squid/squid.conf:/etc/squid/squid.conf:ro
+      - ./ops/squid/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '< /dev/tcp/127.0.0.1/3128'"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
   ops-worker:
     container_name: e2e-ops-worker
+    environment:
+      # The worker claims acquisition jobs from the same test DB ops-web
+      # migrated (base file points it at `musicops`, which nothing here
+      # creates).
+      DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops_test?sslmode=disable
+      # yt-dlp egress goes through the validating proxy (DJI-501); only the
+      # downloader is routed, so the app's own traffic to postgres/slskd is
+      # unaffected.
+      YTDLP_PROXY: http://egress-proxy:3128
+    depends_on:
+      egress-proxy:
+        condition: service_healthy

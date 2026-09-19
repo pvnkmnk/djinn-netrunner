@@ -1,0 +1,10 @@
+# Destinations yt-dlp may fetch through the validating egress boundary
+# (DJI-501). One domain per line, leading dot includes subdomains.
+#
+# This is the beta default: YouTube and its regional/CDN hosts, which is what
+# the fallback entrance extracts from today. Extend this file when a feed
+# needs another extraction site -- the proxy refuses everything not listed,
+# which is the point of the boundary.
+.youtube.com
+.ytimg.com
+.googlevideo.com
