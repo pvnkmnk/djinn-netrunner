@@ -26,6 +26,11 @@ async function getCsrfToken(page: Page): Promise<string> {
 
 test.describe('yt-dlp egress boundary (DJI-501)', () => {
   test('a private destination in a seeded source_url is denied by the boundary and terminates the item', async ({ adminPage }) => {
+    // The item's full lifecycle (fallback attempt, retry backoff, terminal
+    // state) takes minutes — the default 30s per-test timeout is what red
+    // master's e2e.yml run died on. Locally this only ever passed because
+    // every invocation passed an ad-hoc `--timeout` flag.
+    test.setTimeout(480_000);
     const page = adminPage;
 
     // Seed the refusal item through the gated test API.
@@ -246,7 +251,18 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
     const tracks = await page.request
       .get(`/api/libraries/${libId}/tracks`, { headers: { 'X-CSRF-Token': csrf } })
       .then(r => (r.status() === 200 ? (r.json() as Array<Record<string, unknown>>) : []));
-    expect(tracks, 'nothing from the refused download may reach the library').toHaveLength(0);
+    // The scan covers the whole /app/music root, which other specs
+    // legitimately populate (ga-probes' success path imports a real track
+    // there; alphabetical order runs this spec first in CI, which is why the
+    // collision never surfaced there). Assert on the refused download's
+    // identity — the decoy's tag words (ops/audio-probe/entrypoint.sh), which
+    // no other fixture shares — not global emptiness.
+    const leaked = (Array.isArray(tracks) ? tracks : []).filter(t => {
+      const artist = String(t['artist'] ?? t['Artist'] ?? '').toLowerCase();
+      const album = String(t['album'] ?? t['Album'] ?? '').toLowerCase();
+      return artist.includes('totally different band') || album.includes('unrelated record');
+    });
+    expect(leaked, 'nothing from the refused download may reach the library').toHaveLength(0);
   });
 });
 

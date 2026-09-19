@@ -27,12 +27,51 @@ MUTATION="${1:?usage: scripts/mutation-check.sh <gate|boundary>}"
 SPEC="e2e/tests/ga-probes.spec.ts"
 DOCKER="${DOCKER_BIN:-docker}"
 
-if [ -n "${ProgramFiles:-}" ] && [ -x "${ProgramFiles}/Docker/Docker/resources/bin/docker.exe" ]; then
-  DOCKER="${ProgramFiles}/Docker/Docker/resources/bin/docker.exe"
+DOCKER="${DOCKER_BIN:-docker}"
+# An explicit DOCKER_BIN wins; otherwise prefer the PATH-resolved binary and
+# fall back to Docker Desktop's known install location. Either way,
+# docker-credential-desktop (a SIBLING of docker.exe) is resolved by the
+# compose/buildx client from PATH at build time — a missing helper kills
+# every build with "docker-credential-desktop ... not found in %PATH%".
+# Prepend the bin dir in POSIX form (cygpath -u): a Windows-form entry
+# mangles the MSYS PATH list instead of extending it.
+if [ "$DOCKER" = "docker" ]; then
+  DOCKER="$(command -v docker || true)"
+  if [ -z "$DOCKER" ] && [ -n "${ProgramFiles:-}" ] && [ -x "${ProgramFiles}/Docker/Docker/resources/bin/docker.exe" ]; then
+    DOCKER="${ProgramFiles}/Docker/Docker/resources/bin/docker.exe"
+  fi
+  [ -n "$DOCKER" ] || { echo "docker not found on PATH or at the Docker Desktop default" >&2; exit 2; }
+fi
+DOCKER_BIN_DIR="$(dirname "$DOCKER")"
+if command -v cygpath >/dev/null 2>&1; then
+  DOCKER_BIN_DIR="$(cygpath -u "$DOCKER_BIN_DIR")"
+fi
+export PATH="$DOCKER_BIN_DIR:$PATH"
+
+# Python 3 under different names: `python3` on Linux, `python` on
+# Windows-as-Python-Launcher hosts. Validated by EXECUTION, not presence:
+# Windows' Store `python3` alias exists on PATH but only prints "Python was
+# not found" — and a silently skipped mutation must not read as a green run.
+PY_BIN=""
+for candidate in python3 python py; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import sys; raise SystemExit(sys.version_info[0] != 3)" >/dev/null 2>&1; then
+    PY_BIN="$candidate"; break
+  fi
+done
+
+# Fresh checkouts (CI runners) have no .env.e2e; compose refuses to start
+# without it. Same bootstrap as scripts/e2e.sh's ensure_env_file — not
+# sourced because e2e.sh dispatches on "$1" and would run the test suite.
+if [ ! -f .env.e2e ]; then
+  if [ ! -f .env.e2e.example ]; then
+    echo ".env.e2e missing and no .env.e2e.example to copy" >&2; exit 2
+  fi
+  cp .env.e2e.example .env.e2e
+  echo "[mutation-check] created .env.e2e from the checked-in template"
 fi
 
 compose() {
-  ${DOCKER} compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml "$@"
+  "$DOCKER" compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml "$@"
 }
 
 service_for() {
@@ -57,7 +96,10 @@ apply_mutation() {
     # The gate's verdict is consumed at the mismatch branch in
     # download_gate.go: make it read as "no mismatch" and the file imports.
     gate)
-      python - <<'PY'
+      if [ -z "$PY_BIN" ]; then
+        echo "gate mutation needs python3/python/py on PATH" >&2; exit 2
+      fi
+      "$PY_BIN" - <<'PY'
 import pathlib
 p = pathlib.Path("backend/internal/services/download_gate.go")
 t = p.read_text(encoding="utf-8")
@@ -66,11 +108,17 @@ assert t.count(anchor) == 1, f"anchor not unique: {anchor}"
 t = t.replace(anchor, '_ = meta // MUTATION: identity verdict ignored\n\tmismatch := ""')
 p.write_text(t, encoding="utf-8", newline="")
 PY
+      # A no-op mutation (stub interpreter, anchor drift) must fail here,
+      # not masquerade as a green cycle.
+      grep -q "MUTATION: identity verdict ignored" backend/internal/services/download_gate.go \
+        || { echo "gate mutation did not land" >&2; exit 2; }
       ;;
     # No proxy = no validating boundary in front of yt-dlp; the private hop
     # would be followed and only the (absent) pre-flight could refuse it.
     boundary)
       sed -i 's/^      YTDLP_PROXY: http:\/\/egress-proxy:3128$/      # MUTATION: YTDLP_PROXY removed/' docker-compose.e2e.yml
+      grep -q "MUTATION: YTDLP_PROXY removed" docker-compose.e2e.yml \
+        || { echo "boundary mutation did not land" >&2; exit 2; }
       ;;
   esac
 }
@@ -82,13 +130,17 @@ restore_mutation() {
   esac
 }
 
+# Restore + rebuild in one step, guarded by the .bak files so it is
+# idempotent. Called explicitly BEFORE the control run (the control run must
+# exercise the clean tree — the EXIT trap alone would fire too late, after the
+# control run, and the control would fail with the mutation still applied).
 cleanup() {
   cd "$REPO_ROOT"
   if [ -f "backend/internal/services/download_gate.go.bak" ] || [ -f "docker-compose.e2e.yml.bak" ]; then
     restore_mutation
+    echo "[mutation-check] restored $MUTATION; rebuilding clean stack..."
+    compose up -d --build "$(service_for)" >/dev/null 2>&1 || true
   fi
-  echo "[mutation-check] restored $MUTATION; rebuilding clean stack..."
-  compose up -d --build "$(service_for)" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -106,9 +158,11 @@ compose up -d --build "$(service_for)" >/dev/null
 sleep 10
 
 run_probe() {
-  cd "$REPO_ROOT/e2e"
-  npx playwright test "$(basename "$SPEC")" --grep "$(test_grep_for)" \
-    --timeout=300000 --reporter=list --workers=1
+  # Subshell: the cd must not outlive the call, or the script's cwd (and the
+  # relative log paths and mutation file targets below) silently re-anchor to
+  # e2e/ after the first probe run.
+  ( cd "$REPO_ROOT/e2e" && npx playwright test "$(basename "$SPEC")" --grep "$(test_grep_for)" \
+    --timeout=300000 --reporter=list --workers=1 )
 }
 
 echo "[mutation-check] running the probe — it MUST FAIL..."
@@ -116,12 +170,11 @@ echo "[mutation-check] running the probe — it MUST FAIL..."
 # SPEC means caught; anything else (compose failed, npx missing) means the
 # harness itself is broken and must fail loudly, not "pass".
 set +e
-run_probe > mutation-run.tmp.log 2>&1
+run_probe > "$REPO_ROOT/mutation-run.tmp.log" 2>&1
 SPEC_EXIT=$?
 set -e
-tail -6 mutation-run.tmp.log
-rm -f mutation-run.tmp.log
-cd "$REPO_ROOT"
+tail -6 "$REPO_ROOT/mutation-run.tmp.log"
+rm -f "$REPO_ROOT/mutation-run.tmp.log"
 if [ "$SPEC_EXIT" -eq 0 ]; then
   echo "[mutation-check] SPEC PASSED WITH THE MUTATION — the spec does not bite."
   exit 1
@@ -131,16 +184,19 @@ case "$SPEC_EXIT" in
   *) echo "[mutation-check] probe exited $SPEC_EXIT — a harness/infra failure, not a caught mutation." >&2; exit 3 ;;
 esac
 
-# Clean control run: the restore happened in the EXIT trap, so rebuild happened
-# too. The probe must now PASS — otherwise the "failure" above was a flaky or
-# broken probe, not a caught mutation, and the check has proven nothing.
+# Clean control run: restore FIRST (the EXIT trap fires too late to help
+# here), rebuild, then run. The probe must PASS — otherwise the "failure"
+# above was a flaky or broken probe, not a caught mutation, and the check has
+# proven nothing.
+echo "[mutation-check] restoring before the control run..."
+cleanup
 echo "[mutation-check] clean control run — the probe MUST PASS now..."
 set +e
-run_probe > mutation-control.tmp.log 2>&1
+run_probe > "$REPO_ROOT/mutation-control.tmp.log" 2>&1
 CONTROL_EXIT=$?
 set -e
-tail -4 mutation-control.tmp.log
-rm -f mutation-control.tmp.log
+tail -4 "$REPO_ROOT/mutation-control.tmp.log"
+rm -f "$REPO_ROOT/mutation-control.tmp.log"
 if [ "$CONTROL_EXIT" -ne 0 ]; then
   echo "[mutation-check] CONTROL RUN FAILED — the probe's mutation failure cannot be trusted." >&2
   exit 4
