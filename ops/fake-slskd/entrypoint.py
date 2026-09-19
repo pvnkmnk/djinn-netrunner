@@ -41,9 +41,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
 API_KEY = os.environ.get("SLSKD_API_KEY", "e2e-test-api-key-0123456789abcdef")
-DOWNLOADS_DIR = os.environ.get("FAKE_DOWNLOADS_DIR", "/downloads")
-
-PEERS = {
+DOWNLOADS_DIR = os.environ.get("FAKE_DOWNLOADS_DIR", "/downloads")PEERS = {
+    # Baseline roster. Specs can extend it at runtime via the management
+    # surface below (POST /roster), so a new acceptance clause needs no fixture
     "decoy": {
         "username": "decoy-peer",
         # The FILENAME carries the query's marker words ("Unrelated Record")
@@ -131,6 +131,31 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authed():
             return self._json(401, {"error": "invalid API key"})
 
+        # Management surface for the e2e harness (NOT part of the slskd API the
+        # worker speaks): register a peer at request time so a new acceptance
+        # clause needs no fixture change. Body = a PEERS-shaped entry.
+        if path == "/roster":
+            length = int(self.headers.get("Content-Length", 0))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            for required in ("username", "filename", "tag_artist", "tag_album", "tag_title", "marker", "local"):
+                if not payload.get(required):
+                    return self._json(400, {"error": f"missing field: {required}"})
+            with LOCK:
+                PEERS[payload["username"]] = payload
+            print(f"[fake-slskd] roster: added {payload['username']}")
+            return self._json(201, {"ok": True, "username": payload["username"]})
+
+        if path == "/roster/clear":
+            with LOCK:
+                for name in [k for k in PEERS if k not in ("decoy", "clean")]:
+                    del PEERS[name]
+            print("[fake-slskd] roster: dynamic peers cleared")
+            return self._json(200, {"ok": True})
+
+        if path == "/roster/list":
+            with LOCK:
+                return self._json(200, {"usernames": sorted(PEERS.keys())})
+
         if path == "/api/v0/session":
             return self._json(200, {"authenticated": True})
 
@@ -175,6 +200,26 @@ class Handler(BaseHTTPRequestHandler):
 
         if not self._authed():
             return self._json(401, {"error": "invalid API key"})
+
+        # Management surface mirror: register a peer via POST /roster too, so
+        # either verb works (the slskd API itself is POST-heavy).
+        if path == "/roster/clear":
+            with LOCK:
+                for name in [k for k in PEERS if k not in ("decoy", "clean")]:
+                    del PEERS[name]
+            print("[fake-slskd] roster: dynamic peers cleared")
+            return self._json(200, {"ok": True})
+
+        if path == "/roster":
+            length = int(self.headers.get("Content-Length", 0))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            for required in ("username", "filename", "tag_artist", "tag_album", "tag_title", "marker", "local"):
+                if not payload.get(required):
+                    return self._json(400, {"error": f"missing field: {required}"})
+            with LOCK:
+                PEERS[payload["username"]] = payload
+            print(f"[fake-slskd] roster: added {payload['username']}")
+            return self._json(201, {"ok": True, "username": payload["username"]})
 
         # POST /api/v0/searches  {searchText, ...}
         if path == "/api/v0/searches":
