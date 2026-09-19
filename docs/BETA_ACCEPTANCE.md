@@ -132,12 +132,14 @@ All three were reproduced on the live stack, fixed, and re-verified (rows 30–3
 1. **RESOLVED — see *Clean-slate bring-up* finding 1.** A duplicate library path used to return 500. `POST /api/libraries` with an
    existing path surfaces the `idx_libraries_path` violation as
    `internal server error` rather than a 409 with a readable message.
-2. **BY DESIGN** — see *Clean-slate bring-up*: the worker runs up to `MaxConcurrentJobs`
+2. **BY DESIGN, now explicit** — see *Clean-slate bring-up*: the worker runs up to `MaxConcurrentJobs`
    acquisitions at once. A stalled peer blocks its own item, not the queue. Three jobs
    (`10`, `68`, `76`) were observed in `running` state with items downloading at
    the same time under one `worker_id`, so a stalled peer blocks its own item but
    not the whole queue. The earlier note that the worker runs one job at a time
-   no longer describes this build; the concurrency limit should be made explicit.
+   no longer describes this build. The concurrency limit is now the env setting
+   `MAX_CONCURRENT_JOBS` (default 5, SQLite capped at 1 regardless) — the gap
+   this finding named is closed.
 3. **RESOLVED — see *Clean-slate bring-up* findings 2-5.** The endpoint existed but no
    running worker honoured it, and manual SQL was the only way to stop a job. A long acquisition cannot be stopped
    through the API; the local stack was cleared by editing item rows directly.

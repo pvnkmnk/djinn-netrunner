@@ -592,7 +592,7 @@ func TestClaimAndProcess_AtCapacity(t *testing.T) {
 	w := setupWorkerTestDB(t)
 
 	// Create enough queued jobs to fill capacity
-	for i := 0; i < MaxConcurrentJobs; i++ {
+	for i := 0; i < w.maxConcurrentJobs(); i++ {
 		job := database.Job{
 			Type:        "scan",
 			State:       "queued",
@@ -604,13 +604,13 @@ func TestClaimAndProcess_AtCapacity(t *testing.T) {
 	}
 
 	// Claim all slots by calling claimAndProcess MaxConcurrentJobs times
-	for i := 0; i < MaxConcurrentJobs; i++ {
+	for i := 0; i < w.maxConcurrentJobs(); i++ {
 		w.claimAndProcess()
 	}
 
 	// Verify all slots are filled
 	w.jobMutex.Lock()
-	require.Len(t, w.activeJobs, MaxConcurrentJobs)
+	require.Len(t, w.activeJobs, w.maxConcurrentJobs())
 	w.jobMutex.Unlock()
 
 	// Create one more queued job
@@ -633,8 +633,56 @@ func TestClaimAndProcess_AtCapacity(t *testing.T) {
 
 	// activeJobs should still be at capacity
 	w.jobMutex.Lock()
-	require.Len(t, w.activeJobs, MaxConcurrentJobs)
+	require.Len(t, w.activeJobs, w.maxConcurrentJobs())
 	w.jobMutex.Unlock()
+}
+
+// TestMaxConcurrentJobs_FromConfig pins the env-configurable cap: the
+// constructor reads MAX_CONCURRENT_JOBS through config, and every capacity
+// check goes through w.maxConcurrentJobs() — a config change lands in one
+// place.
+func TestMaxConcurrentJobs_FromConfig(t *testing.T) {
+	w := setupWorkerTestDB(t)
+	w.maxJobs = 2
+
+	// Create 3 queued jobs; only 2 may ever be claimed.
+	for i := 0; i < 3; i++ {
+		job := database.Job{
+			Type:        "scan",
+			State:       "queued",
+			ScopeType:   "library",
+			ScopeID:     fmt.Sprintf("00000000-0000-0000-0000-0000000000a%d", i),
+			RequestedAt: time.Now(),
+		}
+		require.NoError(t, w.db.Create(&job).Error)
+	}
+
+	for i := 0; i < 3; i++ {
+		w.claimAndProcess()
+	}
+
+	w.jobMutex.Lock()
+	require.Len(t, w.activeJobs, 2)
+	w.jobMutex.Unlock()
+
+	// The third job is still queued, not claimed.
+	var remaining database.Job
+	require.NoError(t, w.db.Where("state = ?", "queued").First(&remaining).Error)
+}
+
+// TestMaxConcurrentJobs_DefaultFallback pins that a zero/negative cap falls
+// back to the documented default instead of silently running zero-capacity
+// or unbounded.
+func TestMaxConcurrentJobs_DefaultFallback(t *testing.T) {
+	w := setupWorkerTestDB(t)
+	w.maxJobs = 0
+	require.Equal(t, DefaultMaxConcurrentJobs, w.maxConcurrentJobs())
+
+	// The struct-literal zero value (tests that never set the field) behaves
+	// the same way.
+	w2 := setupWorkerTestDB(t)
+	w2.maxJobs = 0
+	require.Equal(t, DefaultMaxConcurrentJobs, w2.maxConcurrentJobs())
 }
 
 // TestProcessActiveJobsRoundRobin_EmptyMap tests that processActiveJobsRoundRobin

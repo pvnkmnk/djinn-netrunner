@@ -25,12 +25,20 @@ import (
 	"gorm.io/gorm"
 )
 
-const MaxConcurrentJobs = 5
+// DefaultMaxConcurrentJobs is used when MAX_CONCURRENT_JOBS is unset. A
+// conservative default: each running job holds peer connections and a
+// download pipeline.
+const DefaultMaxConcurrentJobs = 5
 
 type WorkerOrchestrator struct {
 	workerID string
 	db       *gorm.DB
 	cfg      *config.Config
+
+	// maxJobs caps concurrent jobs (MAX_CONCURRENT_JOBS, default
+	// DefaultMaxConcurrentJobs). Set from config at construction; tests may
+	// override it directly.
+	maxJobs int
 
 	// Services
 	mbService           *services.MusicBrainzService
@@ -136,10 +144,17 @@ func NewWorkerOrchestrator(cfg *config.Config, db *gorm.DB) *WorkerOrchestrator 
 	stagingReclaimCfg.Enabled = cfg.StagingReclaimEnabled
 	stagingReclaimCfg.RemoveOrphans = cfg.StagingReclaimOrphans
 
+	maxJobs := cfg.MaxConcurrentJobs
+	if maxJobs <= 0 {
+		// Unset or nonsense (0/negative): fall back to the documented default
+		// rather than silently running zero-capacity or unbounded.
+		maxJobs = DefaultMaxConcurrentJobs
+	}
 	return &WorkerOrchestrator{
 		workerID:       fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
 		db:             db,
 		cfg:            cfg,
+		maxJobs:        maxJobs,
 		mbService:      mb,
 		atService:      at,
 		rmService:      rm,
@@ -176,9 +191,9 @@ func (w *WorkerOrchestrator) Start() {
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	slog.Info("Starting worker", "worker_id", w.workerID)
 
-	if !database.IsPostgres(w.cfg.DatabaseURL) && MaxConcurrentJobs > 1 {
+	if !database.IsPostgres(w.cfg.DatabaseURL) && w.maxConcurrentJobs() > 1 {
 		slog.Warn("SQLite detected with MaxConcurrentJobs > 1 — concurrent workers are unsafe without PostgreSQL advisory locks. Consider switching to PostgreSQL for production workloads.",
-			"max_concurrent_jobs", MaxConcurrentJobs)
+			"max_concurrent_jobs", w.maxConcurrentJobs())
 	}
 
 	// Start background tasks — all tracked in WaitGroup for graceful shutdown
@@ -462,9 +477,21 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 	}
 }
 
+// maxConcurrentJobs is the single read point for the concurrency cap: every
+// capacity check and warning goes through it, so a config change lands in
+// one place.
+func (w *WorkerOrchestrator) maxConcurrentJobs() int {
+	if w.maxJobs > 0 {
+		return w.maxJobs
+	}
+	// Zero-value constructions (tests building the struct literal directly)
+	// fall back to the documented default.
+	return DefaultMaxConcurrentJobs
+}
+
 func (w *WorkerOrchestrator) claimAndProcess() {
 	w.jobMutex.Lock()
-	if len(w.activeJobs) >= MaxConcurrentJobs {
+	if len(w.activeJobs) >= w.maxConcurrentJobs() {
 		w.jobMutex.Unlock()
 		return
 	}
@@ -567,7 +594,7 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 
 	w.jobMutex.Lock()
 	// Re-check capacity while holding lock — prevents race between check and insertion (DJI-339)
-	if len(w.activeJobs) >= MaxConcurrentJobs {
+	if len(w.activeJobs) >= w.maxConcurrentJobs() {
 		w.jobMutex.Unlock()
 		cancel()
 		w.lockManager.ReleaseLock(context.Background(), lockKey)
