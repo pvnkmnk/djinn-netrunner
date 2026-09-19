@@ -148,6 +148,20 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   re-proven weekly by `.github/workflows/mutation.yml`. Browser behavior
   mutations (remove admin gate) still need an image rebuild + spec run
   (templates are baked into the image) — see Linear DJI-434.
+- **A workflow that has never run will fail on its first scheduled fire.**
+  Dispatch `workflow_dispatch`-able workflows once right after merge: the
+  mutation workflow needed three runner-only fixes before its first green
+  run (2026-09-19, run 35471332835), none reproducible locally.
+- **Actions sets `CI=true` ambiently**: Playwright invocations that pass
+  locally flip `reuseExistingServer` to false on a runner and refuse the
+  already-running stack ("port 8080 already used"). A harness sharing one
+  long-lived stack across phases must strip CI for its probe runs
+  (`env -u CI npx playwright ...`).
+- **`compose up -d --build` may not recreate a container**: a rebuild that
+  lands on the same image id (layer-cache hit) prints "Built" but leaves
+  the old container "Running" — a "mutated" build silently serves the
+  stale binary. Mutation phases need `compose build --no-cache` +
+  `up -d --force-recreate` (proven by run 35470657152's false pass).
 
 ## API & data contracts (non-obvious)
 
