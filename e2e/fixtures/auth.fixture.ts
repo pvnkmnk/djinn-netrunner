@@ -1,5 +1,5 @@
 import { test as base, type Page } from '@playwright/test';
-import { execFileSync, execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import path from 'path';
 
 type AuthFixtures = {
