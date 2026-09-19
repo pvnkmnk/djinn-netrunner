@@ -1,414 +1,560 @@
-# Agents Guide - NetRunner
+# Agents Guide — NetRunner
 
-> Last updated: 2026-07-14
+> Condensed 2026-09-18 (reference prose compressed; every lesson kept).
 
-## Codemap
+## Orientation
 
-Before working on any task, read `codemap.md` in the project root to understand:
-- **Project architecture and entry points** — System entry points (`server`, `worker`, `agent`, `cli`)
-- **Directory responsibilities** — Detailed codemaps per directory for deep work
-- **Data flow and integration points** — How watchlists, acquisition, metadata, and library management connect
-- **Architecture constraints** — Technology choices, invariants, and design patterns
+NetRunner is a Go music-acquisition and library-operations platform: watchlist
+ingest (Spotify, Last.fm, ListenBrainz, RSS, local), acquisition jobs through
+slskd (Soulseek), metadata enrichment, local libraries, Fiber + HTMX UI.
 
-For deep work on a specific folder, also read that folder's `codemap.md` (e.g., `backend/internal/services/codemap.md` for the service layer).
+- **Before any task, read `codemap.md`** (project root) for architecture,
+  entry points, and data flow; for deep work also read the folder's own
+  `codemap.md` (e.g. `backend/internal/services/codemap.md`).
+- **Autonomy:** read-write for local code/docs/tests/non-destructive tooling;
+  runtime/deployment changes (compose, prod env, credentials) are
+  operator-reviewed.
+- **Auth is session-cookie based** (`session_id`, roles `user`/`admin`
+  checked at handler/service boundaries) — NOT the older JWT-first design.
+  This is the source of truth for API behavior.
+- Entry points: `backend/cmd/{server,worker,cli,agent}`; layers:
+  `internal/api` (Fiber handlers), `internal/services` (logic),
+  `internal/database` (GORM models/migrations), `internal/agent`
+  (transport-agnostic facade for MCP+CLI), `internal/interfaces`
+  (`WatchlistProvider`, `SpotifyClientProvider`), `internal/integration`
+  (tagged tests), `internal/testutil` (test doubles). Ops in `ops/`
+  (compose, `caddy/` reverse proxy, `db/` init+migrations, `web/` Pongo2
+  templates + static JS); `e2e/` Playwright; `scripts/` helpers;
+  `.github/workflows/` (Go CI + coverage, Docker, E2E, PRGuard/PR-Sentry);
+  `conductor/` removed (content in Linear).
 
-## Overview
-NetRunner is a Go-based music acquisition and library-operations platform. It ingests tracks from watchlist sources (Spotify, Last.fm, ListenBrainz, RSS, local files), orchestrates acquisition jobs through slskd (Soulseek daemon), enriches metadata, and maintains local music libraries with a Fiber + HTMX UI.
+## Setup & commands
 
-Agents working in this repository should assume read-write autonomy for local code and docs updates, test execution, and non-destructive tooling changes. Runtime/deployment actions (docker compose changes, production environment changes, credential rotation) should be treated as operator-reviewed actions.
-
-Current authentication is session-cookie based (`session_id`) with role checks (`user`, `admin`) at handler/service boundaries. This differs from the older JWT-first description and should be considered the source of truth for API behavior.
-
-## Repository Map
-
-| Directory | Type | Purpose | Agent-relevant? |
-|---|---|---|---|
-| `backend/cmd/` | Go executables | Entry points for `server`, `worker`, `cli`, `agent`, `test_sqlite` — see [codemap](backend/cmd/codemap.md) for per-binary details | Yes |
-| `backend/internal/api/` | HTTP layer | Fiber handlers, route logic, auth/session middleware, HTMX/WebSocket endpoints | Yes |
-| `backend/internal/api/templates/` | View engine | Pongo2 Jinja2-compatible Fiber ViewEngine adapter | Yes |
-| `backend/internal/services/` | Service layer | Acquisition orchestration, providers, API clients, metadata/tagging, notifications | Yes |
-| `backend/internal/database/` | Data layer | GORM models, connection, migrations, lock managers, helpers | Yes |
-| `backend/internal/agent/` | Agent facade | Transport-agnostic functions used by MCP server + CLI | Yes |
-| `backend/internal/config/` | Config | Env loading and defaults, required/optional config validation | Yes |
-| `backend/internal/interfaces/` | Abstractions | `WatchlistProvider` and `SpotifyClientProvider` contracts | Yes |
-| `backend/internal/integration/` | Integration tests | Dockerized slskd/integration harness and test scenarios | Yes |
-| `backend/internal/testutil/` | Test utilities | Shared test doubles and mock providers for unit testing | Yes |
-| `ops/` | Infra config | Docker Compose, Caddy reverse proxy, DB init/migrations, web assets | Yes |
-| `ops/caddy/` | Reverse proxy | Caddy config for production HTTPS | Yes |
-| `ops/db/` | Database | PostgreSQL init scripts and SQL migrations | Yes |
-| `ops/web/` | Web assets | Static files (CSS, JS) + Pongo2 HTML templates | Yes |
-| `ops/web/static/js/` | Client JS | Minimal vanilla JS for modals, console, WebSocket | Yes |
-| `ops/web/templates/` | HTML templates | Layouts, pages, HTMX partials for server-side rendering | Yes |
-| `.github/workflows/` | CI/CD | Go CI (`go vet`, `go test`, coverage artifact), Docker build/push, E2E tests (Playwright), PR reviews (PRGuard, PR-Sentry) | Yes |
-| `scripts/` | Ops scripts | Integration test (`integration-tests.sh`), smoke test (`smoke-test.sh`), validation (`validate.sh`, `validate.ps1`) | Yes |
-| `e2e/` | Playwright E2E tests | Browser-based E2E tests against Docker Compose stack | Yes |
-| `docs/` | Documentation | Architecture/plans/runbooks | Yes |
-| `conductor/` | (removed) | Legacy/archived docs area — content captured in Linear | No |
-| `examples/` | Examples | Sample content and helper artifacts | Sometimes |
-
-## Quickstart for Agents
-1. Clone and enter repo:
-   - `git clone <repo-url>`
-   - `cd netrunner`
-2. Copy env template:
-   - `cp .env.example .env`
-3. Populate required env vars in `.env`:
-   - `DATABASE_URL`, `JWT_SECRET`, `SLSKD_API_KEY`
-   - For Docker compose: `POSTGRES_PASSWORD`, `SLSKD_USERNAME`, `SLSKD_PASSWORD`
-4. Install dependencies:
-   - `cd backend && go mod download`
-5. Run baseline validation:
-   - `go vet ./...`
-   - `go test ./cmd/... ./internal/config ./internal/database ./internal/services ./internal/agent`
-6. Start dev server:
-   - Local binary mode: `go run ./cmd/server`
-   - Full stack: `docker compose up -d`
-
-## Environment Variables
-
-See `.env.example` for the full list. Below are the non-obvious or conditionally required ones.
-
-| VAR_NAME | Required | Default | Purpose |
-|---|---|---|---|
-| `DATABASE_URL` | Yes | none | Primary DB connection string (`postgres://...` or SQLite `.db` path) |
-| `SLSKD_API_KEY` | Yes (for acquisition) | empty | slskd API auth |
-| `JWT_SECRET` | Recommended | auto-generated | Session/auth crypto secret; set explicitly for stable restarts |
-| `MUSIC_LIBRARY` | No | `./music_library` | Library root path |
-| `GONIC_USER` / `GONIC_PASS` | Conditional | empty | Gonic/Subsonic auth |
-| `POSTGRES_PASSWORD` | Docker-only | (required) | Postgres password for compose stack |
-| `SLSKD_USERNAME` / `SLSKD_PASSWORD` | Docker-only | none | slskd Soulseek credentials |
-| `SKIP_INTEGRATION_TESTS` | Test-only | empty | Skip integration tests when `true` |
-| `SKIP_NETWORK_TESTS` | Test-only | empty | Skip network-dependent tests |
-
-**Integration-only vars** (for `./scripts/integration-tests.sh`):
-- `INTEGRATION_DATABASE_URL`, `INTEGRATION_SLSKD_URL`, `INTEGRATION_SLSKD_API_KEY`
-- `SLSKD_TEST_USERNAME`, `SLSKD_TEST_PASSWORD`, `SLSKD_TEST_API_KEY`
-- `INTEGRATION_SLSKD_USERNAME`, `INTEGRATION_SLSKD_PASSWORD`
-- `INTEGRATION_DB_PASSWORD`
-
-## Available Commands
-
-| Command | Purpose | When to use |
-|---|---|---|
-| `cd backend && go mod download` | Fetch module dependencies | Fresh clone or dependency changes |
-| `cd backend && go vet ./...` | Static correctness checks | Before PR/merge |
-| `cd backend && go test ./...` | Full unit/integration (non-tagged) suite | Baseline validation |
-| `cd backend && go test ./cmd/... ./internal/config ./internal/database ./internal/services ./internal/agent` | Core passing suite in current workspace | Fast confidence check |
-| `cd backend && go build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent` | Build all primary binaries | Release prep and smoke checks |
-| `cd backend && go run ./cmd/server` | Start HTTP server (auto-runs migrations) | Local API/UI development |
-| `cd backend && go run ./cmd/worker` | Start worker orchestrator | Local job-processing tests |
-| `cd backend && go run ./cmd/agent` | Start MCP server over stdio | Agent tool integration |
-| `cd backend && go run ./cmd/cli --help` | Inspect CLI surface | Operational scripting |
-| `docker compose up -d` | Bring up full stack | End-to-end local environment |
-| `docker compose logs -f netrunner` | Follow app logs | Runtime debugging |
-| `docker compose logs -f netrunner-slskd` | Follow slskd logs | Acquisition/connectivity debugging |
-| `./scripts/integration-tests.sh test` | Run integration-tagged tests with dockerized deps | Integration scenarios |
-| `go test ./backend/internal/integration/... -tags=integration -v` | Direct integration test invocation | CI/debug for integration package |
-| `./scripts/smoke-test.sh` | Deploy Docker stack + health/auth/CRUD checks | End-to-end smoke test |
-| `./scripts/validate.sh` or `validate.ps1` | Pre-commit validation checks | Before PR/merge |
-| `govulncheck ./...` | Vulnerability scan for reachable issues in code + deps | Security/dependency maintenance |
-| `cd e2e && npx playwright test` | Run Playwright E2E tests against Docker stack | E2E UI testing |
-| `cd e2e && npx playwright test tests/auth.spec.ts` | Run specific E2E test spec | Targeted E2E testing |
-| `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d` | Start stack with E2E port mapping | E2E test development |
-
-## E2E Testing (Playwright)
-
-E2E tests use Playwright against the full Docker Compose stack (Postgres, slskd, caddy, web, worker).
-
-**Key files:**
-- `e2e/playwright.config.ts` — Playwright config with Docker webServer
-- `e2e/fixtures/auth.fixture.ts` — Auth fixtures (`authenticatedPage`, `adminPage`)
-- `e2e/setup-test-db.sh` — Postgres test database setup
-- `docker-compose.e2e.yml` — Port 8080 exposure + higher rate limit for tests
-
-**Running tests:**
 ```bash
-cd e2e && npx playwright test                    # All tests
-cd e2e && npx playwright test tests/auth.spec.ts  # Specific spec
+cp .env.example .env        # DATABASE_URL, SLSKD_API_KEY; JWT_SECRET recommended
+cd backend && go mod download
+cd backend && go vet ./...  # and before every PR
+cd backend && go test ./cmd/... ./internal/config ./internal/database ./internal/services ./internal/agent   # core suite
+cd backend && go test ./... # full non-tagged suite
+cd backend && go build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent
+cd backend && go run ./cmd/server   # auto-runs migrations; worker/agent/cli likewise
+docker compose up -d                # full stack; logs: docker compose logs -f netrunner[-slskd]
+./scripts/integration-tests.sh test # or: go test ./internal/integration/... -tags=integration -v
+./scripts/smoke-test.sh             # deploy + health/auth/CRUD checks
+./scripts/validate.sh | validate.ps1
+govulncheck ./...                   # CI fails on reachable CVEs
 ```
 
-**How it works:**
-1. `webServer` runs `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build`
-2. `setup-test-db.sh` waits for Postgres, creates fresh `musicops_test` database
-3. Tests run against `http://localhost:8080`
-4. `globalTeardown` runs `docker compose down -v --remove-orphans` (only in CI — skipped locally for fast iteration)
+Key env vars (full list in `.env.example`): `DATABASE_URL` (postgres:// or
+SQLite path), `SLSKD_API_KEY` (required for acquisition), `JWT_SECRET`
+(set explicitly for stable restarts), `MUSIC_LIBRARY` (default
+`./music_library`), `GONIC_USER`/`GONIC_PASS` (conditional), docker-only
+`POSTGRES_PASSWORD`, `SLSKD_USERNAME`/`SLSKD_PASSWORD`; test-only
+`SKIP_INTEGRATION_TESTS`, `SKIP_NETWORK_TESTS`; integration vars
+(`INTEGRATION_*`, `SLSKD_TEST_*`) per `scripts/integration-tests.sh`.
 
-**Docker reuse (key iteration speedup):**
-- `playwright.config.ts` sets `reuseExistingServer: !process.env.CI` — local runs reuse the Docker stack between test runs
-- `e2e/teardown.ts` checks `process.env.CI` and skips teardown locally, so the stack stays up
-- **Impact:** iterating on a single test file takes ~4s instead of ~4min (full rebuild)
+## E2E (Playwright)
 
-**Auth fixture pattern:**
-- Uses API-based auth (register + login via `/api/auth/*`)
-- CSRF token from `csrf_` cookie required for POST requests
-- `authenticatedPage` and `adminPage` fixtures auto-login
-- Rate limit set to 1000 req/min in `docker-compose.e2e.yml` for test stability
+Entry point: `bash scripts/e2e.sh test` from `e2e/` — **Playwright owns the
+stack lifecycle**: `webServer` runs `e2e/setup-test-db.sh`
+(build/create-DB/start/seed, `.env.e2e` materialised from the checked-in
+`.env.e2e.example`), `globalTeardown` tears down only when `CI=true`.
+Full run ~5 min / ~266 tests (18 skip). `reuseExistingServer: !process.env.CI` — local
+runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
 
-**CRITICAL auth gotcha:** `getCsrfToken()` is async (`Promise<string>`). It **must** be `await`ed:
-```typescript
-const csrfToken = await getCsrfToken(page);  // ✅ correct
-const csrfToken = getCsrfToken(page);          // ❌ csrfToken is "[object Promise]" → every request gets 403
-```
-This is the #1 cause of auth-related E2E failures. `auth.spec.ts` historically had 29 call sites missing `await` (DJI-441).
+- **After backend/frontend changes, rebuild the stack first** — it runs
+  compiled binaries, not live source:
+  `docker compose --env-file ../.env.e2e -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --build`.
+- **CRITICAL: run `npx playwright` from `e2e/`** — from repo root it resolves
+  to a global playwright (version mismatch) with the cryptic error
+  `"test.describe() called from async test.describe() block"`.
+- **CRITICAL: `getCsrfToken()` is async — `await` it.** An un-awaited call
+  yields `"[object Promise]"` and every request 403s (DJI-441: 29 missed
+  awaits in `auth.spec.ts`). The #1 cause of auth E2E failures.
+- Auth fixtures (`authenticatedPage`, `adminPage`) login via `/api/auth/*`;
+  POSTs need the CSRF token from the `csrf_` cookie; the e2e overlay raises
+  the rate limit to 1000 req/min.
+- **A 403 on a POST may be the CSRF gate, not the behavior under test** — and
+  it can make wrong assertions pass vacuously (a cross-owner probe "passed" on
+  a CSRF-403). Send the cookie's token on every deliberate mutating request so
+  the asserted status is specific (DJI-434).
+- htmx pushes the URL with the swap: assert the pushed URL with
+  `await page.waitForURL(...)` — `page.url()` right after `waitForResponse`
+  races the push and sees the pre-swap URL (DJI-499).
+- Templates are baked into the e2e image, not bind-mounted — a browser-level
+  mutation check needs an image rebuild; pin page/partial contracts in Go
+  handler tests and use Playwright for the end-to-end proof.
+- The fixture's admin promotion (`docker exec e2e-postgres psql ...` via
+  execFileSync resolving `DOCKER_BIN` → PATH → Docker Desktop default) works
+  on Windows shells since #252 — the earlier bare-`docker` PATH reliance
+  only worked where docker was already resolvable.
+- **Live worker-driven specs need the e2e worker wired to the test DB** —
+  the e2e overlay's `ops-worker` overrides `DATABASE_URL` to `musicops_test`
+  (base file points it at `musicops`, which nothing creates) and sets
+  `YTDLP_PROXY`. `egress-refusal.spec.ts` is the first worker-exercising spec.
+- **The Job model has no json tags** — `/api/jobs/` returns `"ID"`/`"State"`;
+  poll specs must read both casings or terminal-state detection never fires.
+- Acquisition jobs need a **unique `scope_type:scope_id`**: the advisory lock
+  key is a hash of that pair, so every empty-scope job contends on one key —
+  a leaked lock requeues them forever ("Scope locked, requeueing") and an
+  older stuck job wins `ORDER BY requested_at` and starves newer seeds.
+  Production jobs are always scoped; seed helpers must be too.
+- An acquisition item's full failed lifecycle is ~5 min (max_attempts ×
+  retry backoff); a spec asserting terminal state needs a ≥7 min deadline and
+  must break ONLY on the terminal state — breaking on a log line races the
+  retry scheduler. Also note `example.com` is NXDOMAIN on this home network's
+  DNS filter; `httpbin.org` resolves.
+- **The egress boundary (DJI-501)**: worker `YTDLP_PROXY` → squid sidecar
+  (`ops/squid/`); healthcheck is `bash -c '< /dev/tcp/127.0.0.1/3128'` (the
+  image has no `squidclient` and dash lacks `/dev/tcp` — the healthcheck
+  string must invoke bash explicitly). A refusal probe must assert
+  proxy-specific markers (`Tunnel connection failed|ProxyError`), never the
+  URL — the attempt line contains the URL, which makes the assertion
+  vacuous. Local runs seed probes via the gated
+  `POST /api/test/seed-fallback-refusal`; clean probe rows between runs (the
+  spec does not delete them).
+- Mutation-proof procedures for browser behavior (remove admin gate, remove
+  `YTDLP_PROXY`) are recorded in Linear (DJI-434/DJI-501), not automated —
+  rebuild the stack with the mutation, run the spec, restore, rebuild.
 
-**CRITICAL: always run from `e2e/` directory.** `npx playwright` from the repo root resolves to a globally-installed playwright (v1.61.0), which mismatches the local `@playwright/test` (v1.61.1) and produces the cryptic error `"test.describe() called from async test.describe() block"`.
+## API & data contracts (non-obvious)
 
-**After backend/frontend code changes,** rebuild the Docker stack before re-running E2E tests (the stack runs compiled binaries, not live source):
-```bash
-docker compose --env-file ../.env.e2e -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --build
-```
+- HTTP API is HTMX-first: `POST /api/auth/login` answers **302 + Set-Cookie
+  with an empty body**; the `csrf_` cookie is minted by *any* request (even a
+  404 like `GET /login`) — refresh it with BOTH `-b` and `-c` or the session
+  cookie gets wiped. `csrf_` must NOT be `httpOnly` (the double-submit
+  pattern reads `document.cookie` and echoes it as `X-CSRF-Token`); the
+  *session* cookie is the httpOnly one.
+- **JSON responses use PascalCase fields** (`ID`, `Name`, `SourceType`) —
+  E2E must check `response.ID`, not `response.id`.
+- Public: `/api/health` (no auth), `/api/auth/{register,login,logout}`
+  (rate-limited). Pages under `/`, protected pages and `/partials/*` (HTMX)
+  and `/api/*` CRUD groups require a session; profile writes are admin-only.
+  `GET /api/health` reports `database` unconditionally; `slskd` needs an API
+  key, `disk` needs the library path, `gonic`/`navidrome` need their URL —
+  assert the contract (every reported key carries a `status`), not a fixed
+  key set. WebSocket: `/ws/events`, `/ws/jobs/:job_id`. Subsonic `/rest/*`
+  requires the `.view` suffix. Route assertions should read
+  `app.GetRoutes()` (filter by method — middleware shows as `USE`).
+- CLI (`netrunner-cli`): `status`, `config list`, `watchlist
+  list|add|sync|import`, `library list|add|scan|prune|rm`, `profile
+  list|add|rm|set-default`, `stats summary|jobs|library`.
+- MCP tools (`backend/cmd/agent`, stable v0.0.1): 20 tools — read-only
+  probes (`probe_system`, `read_config`, `list_*`, `get_stats`,
+  `search_library`, `get_job_logs`) and stateful ones (`update_config`,
+  `add_watchlist`, `sync_watchlist`, `enqueue_acquisition`, `bootstrap`
+  (runs AutoMigrate, safe to retry), `scan_library`, `add_library`,
+  `cancel_job`, `retry_job`). All return `mcp.CallToolResultError` on
+  failure; read-only tools leave no partial state, write tools may leave a
+  partially created row if a follow-up step fails.
+- Models (GORM, `backend/internal/database/models.go`): `User`(1:N
+  `Session`), `QualityProfile`, `Watchlist`, `Schedule`, `Job`(1:N
+  `JobItem`,`JobLog`), `Acquisition`, `Library`(1:N `Track`),
+  `MonitoredArtist`(1:N `TrackedRelease`), `MetadataCache`, `SpotifyToken`,
+  `Lock`, `Setting`, `PeerReputation`. Schema sources:
+  `ops/db/init/01-schema.sql` + `02-functions.sql` + `migrations/*.sql`;
+  runtime `database.Migrate(db)` + AutoMigrate.
+- `interfaces.WatchlistProvider`:
+  `FetchTracks(ctx, watchlist) ([]map[string]string, string, error)`,
+  `ValidateConfig(config string) error`;
+  `interfaces.SpotifyClientProvider`: `GetClient(ctx, userID)`.
 
-**CI:** `.github/workflows/e2e.yml` runs on push/PR to main/develop
+## Database drivers
 
-## API / Interface Reference
+Driver auto-detects from `DATABASE_URL` (`.db` → SQLite WAL, `postgres://`
+→ Postgres). **SQLite is single-writer only**: no `pg_try_advisory_lock`
+(`TableLockManager` emulates via a `locks` table inside a transaction —
+locks expire after 15 min, not cross-process-safe), no `FILTER (WHERE ...)`
+(agent stats queries fail), GORM AutoMigrate only, `LiteFSGuard` checks
+`/litefs/.primary`. Postgres: pooling, real session-level advisory locks,
+`LISTEN/NOTIFY` job wakeup, SQL bootstrap + AutoMigrate. The
+`WorkerOrchestrator` takes advisory locks per scope ID before processing;
+if `MaxConcurrentJobs > 1` with SQLite the worker warns at startup — use
+Postgres for concurrent production workloads.
 
-### HTTP API (Fiber)
+## Common tasks
 
-#### Public Endpoints
-
-| Route | Method | Auth required | Handler |
-|---|---|---|---|
-| `/api/health` | GET | No | `HealthHandler.GetHealth` (probes DB + slskd + Gonic) |
-| `/api/auth/register` | POST | No + rate-limited | `AuthHandler.Register` |
-| `/api/auth/login` | POST | No + rate-limited | `AuthHandler.Login` |
-| `/api/auth/logout` | POST | Session recommended | `AuthHandler.Logout` |
-
-#### UI Pages (Fiber HTML — Pongo2 templates)
-
-| Route | Method | Auth required | Handler |
-|---|---|---|---|
-| `/` | GET | No | `DashboardHandler.RenderIndex` |
-| `/watchlists` | GET | Yes | `WatchlistHandler.WatchlistsPage` |
-| `/libraries` | GET | Yes | `LibraryHandler.LibrariesPage` |
-| `/profiles` | GET | Yes | `ProfileHandler.ProfilesPage` |
-| `/schedules` | GET | Yes | `SchedulesHandler.SchedulesPage` |
-| `/artists` | GET | Yes | `ArtistsHandler.ArtistsPage` |
-| `/jobs` | GET | Yes | `StatsHandler.JobsPage` |
-
-#### HTMX Partials (all protected)
-
-| Route | Method | Handler |
-|---|---|---|
-| `/partials/stats` | GET | `StatsHandler.RenderStatsPartial` |
-| `/partials/watchlists` | GET | `WatchlistHandler.RenderWatchlistsPartial` |
-| `/partials/libraries` | GET | `LibraryHandler.RenderLibrariesPartial` |
-| `/partials/schedules` | GET | `SchedulesHandler.RenderSchedulesPartial` |
-| `/partials/artists` | GET | `ArtistsHandler.RenderPartial` |
-| `/partials/artist-form` | GET | `ArtistsHandler.GetForm` |
-| `/partials/jobs` | GET | `StatsHandler.RenderJobsPartial` |
-| `/partials/libraries/:id/browse` | GET | `LibraryHandler.BrowseTracks` |
-| `/partials/tracks/:id` | GET | `LibraryHandler.TrackDetail` |
-
-#### Protected API (Fiber JSON)
-
-| Route | Method | Auth required | Handler |
-|---|---|---|---|
-| `/api/auth/spotify/login` | GET | Yes | `SpotifyAuthHandler.Login` |
-| `/api/auth/spotify/callback` | GET | Yes | `SpotifyAuthHandler.Callback` |
-| `/api/auth/spotify/spdc` | POST | Yes | `SpotifyAuthHandler.LinkSpDc` — stores sp_dc browser cookie for GraphQL Partner API access |
-| `/api/watchlists/*` | GET/POST/PATCH/DELETE | Yes | `WatchlistHandler` + preview handler |
-| `/api/profiles/*` | GET/POST/PATCH/DELETE | Yes (admin for writes/default) | `ProfileHandler` |
-| `/api/artists/*` | GET/POST/PATCH/DELETE | Yes | `ArtistsHandler` |
-| `/api/schedules/*` | GET/POST/PATCH/DELETE | Yes | `SchedulesHandler` |
-| `/api/libraries/*` | GET/POST/PATCH/DELETE | Yes | `LibraryHandler` |
-| `/api/libraries/:id/{scan,enrich,prune}` | POST | Yes | `LibraryHandler.Trigger{Scan,Enrich,Prune}` |
-| `/api/libraries/:id/tracks` | GET | Yes | `LibraryHandler.ListTracks` |
-| `/api/stats/*` | GET | Yes | `StatsHandler` (jobs, jobs/breakdown, jobs/trends, library, activity, summary) |
-| `/api/jobs` | GET | Yes | inline query |
-| `/api/jobs/sync` | POST | Yes | inline queue trigger |
-| `/api/jobs/:id/retry` | POST | Yes | `agent.RetryJob` |
-| `/api/jobs/:id/cancel` | POST | Yes | `agent.CancelJob` |
-| `/api/artists/track` | POST | Yes | inline handler |
-| `/api/library/scan` | POST | Yes | inline handler |
-| `/ws/events` | GET (WebSocket) | Yes | `WebSocketManager.HandleEvents` |
-| `/ws/jobs/:job_id` | GET (WebSocket) | Yes | `WebSocketManager.HandleConsole` |
-
-> Note: `*` wildcard routes cover CRUD operations plus sub-routes like `form`, `toggle`, `preview`, and `profiles` under the same group.
-
-### CLI (`netrunner-cli`)
-
-| Command | Signature | Result |
-|---|---|---|
-| `status` | `netrunner-cli status` | System probe summary |
-| `config` | `netrunner-cli config list` | Current non-sensitive config |
-| `watchlist` | `list`, `add [name] [type] [uri]`, `sync [id]`, `import` | Watchlist management |
-| `library` | `list`, `add [name] [path]`, `scan [id]`, `prune [id]`, `rm [id]` | Library lifecycle |
-| `profile` | `list`, `add [name]`, `rm [id]`, `set-default [id]` + flags | Quality profile lifecycle |
-| `stats` | `summary`, `jobs`, `library` | Stats reports |
-
-### MCP Tools (`backend/cmd/agent`)
-
-> MCP surface is stable as of v0.0.1. Tool names and schemas below are the source of truth.
-
-| Tool | Input | Output | Side Effects | Idempotent |
-|---|---|---|---|---|
-| `probe_system` | _(none)_ | `{database_connected, gonic_connected, slskd_connected, message}` | None (read-only) | Yes |
-| `read_config` | _(none)_ | `map[string]string` of non-sensitive settings | None (read-only) | Yes |
-| `update_config` | `key: string` (required), `value: string` (required) | Success message | Upserts `Setting` row | No |
-| `list_watchlists` | _(none)_ | `[]Watchlist` with name, source_type, source_uri, enabled | None (read-only) | Yes |
-| `add_watchlist` | `name: string` (required), `source_type: string` (required), `source_uri: string` (required), `quality_profile_id: UUID` (required) | Created watchlist with ID | Creates `Watchlist` row | No |
-| `sync_watchlist` | `watchlist_id: UUID` (required) | Queued job ID | Creates `Job` row (type=sync) | No |
-| `list_jobs` | `limit: number` (optional, default 10) | `[]Job` with state, type, requested_at | None (read-only) | Yes |
-| `get_job_logs` | `job_id: number` (required) | `[]JobLog` with timestamp, level, message | None (read-only) | Yes |
-| `enqueue_acquisition` | `artist: string` (required), `title: string` (required), `album: string` (optional) | Queued job ID | Creates `Job` + `JobItem` rows | No |
-| `bootstrap` | _(none)_ | `map[string]string` of check results | Runs `AutoMigrate` | Yes (safe to retry) |
-| `search_library` | `query: string` (required) | `[]match` with artist, title, album, source | None (read-only) | Yes |
-| `register_webhook` | `url: string` (required) | Success message | Upserts webhook setting | No |
-| `get_stats` | _(none)_ | Jobs (24h), library, activity summary | None (read-only) | Yes |
-| `list_quality_profiles` | _(none)_ | `[]QualityProfile` with settings | None (read-only) | Yes |
-| `list_libraries` | _(none)_ | `[]Library` with name, path, ID | None (read-only) | Yes |
-| `scan_library` | `library_id: UUID` (required) | Queued job ID | Creates `Job` row (type=scan) | No |
-| `add_library` | `name: string` (required), `path: string` (required) | Created library with ID | Creates `Library` row | No |
-| `list_monitored_artists` | _(none)_ | `[]MonitoredArtist` with MBID, release counts | None (read-only) | Yes |
-| `cancel_job` | `job_id: string` (required, numeric) | Success message | Updates job + items to cancelled | No |
-| `retry_job` | `job_id: string` (required, numeric) | Success message | Resets failed items to queued | No |
-
-**Error behavior**: All tools return `mcp.CallToolResultError` with a descriptive message on failure. No partial state is left on error for read-only tools. Write tools may leave a partially created row if the DB operation succeeds but a follow-up fails.
-
-### Internal Abstractions
-
-- `interfaces.WatchlistProvider`
-  - `FetchTracks(ctx, watchlist) ([]map[string]string, string, error)`
-  - `ValidateConfig(config string) error`
-- `interfaces.SpotifyClientProvider`
-  - `GetClient(ctx, userID) (*spotify.Client, error)`
-
-## Data Models
-Key entities (GORM, mostly in `backend/internal/database/models.go`):
-
-- `User` (1:N `Session`): session-auth principals, role field (`user`/`admin`)
-- `QualityProfile`: acquisition policy (formats, bitrate, lossless preference, filter mode)
-- `Watchlist`: source config + quality profile linkage
-- `Schedule`: cron sync config per watchlist
-- `Job` (1:N `JobItem`, 1:N `JobLog`): background execution state machine
-- `Acquisition`: imported artifact provenance and metadata linkage
-- `Library` (1:N `Track`): filesystem collection roots + quota fields
-- `MonitoredArtist` (1:N `TrackedRelease`): artist release tracking
-- `MetadataCache`: API response cache with expiry
-- `SpotifyToken`: per-user Spotify OAuth tokens (access + refresh)
-- `Lock`: distributed advisory lock for session-level exclusivity
-- `Setting`: dynamic key-value runtime config
-- `PeerReputation`: Soulseek peer quality tracking for scoring
-
-Schema/migration sources:
-- SQL bootstrap: `ops/db/init/01-schema.sql`, `ops/db/init/02-functions.sql`
-- Forward SQL migrations: `ops/db/init/migrations/*.sql`
-- Runtime migration path: `database.Migrate(db)` + `AutoMigrate`
-
-## Testing Guide
-- Test files follow `*_test.go`, primarily under `backend/internal/*` and `backend/cmd/*`.
-- Default runner:
-  - `cd backend && go test ./...`
-- Targeted package tests:
-  - `go test ./internal/api -run TestAuth -v`
-  - `go test ./cmd/worker -run TestRoundRobin -v`
-- Integration-tagged tests:
-  - `go test ./internal/integration/... -tags=integration -v`
-  - or `./scripts/integration-tests.sh test`
-- Coverage:
-  - CI uses `go test ./... -coverprofile=coverage.out`
-
-## Database Driver Behavior
-
-NetRunner supports SQLite WAL and PostgreSQL. The database driver is auto-detected from `DATABASE_URL`:
-
-| Behavior | SQLite WAL | PostgreSQL |
-|---|---|---|
-| Connection string prefix | No prefix / ends in `.db` | `postgres://` or `postgresql://` |
-| Journal mode | WAL (set via PRAGMA) | WAL by default |
-| Advisory locks (`pg_try_advisory_lock`) | Not available — file locking only | Full support via `PostgresLockManager` |
-| Job wakeup | Polling interval | `LISTEN/NOTIFY` support |
-| Concurrent workers | Unsafe — single writer only | Safe — connection pooling + advisory locks |
-| `LiteFSGuard` primary detection | Checks `/litefs/.primary` file | Always primary (guard is no-op) |
-| `FILTER (WHERE ...)` SQL syntax | Not supported — agent stats queries will fail | Full support |
-| Schema migrations | GORM `AutoMigrate` only | SQL bootstrap (`ops/db/init/`) + `AutoMigrate` |
-
-**Important**: If `MaxConcurrentJobs > 1` and SQLite is detected, the worker emits a startup warning. Use Postgres for production concurrent workloads.
-
-### Advisory Lock Implementation
-
-The `WorkerOrchestrator` acquires advisory locks per scope ID before processing jobs to prevent concurrent operations on the same watchlist or library.
-
-| Driver | Lock Manager | Mechanism | Concurrent Safety |
-|---|---|---|---|
-| PostgreSQL | `PostgresLockManager` | `pg_try_advisory_lock` / `pg_advisory_unlock` — true session-level mutual exclusion | Safe — different connections get real mutual exclusion |
-| SQLite | `TableLockManager` | `locks` table with `key` + `expires_at` — check-then-insert inside a GORM transaction | **Single-worker only** — SQLite's transaction serialization provides basic protection, but is not equivalent to Postgres advisory locks under high concurrency. Locks expire after 15 minutes as a safety net. |
-
-**SQLite is single-worker only.** The `TableLockManager` uses row-level locking emulated via a table, which provides basic mutual exclusion within a single process due to SQLite's serialized writes. However, it does not provide cross-process locking and is not safe for multi-worker deployments. Always use PostgreSQL when running multiple workers.
-
-## Common Agent Tasks
-
-### 1) Add a new feature
-1. Locate the owning layer:
-   - API contract: `backend/internal/api/`
-   - business logic: `backend/internal/services/`
-   - data shape: `backend/internal/database/`
-2. Implement minimal path:
-   - route/handler + service + model updates as needed
-3. Add/extend tests:
-   - handler tests in `backend/internal/api/*_test.go`
-   - service tests in `backend/internal/services/*_test.go`
-4. Validate:
-   - `cd backend && go vet ./...`
-   - `cd backend && go test ./...`
-
-### 2) Fix a bug
-1. Reproduce with targeted test:
-   - `cd backend && go test ./<package> -run <TestName> -v`
-2. Trace request/data path through handler -> service -> database.
-3. Patch smallest safe unit and add regression test.
-4. Re-run package tests, then broader suite.
-
-### 3) Run a migration/schema change
-1. Update model(s) in `backend/internal/database/models.go`.
-2. If SQL-specific transformation is needed, add file in `ops/db/init/migrations/`.
-3. Ensure `database.Migrate(db)` handles transition safely.
-4. Validate with sqlite/postgres test path (as available).
-
-### 4) Update a dependency
-1. Edit module refs:
-   - `cd backend && go get <module>@<version>`
-   - `go mod tidy`
-2. Re-run `go vet`, `go test`, and `go build`.
-3. Run vulnerability scan:
-   - `govulncheck ./...`
-
-### 5) Deploy or run full stack
-1. Set required env vars in `.env`.
-2. Build and launch:
-   - `docker compose up -d --build`
-3. Validate health:
-   - `curl http://localhost:8080/api/health`
-4. Inspect logs:
-   - `docker compose logs -f netrunner`
+1. **New feature:** locate the layer (api/services/database), minimal
+   handler+service+model changes, extend `*_test.go` in that package, then
+   `go vet ./...` + `go test ./...`.
+2. **Bug fix:** reproduce with a targeted test
+   (`go test ./<pkg> -run <Test> -v`), trace handler→service→database,
+   smallest safe patch + regression test, re-run package then broader suite.
+3. **Migration/schema change:** update `models.go`; SQL-specific
+   transformations go in `ops/db/init/migrations/`; ensure `database.Migrate`
+   handles the transition; validate both driver paths when available.
+4. **Dependency update:** `go get`, `go mod tidy`, then vet/test/build +
+   `govulncheck`.
+5. **Deploy/full stack:** set env, `docker compose up -d --build`, check
+   `curl localhost:8080/api/health`, follow logs.
 
 ## Pitfalls & Gotchas
-- `<!-- OUTDATED: prior guide states JWT+RBAC. Current implementation uses session cookie auth via sessions table, with role checks in handlers/services. -->`
-- `<!-- OUTDATED: prior guide states Redis-backed rate limiting is mandatory. Current auth limiter in server setup uses Fiber limiter defaults and does not wire Redis storage. -->`
-- `<!-- OUTDATED: prior guide references Nginx ownership in ops. Current reverse proxy config is Caddy (`ops/caddy/Caddyfile`). -->`
-- `<!-- OUTDATED: prior guide says avoid hardcoded role names absolutely. Current code still has explicit role checks (e.g., "admin") in handlers; keep behavior consistent unless performing coordinated RBAC refactor. -->`
-- <!-- RESOLVED 2026-05-19: library test path failures fixed in commit 1250fe4. All tests pass cross-platform. -->
-- `database.Migrate` contains PostgreSQL enum-to-text conversions; read it before modifying job state columns.
-- `backend/entrypoint.sh` is a single-process bootstrap for Docker (creates dirs, logs, exec). The Docker Compose stack runs `ops-web` and `ops-worker` as separate services with different `command` overrides. For local debugging, run binaries directly with `go run ./cmd/server` or `go run ./cmd/worker`.
-- Spotify OAuth defaults callback to `http://localhost:8080/api/auth/spotify/callback` unless `SPOTIFY_REDIRECT_URI` is set.
-- **Pongo2 renders Go bool as capitalized `True`/`False`**, not lowercase `true`/`false`. Use `{% if field %}true{% else %}false{% endif %}` to get lowercase. E.g., `Lossless: True` (capital T) broke E2E tests expecting `Lossless: true`.
-- **Pongo2 `{% if ID %}` is always true for UUID fields.** The zero UUID `00000000-0000-0000-0000-000000000000` is a non-empty string, so `{% if ID %}` evaluates to true. Always pass an explicit `IsNew` bool when the template needs to distinguish "add" from "edit".
-- **Go `encoding/json` silently drops fields without JSON tags.** `source_uri` (snake_case) does NOT match `SourceURI` (PascalCase) unless the struct has `json:"source_uri"`. The case-insensitive fallback only works for pure case differences, not underscore differences. Both the model AND the input struct need JSON tags (DJI-437).
-- **HTMX only swaps 2xx responses.** Error paths returning 4xx/5xx are silently discarded by HTMX — the target div stays unchanged. Always check `isHTMXRequest(c)` and return `c.SendString("<div class=\"error\">...</div>")` on error paths for HTMX requests (DJI-438).
-- **API responses use PascalCase field names** (`ID`, `Name`, `SourceType`, `IsDefault`), not camelCase. E2E tests must check `response.ID` not `response.id`.
-- **Multiple create handlers don't close the modal after HTMX submit.** The JS listens for `HX-Trigger: closeModal` header, but only `AcquireHandler.Create` sets it. Any new form handler needs `c.Set("HX-Trigger", "closeModal")` before returning the partial (DJI-440).
 
-## Skill Index
-- `release-readiness-review` — Two-phase audit+closure pattern for shipping releases. See `.agents/skills/release-readiness-review/SKILL.md`.
-- `e2e-test-spec-generator` — Generate Playwright E2E test specs from Linear issue descriptions.
-- `auto-linear-update` — Automatically update Linear issues with E2E test results after test runs.
-- See `.agents/skills/` for additional project-specific skills.
+- Prior-guide corrections: auth is session-cookie (not JWT+RBAC); rate
+  limiting uses Fiber limiter defaults (no Redis); reverse proxy is Caddy
+  (`ops/caddy/Caddyfile`), not Nginx; explicit `"admin"` role checks exist —
+  keep consistent unless doing a coordinated RBAC refactor.
+- `database.Migrate` contains PostgreSQL enum-to-text conversions; read it
+  before modifying job state columns.
+- `backend/entrypoint.sh` is a single-process bootstrap (dirs, logs, exec);
+  compose runs `ops-web`/`ops-worker` as separate services with `command`
+  overrides. Debug locally with `go run ./cmd/server|worker`.
+- Spotify OAuth defaults the callback to
+  `http://localhost:8080/api/auth/spotify/callback` unless
+  `SPOTIFY_REDIRECT_URI` is set.
+- **Pongo2 renders Go bools as `True`/`False`** (capitalized) — use
+  `{% if field %}true{% else %}false{% endif %}` for lowercase (broke E2E on
+  `Lossless: True`).
+- **Pongo2 `{% if ID %}` is always true for UUIDs** (zero UUID is a
+  non-empty string) — pass an explicit `IsNew` bool to distinguish add/edit.
+- **`encoding/json` silently drops fields without JSON tags** — `source_uri`
+  ≠ `SourceURI` (case-insensitive fallback doesn't cover underscores); both
+  model AND input struct need tags (DJI-437).
+- **HTMX only swaps 2xx responses** — 4xx/5xx error paths silently no-op;
+  check `isHTMXRequest(c)` and return an error partial via
+  `c.SendString(...)` (DJI-438).
+- **Create handlers must set `HX-Trigger: closeModal`** before returning the
+  partial, or the modal never closes (only `AcquireHandler.Create` does it;
+  DJI-440).
+- **Pongo2 `{# #}` comments cannot span lines** — keep template comments
+  single-line.
 
-## Cloned Dependency Source
+## Consolidated workspace learnings (merged from DevWorks base, 2026-09-18)
 
-Read-only dependency source repositories are available under
-`.slim/clonedeps/repos/` for inspection. Do not edit these clones.
+> Repo-specific operational scar tissue. Where an entry overlaps a section
+> above it adds nuance rather than replacing it.
 
-- `.slim/clonedeps/repos/gofiber__fiber/` — **gofiber/fiber** at `v2.52.13`; HTTP framework source for debugging middleware chain, context methods, error handling, and route matching.
-- `.slim/clonedeps/repos/go-gorm__gorm/` — **go-gorm/gorm** at `v1.31.1`; ORM source for debugging query building, preloading, transaction behavior, and migration patterns.
-- `.slim/clonedeps/repos/mark3labs__mcp-go/` — **mark3labs/mcp-go** at `v0.45.0`; MCP protocol Go SDK for debugging tool definitions, protocol messages, and agent transport layer.
+### GitHub, CI & review workflow
+
+- Default branch is `master`, not `main`.
+- Merge PRs with `gh pr merge N --repo pvnkmnk/djinn-netrunner --squash
+  --delete-branch`. It often prints **nothing** on success (exit 0, empty
+  stdout) — confirm with `gh pr view N --json state,mergeCommit` instead of
+  inferring failure from silence. `git reset --hard origin/master` after is
+  safe only because master only fast-forwards — check
+  `git reflog show master` before assuming that on a shared checkout.
+- The `integration` CI job can fail in ~26s with `connection reset by peer`
+  pulling Navidrome from Docker Hub — a registry flake that hits docs-only
+  commits too. Re-run the workflow instead of debugging the diff.
+- `internal/integration/*_test.go` sits behind `//go:build integration`, so
+  `go test ./...` never compiles it: changing a shared signature passes
+  locally and fails CI. Run `go vet -tags integration ./...` (or
+  `go test -tags integration -run XXNONE ./internal/integration/...`) before
+  pushing.
+- `gh workflow run e2e.yml --ref <feature-branch>` works even though the
+  workflow watches only `master`: `workflow_dispatch` needs the workflow on
+  the *default* branch, not the dispatched ref — how to prove workflow-only
+  changes without merging first.
+- When a bot leaves a review thread open and won't flip it (`@coderabbitai
+  resolve` replies can lag), resolve directly via GraphQL: get the thread id
+  from `reviewThreads`, then `gh api graphql -f query='mutation {
+  resolveReviewThread(input: {threadId: "PRRT_..."}) { thread { isResolved } }
+  }'`.
+
+### Go toolchain & dependencies
+
+- CI pins `go 1.25.13` (setup-go) and the Docker builder uses
+  `GOTOOLCHAIN=local`; local Go is newer. Never let `go get`/`go mod tidy`
+  bump the `go` directive in `backend/go.mod` — check it LAST, after tidy
+  (any module requiring go ≥ 1.26 forces it back up, e.g. x/sync).
+- The `test` workflow runs govulncheck and fails CI on reachable CVEs.
+  Downgrading transitive deps to appease the directive reintroduces CVEs —
+  keep master's dep versions and add new libs at go-1.25-compatible
+  releases.
+- Runner Go installs can be transiently corrupted (`compile: version X does
+  not match go tool version Y` in stdlib internals unrelated to your diff) —
+  re-run before debugging.
+
+### Build, test & integration
+
+- **Line endings are mixed per-file in this repo**: most files are CRLF but
+  `acquisition_pipeline.go` (among others) is LF. Detect the dominant ending
+  before patch-scripting and preserve it — forcing CRLF onto an LF file
+  corrupts it (CRCRLF), and str_replace anchors written with the wrong ending
+  silently match nothing.
+- `py -c "print(...)"` with emoji/box-drawing output dies with cp1252
+  `UnicodeEncodeError` (MSYS pipes it fine) — start such scripts with
+  `sys.stdout.reconfigure(encoding='utf-8', errors='replace')`. Same for
+  reading JSON from `gh api` (codebot names contain emoji): use
+  `io.open(..., encoding='utf-8')`, never the cp1252 default.
+- **`write_file` can report success while the file never lands** (seen twice:
+  `backend/_patch/dji501_fix_overlay.py`). After a write that later steps
+  depend on, `ls` the path before running it — and prefer direct
+  `str_replace` edits for one-off fixes when a script keeps failing to write.
+- `PORT=0` is exported by this environment, making
+  `go test ./internal/config` fail (`TestLoad_Defaults: cfg.Port = "0", want
+  "8080"`). Run Go tests as `PORT= go test ...` — environmental, not a repo
+  bug; don't "fix" config.go.
+- The scanner indexes with a 4-goroutine pool, so a `:memory:` SQLite test
+  DB gives each pooled connection its own database ("no such table"). Use a
+  file-backed DSN under `t.TempDir()` closed via `t.Cleanup` — Windows
+  refuses to remove the directory while the DB file is open.
+- `cmd/cli` tests swap package globals (`db`, `cfg`, `jsonOutput`, `osExit`).
+  Stub `osExit` before any test that can reach `handleError`, or the real
+  `os.Exit` kills the test binary mid-run. `setupTestDB`'s `:memory:` is
+  unsafe there for the same pooled-connection reason — file-backed DSN under
+  `t.TempDir()`.
+- `acquisitionPipeline` test fixtures must set `ctx: context.Background()`:
+  the probe stage calls `context.WithTimeout(p.ctx, ...)`, which **panics**
+  (`context.WithDeadlineCause`) on a nil parent — the failure surfaces as a
+  crashed stage, not an assertion.
+- ffmpeg/ffprobe are mise-installed; several tests skip without them
+  (`requireProbeTools`). Two PATH layers needed: the WinGet Links dir (so
+  mise *shims* can find mise itself — without it every shim dies with
+  `mise-shim: failed to execute mise: program not found`) and
+  `.exe`-suffixed shim copies in a PATH dir (Go's `exec.LookPath` only
+  accepts PATHEXT extensions). Recipe:
+  `mkdir -p ~/.ffbin && cp .../mise/shims/{ffmpeg,ffprobe} ~/.ffbin/{ffmpeg,ffprobe}.exe`
+  then
+  `PATH="/c/Users/idols/AppData/Local/Microsoft/WinGet/Links:$HOME/.ffbin:$PATH"`.
+  ffmpeg 9.0.1.
+- Full `internal/services` suite takes ~65–95s (longer when ffmpeg is
+  reachable and probe tests stop skipping).
+- Integration suite: bring up `docker-compose.integration.yml` (services
+  `netrunner-postgres/navidrome/slskd-integration/app`, app on port 18080),
+  run with `INTEGRATION_TESTS=1 INTEGRATION_BASE_URL=http://localhost:18080`.
+  Without the env vars, tests are excluded by build tags or fail with
+  misleading connection-refused.
+- Integration mock slskd contract: download polls must return state
+  `"Completed, Succeeded"` (exact string — `IsSucceeded` requires it) and
+  search `"state":"Completed"`, else waits burn full budgets (30s search,
+  75s download). This exact quirk once caused a pipeline E2E skip.
+- Integration smoke tests (`TestSmoke_Library_CRUD`, `TestSmoke_Quota_Warning`)
+  delete the library at `/app/music` first — leftover demo libraries there
+  fail with `update or delete on table "libraries" violates foreign key
+  constraint "fk_tracks_library"`. Delete those rows (`DELETE FROM tracks
+  WHERE library_id IN (SELECT id FROM libraries WHERE path='/app/music')`,
+  then the library) before suspecting a regression.
+- Libraries and monitored artists are owner-scoped (`owner_user_id`): a
+  fixture from an earlier session's user is invisible to a new session's API
+  calls (`{"error":"artist not found"}`, empty Subsonic `getIndexes`) —
+  re-point ownership (`update monitored_artists set owner_user_id=<id>`)
+  instead of recreating fixtures. Library creation at an existing path is
+  idempotent for the same owner (200, same id) and 409 + HTMX error partial
+  for another owner's path (used to be a bare 500).
+- Route-table assertions read `app.GetRoutes()` (method + full path), not
+  endpoint probes; group middleware appears as a `USE` route, so filter by
+  method before asserting no endpoint exists under a prefix. Subsonic's
+  `.view` suffix deserves assertion across the whole `/rest` family — a
+  violation surfaces as `Cannot GET` (missing-route message), not a naming
+  error.
+
+### Acquisition pipeline & library scanning
+
+- `Track.Path` is `not null` + `uniqueIndex`: a scanner that forgets it
+  inserts one `path=''` row then fails every later file on `idx_tracks_path`
+  while the job still reports "Completed" — a scan of N files silently
+  yields 1 track and nothing can stream. `/api/libraries/:id/tracks` nests a
+  zero-valued `library` object, so grepping that response for `"path":""`
+  false-positives; match on the library path prefix instead.
+- The worker dispatches on `job_type` and fails unknown types with
+  `unsupported job type: <x>`. It runs **several jobs concurrently** (three
+  acquisition jobs observed `running` at once under one `worker_id`) — a
+  stalled item blocks only its own job. `WatchlistHandler.SyncWatchlist`
+  must create type `sync` (not `watchlist_sync`) with `ScopeType:
+  "watchlist"` — exactly what `SyncHandler.Execute` requires.
+- The acquisition library client is optional and arrives as a
+  `SubsonicClientInterface`. A typed-nil `*SubsonicClient` is NOT a nil
+  interface, so `stageCheckLibraryIndex`'s `library == nil` guard passes and
+  `Search3` panics — pass a genuine nil interface from the worker AND keep
+  the nil-receiver guard in `doRequest`.
+- A peer that answers but never sends (`Queued, Remotely`) is abandoned
+  after `remoteQueueGrace` (45s) — but only when another candidate remains;
+  with `DownloadWaitOptions.HasAlternatives=false` (last candidate) the full
+  timeout applies. `CancelDownload` is
+  `DELETE /api/v0/transfers/downloads/{user}/{id}`; slskd answers **204 No
+  Content** even for unknown ids (never 404) — 200/204/404 all mean "gone".
+- Downloaded bytes are validated by `AudioProbe` (ffprobe) and it **fails
+  open**: missing/unstartable binary → `ErrProbeUnavailable`, file imported
+  with a warning. Only `*exec.ExitError` means ffprobe actually judged the
+  file; a cancelled *caller* context is deliberately not a verdict — reading
+  either as "unplayable" deletes valid audio. Validation runs per candidate
+  *inside* the download loop, so one truncated file is just another failure
+  reason and the next peer can still satisfy the item.
+- Scanning a SQL column into a GORM field named `Name` reads the `name`
+  column, not the aliased one: `SELECT DISTINCT artist` into it yields empty
+  strings (the cause of DJI-487's nameless Subsonic artists). Alias the
+  column to `name` or tag the field.
+- Job cancellation is cooperative: `POST /api/jobs/:id/cancel` only flips
+  the row; the worker notices on its next round-robin tick. An idle job
+  finalizes through a different path than a running one; a job whose worker
+  died (container rebuild) sits `running` with no `finished_at` until the
+  janitor stamps it.
+- `cleanupEmptyStagingDirs` compared an **absolute** `stagingRoot` against a
+  possibly-relative `dir`; `filepath.Rel` errors on the mixed pair, so the
+  sweep silently never ran under the default relative `./downloads` staging
+  path (it only worked with absolute paths — hence "fine" in Docker and
+  `t.TempDir()` tests). Both sides must be made absolute first.
+- The MusicBrainz recording-ID dedup branch (3.5 of `importFile`) and album
+  branch (3.6) both go through `discardStagedDownload`, which removes the
+  file then sweeps upward, stopping at the first directory still holding
+  entries (whole-album downloads are many items sharing one folder — an
+  eager sweep would delete a sibling another item still needs).
+- `importFile`'s error return reaches `failItem` via `ProcessItem` →
+  `ExecuteItem` — returning an error IS the correct fail-and-retry path. A
+  dedup branch that ignores its `Updates(...)` error and returns `nil` is
+  worse than a failure: the worker reports success while the row stays
+  `running`, so nothing re-claims it and no retry is scheduled.
+- Identity lookup must distinguish "not found" from "query failed":
+  `gorm.ErrRecordNotFound` = genuinely new (fall back to filesystem, then
+  tag casing); any other error must abort via `ErrIdentityLookup` — falling
+  back on a failed query can point a repair at the wrong destination folder.
+  Same shape for `findExistingAlbumAcquisition`, which returns `(nil, nil)`
+  for a missing row so a caller's `err == nil` cannot read a DB failure as
+  "not a duplicate".
+- An `acquisitions` row stores the **track** artist, not the album artist,
+  so release-group dedup keyed on the stored value never matches a
+  multi-credit track against its own album (`Every Time I Die & Daryl
+  Palumbo` vs `Every Time I Die`). Widen the lookup to accept either; don't
+  change what is stored — that column is display/provenance.
+- Artist/album casing is canonicalised by `canonical_identity.go` (case +
+  whitespace folded), the single owner for both the dedup key and
+  `GenerateLibraryPath`, so they cannot disagree. Resolution order: earliest
+  `acquisitions` row wins, then an existing on-disk folder, then the tag
+  verbatim — artist resolved *before* album so a new album lands in the
+  artist's existing folder. Later-wins would drift as folders come and go.
+- `detectAlbumFragments` groups by folded **album** name only, so
+  `Band A/Greatest Hits` and `Band B/GREATEST HITS` land in one group; a
+  bare case check accepts it and `--apply` then moves one band's track under
+  the other's canonical artist. A case-only album match must also require
+  artist agreement (`len(artists) == 1 || allCaseEqual(artists)`).
+- Merging fragmented folders must carry **sidecar files** (`.lrc`, images)
+  with the audio: moving only the `.mp3` leaves the source dir populated and
+  never reclaimed (`dirs removed: 0`). A track's own file is excluded from
+  its sidecar set by suffix match — `.mp3` shares the stem.
+- Standing casing repro in the beta library: `music/PUP/The Unraveling Of
+  Puptheband` beside `music/PUP/The Unraveling of Puptheband` (`acquisitions`
+  id 4 = lowercase `of`, id 9 = capital `Of`). Use it for identity/path work
+  — don't rebuild a fixture.
+- Reading live job state: `jobs` uses `job_type` (not `type`), items live in
+  `jobitems` (`track_title`, not `title`), `monitored_artists` uses `name`
+  (not `artist_name`). No `LOG_LEVEL` config and slog defaults to INFO, so
+  `DEBUG` job logs never reach `docker logs` and cannot serve as evidence.
+
+### Media tagging architecture
+
+- M4A/OGG tag writes shell out to ffmpeg (`FFmpegTagger`), NOT a Go library:
+  audiometa v1.3.1 panics on real-world MP4 `covr` atoms, and audiometa v3
+  (or any dep needing go 1.26) cascades the toolchain. Reads use
+  `dhowden/tag` (pure Go).
+- ffmpeg recipes: tag writes = re-mux with `-c copy` (lossless); source tags
+  propagate (no `-map_metadata -1`); M4A cover = image as 2nd input +
+  `-disposition:v attached_pic`; OGG cover = base64
+  `METADATA_BLOCK_PICTURE` Vorbis comment (ogg muxer cannot carry a picture
+  stream; build the block with `flacpicture`, encode `block.Data` only, not
+  the struct). All writes go through unique temp file + atomic rename with
+  permissions preserved.
+- The runtime Docker image ships ffmpeg (`apk add ffmpeg`) —
+  TranscoderService assumed it before it existed; keep it there. It also
+  installs `/usr/bin/ffprobe` (verified 6.1.2 in the image), which the
+  acquisition download validator calls — no separate package needed, but
+  dropping ffmpeg silently disables validation.
+
+### Ops / compose & runtime environment
+
+- Prod compose runs slskd as `user: "1000:1000"` with a one-shot
+  `volume-init` chown bootstrap; slskd's entrypoint exits in non-root mode
+  if `/app` is unwritable on fresh root-owned volumes. Don't remove
+  volume-init. Leftover ad-hoc containers from live debugging (e.g.
+  `netrunner-etid-worker2`) are harmless — not part of compose.
+- `.env` only drives `${VAR}` substitution unless a service declares
+  `env_file:`. Both app services now do (`- path: .env / required: false`)
+  and `environment:` still wins, so compose-derived values stay
+  authoritative. Symptom of a missing passthrough: `JWT_SECRET not set —
+  generated random secret` and sessions dying every restart. Verify with
+  `docker compose exec ops-web env`.
+- Duplicate keys in an env template take the **last** occurrence silently:
+  `.env.beta.example` declared `NAVIDROME_ADMIN_PASSWORD` twice, so the
+  placeholder below overrode the value a user set above it.
+- Profile-gated services (beta overlay: Caddy behind `edge`, Navidrome
+  behind `media-server`) disappear from `docker compose config` output
+  entirely — correct, not a failed merge.
+- `docker compose --env-file X` replaces `.env` for `${VAR}` *substitution*
+  only; a service declaring `env_file: .env` still receives that file's
+  values *inside the container*. `docker compose config` can print two
+  different values for the same key and only one reaches the process —
+  check which block a value came from before debugging.
+- One secret, one source: `docker-compose.e2e.yml` once hardcoded
+  `musicops:testpass` in `DATABASE_URL` while the postgres role took its
+  password from `POSTGRES_PASSWORD` — any `.env.e2e` with a different
+  password produced a healthy-looking stack that failed auth. Interpolate
+  `${POSTGRES_PASSWORD}` instead.
+- `POSTGRES_PASSWORD` applies only on **first** volume init: changing it
+  without `docker compose down -v` leaves the role password unchanged —
+  teardown must include `-v`.
+- The e2e overlay pins `ENVIRONMENT: development` because the base compose's
+  `env_file: .env` would otherwise let a developer's local `.env` put the
+  throwaway stack in production mode, where a missing `JWT_SECRET` refuses
+  to boot; CI has no `.env`, so local and CI would diverge.
+- Subsonic auth contract: `u` is the account **email**; `p=` compares the
+  bcrypt account password, `t=`/`s=` use the shared `SUBSONIC_PASSWORD`
+  (`t=md5(md5(SUBSONIC_PASSWORD)+salt)`). Production refuses to boot with
+  Subsonic enabled and no password; token auth is refused when unset —
+  otherwise the expected token degenerates to `md5(""+salt)` and anything
+  can forge it. A `+` in the email must be sent as `%2B` (a literal `+`
+  decodes to a space and the ping fails exactly like a wrong password).
+- `ENVIRONMENT=production` hard-fails on missing `JWT_SECRET` (or Subsonic
+  enabled without a password); development warns only. Integration/e2e
+  stacks run development, so they're unaffected.
+- Base `docker-compose.yml` publishes no ops-web port; only the beta overlay
+  does (`${BETA_BIND_ADDR:-127.0.0.1}:${BETA_HTTP_PORT:-8080}:8080`) —
+  host-side API work (`scripts/beta-smoke.sh`, curl `:8080`) needs
+  `docker compose -f docker-compose.yml -f docker-compose.beta.yml up`.
+- The live beta stack runs from a *second clone*
+  (`projects/beta-bringup/djinn-netrunner`), not the working repo — sync
+  changed files there and rebuild `ops-worker` before live verification, or
+  you test the previous binary and report it as evidence.
+- The runtime image ships only `netrunner-server`/`netrunner-worker` — **no
+  `netrunner-cli` inside it**, so documented
+  `docker compose exec ops-web netrunner-cli ...` repair steps cannot work.
+  Build the CLI for Linux, `docker cp` it in, `chmod +x` as root (the app
+  user can't), then run it as the app user.
+- `ALLOW_PRIVATE_TARGETS=true` is mandatory on any compose stack:
+  slskd/Navidrome/Gonic are reached by service name (a private IP), so the
+  SSRF dialer rejects every request with `ssrf: no public IP found for
+  <host>`. Provider APIs stay guarded either way. Note the yt-dlp pre-flight
+  walk (`checkPublicHost`/`resolveRedirectTarget`) is UNCONDITIONAL — the
+  flag only affects the app's service-mesh client, so even in beta a source
+  URL that resolves private is refused before the egress proxy is consulted.
+- The egress-proxy sidecar logs to `/var/log/squid/` — **never `stdio:/dev/stdout`**:
+  squid drops privileges to `proxy` before opening its logs, and root owns
+  stdout, which FATALs. Likewise never point `cache_log` at `/dev/null` — it
+  blinds squid's own FATAL diagnostics when debugging. Read refusals via
+  `docker exec <proxy> tail /var/log/squid/access.log` (`TCP_DENIED/403 CONNECT …`).
+- After editing `ops/squid/allowed-domains.txt`, `restart egress-proxy` — a
+  plain `up -d` leaves the running squid on its old in-memory allowlist.
+- The `ubuntu/squid` image has no `squidclient`; its `/bin/sh` is dash (no
+  `/dev/tcp`), but `bash` is present — healthchecks must invoke bash
+  explicitly.
+- slskd needs its *own* copy of `SLSKD_API_KEY` (the env var only feeds the
+  *app* — every search 401s until the slskd service carries it too). Use
+  slskd's **primary** key (`SLSKD_API_KEY` / `-k` / `--api-key`,
+  documented and stable); it's the `web.authentication.api_keys` *map* whose
+  env-var nesting is fragile.
+- A primary key shorter than 16 chars makes slskd exit with `API key must be
+  between 16 and 255 characters` and **exit code 0** — looks like a clean
+  stop, not a crash.
+- slskd defaults `directories.downloads` to `~/downloads`, which resolves to
+  its *own* `/app/downloads` (slskd data volume), not the volume the worker
+  imports from. Without `SLSKD_DOWNLOADS_DIR=/downloads`, transfers report
+  `Completed, Succeeded` while the shared volume stays empty and every
+  import fails with `Downloaded file not found`.
+- `ALLOW_PRIVATE_TARGETS` + a proxy is still buggy in `safe_http.go`: the
+  AllowPrivateTargets branch builds a proxied transport then returns a fresh
+  `DefaultTransport` clone, silently dropping the proxy.
+- Never prefix a whole script invocation with `MSYS_NO_PATHCONV=1`: it also
+  disables conversion of the script's own Windows paths, so compose resolved
+  `../.env.e2e` to a phantom `C:\c\Users\...` and `e2e.sh down` failed. Scope
+  it to the container-side command only.
+
+## Skills & dependency sources
+
+- `.agents/skills/`: `release-readiness-review` (two-phase audit+closure),
+  `e2e-test-spec-generator` (Playwright specs from Linear issues),
+  `auto-linear-update` (Linear updates from E2E results); see
+  `.agents/skills/` for the rest.
+- Read-only dependency clones live under `.slim/clonedeps/repos/` for
+  inspection (do not edit): `gofiber__fiber` v2.52.13 (middleware chain,
+  context, routing), `go-gorm__gorm` v1.31.1 (query building, preloading,
+  transactions, migrations), `mark3labs__mcp-go` v0.45.0 (MCP SDK, tool
+  definitions, transports).
