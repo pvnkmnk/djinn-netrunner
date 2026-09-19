@@ -41,7 +41,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
 API_KEY = os.environ.get("SLSKD_API_KEY", "e2e-test-api-key-0123456789abcdef")
-DOWNLOADS_DIR = os.environ.get("FAKE_DOWNLOADS_DIR", "/downloads")PEERS = {
+DOWNLOADS_DIR = os.environ.get("FAKE_DOWNLOADS_DIR", "/downloads")
+PEERS = {
     # Baseline roster. Specs can extend it at runtime via the management
     # surface below (POST /roster), so a new acceptance clause needs no fixture
     "decoy": {
