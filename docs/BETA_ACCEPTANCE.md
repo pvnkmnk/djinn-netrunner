@@ -888,7 +888,7 @@ stack for a reason this run established rather than assumed:
 | Entrance | Why it could not be driven live |
 |---|---|
 | Soulseek candidate loop | A refusal needs a real peer to serve a mismatched file *at a chosen moment*. The one time this happened organically it produced the original defect (the `Noriyuki Iwadare` track imported under a `PUP` request). There is no seam to request a mismatched peer on demand, and the query cannot be chosen to force one — a peer only appears in results when its filename matches the query, which is the same signal the gate uses. |
-| yt-dlp fallback | **Driven live as of DJI-501** (`egress-refusal.spec.ts` seeds an item whose source_url is public and non-allowlisted; a real worker and real yt-dlp run the entrance and the boundary refuses the fetch — `Tunnel connection failed: 403 Forbidden`, job ends failed, zero imports; removing `YTDLP_PROXY` turns the spec red, so the proof binds to the boundary). What remains **not driven live** is specifically the *mismatched-work refusal* on this entrance: a reachable URL serving playable audio that is not the requested work. (For history: when the 2026-09-15 run was recorded, no production code path wrote `jobitems.source_url` — only `_test.go` did, and the live stack counted **0 of 122** items carrying one despite having imported 43 tracks — so the entrance was gated but unreachable. DJI-498 gave it the writer; DJI-501 proved the entrance end to end.) |
+| yt-dlp fallback | **Driven live as of DJI-501** (`egress-refusal.spec.ts` seeds an item whose source_url is public and non-allowlisted; a real worker and real yt-dlp run the entrance and the boundary refuses the fetch — `Tunnel connection failed: 403 Forbidden`, job ends failed, zero imports; removing `YTDLP_PROXY` turns the spec red, so the proof binds to the boundary). **The mismatched-work refusal on this entrance was driven live as of PR #257** (`1603632`): the e2e stack's `audio-probe` sidecar serves a real 20-second FLAC tagged "Totally Different Band / Unrelated Record" from a documentation-IPv6 network (2001:db8:aa::/64), so the URL passes the pre-handover guard AND the boundary allowlist, yt-dlp downloads it through the proxy (`yt-dlp downloaded: wrong-work.flac`, ffprobe validates `flac, 242.5 KiB, 20s`), and the identity gate refuses it — item `abandoned` terminally with "does not match the request", job `failed`, library scan empty. Ignoring the gate's verdict in a mutation build let the item reach the import stage and turned the spec red, so the proof binds to the gate. One live finding: a decoy sharing one word with the request passes the gate (word-overlap is deliberate — half-matching names are how real releases differ), so the decoy shares none. (For history: when the 2026-09-15 run was recorded, no production code path wrote `jobitems.source_url` — only `_test.go` did, and the live stack counted **0 of 122** items carrying one despite having imported 43 tracks — so the entrance was gated but unreachable. DJI-498 gave it the writer; DJI-501 proved the entrance end to end; #257 proved the wrong-work refusal on it.) |
 
 What exists instead is test evidence, and it is labelled as such rather than
 presented as a run. The tests drive the real pipeline through each entrance with
@@ -967,11 +967,15 @@ the map key (`source_link` → `not_the_link_key`) turns it red with
 `expected: "https://example.invalid/album/pup"` /
 *the provider's page URL must reach the item or the fallback entrance is unreachable*.
 
-**Still not driven live in this run,** and the row above says so: proving the refusal
-on this entrance needs a real feed entry the swarm cannot satisfy *and* yt-dlp network
-egress from the stack, then a download that is playable but a different work. That is a
-run of its own; wiring the writer is what made it possible, and the gate itself is
-already pinned by `TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo`.
+**Still not driven live in this run** (this was written for the 2026-09-18 run; superseded
+by PR #257 for the wrong-work half): proving the refusal on this entrance needs a real
+feed entry the swarm cannot satisfy *and* yt-dlp network egress from the stack, then a
+download that is playable but a different work. #257 closed that half — the e2e stack's
+`audio-probe` sidecar serves a playable, mismatched-tagged FLAC from a documentation-IPv6
+network and the gate refuses it live (see the coverage table's fallback row). What the
+Soulseek-entrance clauses above say about a real peer serving a mismatched file on demand
+still holds there. The gate itself is pinned by
+`TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo`.
 
 **An egress control this decision made necessary (PR #243).** Wiring an
 attacker-influenced URL onto the item put the extractor on a real path for the first
