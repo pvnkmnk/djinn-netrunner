@@ -991,3 +991,15 @@ was checked against the binary rather than assumed — and constraining them nee
 egress boundary (a validating proxy). That boundary is the decision recorded here as
 not justified for a single-operator beta whose feed URLs are the operator's own, and
 it is the point to revisit before this entrance serves untrusted feeds.
+
+**Resolved since (DJI-501).** The boundary exists now: the beta and e2e overlays run
+a validating squid sidecar and the worker points yt-dlp at it (`YTDLP_PROXY`), so
+every post-handover hop is subject to connect-time denial of private/loopback
+ranges and a destination allowlist. The refusal is proven on the real stack by
+`e2e/tests/egress-refusal.spec.ts`: a seeded item whose source_url is a TEST-NET
+address (permitted by the pre-flight guard, which the overlays run with
+`ALLOW_PRIVATE_TARGETS=true`) is attempted by the worker, denied by the boundary
+inside yt-dlp, and terminates visibly. What the spec does *not* exercise is a real
+multi-hop public redirect into a private address after handover — the seeded URL is
+private from the start — and yt-dlp's own extraction sites are allowlisted, not
+discovered; both stay honest limits of this proof.

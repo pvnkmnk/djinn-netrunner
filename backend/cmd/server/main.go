@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -400,6 +401,73 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			return c.Status(500).JSON(fiber.Map{"error": "failed to create directory"})
 		}
 		return c.JSON(fiber.Map{"status": "ok", "path": cleanPath})
+	})
+
+	// Test helper: seed a fallback-refusal acquisition (used by the DJI-501 e2e
+	// refusal spec). The item's source_url is public and resolvable — it passes
+	// the app's pre-handover walk (DJI-500) — but it is not on the egress
+	// boundary's allowlist, so yt-dlp's fetch through the proxy (YTDLP_PROXY) is
+	// denied at connect time: the refusal comes from the boundary, the layer
+	// this ticket adds, not from a dead address. httpbin.org is a public,
+	// long-lived documentation service: reachable, harmless, never a media
+	// source, and not on the allowlist. Gate: E2E_ENABLE_TEST_API must be true.
+	apiProtected.Post("/test/seed-fallback-refusal", func(c *fiber.Ctx) error {
+		if !cfg.E2EEnableTestAPI {
+			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
+		}
+
+		user, ok := c.Locals("user").(database.User)
+		if !ok {
+			return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+		}
+
+		var payload struct {
+			Artist string `json:"artist"`
+			Album  string `json:"album"`
+		}
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
+		}
+		if payload.Artist == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "artist required"})
+		}
+
+		job := database.Job{
+			Type:        "acquisition",
+			State:       "queued",
+			RequestedAt: time.Now(),
+			OwnerUserID: &user.ID,
+			CreatedBy:   "e2e_probe",
+			Params:      json.RawMessage("{}"),
+			// A unique scope per seed: the advisory lock key is a hash of
+			// scope_type:scope_id, so empty-scope jobs all contend on one key —
+			// a leaked lock from any earlier scope-less run would requeue this
+			// job forever. Production acquire jobs are scoped the same way.
+			ScopeType: "probe",
+			ScopeID:   fmt.Sprintf("fallback-refusal-%d", time.Now().UnixNano()),
+		}
+		item := database.JobItem{
+			Artist:          payload.Artist,
+			Album:           payload.Album,
+			NormalizedQuery: strings.TrimSpace(payload.Artist + " " + payload.Album),
+			Status:          "queued",
+			SourceURL:       "https://httpbin.org/bytes/1024",
+			OwnerUserID:     &user.ID,
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&job).Error; err != nil {
+				return err
+			}
+			// job.ID is only populated by the insert above — set it here, not in
+			// the struct literal, or the item is created orphaned with job_id = 0
+			// and the worker claims an empty job.
+			item.JobID = job.ID
+			return tx.Create(&item).Error
+		}); err != nil {
+			slog.Error("Failed to seed fallback-refusal job", "error", err)
+			return c.Status(500).JSON(fiber.Map{"error": "failed to seed job"})
+		}
+		return c.JSON(fiber.Map{"job_id": job.ID})
 	})
 
 	// Stats

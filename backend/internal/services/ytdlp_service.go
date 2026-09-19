@@ -22,6 +22,10 @@ const targetResolveTimeout = 20 * time.Second
 type YtdlpService struct {
 	ytdlpPath string // path to yt-dlp binary
 	jsRuntime string // JS runtime for yt-dlp extraction (e.g., "node")
+	// proxy is the validating egress proxy yt-dlp is pointed at via --proxy
+	// (YTDLP_PROXY). Empty means direct egress: single-operator deployments
+	// without the sidecar behave exactly as before.
+	proxy string
 
 	// resolveClient walks a source URL's redirect chain before handover. Nil
 	// means the production client (safe transport plus hop bound); tests set it
@@ -52,7 +56,7 @@ func NewYtdlpService() *YtdlpService {
 			jsRuntime = "node"
 		}
 	}
-	return &YtdlpService{ytdlpPath: path, jsRuntime: jsRuntime}
+	return &YtdlpService{ytdlpPath: path, jsRuntime: jsRuntime, proxy: os.Getenv("YTDLP_PROXY")}
 }
 
 // DownloadAudio extracts audio from a URL using yt-dlp
@@ -147,6 +151,15 @@ func (s *YtdlpService) DownloadAudio(ctx context.Context, rawURL, outputDir, aud
 		args = append(args, "--js-runtimes", s.jsRuntime)
 		// yt-dlp 2026+ uses remote component solvers for JS challenges
 		args = append(args, "--remote-components", "ejs:github")
+	}
+	// The pre-flight walk above settles the URL, but yt-dlp still performs its
+	// own network activity after handover and can follow further hops this code
+	// never sees (DJI-500's residual). YTDLP_PROXY is the one control point the
+	// binary offers: when set, every hop yt-dlp takes is subject to the
+	// proxy's connect-time rules, so a disallowed destination fails inside the
+	// downloader instead of being contacted. See ops/squid/ and the beta overlay.
+	if s.proxy != "" {
+		args = append(args, "--proxy", s.proxy)
 	}
 	args = append(args, "--", url)
 
