@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # mutation-check.sh only rebuilds ops-worker — it assumes the rest of
       # the stack is already up and seeded, exactly as a local run leaves it.
