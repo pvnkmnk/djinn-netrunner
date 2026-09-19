@@ -139,7 +139,7 @@ cleanup() {
   if [ -f "backend/internal/services/download_gate.go.bak" ] || [ -f "docker-compose.e2e.yml.bak" ]; then
     restore_mutation
     echo "[mutation-check] restored $MUTATION; rebuilding clean stack..."
-    compose up -d --build "$(service_for)" >/dev/null 2>&1 || true
+    compose up -d --build --force-recreate "$(service_for)" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -154,7 +154,14 @@ echo "[mutation-check] applying mutation: $MUTATION"
 apply_mutation
 
 echo "[mutation-check] rebuilding $(service_for) with the mutation..."
-compose up -d --build "$(service_for)" >/dev/null
+# --no-cache + --force-recreate: compose only recreates a container when its
+# config/image REFERENCE changes, and a rebuilt image can keep the same id
+# (cache hit on unchanged layers) — on a fresh runner the worker container
+# then stays on the pre-mutation binary and the probe "passes with the
+# mutation" because the mutation never shipped (run 35470657152). The
+# mutation cycle must never reuse the old binary.
+compose build --no-cache "$(service_for)" >/dev/null
+compose up -d --force-recreate "$(service_for)" >/dev/null
 sleep 10
 
 run_probe() {
