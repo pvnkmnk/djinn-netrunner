@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.0.2] - 2026-09-19
+
+### Added
+- Validating egress boundary in front of yt-dlp (#253, DJI-501): a Squid
+  sidecar in the beta and e2e overlays denies private/loopback ranges at
+  connect time and allowlists extraction domains; `YTDLP_PROXY` routes only
+  the downloader through it. Proven live by `egress-refusal.spec.ts` and
+  verified to bite via mutation (removing `YTDLP_PROXY` turns the spec red)
+- Permissions and edge-case browser suite (#251, DJI-434): a real second user
+  drives the authorization matrix, cross-owner playlist isolation is asserted
+  in both directions, and a hostile-input sweep must never 500. Mutation
+  proof recorded: removing the admin role check fails exactly the two
+  admin-authorization tests
+
+### Changed
+- Terminal-outcome writers (`noResultsItem`/`failItem`/`abandonItem`) moved
+  out of the import path into `item_outcomes.go`, and the staging sweep into
+  `staging_cleanup.go` beside its owner; identity-test fixtures folded into
+  shared helpers (#250)
+- The e2e fixture resolves the docker binary explicitly instead of relying on
+  PATH, so admin promotion works on Windows shells (#252)
+- The e2e worker points at the test database, and the egress proxy is a
+  health-gated dependency of the worker in both overlays (#253)
+
+### Fixed
+- A stale scope-less acquisition job could requeue-loop and starve every
+  later acquisition: seeded/production jobs now carry a unique advisory-lock
+  scope (#253, found during the refusal probe)
+
 ## [v0.0.2-beta.1] - 2026-09-18
 
 ### Added
@@ -155,6 +184,7 @@ Initial release of Djinn NetRunner.
 - Dependency bump: `gofiber/fiber/v2` to v2.52.13 (CVE-2026-42554)
 - Docs reconciliation: `.env.example`, AGENTS.md, ARCHITECTURE.md alignment with runtime behavior
 
-[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-beta.1...HEAD
+[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2...HEAD
+[v0.0.2]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-beta.1...v0.0.2
 [v0.0.2-beta.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-b...v0.0.2-beta.1
 [0.0.1]: https://github.com/pvnkmnk/djinn-netrunner/releases/tag/v0.0.1

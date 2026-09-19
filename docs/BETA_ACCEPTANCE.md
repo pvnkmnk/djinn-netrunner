@@ -114,7 +114,7 @@ All three were reproduced on the live stack, fixed, and re-verified (rows 30–3
 
 ## Open findings (not blocking)
 
-0. **OPEN (DJI-489) — case-only differences split an album or artist across folders.** A full PUP
+0. **RESOLVED (DJI-489) — see *Case-canonicalised album identity* and *Case-variant album repair* below; live re-acquire proof included.** Case-only differences split an album or artist across folders. A full PUP
    acquisition produced both `/app/music/PUP/Who Will Look After The Dogs/` and
    `/app/music/PUP/Who Will Look After the Dogs/`, plus `/app/music/Pup/` beside
    `/app/music/PUP/` for the same artist. Peers tag the same album with different
@@ -122,7 +122,7 @@ All three were reproduced on the live stack, fixed, and re-verified (rows 30–3
    the album fragments exactly as it did with per-track credits. Folder and
    comparison logic needs case-insensitive folding (or a canonical form) rather
    than the raw tag.
-0b. **OPEN (DJI-490) — staging keeps non-empty leftovers.** 54 directories remained under
+0b. **RESOLVED (DJI-490) — see *Acceptance run at the merge commit* row 63 (zero residual directories) and the "Resolved by this run" note in the 2026-09-15 findings.** Staging kept non-empty leftovers: 54 directories remained under
    `/app/downloads` after the run, 13 of them non-empty. `cleanupEmptyStagingDirs`
    only removes directories that are already empty, so anything left by an item
    that ended as `abandoned`, `completed (duplicate album)` or `failed (no
@@ -613,7 +613,7 @@ upward, stopping at the first directory that still holds entries.
 
 Neither was found by reading code.
 
-**OPEN (not blocking) — the folder is canonicalised, the tag is not, so Subsonic still splits the artist.** Acquisition #8 imported with peer tags `artist=Pup`, `album=PUP`. The folder was correctly canonicalised to `/app/music/PUP/PUP/`, but the tags written into the file kept the peer's casing:
+**RESOLVED (DJI-494) — see the *DJI-494 tag writes and the download gate* section, rows 75-77.** The folder is canonicalised, the tag was not, so Subsonic still split the artist. Acquisition #8 imported with peer tags `artist=Pup`, `album=PUP`. The folder was correctly canonicalised to `/app/music/PUP/PUP/`, but the tags written into the file kept the peer's casing:
 
 ```
 $ ffprobe … "/app/music/PUP/PUP/07 - Lionheart.mp3"
@@ -886,7 +886,7 @@ stack for a reason this run established rather than assumed:
 | Entrance | Why it could not be driven live |
 |---|---|
 | Soulseek candidate loop | A refusal needs a real peer to serve a mismatched file *at a chosen moment*. The one time this happened organically it produced the original defect (the `Noriyuki Iwadare` track imported under a `PUP` request). There is no seam to request a mismatched peer on demand, and the query cannot be chosen to force one — a peer only appears in results when its filename matches the query, which is the same signal the gate uses. |
-| yt-dlp fallback | **Dormant when the run was recorded:** no production code path wrote `jobitems.source_url` (only `_test.go` did, and the live stack counted **0 of 122** items carrying one despite having imported 43 tracks), so the entrance was gated but unreachable. DJI-498 has since given it a writer — watchlist sync now carries the provider's `source_link` onto the item — but the clause is still **not driven live**, and hand-inserting a row would be a fixture rather than a flow. Driving it needs a feed entry the swarm cannot satisfy plus working yt-dlp egress, which is a future run's work. |
+| yt-dlp fallback | **Driven live as of DJI-501** (`egress-refusal.spec.ts` seeds an item whose source_url is public and non-allowlisted; a real worker and real yt-dlp run the entrance and the boundary refuses the fetch — `Tunnel connection failed: 403 Forbidden`, job ends failed, zero imports; removing `YTDLP_PROXY` turns the spec red, so the proof binds to the boundary). What remains **not driven live** is specifically the *mismatched-work refusal* on this entrance: a reachable URL serving playable audio that is not the requested work. (For history: when the 2026-09-15 run was recorded, no production code path wrote `jobitems.source_url` — only `_test.go` did, and the live stack counted **0 of 122** items carrying one despite having imported 43 tracks — so the entrance was gated but unreachable. DJI-498 gave it the writer; DJI-501 proved the entrance end to end.) |
 
 What exists instead is test evidence, and it is labelled as such rather than
 presented as a run. The tests drive the real pipeline through each entrance with
