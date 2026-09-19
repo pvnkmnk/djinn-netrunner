@@ -18,7 +18,8 @@
 # The restore uses `git stash`-free snapshot copies taken BEFORE mutating, not
 # `git checkout --`: these files carry uncommitted work in progress, and a
 # checkout would silently wipe it (observed live — the fake-slskd service
-# block vanished from the overlay mid-run).set -euo pipefail
+# block vanished from the overlay mid-run).
+set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -39,6 +40,15 @@ service_for() {
     gate)     echo "ops-worker" ;;
     boundary) echo "ops-worker" ;;
     *) echo "unknown mutation: $MUTATION (gate|boundary)" >&2; exit 2 ;;
+  esac
+}
+
+# Only the test that pins the mutated behavior — running the whole file would
+# blame an infrastructure blip in an unrelated probe on the mutation.
+test_grep_for() {
+  case "$MUTATION" in
+    gate)     echo "Soulseek entrance" ;;
+    boundary) echo "multi-hop" ;;
   esac
 }
 
@@ -95,18 +105,44 @@ echo "[mutation-check] rebuilding $(service_for) with the mutation..."
 compose up -d --build "$(service_for)" >/dev/null
 sleep 10
 
-echo "[mutation-check] running the spec — it MUST FAIL..."
-cd "$REPO_ROOT/e2e"
-# The pipeline's exit code is tail's, so run playwright with its own status
-# captured (PIPESTATUS) — a masked failure would read as "spec does not bite".
+run_probe() {
+  cd "$REPO_ROOT/e2e"
+  npx playwright test "$(basename "$SPEC")" --grep "$(test_grep_for)" \
+    --timeout=300000 --reporter=list --workers=1
+}
+
+echo "[mutation-check] running the probe — it MUST FAIL..."
+# Distinguish "the spec caught the mutation" from "the stack broke": a failing
+# SPEC means caught; anything else (compose failed, npx missing) means the
+# harness itself is broken and must fail loudly, not "pass".
 set +e
-npx playwright test "$(basename "$SPEC")" --timeout=300000 --reporter=list --workers=1 > /tmp/mutation-playwright.log 2>&1
+run_probe > mutation-run.tmp.log 2>&1
 SPEC_EXIT=$?
-tail -6 /tmp/mutation-playwright.log
 set -e
+tail -6 mutation-run.tmp.log
+rm -f mutation-run.tmp.log
 cd "$REPO_ROOT"
 if [ "$SPEC_EXIT" -eq 0 ]; then
   echo "[mutation-check] SPEC PASSED WITH THE MUTATION — the spec does not bite."
   exit 1
 fi
-echo "[mutation-check] spec failed under the mutation (exit $SPEC_EXIT), as it must."
+case "$SPEC_EXIT" in
+  1) echo "[mutation-check] probe failed under the mutation (exit $SPEC_EXIT), as it must." ;;
+  *) echo "[mutation-check] probe exited $SPEC_EXIT — a harness/infra failure, not a caught mutation." >&2; exit 3 ;;
+esac
+
+# Clean control run: the restore happened in the EXIT trap, so rebuild happened
+# too. The probe must now PASS — otherwise the "failure" above was a flaky or
+# broken probe, not a caught mutation, and the check has proven nothing.
+echo "[mutation-check] clean control run — the probe MUST PASS now..."
+set +e
+run_probe > mutation-control.tmp.log 2>&1
+CONTROL_EXIT=$?
+set -e
+tail -4 mutation-control.tmp.log
+rm -f mutation-control.tmp.log
+if [ "$CONTROL_EXIT" -ne 0 ]; then
+  echo "[mutation-check] CONTROL RUN FAILED — the probe's mutation failure cannot be trusted." >&2
+  exit 4
+fi
+echo "[mutation-check] PASS: probe fails under the mutation, passes restored — it bites."

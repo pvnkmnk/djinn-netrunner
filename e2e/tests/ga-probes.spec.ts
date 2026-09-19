@@ -62,10 +62,13 @@ async function seedProbe(
 // an identical-recording file hits the recording dedup — both bypass the
 // identity gate. Clean this suite's own rows and files before seeding.
 async function cleanProbeResidue(page: Page, csrf: string): Promise<void> {
-  await page.request.post(
+  const res = await page.request.post(
     '/api/test/seed-fallback-refusal/cleanup',
     { headers: { 'X-CSRF-Token': csrf } },
   );
+  // A silently partial cleanup leaves duplicate paths active and the probe
+  // exercises nothing — the endpoint reports failures, we fail on them.
+  expect(res.status(), 'probe cleanup must fully succeed before seeding').toBe(200);
 }
 
 // The Job model has no json tags, so Go marshals fields as "ID"/"State" —
@@ -137,23 +140,10 @@ test.describe('GA gap closers', () => {
     ).toBe(true);
     expect(state, 'the job must fail — the only item was refused').toBe('failed');
 
-    // Nothing the decoy names may exist under the library root: a refused
-    // download must not be in the library, and the job's own scan must not
-    // have indexed one either.
-    for (const name of ['Totally Different Band', 'Wrong Work Probe']) {
-      const listing = await page.request
-        .post('/api/test/create-dir', {
-          data: { path: `/app/music/${name}`, check_only: true },
-          headers: { 'X-CSRF-Token': csrf },
-        })
-        .catch(() => null);
-      // Best-effort only: the helper exists in the e2e build; the assertion
-      // below is the real proof.
-      if (listing && listing.status() === 200) {
-        const body = (await listing.json()) as Record<string, unknown>;
-        expect(body['exists'], `nothing from "${name}" may exist under the library root`).toBeFalsy();
-      }
-    }
+    // Nothing the decoy names may exist under the library root: the refusal's
+    // own discard plus the cleanup endpoint's RemoveAll (in the next run's
+    // setup) are the only writers of those folders, so the DB assertion below
+    // plus the failed job are the proof of "never imported".
     const libTracks = await page.request
       .get(`/api/libraries/`, { headers: { 'X-CSRF-Token': csrf } })
       .then(r => (r.status() === 200 ? (r.json() as Array<Record<string, unknown>>) : []));

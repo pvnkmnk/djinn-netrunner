@@ -524,13 +524,23 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		// and the FOLDER NAME the refused decoy imported under (the item's
 		// request — the decoy is stranded there by the terminal-discard
 		// boundary, which only removes STAGED files, never library files).
+		// Every failure is reported: a cleanup that silently no-ops leaves the
+		// duplicate paths active and the next probe exercises nothing.
+		var problems []string
 		for _, artist := range []string{"Totally Different Band", "Wrong Work Probe", "Clean Success Artist"} {
-			db.Where("artist = ?", artist).Delete(&database.Track{})
-			db.Where("artist = ?", artist).Delete(&database.Acquisition{})
-			artistDir := filepath.Join(cfg.MusicLibraryPath, artist)
-			if err := os.RemoveAll(artistDir); err == nil {
-				slog.Info("probe cleanup removed library dir", "dir", artistDir)
+			if err := db.Where("artist = ?", artist).Delete(&database.Track{}).Error; err != nil {
+				problems = append(problems, fmt.Sprintf("tracks %q: %v", artist, err))
 			}
+			if err := db.Where("artist = ?", artist).Delete(&database.Acquisition{}).Error; err != nil {
+				problems = append(problems, fmt.Sprintf("acquisitions %q: %v", artist, err))
+			}
+			artistDir := filepath.Join(cfg.MusicLibraryPath, artist)
+			if err := os.RemoveAll(artistDir); err != nil {
+				problems = append(problems, fmt.Sprintf("dir %s: %v", artistDir, err))
+			}
+		}
+		if len(problems) > 0 {
+			return c.Status(500).JSON(fiber.Map{"error": "cleanup incomplete", "details": problems})
 		}
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
