@@ -161,7 +161,13 @@ run_probe() {
   # Subshell: the cd must not outlive the call, or the script's cwd (and the
   # relative log paths and mutation file targets below) silently re-anchor to
   # e2e/ after the first probe run.
-  ( cd "$REPO_ROOT/e2e" && npx playwright test "$(basename "$SPEC")" --grep "$(test_grep_for)" \
+  # `env -u CI`: GitHub Actions sets CI=true ambiently, which flips
+  # playwright.config.ts's reuseExistingServer to false — Playwright then
+  # refuses the long-lived stack this harness shares across mutate/control/
+  # boundary phases ("port 8080 already used") and teardown.ts would destroy
+  # it between phases. The probes must always run in reuse mode; CI's other
+  # meanings (retries, forbidden .only) are not needed for a 1-test probe.
+  ( cd "$REPO_ROOT/e2e" && env -u CI npx playwright test "$(basename "$SPEC")" --grep "$(test_grep_for)" \
     --timeout=300000 --reporter=list --workers=1 )
 }
 
@@ -173,6 +179,12 @@ set +e
 run_probe > "$REPO_ROOT/mutation-run.tmp.log" 2>&1
 SPEC_EXIT=$?
 set -e
+if grep -qE "is already used|webServer" "$REPO_ROOT/mutation-run.tmp.log"; then
+  echo "[mutation-check] probe never ran (Playwright webServer/stack conflict) — harness failure, not a caught mutation." >&2
+  tail -6 "$REPO_ROOT/mutation-run.tmp.log"
+  rm -f "$REPO_ROOT/mutation-run.tmp.log"
+  exit 3
+fi
 tail -6 "$REPO_ROOT/mutation-run.tmp.log"
 rm -f "$REPO_ROOT/mutation-run.tmp.log"
 if [ "$SPEC_EXIT" -eq 0 ]; then
