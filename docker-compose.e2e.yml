@@ -71,6 +71,19 @@ services:
     volumes:
       - ./ops/squid/squid.conf:/etc/squid/squid.conf:ro
       - ./ops/squid/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro
+    # Same pin as ops-worker: squid must resolve the probe's name to the same
+    # documentation address the worker's guard checked, or CONNECT would
+    # target a different host than the one that was validated (and would
+    # otherwise fail — squid has no other way to learn this name). Paired
+    # with hosts_file in squid.conf, which points squid's resolver at
+    # /etc/hosts.
+    extra_hosts:
+      - "audio-probe.e2e.test=2001:db8:aa::10"
+    # The proxy joins the doc network too: it is the one that dials the probe
+    # on yt-dlp's behalf (the worker only talks to squid).
+    networks:
+      - default
+      - probe-doc-v6
     healthcheck:
       test: ["CMD-SHELL", "bash -c '< /dev/tcp/127.0.0.1/3128'"]
       interval: 10s
@@ -93,3 +106,55 @@ services:
     depends_on:
       egress-proxy:
         condition: service_healthy
+      audio-probe:
+        condition: service_started
+    # The wrong-work refusal probe (see audio-probe below). /etc/hosts pins the
+    # probe's name to ONE address — the documentation-IPv6 one — in the
+    # resolver of every component that must agree on it: the worker's SSRF
+    # guard resolves via Go's resolver, which consults files first, and yt-dlp
+    # (python) and squid resolve through getaddrinfo, same order. A compose
+    # DNS alias cannot do this: every Docker network is dual-stack in practice
+    # (a --ipv6 bridge still auto-assigns 172.x, verified), so an alias
+    # resolves to a private v4 address the guard would refuse — and the probe
+    # must pass the guard to reach the gate. 2001:db8:aa::/64 is RFC 3849
+    # documentation space: not in the guard's privateCIDRs, not in the
+    # proxy's deny ACL, and unreachable from the internet.
+    extra_hosts:
+      - "audio-probe.e2e.test=2001:db8:aa::10"
+    networks:
+      # Reach the probe server over the doc network (yt-dlp does the fetching).
+      - default
+      - probe-doc-v6  # Wrong-work refusal probe (the fallback-entrance clause the acceptance
+  # record still lists as not driven live). A tiny HTTP server on the IPv6
+  # documentation network (RFC 3849 — 2001:db8::/32 is guaranteed never
+  # routable, so nothing here can touch the internet) serving a real FLAC
+  # whose tags name a different work than the probe requests. The URL passes
+  # the app's pre-handover guard (DJI-500 — the range is not in privateCIDRs)
+  # and the proxy's deny list (DJI-501 — same reason), yt-dlp downloads it
+  # THROUGH the proxy fine, and the identity gate (download_gate.go) is the
+  # layer that must refuse it. Every earlier layer passing is what makes this
+  # a proof of the gate and not of something in front of it.
+  # Resolution: the probe name is pinned via extra_hosts on the containers
+  # that resolve it (see ops-worker) — this service needs no DNS alias at all.
+  # Static v6 address so the /etc/hosts entry and the server agree.
+  audio-probe:
+    build:
+      context: ./ops/audio-probe
+    container_name: e2e-audio-probe
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+    networks:
+      probe-doc-v6:
+        ipv6_address: 2001:db8:aa::10
+
+networks:
+  probe-doc-v6:
+    # IPv6 documentation range (RFC 3849). Containers reach it; the internet
+    # cannot, and it cannot reach out — 2001:db8::/32 is not globally routed.
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 2001:db8:aa::/64
+
+
