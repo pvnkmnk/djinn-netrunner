@@ -115,8 +115,9 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   spec does not delete them).
 - The `reuseExistingServer: !CI` shortcut hides stale code: a rebuilt seed
   endpoint never reaches a running stack (Playwright skips setup when healthy).
-  After backend/template changes, `docker compose ... up -d --build ops-web
-  ops-worker` before trusting a run against new code.
+  After backend/template changes, `docker compose --env-file ../.env.e2e -f
+  ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --build ops-web
+  ops-worker` (from `e2e/`) before trusting a run against new code.
 - **GA-gap probes** (`e2e/tests/ga-probes.spec.ts`, PR #259) drive three live
   clauses: Soulseek-entrance wrong-work refusal, success path → library, and
   multi-hop post-handover refusal. `POST /api/test/seed-*` endpoints (gated
@@ -140,9 +141,13 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   not `git checkout --`** (the latter wipes unrelated uncommitted work), then
   require a passing control run. Route Playwright output to a file — exit
   codes through `tail` pipelines see tail's status, not playwright's.
-- Egress-proxy mutations are automated for the gate and boundary; browser
-  behavior mutations (remove admin gate) still need an image rebuild + spec
-  run (templates are baked into the image) — see Linear DJI-434.
+- Automated mutation proofs cover the **identity gate**
+  (`scripts/mutation-check.sh gate` — mutates `download_gate.go`; the
+  Soulseek wrong-work probe must fail) and the **egress boundary**
+  (`boundary` — removes `YTDLP_PROXY`; the multi-hop probe must fail),
+  re-proven weekly by `.github/workflows/mutation.yml`. Browser behavior
+  mutations (remove admin gate) still need an image rebuild + spec run
+  (templates are baked into the image) — see Linear DJI-434.
 
 ## API & data contracts (non-obvious)
 

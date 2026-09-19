@@ -27,17 +27,21 @@ MUTATION="${1:?usage: scripts/mutation-check.sh <gate|boundary>}"
 SPEC="e2e/tests/ga-probes.spec.ts"
 DOCKER="${DOCKER_BIN:-docker}"
 
-# Prefer the PATH-resolved docker; fall back to Docker Desktop's known
-# install location. Either way, docker-credential-desktop (a SIBLING of
-# docker.exe) is resolved by the compose/buildx client from PATH at build
-# time — a missing helper kills every build with "docker-credential-desktop
-# ... not found in %PATH%". Prepend the bin dir in POSIX form (cygpath -u):
-# a Windows-form entry mangles the MSYS PATH list instead of extending it.
-DOCKER="$(command -v docker || true)"
-if [ -z "$DOCKER" ] && [ -n "${ProgramFiles:-}" ] && [ -x "${ProgramFiles}/Docker/Docker/resources/bin/docker.exe" ]; then
-  DOCKER="${ProgramFiles}/Docker/Docker/resources/bin/docker.exe"
+DOCKER="${DOCKER_BIN:-docker}"
+# An explicit DOCKER_BIN wins; otherwise prefer the PATH-resolved binary and
+# fall back to Docker Desktop's known install location. Either way,
+# docker-credential-desktop (a SIBLING of docker.exe) is resolved by the
+# compose/buildx client from PATH at build time — a missing helper kills
+# every build with "docker-credential-desktop ... not found in %PATH%".
+# Prepend the bin dir in POSIX form (cygpath -u): a Windows-form entry
+# mangles the MSYS PATH list instead of extending it.
+if [ "$DOCKER" = "docker" ]; then
+  DOCKER="$(command -v docker || true)"
+  if [ -z "$DOCKER" ] && [ -n "${ProgramFiles:-}" ] && [ -x "${ProgramFiles}/Docker/Docker/resources/bin/docker.exe" ]; then
+    DOCKER="${ProgramFiles}/Docker/Docker/resources/bin/docker.exe"
+  fi
+  [ -n "$DOCKER" ] || { echo "docker not found on PATH or at the Docker Desktop default" >&2; exit 2; }
 fi
-[ -n "$DOCKER" ] || { echo "docker not found on PATH or at the Docker Desktop default" >&2; exit 2; }
 DOCKER_BIN_DIR="$(dirname "$DOCKER")"
 if command -v cygpath >/dev/null 2>&1; then
   DOCKER_BIN_DIR="$(cygpath -u "$DOCKER_BIN_DIR")"
@@ -50,7 +54,7 @@ export PATH="$DOCKER_BIN_DIR:$PATH"
 # not found" — and a silently skipped mutation must not read as a green run.
 PY_BIN=""
 for candidate in python3 python py; do
-  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import sys" >/dev/null 2>&1; then
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import sys; raise SystemExit(sys.version_info[0] != 3)" >/dev/null 2>&1; then
     PY_BIN="$candidate"; break
   fi
 done
