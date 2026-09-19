@@ -13,7 +13,7 @@ on:
     - cron: '0 4 * * 1'
   workflow_dispatch: {}
 
-# One full cycle (setup → gate → boundary) at a time; a manual dispatch
+# One full cycle (setup -> gate -> boundary -> success) at a time; a manual dispatch
 # during a scheduled run must not stack two full runs.
 concurrency:
   group: mutation-check
@@ -50,6 +50,8 @@ jobs:
 
       - name: Boundary mutation must turn the multi-hop probe red
         run: bash scripts/mutation-check.sh boundary
+      - name: Success mutation must turn the success-path probe red
+        run: bash scripts/mutation-check.sh success
 
       - name: Upload probe results
         if: always()

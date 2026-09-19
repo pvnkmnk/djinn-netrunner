@@ -9,6 +9,9 @@
 #               the Soulseek wrong-work spec must fail.
 #   boundary  - unset YTDLP_PROXY so yt-dlp egress is unvalidated;
 #               the multi-hop post-handover spec must fail.
+#   success   - retag the success fixture's source (ops/fake-slskd's clean
+#               peer) so the downloaded file no longer matches the request;
+#               the success-path import spec must fail.
 #
 # Each mutation is applied in-place, the stack is rebuilt with it, the spec is
 # expected to FAIL, then the file is restored and the stack rebuilt clean.
@@ -23,7 +26,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-MUTATION="${1:?usage: scripts/mutation-check.sh <gate|boundary>}"
+MUTATION="${1:?usage: scripts/mutation-check.sh <gate|boundary|success>}"
 SPEC="e2e/tests/ga-probes.spec.ts"
 DOCKER="${DOCKER_BIN:-docker}"
 
@@ -78,7 +81,8 @@ service_for() {
   case "$MUTATION" in
     gate)     echo "ops-worker" ;;
     boundary) echo "ops-worker" ;;
-    *) echo "unknown mutation: $MUTATION (gate|boundary)" >&2; exit 2 ;;
+    success)  echo "slskd" ;;
+    *) echo "unknown mutation: $MUTATION (gate|boundary|success)" >&2; exit 2 ;;
   esac
 }
 
@@ -88,6 +92,7 @@ test_grep_for() {
   case "$MUTATION" in
     gate)     echo "Soulseek entrance" ;;
     boundary) echo "multi-hop" ;;
+    success)  echo "success path" ;;
   esac
 }
 
@@ -120,6 +125,18 @@ PY
       grep -q "MUTATION: YTDLP_PROXY removed" docker-compose.e2e.yml \
         || { echo "boundary mutation did not land" >&2; exit 2; }
       ;;
+    # The success spec's subject is the fake slskd's clean peer: the probe
+    # rides the Soulseek entrance (no_fallback), so the file the worker
+    # downloads is generated from the peer's TAGS. Mutate the tag source,
+    # not a generated file -- the entrypoint regenerates from tags on every
+    # enqueue, so a file-only mutation would be overwritten before the
+    # worker ever fetched it (observed live: a success.sh mutation left the
+    # spec green).
+    success)
+      sed -i 's/"tag_artist": "Clean Success Artist",$/# MUTATION: tag source renamed\n        "tag_artist": "Mutated Success Artist",/' ops/fake-slskd/entrypoint.py
+      grep -q "MUTATION: tag source renamed" ops/fake-slskd/entrypoint.py \
+        || { echo "success mutation did not land" >&2; exit 2; }
+      ;;
   esac
 }
 
@@ -127,6 +144,7 @@ restore_mutation() {
   case "$MUTATION" in
     gate)     mv backend/internal/services/download_gate.go.bak backend/internal/services/download_gate.go ;;
     boundary) mv docker-compose.e2e.yml.bak docker-compose.e2e.yml ;;
+    success)  mv ops/fake-slskd/entrypoint.py.bak ops/fake-slskd/entrypoint.py ;;
   esac
 }
 
@@ -136,7 +154,8 @@ restore_mutation() {
 # control run, and the control would fail with the mutation still applied).
 cleanup() {
   cd "$REPO_ROOT"
-  if [ -f "backend/internal/services/download_gate.go.bak" ] || [ -f "docker-compose.e2e.yml.bak" ]; then
+  if [ -f "backend/internal/services/download_gate.go.bak" ] || [ -f "docker-compose.e2e.yml.bak" ] \
+    || [ -f "ops/fake-slskd/entrypoint.py.bak" ]; then
     restore_mutation
     echo "[mutation-check] restored $MUTATION; rebuilding clean stack..."
     compose up -d --build --force-recreate "$(service_for)" >/dev/null 2>&1 || true
@@ -148,6 +167,7 @@ echo "[mutation-check] snapshotting the target file (it may carry uncommitted wo
 case "$MUTATION" in
   gate)     cp backend/internal/services/download_gate.go backend/internal/services/download_gate.go.bak ;;
   boundary) cp docker-compose.e2e.yml docker-compose.e2e.yml.bak ;;
+  success)  cp ops/fake-slskd/entrypoint.py ops/fake-slskd/entrypoint.py.bak ;;
 esac
 
 echo "[mutation-check] applying mutation: $MUTATION"
