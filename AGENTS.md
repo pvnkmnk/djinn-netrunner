@@ -39,9 +39,9 @@ cd backend && go test ./... # full non-tagged suite
 cd backend && go build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent
 cd backend && go run ./cmd/server   # auto-runs migrations; worker/agent/cli likewise
 docker compose up -d                # full stack; logs: docker compose logs -f netrunner[-slskd]
-./scripts/integration-tests.sh test # or: go test ./internal/integration/... -tags=integration -v
+./scripts/integration-tests.sh test # or, from backend/: go test ./internal/integration/... -tags=integration -v
 ./scripts/smoke-test.sh             # deploy + health/auth/CRUD checks
-./scripts/validate.sh | validate.ps1
+./scripts/validate.sh            # (Windows PowerShell: ./scripts/validate.ps1)
 govulncheck ./...                   # CI fails on reachable CVEs
 ```
 
@@ -55,7 +55,7 @@ SQLite path), `SLSKD_API_KEY` (required for acquisition), `JWT_SECRET`
 
 ## E2E (Playwright)
 
-Entry point: `bash scripts/e2e.sh test` from `e2e/` — **Playwright owns the
+Entry point: `bash scripts/e2e.sh test` from the repo root (or `bash ../scripts/e2e.sh test` from `e2e/`) — **Playwright owns the
 stack lifecycle**: `webServer` runs `e2e/setup-test-db.sh`
 (build/create-DB/start/seed, `.env.e2e` materialised from the checked-in
 `.env.e2e.example`), `globalTeardown` tears down only when `CI=true`.
@@ -304,7 +304,7 @@ Postgres for concurrent production workloads.
   `mise-shim: failed to execute mise: program not found`) and
   `.exe`-suffixed shim copies in a PATH dir (Go's `exec.LookPath` only
   accepts PATHEXT extensions). Recipe:
-  `mkdir -p ~/.ffbin && cp .../mise/shims/{ffmpeg,ffprobe} ~/.ffbin/{ffmpeg,ffprobe}.exe`
+  `mkdir -p ~/.ffbin && cp .../mise/shims/ffmpeg ~/.ffbin/ffmpeg.exe && cp .../mise/shims/ffprobe ~/.ffbin/ffprobe.exe`
   then
   `PATH="/c/Users/idols/AppData/Local/Microsoft/WinGet/Links:$HOME/.ffbin:$PATH"`.
   ffmpeg 9.0.1.
