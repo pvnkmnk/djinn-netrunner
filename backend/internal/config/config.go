@@ -110,6 +110,11 @@ type Config struct {
 	// Empty disables the endpoint (default for backwards compatibility).
 	WorkerHealthAddr string
 
+	// MaxConcurrentJobs caps how many jobs one worker runs at once. Only
+	// meaningful with PostgreSQL (advisory locks); the worker warns and runs
+	// one at a time on SQLite regardless.
+	MaxConcurrentJobs int
+
 	// Subsonic
 	Subsonic struct {
 		Enabled  bool   `envconfig:"SUBSONIC_ENABLED" default:"false"`
@@ -187,6 +192,10 @@ func applyOverlay(cfg *Config, overlay map[string]interface{}) {
 	// Rate limiter
 	if v, ok := overlay["auth_rate_limit_max"].(int); ok && v > 0 {
 		cfg.AuthRateLimitMax = v
+	}
+	// Worker
+	if v, ok := overlay["max_concurrent_jobs"].(int); ok && v > 0 {
+		cfg.MaxConcurrentJobs = v
 	}
 	if v, ok := overlay["auth_rate_limit_expiration"].(string); ok && v != "" {
 		cfg.AuthRateLimitExpiration = v
@@ -337,6 +346,9 @@ func Load(filenames ...string) (*Config, error) {
 		AuthRateLimitMax:        getEnvAsInt("AUTH_RATE_LIMIT_MAX", 10),
 		AuthRateLimitExpiration: getEnv("AUTH_RATE_LIMIT_EXPIRATION", "1m"),
 
+		// Worker
+		MaxConcurrentJobs: getEnvAsInt("MAX_CONCURRENT_JOBS", 5),
+
 		// Subsonic
 		Subsonic: struct {
 			Enabled  bool   `envconfig:"SUBSONIC_ENABLED" default:"false"`
@@ -362,6 +374,7 @@ func Load(filenames ...string) (*Config, error) {
 	cfg.NotificationEnabled = getEnvBool("NOTIFICATION_ENABLED", cfg.NotificationEnabled)
 	cfg.NotificationWebhookURL = getEnv("NOTIFICATION_WEBHOOK_URL", cfg.NotificationWebhookURL)
 	cfg.WorkerHealthAddr = getEnv("WORKER_HEALTH_ADDR", "")
+	cfg.MaxConcurrentJobs = getEnvAsInt("MAX_CONCURRENT_JOBS", cfg.MaxConcurrentJobs)
 	cfg.AllowPrivateTargets = getEnvBool("ALLOW_PRIVATE_TARGETS", cfg.AllowPrivateTargets)
 	cfg.CSRFEnabled = getEnvBool("CSRF_ENABLED", cfg.CSRFEnabled)
 	cfg.MusicLibraryPath = getEnv("MUSIC_LIBRARY", cfg.MusicLibraryPath)
