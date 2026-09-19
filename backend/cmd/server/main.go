@@ -424,12 +424,23 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		var payload struct {
 			Artist string `json:"artist"`
 			Album  string `json:"album"`
+			// URL optionally overrides the probe's source_url. Empty keeps the
+			// DJI-501 default: a public, non-allowlisted host the boundary
+			// denies. The wrong-work probe passes a URL the boundary ALLOWS —
+			// a documentation-IPv6 host serving a real but mismatched FLAC —
+			// so the identity gate is the layer that refuses (see
+			// egress-refusal.spec.ts for both probes).
+			URL string `json:"url"`
 		}
 		if err := c.BodyParser(&payload); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
 		}
 		if payload.Artist == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "artist required"})
+		}
+		sourceURL := payload.URL
+		if sourceURL == "" {
+			sourceURL = "https://httpbin.org/bytes/1024"
 		}
 
 		job := database.Job{
@@ -446,14 +457,14 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			ScopeType: "probe",
 			ScopeID:   fmt.Sprintf("fallback-refusal-%d", time.Now().UnixNano()),
 		}
-		item := database.JobItem{
-			Artist:          payload.Artist,
-			Album:           payload.Album,
-			NormalizedQuery: strings.TrimSpace(payload.Artist + " " + payload.Album),
-			Status:          "queued",
-			SourceURL:       "https://httpbin.org/bytes/1024",
-			OwnerUserID:     &user.ID,
-		}
+	item := database.JobItem{
+		Artist:          payload.Artist,
+		Album:           payload.Album,
+		NormalizedQuery: strings.TrimSpace(payload.Artist + " " + payload.Album),
+		Status:          "queued",
+		SourceURL:       sourceURL,
+		OwnerUserID:     &user.ID,
+	}
 		if err := db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Create(&job).Error; err != nil {
 				return err
