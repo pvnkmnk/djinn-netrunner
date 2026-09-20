@@ -40,6 +40,11 @@ services:
     container_name: netrunner-slskd
     build:
       context: ./ops/fake-slskd
+    # Own tag: building the stand-in under slskd/slskd:latest shadows the
+    # REAL slskd image on any host that later runs the beta compose — the
+    # container named netrunner-slskd silently runs the python stand-in and
+    # every real-slskd healthcheck 401s (observed in the v0.0.3 RC smoke).
+    image: netrunner/fake-slskd:e2e
     environment:
       SLSKD_API_KEY: ${SLSKD_API_KEY}
       FAKE_DOWNLOADS_DIR: /downloads
