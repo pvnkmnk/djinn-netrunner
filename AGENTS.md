@@ -286,6 +286,11 @@ Postgres for concurrent production workloads.
   does not exist here either.
 - **Pongo2 `{# #}` comments cannot span lines** — keep template comments
   single-line.
+- **Feature pages are pinned by their specs**: every page keeps a
+  `.page-header h2`, and its region partial keeps the `.section-header` copy
+  with the Add button, so the title legitimately appears twice. Deduping
+  either one is a spec change, not a tidy — it needs all seven partials and
+  five specs together, or it breaks 11 tests.
 - **`c.Is("form")` is always false**: Fiber's MIME table has a `json` key
   but no `form` key, so the check never matches (it hid the
   unchecked-checkbox handling for watchlists, profiles and schedules). Test
