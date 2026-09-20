@@ -41,7 +41,11 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "5432:5432"
+      # Host-side debugging only — the stack reaches postgres over the
+      # compose network by name. Loopback bind like the other
+      # credential-adjacent publishes; override the host side with
+      # PG_HOST_PORT when another postgres already holds 5432 (DJI-504).
+      - "127.0.0.1:${PG_HOST_PORT:-5432}:5432"
 
   slskd:
     image: slskd/slskd:latest
