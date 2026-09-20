@@ -46,6 +46,25 @@ func (h *WatchlistHandler) ListWatchlists(c *fiber.Ctx) error {
 	return c.JSON(watchlists)
 }
 
+// resolveFormProfileID maps the watchlist form's Quality Profile select onto
+// a stored profile id. An empty value means "use the global default", and
+// the row carries a foreign key, so the default is resolved to a real id:
+// storing the zero UUID is rejected by Postgres
+// (fk_watchlists_quality_profile), which the live stack caught and SQLite
+// tests could not. The field also has to arrive as a string — a select left
+// on its placeholder submits an empty value, which cannot unmarshal into a
+// uuid.UUID and made the whole body fail to parse.
+func (h *WatchlistHandler) resolveFormProfileID(raw string) (uuid.UUID, error) {
+	if raw != "" {
+		return uuid.Parse(raw)
+	}
+	var profile database.QualityProfile
+	if err := h.db.Where("is_default = ?", true).First(&profile).Error; err != nil {
+		return uuid.Nil, fmt.Errorf("no default quality profile is configured")
+	}
+	return profile.ID, nil
+}
+
 // CreateWatchlist creates a new automated watchlist
 func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
@@ -54,27 +73,32 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Name             string    `json:"name"`
-		SourceType       string    `json:"source_type"`
-		SourceURI        string    `json:"source_uri"`
-		QualityProfileID uuid.UUID `json:"quality_profile_id"`
+		Name             string `json:"name" form:"name"`
+		SourceType       string `json:"source_type" form:"source_type"`
+		SourceURI        string `json:"source_uri" form:"source_uri"`
+		QualityProfileID string `json:"quality_profile_id" form:"quality_profile_id"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	if input.QualityProfileID != uuid.Nil && user.Role != "admin" {
+	profileID, err := h.resolveFormProfileID(input.QualityProfileID)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if profileID != uuid.Nil && user.Role != "admin" {
 		var count int64
 		h.db.Model(&database.QualityProfile{}).
-			Where("id = ? AND (owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?)", input.QualityProfileID, user.ID, true).
+			Where("id = ? AND (owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?)", profileID, user.ID, true).
 			Count(&count)
 		if count == 0 {
 			return c.Status(403).JSON(fiber.Map{"error": "forbidden: unauthorized quality profile"})
 		}
 	}
 
-	watchlist, err := h.service.CreateWatchlist(input.Name, input.SourceType, input.SourceURI, input.QualityProfileID, &user.ID)
+	watchlist, err := h.service.CreateWatchlist(input.Name, input.SourceType, input.SourceURI, profileID, &user.ID)
 	if err != nil {
 		slog.Error("Failed to create watchlist", "error", err)
 		return c.Status(400).JSON(fiber.Map{"error": "failed to create watchlist"})
@@ -88,11 +112,11 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 }
 
 type UpdateWatchlistInput struct {
-	Name             *string    `json:"name"`
-	SourceType       *string    `json:"source_type"`
-	SourceURI        *string    `json:"source_uri"`
-	QualityProfileID *uuid.UUID `json:"quality_profile_id"`
-	Enabled          *bool      `json:"enabled"`
+	Name             *string `json:"name" form:"name"`
+	SourceType       *string `json:"source_type" form:"source_type"`
+	SourceURI        *string `json:"source_uri" form:"source_uri"`
+	QualityProfileID *string `json:"quality_profile_id" form:"quality_profile_id"`
+	Enabled          *bool   `json:"enabled" form:"enabled"`
 }
 
 // UpdateWatchlist updates an existing watchlist
@@ -135,20 +159,24 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 		watchlist.SourceURI = *input.SourceURI
 	}
 	if input.QualityProfileID != nil {
-		if user.Role != "admin" {
+		profileID, err := h.resolveFormProfileID(*input.QualityProfileID)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		if profileID != uuid.Nil && user.Role != "admin" {
 			var count int64
 			h.db.Model(&database.QualityProfile{}).
-				Where("id = ? AND (owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?)", *input.QualityProfileID, user.ID, true).
+				Where("id = ? AND (owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?)", profileID, user.ID, true).
 				Count(&count)
 			if count == 0 {
 				return c.Status(403).JSON(fiber.Map{"error": "forbidden: unauthorized quality profile"})
 			}
 		}
-		watchlist.QualityProfileID = *input.QualityProfileID
+		watchlist.QualityProfileID = profileID
 	}
 	if input.Enabled != nil {
 		watchlist.Enabled = *input.Enabled
-	} else if c.Is("form") {
+	} else if isFormPost(c) {
 		// ponytail: unchecked checkboxes are omitted in form submissions, treat as false
 		watchlist.Enabled = false
 	}
@@ -162,6 +190,8 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	// An edit comes from the modal: close it on success, as create does.
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderWatchlistsPartial(c)
 	}
@@ -284,9 +314,15 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
 
+	// Only pass ID if it is non-zero: a zero UUID is truthy in templates,
+	// which labelled the Add modal "Edit" and posted a hidden zero id.
+	var templateID interface{} = wl.ID.String()
+	if wl.ID == uuid.Nil {
+		templateID = nil
+	}
 	c.Set("HX-Trigger", "openModal")
 	return c.Render("partials/watchlist-form", fiber.Map{
-		"ID":               wl.ID,
+		"ID":               templateID,
 		"Name":             wl.Name,
 		"SourceType":       wl.SourceType,
 		"SourceURI":        wl.SourceURI,

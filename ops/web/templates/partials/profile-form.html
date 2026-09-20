@@ -4,7 +4,7 @@
             <h3 id="modal-title">{% if IsNew %}Add{% else %}Edit{% endif %} Profile</h3>
             <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
-        <form hx-post="/api/profiles" hx-target="#profiles-list" hx-swap="outerHTML">
+        <form hx-{% if ID %}patch="/api/profiles/{{ ID }}"{% else %}post="/api/profiles"{% endif %} hx-target="#profiles-region" hx-swap="innerHTML">
             {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
             <div class="form-group">
                 <label for="name">Name</label>

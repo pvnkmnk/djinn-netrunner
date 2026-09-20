@@ -112,7 +112,9 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   URL — the attempt line contains the URL, which makes the assertion
   vacuous. Local runs seed probes via the gated
   `POST /api/test/seed-fallback-refusal`; clean probe rows between runs (the
-  spec does not delete them).
+  spec does not delete them). Seeds accept an optional `peer` spec
+  (forwarded to the fake's `/roster` surface), so on-demand peers need no
+  fixture-code change.
 - The `reuseExistingServer: !CI` shortcut hides stale code: a rebuilt seed
   endpoint never reaches a running stack (Playwright skips setup when healthy).
   After backend/template changes, `docker compose --env-file ../.env.e2e -f
@@ -136,7 +138,16 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   answer that with 200 and everything else with 302→RFC1918. A counter gets
   consumed by attempt 1 and attempt 2's walk records the *pre-flight* refusal
   — the wrong layer, catchable only by asserting the wording.
-- `scripts/mutation-check.sh <gate|boundary>` automates mutation proofs:
+- The e2e test endpoints live in `internal/api/testapi` (mounted only when
+  `E2E_ENABLE_TEST_API`); **seeds self-declare their fixture artists to
+  cleanup** (request artist + peer TAG artist), so cleanup needs no edits for
+  a new clause — and its roster is add-only, never trimmed (DJI-502).
+- The e2e overlay tags the slskd stand-in `netrunner/fake-slskd:e2e` — never
+  build it under `slskd/slskd:latest` (that shadowed the real image and later
+  beta bring-ups ran a python stand-in as netrunner-slskd, DJI-503).
+- Compose publishes postgres as `127.0.0.1:${PG_HOST_PORT:-5432}:5432`;
+  host-side client URLs must follow `PG_HOST_PORT` (DJI-504).
+- `scripts/mutation-check.sh <gate|boundary|success>` automates mutation proofs:
   snapshot the file, mutate, expect spec FAIL, restore **from the snapshot,
   not `git checkout --`** (the latter wipes unrelated uncommitted work), then
   require a passing control run. Route Playwright output to a file — exit
@@ -251,19 +262,54 @@ Postgres for concurrent production workloads.
 - **Pongo2 renders Go bools as `True`/`False`** (capitalized) — use
   `{% if field %}true{% else %}false{% endif %}` for lowercase (broke E2E on
   `Lossless: True`).
-- **Pongo2 `{% if ID %}` is always true for UUIDs** (zero UUID is a
-  non-empty string) — pass an explicit `IsNew` bool to distinguish add/edit.
+- **Pongo2 truthiness calls a nil pointer true**: it resolves the pointer
+  to its zero value, so `{% if field %}` cannot guard a nullable one. A
+  zero UUID made Add modals read "Edit" (nil the id out, as
+  `libraries.go` does, or pass an explicit `IsNew`); a nil `*time.Time`
+  reached the `date` filter and 500'd the whole list (`filter input
+  argument must be of type 'time.Time'`) — such fields need a Go-side
+  label (`Schedule.NextRunLabel`, `MonitoredArtist.LastScanLabel`).
 - **`encoding/json` silently drops fields without JSON tags** — `source_uri`
   ≠ `SourceURI` (case-insensitive fallback doesn't cover underscores); both
   model AND input struct need tags (DJI-437).
-- **HTMX only swaps 2xx responses** — 4xx/5xx error paths silently no-op;
-  check `isHTMXRequest(c)` and return an error partial via
-  `c.SendString(...)` (DJI-438).
-- **Create handlers must set `HX-Trigger: closeModal`** before returning the
-  partial, or the modal never closes (only `AcquireHandler.Create` does it;
-  DJI-440).
+- **HTMX only swaps 2xx responses** — 4xx/5xx paths no-op silently unless
+  something renders them. `app.js`'s `htmx:responseError` handler shows the
+  server's message inside the modal (or the region for a failed load) and
+  discriminates on `requestConfig.verb`: the section regions also carry
+  `hx-get`, so the target's attributes cannot tell a failed save from a
+  failed load (DJI-438).
+- **Every modal-bearing handler — create *and* update — must set
+  `HX-Trigger: closeModal`** before returning its partial (DJI-440), or an
+  edit leaves the modal open over an already-updated list. `hx-on:submit`
+  cannot replace it: the native submit event has no `detail.successful`,
+  and this app ships **htmx 1.9.10**, so htmx 2's `hx-on::after-request`
+  does not exist here either.
 - **Pongo2 `{# #}` comments cannot span lines** — keep template comments
   single-line.
+- **Feature pages are pinned by their specs**: every page keeps a
+  `.page-header h2`, and its region partial keeps the `.section-header` copy
+  with the Add button, so the title legitimately appears twice. Deduping
+  either one is a spec change, not a tidy — it needs all seven partials and
+  five specs together, or it breaks 11 tests.
+- **`c.Is("form")` is always false**: Fiber's MIME table has a `json` key
+  but no `form` key, so the check never matches (it hid the
+  unchecked-checkbox handling for watchlists, profiles and schedules). Test
+  the header — `strings.HasPrefix(c.Get(fiber.HeaderContentType),
+  fiber.MIMEApplicationForm)`, see `isFormPost` in `auth_context.go`.
+- **Inline `<script>` never runs here**: `main.go` and the Caddyfile both
+  set `script-src 'self'`, so script inside a template is dead code in every
+  environment — handlers belong in `ops/web/static/js/app.js`.
+- **Form posts need `form:` tags beside `json:`**, and an empty `<select>`
+  cannot unmarshal into a `uuid.UUID` (the decoder fails the *whole* body,
+  so the error reads `invalid request body`, not the field). Take such
+  fields as `string` and parse; `uuid.Nil` also cannot be stored where a
+  foreign key exists, so "use the global default" has to resolve the
+  default row (`WatchlistHandler.resolveFormProfileID`, `artists.Add`).
+- **A mutation response renders the whole region partial**, so its swap
+  target must be the region with `innerHTML` (`#X-region`, as `/playlists`
+  and `/jobs` already did). Targeting the region's inner `#X-list` with
+  `outerHTML` nests a second region inside the first — a duplicate Add
+  button and section title on every save.
 
 ## Consolidated workspace learnings (merged from DevWorks base, 2026-09-18)
 
@@ -312,6 +358,16 @@ Postgres for concurrent production workloads.
   re-run before debugging.
 
 ### Build, test & integration
+
+- **The `:memory:` SQLite test DB does not enforce foreign keys**, so a
+  zero-UUID/FK violation passes the unit test and only fails on the live
+  Postgres stack; assert the resolved value, not merely "not 400".
+- **Templates, CSS and JS are baked into the images** (no bind mounts): a
+  template or `app.js` change is invisible until
+  `up -d --build`, and the running container's copy is what the browser gets.
+- CI has no `gofmt` gate (the lint job is disabled pending
+  golangci-lint+go1.25); `go vet ./...` is the gate, and `gofmt -w` would
+  flip this repo's CRLF Go files to LF — format-check an LF copy instead.
 
 - **Line endings are mixed per-file in this repo**: most files are CRLF but
   `acquisition_pipeline.go` (among others) is LF. Detect the dominant ending

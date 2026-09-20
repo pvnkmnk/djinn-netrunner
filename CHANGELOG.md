@@ -7,37 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [v0.0.4] - DRAFT 2026-09-19
+## [v0.1.0] - 2026-09-19
 
-Drafted by the post-tag assessment; cut when the release owner decides the
-residuals below (if any) are in. Content = everything on master since
-v0.0.3.1 (`da4d0d7`).
-
-### Fixed
-- The postgres container's host publish was a hardcoded `5432:5432`,
-  colliding with any existing host postgres during bring-up; it is now
-  loopback-bound and overridable via `PG_HOST_PORT`, documented in
-  `.env.beta.example` and `skills/repo-setup.md` (#271, DJI-504)
-
-### Changed
-- The e2e cleanup endpoint's fixture roster is self-extending: every
-  probe seed declares its own names (request artist + peer tag artist),
-  so probe residue can no longer silently short-circuit the identity gate
-  through the hash/recording-dedup paths, and new acceptance clauses need
-  no cleanup-list edit (#272, DJI-502)
-
-## [v0.0.3.1] - 2026-09-19
-
-### Fixed
-- The e2e overlay built the fake-slskd stand-in under `slskd/slskd:latest`,
-  overwriting the REAL slskd image tag on any host that had run the e2e
-  suite; a later beta bring-up then silently ran the python stand-in as
-  `netrunner-slskd` and its healthcheck blocked the whole stack (#269,
-  found in the v0.0.3 RC smoke, tracked as DJI-503). The stand-in now tags
-  as `netrunner/fake-slskd:e2e`. Hosts whose tag was already shadowed
-  recover with one `docker pull slskd/slskd:latest`.
-
-## [v0.0.3] - 2026-09-19
+The single current release: everything from the v0.0.3 line (GA gap
+closers), the v0.0.3.1 patch, and the post-tag fixes, consolidated. The
+v0.0.3 / v0.0.3.1 tags are deleted; v0.0.2 and earlier remain as history.
 
 ### Added
 - The Soulseek entrance's wrong-work refusal, driven live (#259): the e2e
@@ -60,6 +34,8 @@ v0.0.3.1 (`da4d0d7`).
   documented default, SQLite warning kept) (#256)
 
 ### Changed
+- `docs/USERFLOW.md` documents the first-user flow path by path, what the
+  interface promises at each step, and the rough edges that remain
 - The e2e test-helper endpoints moved out of `cmd/server/main.go` into
   `internal/api/testapi`, conditionally registered behind
   `E2E_ENABLE_TEST_API`, with contract tests pinning the endpoint surface;
@@ -67,8 +43,16 @@ v0.0.3.1 (`da4d0d7`).
   acceptance clause no longer needs a fixture-code change (#266)
 - `ops/audio-probe` split into one role per file (wrong-work server, flip
   server, success source) behind a thin dispatcher (#267)
+- The e2e cleanup endpoint's fixture roster is self-extending: every
+  probe seed declares its own names (request artist + peer tag artist),
+  so probe residue can no longer silently short-circuit the identity gate
+  through the hash/recording-dedup paths, and new acceptance clauses need
+  no cleanup-list edit (#272, DJI-502)
 
 ### Fixed
+- A stale scope-less acquisition job could requeue-loop and starve every
+  later acquisition: seeded/production jobs now carry a unique advisory-lock
+  scope (found during the refusal probe)
 - Probe scope IDs based on `UnixNano` collide on Windows (~15ms clock
   granularity), reintroducing advisory-lock contention; a process-unique
   sequence suffix disambiguates them (#266, caught by the new contract test)
@@ -85,6 +69,56 @@ v0.0.3.1 (`da4d0d7`).
   a Python 3 stub that exits 0, `Built` without recreate reusing the
   pre-mutation binary, and Actions' ambient `CI=true` flipping
   `reuseExistingServer` off mid-cycle (#260, #262, #263)
+- The e2e overlay built the fake-slskd stand-in under `slskd/slskd:latest`,
+  overwriting the REAL slskd image tag on any host that had run the e2e
+  suite; a later beta bring-up then silently ran the python stand-in as
+  `netrunner-slskd` and its healthcheck blocked the whole stack (#269,
+  DJI-503). The stand-in now tags as `netrunner/fake-slskd:e2e`
+- The postgres container's host publish was a hardcoded `5432:5432`,
+  colliding with any existing host postgres during bring-up; it is now
+  loopback-bound and overridable via `PG_HOST_PORT`, documented in
+  `.env.beta.example` and `skills/repo-setup.md` (#271, DJI-504)
+- **Interface pass** — every item below was found by driving the real UI
+  end to end on a live stack, not by reading code:
+  - Every create form posted `application/x-www-form-urlencoded` into input
+    structs carrying only `json` tags, so the fields arrived empty: the first
+    thing a new user does (save a watchlist) returned `400 unsupported source
+    type: ` with nothing shown. All form-posting handlers now bind both
+    encodings.
+  - The Quality Profile select's empty placeholder could not unmarshal into a
+    `uuid.UUID`, which failed the whole body; it is parsed as a string and
+    resolves to the global default profile — the zero UUID is rejected by the
+    row's foreign key on Postgres.
+  - Rejected saves were invisible: htmx does not swap 4xx responses, and the
+    only error handler targeted `hx-get` elements. A failure now shows the
+    server's message inside the modal (or the region for a failed load), and
+    is classified by the request's verb so a failed save cannot be mistaken
+    for a failed load.
+  - The base layout's inline `<script>` never executed: the app sets
+    `script-src 'self'` itself (and in the Caddyfile), so the handler moved to
+    `app.js` next to its siblings.
+  - Add modals for watchlists and schedules were titled "Edit" and carried a
+    hidden zero UUID, because a zero `uuid.UUID` is truthy in pongo2.
+  - Editing a watchlist, library, profile or schedule posted to the
+    collection (create) endpoint, so a save could never reach the `PATCH`
+    route; each form now PATCHes its own item.
+  - Saving a section nested a fresh copy of the whole section inside the
+    previous one — a duplicate "Add" button and section title on every save —
+    because mutations swapped the region partial into the region's inner list
+    with `outerHTML`; they now target the region with `innerHTML`, matching
+    the sections that already worked (`/playlists`, `/jobs`).
+  - A nullable timestamp fed straight into pongo2's `date` filter 500'd an
+    entire list (`filter input argument must be of type 'time.Time'`): a
+    schedule with no next run broke `/schedules`, an artist with no scan broke
+    `/artists`. Both now carry a Go-side display label that handles nil.
+  - An edit left its modal open over an already-updated list; the watchlist,
+    library and profile forms now close on success like the artist and
+    schedule forms.
+  - The footer hardcoded `v1.0.0`, a version that never existed; it renders
+    the build version from one constant.
+  - Section titles rendered twice on Watchlists, Libraries and Artists, and
+    the Quality Profile select offered "Default" twice once a profile named
+    "Default" existed.
 
 ## [v0.0.2] - 2026-09-19
 
@@ -263,9 +297,8 @@ Initial release of Djinn NetRunner.
 - Dependency bump: `gofiber/fiber/v2` to v2.52.13 (CVE-2026-42554)
 - Docs reconciliation: `.env.example`, AGENTS.md, ARCHITECTURE.md alignment with runtime behavior
 
-[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.3.1...HEAD
-[v0.0.3.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.3...v0.0.3.1
-[v0.0.3]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2...v0.0.3
+[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.1.0...HEAD
+[v0.1.0]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2...v0.1.0
 [v0.0.2]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-beta.1...v0.0.2
 [v0.0.2-beta.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-b...v0.0.2-beta.1
 [0.0.1]: https://github.com/pvnkmnk/djinn-netrunner/releases/tag/v0.0.1

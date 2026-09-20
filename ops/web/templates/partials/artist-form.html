@@ -4,7 +4,7 @@
             <h3 id="modal-title">Add Artist</h3>
             <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
-        <form hx-post="/api/artists" hx-target="#artists-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
+        <form hx-post="/api/artists" hx-target="#artists-region" hx-swap="innerHTML">
             <div class="form-group">
                 <label for="name">Artist Name</label>
                 <input type="text" id="name" name="name" required placeholder="Enter artist name">
@@ -12,7 +12,7 @@
             <div class="form-group">
                 <label for="quality_profile_id">Quality Profile</label>
                 <select id="quality_profile_id" name="quality_profile_id">
-                    <option value="">Default</option>
+                    <option value="">Use global default</option>
                     {% for profile in profiles %}
                     <option value="{{ profile.ID }}">{{ profile.Name | escape }}</option>
                     {% endfor %}

@@ -24,7 +24,7 @@
         </div>
         <div class="actions">
             {% if not profile.IsDefault %}
-            <button class="btn btn-sm" hx-post="/api/profiles/{{ profile.ID }}/set-default" hx-target="#profiles-list" hx-swap="outerHTML" aria-label="Set {{ profile.Name | escape }} as default profile">
+            <button class="btn btn-sm" hx-post="/api/profiles/{{ profile.ID }}/set-default" hx-target="#profiles-region" hx-swap="innerHTML" aria-label="Set {{ profile.Name | escape }} as default profile">
                 Set Default
             </button>
             {% endif %}
