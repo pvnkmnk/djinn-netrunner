@@ -176,7 +176,7 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 	}
 	if input.Enabled != nil {
 		watchlist.Enabled = *input.Enabled
-	} else if c.Is("form") {
+	} else if isFormPost(c) {
 		// ponytail: unchecked checkboxes are omitted in form submissions, treat as false
 		watchlist.Enabled = false
 	}
@@ -190,6 +190,8 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	// An edit comes from the modal: close it on success, as create does.
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderWatchlistsPartial(c)
 	}

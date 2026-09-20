@@ -4,7 +4,7 @@
             <h3 id="modal-title">Add Artist</h3>
             <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
-        <form hx-post="/api/artists" hx-target="#artists-region" hx-swap="innerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
+        <form hx-post="/api/artists" hx-target="#artists-region" hx-swap="innerHTML">
             <div class="form-group">
                 <label for="name">Artist Name</label>
                 <input type="text" id="name" name="name" required placeholder="Enter artist name">

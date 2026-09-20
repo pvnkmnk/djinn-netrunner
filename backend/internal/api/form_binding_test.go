@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -137,6 +138,9 @@ func TestWatchlistUpdate_FormEncodedBody(t *testing.T) {
 	})
 	body := respBody(t, resp)
 	assert.NotEqual(t, 400, resp.StatusCode, "the edit modal's PATCH must bind its form body: "+body)
+	// The edit came from the modal, so the response has to close it - the same
+	// header the create path already sets.
+	assert.Equal(t, "closeModal", resp.Header.Get("HX-Trigger"), "the edit modal still has to close")
 
 	var stored database.Watchlist
 	require.NoError(t, db.First(&stored, "id = ?", existing.ID).Error)
@@ -220,4 +224,86 @@ func TestScheduleCreate_FormEncodedBody(t *testing.T) {
 	var stored database.Schedule
 	require.NoError(t, db.Where("cron_expr = ?", "0 3 * * *").First(&stored).Error)
 	assert.Equal(t, watchlist.ID, stored.WatchlistID)
+}
+
+// TestProfileUpdate_FormClearsUncheckedFlags covers the other half of form
+// binding: a form omits unchecked checkboxes, so an absent flag has to mean
+// "off" for a form PATCH. Without that, a profile's flags could be turned on
+// but never off again from the UI. JSON PATCH keeps nil = leave unchanged.
+func TestProfileUpdate_FormClearsUncheckedFlags(t *testing.T) {
+	db := setupAPITestDB(t)
+	user := formUser(t, db)
+	// Owned by the caller: a non-admin can only update their own profile, and an
+	// unowned fixture would 404 before any of this is exercised.
+	profile := database.QualityProfile{
+		Name: "Flagged", PreferLossless: true, PreferSceneReleases: true,
+		PreferWebReleases: true, OwnerUserID: &user.ID,
+	}
+	require.NoError(t, db.Create(&profile).Error)
+
+	handler := NewProfileHandler(db)
+	app := authedFormApp(user, func(app *fiber.App) {
+		app.Patch("/api/profiles/:id", handler.Update)
+	})
+
+	resp := submitForm(t, app, "PATCH", "/api/profiles/"+profile.ID.String(), map[string]string{
+		"name": "Flagged",
+	})
+	body := respBody(t, resp)
+	require.Equal(t, 200, resp.StatusCode, "the update has to reach the profile: "+body)
+
+	var stored database.QualityProfile
+	require.NoError(t, db.First(&stored, "id = ?", profile.ID).Error)
+	assert.False(t, stored.PreferLossless, "an unchecked box must clear the flag")
+	assert.False(t, stored.PreferSceneReleases, "an unchecked box must clear the flag")
+	assert.False(t, stored.PreferWebReleases, "an unchecked box must clear the flag")
+}
+
+// TestScheduleUpdate_FormClearsUncheckedEnabled is the schedule form's version
+// of the same rule: leaving "Enabled" unticked must disable the schedule.
+func TestScheduleUpdate_FormClearsUncheckedEnabled(t *testing.T) {
+	db := setupAPITestDB(t)
+	user := formUser(t, db)
+
+	watchlist := database.Watchlist{
+		Name: "Toggle", SourceType: "rss_feed",
+		SourceURI: "https://example.com/toggle.xml", Enabled: true, OwnerUserID: &user.ID,
+	}
+	require.NoError(t, db.Create(&watchlist).Error)
+	schedule := database.Schedule{
+		WatchlistID: watchlist.ID, CronExpr: "0 1 * * *", Timezone: "UTC", Enabled: true,
+	}
+	require.NoError(t, db.Create(&schedule).Error)
+
+	handler := NewSchedulesHandler(db)
+	app := authedFormApp(user, func(app *fiber.App) {
+		app.Patch("/api/schedules/:id", handler.Update)
+	})
+
+	resp := submitForm(t, app, "PATCH", "/api/schedules/"+strconv.FormatUint(uint64(schedule.ID), 10), map[string]string{
+		"cron_expr": "0 2 * * *",
+	})
+	assert.NotEqual(t, 400, resp.StatusCode)
+
+	var stored database.Schedule
+	require.NoError(t, db.First(&stored, "id = ?", schedule.ID).Error)
+	assert.False(t, stored.Enabled, "an unticked Enabled box must disable the schedule")
+}
+
+// TestArtistAdd_NoDefaultProfile_SaysSo covers the artist form's dependence on
+// a default quality profile: the zero UUID must not reach the foreign key, and
+// the reason has to be actionable. The MusicBrainz lookup runs after this
+// branch, so the case needs no network.
+func TestArtistAdd_NoDefaultProfile_SaysSo(t *testing.T) {
+	db := setupAPITestDB(t)
+	user := formUser(t, db)
+	handler := NewArtistsHandler(db, nil, nil)
+	app := authedFormApp(user, func(app *fiber.App) {
+		app.Post("/api/artists", handler.Add)
+	})
+
+	resp := submitForm(t, app, "POST", "/api/artists", map[string]string{"name": "Nobody"})
+	body := respBody(t, resp)
+	assert.Equal(t, 400, resp.StatusCode, "no default profile must be reported, not a DB error: "+body)
+	assert.Contains(t, body, "default quality profile")
 }

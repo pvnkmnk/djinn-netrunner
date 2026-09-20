@@ -279,6 +279,8 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	// An edit comes from the modal: close it on success, as create does.
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderLibrariesPartial(c)
 	}

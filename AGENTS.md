@@ -262,19 +262,49 @@ Postgres for concurrent production workloads.
 - **Pongo2 renders Go bools as `True`/`False`** (capitalized) — use
   `{% if field %}true{% else %}false{% endif %}` for lowercase (broke E2E on
   `Lossless: True`).
-- **Pongo2 `{% if ID %}` is always true for UUIDs** (zero UUID is a
-  non-empty string) — pass an explicit `IsNew` bool to distinguish add/edit.
+- **Pongo2 truthiness calls a nil pointer true**: it resolves the pointer
+  to its zero value, so `{% if field %}` cannot guard a nullable one. A
+  zero UUID made Add modals read "Edit" (nil the id out, as
+  `libraries.go` does, or pass an explicit `IsNew`); a nil `*time.Time`
+  reached the `date` filter and 500'd the whole list (`filter input
+  argument must be of type 'time.Time'`) — such fields need a Go-side
+  label (`Schedule.NextRunLabel`, `MonitoredArtist.LastScanLabel`).
 - **`encoding/json` silently drops fields without JSON tags** — `source_uri`
   ≠ `SourceURI` (case-insensitive fallback doesn't cover underscores); both
   model AND input struct need tags (DJI-437).
-- **HTMX only swaps 2xx responses** — 4xx/5xx error paths silently no-op;
-  check `isHTMXRequest(c)` and return an error partial via
-  `c.SendString(...)` (DJI-438).
-- **Create handlers must set `HX-Trigger: closeModal`** before returning the
-  partial, or the modal never closes (only `AcquireHandler.Create` does it;
-  DJI-440).
+- **HTMX only swaps 2xx responses** — 4xx/5xx paths no-op silently unless
+  something renders them. `app.js`'s `htmx:responseError` handler shows the
+  server's message inside the modal (or the region for a failed load) and
+  discriminates on `requestConfig.verb`: the section regions also carry
+  `hx-get`, so the target's attributes cannot tell a failed save from a
+  failed load (DJI-438).
+- **Every modal-bearing handler — create *and* update — must set
+  `HX-Trigger: closeModal`** before returning its partial (DJI-440), or an
+  edit leaves the modal open over an already-updated list. `hx-on:submit`
+  cannot replace it: the native submit event has no `detail.successful`,
+  and this app ships **htmx 1.9.10**, so htmx 2's `hx-on::after-request`
+  does not exist here either.
 - **Pongo2 `{# #}` comments cannot span lines** — keep template comments
   single-line.
+- **`c.Is("form")` is always false**: Fiber's MIME table has a `json` key
+  but no `form` key, so the check never matches (it hid the
+  unchecked-checkbox handling for watchlists, profiles and schedules). Test
+  the header — `strings.HasPrefix(c.Get(fiber.HeaderContentType),
+  fiber.MIMEApplicationForm)`, see `isFormPost` in `auth_context.go`.
+- **Inline `<script>` never runs here**: `main.go` and the Caddyfile both
+  set `script-src 'self'`, so script inside a template is dead code in every
+  environment — handlers belong in `ops/web/static/js/app.js`.
+- **Form posts need `form:` tags beside `json:`**, and an empty `<select>`
+  cannot unmarshal into a `uuid.UUID` (the decoder fails the *whole* body,
+  so the error reads `invalid request body`, not the field). Take such
+  fields as `string` and parse; `uuid.Nil` also cannot be stored where a
+  foreign key exists, so "use the global default" has to resolve the
+  default row (`WatchlistHandler.resolveFormProfileID`, `artists.Add`).
+- **A mutation response renders the whole region partial**, so its swap
+  target must be the region with `innerHTML` (`#X-region`, as `/playlists`
+  and `/jobs` already did). Targeting the region's inner `#X-list` with
+  `outerHTML` nests a second region inside the first — a duplicate Add
+  button and section title on every save.
 
 ## Consolidated workspace learnings (merged from DevWorks base, 2026-09-18)
 
@@ -323,6 +353,16 @@ Postgres for concurrent production workloads.
   re-run before debugging.
 
 ### Build, test & integration
+
+- **The `:memory:` SQLite test DB does not enforce foreign keys**, so a
+  zero-UUID/FK violation passes the unit test and only fails on the live
+  Postgres stack; assert the resolved value, not merely "not 400".
+- **Templates, CSS and JS are baked into the images** (no bind mounts): a
+  template or `app.js` change is invisible until
+  `up -d --build`, and the running container's copy is what the browser gets.
+- CI has no `gofmt` gate (the lint job is disabled pending
+  golangci-lint+go1.25); `go vet ./...` is the gate, and `gofmt -w` would
+  flip this repo's CRLF Go files to LF — format-check an LF copy instead.
 
 - **Line endings are mixed per-file in this repo**: most files are CRLF but
   `acquisition_pipeline.go` (among others) is LF. Detect the dominant ending

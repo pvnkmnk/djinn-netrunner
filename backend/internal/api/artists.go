@@ -75,13 +75,19 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 			}
 		}
 	} else {
-		// Get default profile
+		// Get default profile. A missing default must not fall through as the
+		// zero UUID: MonitoredArtist.QualityProfileID is a foreign key, so the
+		// insert would fail with an opaque constraint error instead of saying
+		// what to fix.
 		var profile database.QualityProfile
-		if err := h.db.Where("is_default = ?", true).First(&profile).Error; err == nil {
-			profileID = profile.ID
-		} else if err != gorm.ErrRecordNotFound {
+		if err := h.db.Where("is_default = ?", true).First(&profile).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return c.Status(400).JSON(fiber.Map{"error": "no default quality profile is configured"})
+			}
 			slog.Error("Error fetching default profile", "error", err)
+			return internalServerError(c, err)
 		}
+		profileID = profile.ID
 	}
 
 	// Search MusicBrainz

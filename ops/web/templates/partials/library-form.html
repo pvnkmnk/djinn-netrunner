@@ -4,7 +4,7 @@
             <h3 id="modal-title">{% if ID %}Edit{% else %}Add{% endif %} Library</h3>
             <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
-        <form hx-{% if ID %}patch="/api/libraries/{{ ID }}"{% else %}post="/api/libraries"{% endif %} hx-target="#libraries-region" hx-swap="innerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
+        <form hx-{% if ID %}patch="/api/libraries/{{ ID }}"{% else %}post="/api/libraries"{% endif %} hx-target="#libraries-region" hx-swap="innerHTML">
             {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
             <div class="form-group">
                 <label for="name">Name</label>

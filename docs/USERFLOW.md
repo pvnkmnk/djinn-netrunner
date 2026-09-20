@@ -19,8 +19,9 @@ media browser — Navidrome (or any Subsonic client) is where you listen.
 
 ### 1. Sign in
 
-`/` is the dashboard: job counts, recent activity, and the console. Anything
-else redirects you here until you have a session. The nav is Watchlists,
+`/` is the dashboard: job counts, recent activity, and the console. The other
+browser routes redirect you here until you have a session; the Subsonic
+endpoint (`/rest`) does not use it, and authenticates per request instead. The nav is Watchlists,
 Libraries, Playlists, Artists, Jobs, Admin; the footer shows the running
 version, so you can tell what you are looking at.
 

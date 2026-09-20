@@ -158,6 +158,13 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
+	// A form omits an unchecked checkbox, so an absent flag means "disabled"
+	// for a form PATCH; JSON PATCH keeps nil = leave unchanged.
+	if isFormPost(c) && payload.Enabled == nil {
+		off := false
+		payload.Enabled = &off
+	}
+
 	updates := make(map[string]interface{})
 	if payload.CronExpr != nil {
 		if _, err := cron.ParseStandard(*payload.CronExpr); err != nil {
@@ -188,6 +195,8 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	// An edit comes from the modal: close it on success, as create does.
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderSchedulesPartial(c)
 	}

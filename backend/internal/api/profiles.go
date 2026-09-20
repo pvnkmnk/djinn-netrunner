@@ -213,6 +213,22 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 	}
 
 	// ✅ SECURITY: Prevent privilege escalation by restricting default profile modification to admins
+	// A form omits unchecked checkboxes, so an absent flag means "off" for a
+	// form PATCH - otherwise a profile's flags could only ever be turned on.
+	// JSON PATCH keeps nil = leave unchanged.
+	if isFormPost(c) {
+		off := false
+		if input.PreferLossless == nil {
+			input.PreferLossless = &off
+		}
+		if input.PreferSceneReleases == nil {
+			input.PreferSceneReleases = &off
+		}
+		if input.PreferWebReleases == nil {
+			input.PreferWebReleases = &off
+		}
+	}
+
 	if input.IsDefault != nil && *input.IsDefault != profile.IsDefault {
 		if user.Role != "admin" {
 			return c.Status(403).JSON(fiber.Map{"error": "only administrators can change the default status"})
@@ -280,6 +296,8 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
+	// An edit comes from the modal: close it on success, as create does.
+	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
 		return h.RenderProfilesPartial(c)
 	}

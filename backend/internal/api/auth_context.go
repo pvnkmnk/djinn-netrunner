@@ -2,6 +2,7 @@ package api
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -21,6 +22,15 @@ func currentUserFromLocals(c *fiber.Ctx) (database.User, bool) {
 
 func isHTMXRequest(c *fiber.Ctx) bool {
 	return c.Get("HX-Request") == "true"
+}
+
+// isFormPost reports whether the request carries an HTML form body.
+//
+// c.Is("form") cannot be used for this: Fiber's MIME table has no "form"
+// key, so it always returns false — which silently disabled the
+// unchecked-checkbox handling for watchlists, profiles and schedules.
+func isFormPost(c *fiber.Ctx) bool {
+	return strings.HasPrefix(c.Get(fiber.HeaderContentType), fiber.MIMEApplicationForm)
 }
 
 func requirePageUser(c *fiber.Ctx) (database.User, bool, error) {
