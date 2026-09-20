@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.0.4] - DRAFT 2026-09-19
+
+Drafted by the post-tag assessment; cut when the release owner decides the
+residuals below (if any) are in. Content = everything on master since
+v0.0.3.1 (`da4d0d7`).
+
+### Fixed
+- The postgres container's host publish was a hardcoded `5432:5432`,
+  colliding with any existing host postgres during bring-up; it is now
+  loopback-bound and overridable via `PG_HOST_PORT`, documented in
+  `.env.beta.example` and `skills/repo-setup.md` (#271, DJI-504)
+
+### Changed
+- The e2e cleanup endpoint's fixture roster is self-extending: every
+  probe seed declares its own names (request artist + peer tag artist),
+  so probe residue can no longer silently short-circuit the identity gate
+  through the hash/recording-dedup paths, and new acceptance clauses need
+  no cleanup-list edit (#272, DJI-502)
+
 ## [v0.0.3.1] - 2026-09-19
 
 ### Fixed
