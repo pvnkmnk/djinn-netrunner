@@ -9,9 +9,13 @@ type PageData struct {
 	Page string
 }
 
+// AppVersion is the running build version, shown in the page footer so it
+// cannot drift from the release it was cut from. Keep in sync with the tag.
+const AppVersion = "0.1.0"
+
 // RenderPage renders a page with common layout
 func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) error {
-	base := fiber.Map{"Page": page}
+	base := fiber.Map{"Page": page, "Version": AppVersion}
 	// SECURITY: Expose CSRF token to templates for HTMX state-changing requests
 	if csrf := c.Locals("csrf"); csrf != nil {
 		base["CSRFToken"] = csrf

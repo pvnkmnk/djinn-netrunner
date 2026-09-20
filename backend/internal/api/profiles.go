@@ -72,16 +72,16 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Name                string `json:"name"`
-		Description         string `json:"description"`
-		PreferLossless      bool   `json:"prefer_lossless"`
-		AllowedFormats      string `json:"allowed_formats"`
-		MinBitrate          int    `json:"min_bitrate"`
-		PreferBitrate       *int   `json:"prefer_bitrate"`
-		PreferSceneReleases bool   `json:"prefer_scene_releases"`
-		PreferWebReleases   bool   `json:"prefer_web_releases"`
-		CoverArtSources     string `json:"cover_art_sources"`
-		IsDefault           bool   `json:"is_default"`
+		Name                string `json:"name" form:"name"`
+		Description         string `json:"description" form:"description"`
+		PreferLossless      bool   `json:"prefer_lossless" form:"prefer_lossless"`
+		AllowedFormats      string `json:"allowed_formats" form:"allowed_formats"`
+		MinBitrate          int    `json:"min_bitrate" form:"min_bitrate"`
+		PreferBitrate       *int   `json:"prefer_bitrate" form:"prefer_bitrate"`
+		PreferSceneReleases bool   `json:"prefer_scene_releases" form:"prefer_scene_releases"`
+		PreferWebReleases   bool   `json:"prefer_web_releases" form:"prefer_web_releases"`
+		CoverArtSources     string `json:"cover_art_sources" form:"cover_art_sources"`
+		IsDefault           bool   `json:"is_default" form:"is_default"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -196,16 +196,16 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Name                *string `json:"name"`
-		Description         *string `json:"description"`
-		PreferLossless      *bool   `json:"prefer_lossless"`
-		AllowedFormats      *string `json:"allowed_formats"`
-		MinBitrate          *int    `json:"min_bitrate"`
-		PreferBitrate       *int    `json:"prefer_bitrate"`
-		PreferSceneReleases *bool   `json:"prefer_scene_releases"`
-		PreferWebReleases   *bool   `json:"prefer_web_releases"`
-		CoverArtSources     *string `json:"cover_art_sources"`
-		IsDefault           *bool   `json:"is_default"`
+		Name                *string `json:"name" form:"name"`
+		Description         *string `json:"description" form:"description"`
+		PreferLossless      *bool   `json:"prefer_lossless" form:"prefer_lossless"`
+		AllowedFormats      *string `json:"allowed_formats" form:"allowed_formats"`
+		MinBitrate          *int    `json:"min_bitrate" form:"min_bitrate"`
+		PreferBitrate       *int    `json:"prefer_bitrate" form:"prefer_bitrate"`
+		PreferSceneReleases *bool   `json:"prefer_scene_releases" form:"prefer_scene_releases"`
+		PreferWebReleases   *bool   `json:"prefer_web_releases" form:"prefer_web_releases"`
+		CoverArtSources     *string `json:"cover_art_sources" form:"cover_art_sources"`
+		IsDefault           *bool   `json:"is_default" form:"is_default"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -368,8 +368,14 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 	c.Set("HX-Trigger", "openModal")
 
 	isNew := id == ""
+	// Only pass ID for an existing profile: the form picks POST vs PATCH
+	// from it, and a zero UUID is truthy in templates.
+	var templateID interface{} = profile.ID.String()
+	if isNew {
+		templateID = nil
+	}
 	return c.Render("partials/profile-form", fiber.Map{
-		"ID":                  profile.ID,
+		"ID":                  templateID,
 		"Name":                profile.Name,
 		"Description":         profile.Description,
 		"PreferLossless":      profile.PreferLossless,

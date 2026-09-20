@@ -509,3 +509,23 @@ func (PeerReputation) TableName() string  { return "peer_reputations" }
 func (AuditLog) TableName() string        { return "audit_logs" }
 func (Playlist) TableName() string      { return "playlists" }
 func (PlaylistTrack) TableName() string { return "playlist_tracks" }
+// Display labels for nullable timestamps.
+//
+// pongo2 resolves a nil *time.Time to its zero value, so `{% if field %}` is
+// truthy and its `date` filter then fails the whole render ("filter input
+// argument must be of type 'time.Time'"). A schedule with no next run and an
+// artist that has never been scanned both 500'd their lists this way; the nil
+// check belongs in Go.
+func (a MonitoredArtist) LastScanLabel() string {
+	if a.LastScanDate == nil {
+		return "Never"
+	}
+	return a.LastScanDate.Format("Jan 02 15:04")
+}
+
+func (s Schedule) NextRunLabel() string {
+	if s.NextRunAt == nil {
+		return "not scheduled"
+	}
+	return s.NextRunAt.Format("Jan 02 15:04")
+}

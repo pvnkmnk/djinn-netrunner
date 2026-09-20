@@ -97,6 +97,43 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // A rejected save must be visible: htmx does not swap 4xx/5xx responses,
+    // so without this a failed form submit looked like nothing happened.
+    // Show the server's message where the user is looking - inside the modal.
+    document.body.addEventListener('htmx:responseError', function(evt) {
+        const target = evt.detail.target;
+        const config = evt.detail.requestConfig || {};
+        // A *load* only: the regions that fetch a partial also carry hx-get,
+        // so the target's attributes cannot tell a failed save from a failed
+        // load - the request's own verb can.
+        const isLoad = (config.verb || '').toLowerCase() === 'get';
+        if (isLoad) {
+            target.innerHTML = '<div class="error-banner">Failed to load content. <button onclick="location.reload()">Retry</button></div>';
+            return;
+        }
+        let message = 'Request failed.';
+        try {
+            const body = JSON.parse(evt.detail.xhr.responseText);
+            if (body && body.error) { message = body.error; }
+        } catch (e) {}
+        const source = evt.detail.elt;
+        const form = source && source.closest ? source.closest('#modal-container form') : null;
+        if (form) {
+            let banner = form.querySelector('.form-error');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.className = 'form-error';
+                form.insertBefore(banner, form.firstChild);
+            }
+            banner.textContent = message;
+            return;
+        }
+        if (target && target.insertAdjacentHTML) {
+            target.insertAdjacentHTML('afterbegin', '<div class="form-error"></div>');
+            target.firstChild.textContent = message;
+        }
+    });
+
     // Listen for HTMX modal trigger headers
     document.body.addEventListener('htmx:afterOnLoad', function(evt) {
         const xhr = evt.detail.xhr;

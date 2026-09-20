@@ -45,8 +45,8 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	}
 
 	var payload struct {
-		Name             string `json:"name"`
-		QualityProfileID string `json:"quality_profile_id"`
+		Name             string `json:"name" form:"name"`
+		QualityProfileID string `json:"quality_profile_id" form:"quality_profile_id"`
 	}
 
 	if err := c.BodyParser(&payload); err != nil {
@@ -148,7 +148,7 @@ func (h *ArtistsHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var payload struct {
-		Monitored *bool `json:"monitored"`
+		Monitored *bool `json:"monitored" form:"monitored"`
 	}
 
 	if err := c.BodyParser(&payload); err != nil {

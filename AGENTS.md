@@ -112,7 +112,9 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   URL — the attempt line contains the URL, which makes the assertion
   vacuous. Local runs seed probes via the gated
   `POST /api/test/seed-fallback-refusal`; clean probe rows between runs (the
-  spec does not delete them).
+  spec does not delete them). Seeds accept an optional `peer` spec
+  (forwarded to the fake's `/roster` surface), so on-demand peers need no
+  fixture-code change.
 - The `reuseExistingServer: !CI` shortcut hides stale code: a rebuilt seed
   endpoint never reaches a running stack (Playwright skips setup when healthy).
   After backend/template changes, `docker compose --env-file ../.env.e2e -f
@@ -136,7 +138,16 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   answer that with 200 and everything else with 302→RFC1918. A counter gets
   consumed by attempt 1 and attempt 2's walk records the *pre-flight* refusal
   — the wrong layer, catchable only by asserting the wording.
-- `scripts/mutation-check.sh <gate|boundary>` automates mutation proofs:
+- The e2e test endpoints live in `internal/api/testapi` (mounted only when
+  `E2E_ENABLE_TEST_API`); **seeds self-declare their fixture artists to
+  cleanup** (request artist + peer TAG artist), so cleanup needs no edits for
+  a new clause — and its roster is add-only, never trimmed (DJI-502).
+- The e2e overlay tags the slskd stand-in `netrunner/fake-slskd:e2e` — never
+  build it under `slskd/slskd:latest` (that shadowed the real image and later
+  beta bring-ups ran a python stand-in as netrunner-slskd, DJI-503).
+- Compose publishes postgres as `127.0.0.1:${PG_HOST_PORT:-5432}:5432`;
+  host-side client URLs must follow `PG_HOST_PORT` (DJI-504).
+- `scripts/mutation-check.sh <gate|boundary|success>` automates mutation proofs:
   snapshot the file, mutate, expect spec FAIL, restore **from the snapshot,
   not `git checkout --`** (the latter wipes unrelated uncommitted work), then
   require a passing control run. Route Playwright output to a file — exit

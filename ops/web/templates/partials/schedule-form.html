@@ -4,7 +4,7 @@
             <h3 id="modal-title">{% if ID %}Edit{% else %}Add{% endif %} Schedule</h3>
             <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
-        <form hx-post="/api/schedules" hx-target="#schedules-list" hx-swap="outerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
+        <form hx-{% if ID %}patch="/api/schedules/{{ ID }}"{% else %}post="/api/schedules"{% endif %} hx-target="#schedules-region" hx-swap="innerHTML" hx-on:submit="if(event.detail.successful) closeModal()">
             {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
             <div class="form-group">
                 <label for="watchlist_id">Watchlist</label>

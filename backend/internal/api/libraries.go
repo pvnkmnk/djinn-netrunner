@@ -114,8 +114,8 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
+		Name string `json:"name" form:"name"`
+		Path string `json:"path" form:"path"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -233,10 +233,10 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Name         *string `json:"name"`
-		Path         *string `json:"path"`
-		MaxSizeBytes *int64  `json:"max_size_bytes"`
-		QuotaAlertAt *int    `json:"quota_alert_at"`
+		Name         *string `json:"name" form:"name"`
+		Path         *string `json:"path" form:"path"`
+		MaxSizeBytes *int64  `json:"max_size_bytes" form:"max_size_bytes"`
+		QuotaAlertAt *int    `json:"quota_alert_at" form:"quota_alert_at"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {

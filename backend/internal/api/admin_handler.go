@@ -101,6 +101,7 @@ func (h *AdminHandler) AdminPage(c *fiber.Ctx) error {
 	section := normalizeAdminSection(c.Query("section"))
 	_, data := h.adminSection(section)
 	data["Page"] = "admin"
+	data["Version"] = AppVersion
 	return c.Render("pages/admin", data)
 }
 
