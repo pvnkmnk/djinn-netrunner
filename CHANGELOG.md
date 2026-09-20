@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.0.3.1] - 2026-09-19
+
+### Fixed
+- The e2e overlay built the fake-slskd stand-in under `slskd/slskd:latest`,
+  overwriting the REAL slskd image tag on any host that had run the e2e
+  suite; a later beta bring-up then silently ran the python stand-in as
+  `netrunner-slskd` and its healthcheck blocked the whole stack (#269,
+  found in the v0.0.3 RC smoke, tracked as DJI-503). The stand-in now tags
+  as `netrunner/fake-slskd:e2e`. Hosts whose tag was already shadowed
+  recover with one `docker pull slskd/slskd:latest`.
+
 ## [v0.0.3] - 2026-09-19
 
 ### Added
@@ -233,7 +244,8 @@ Initial release of Djinn NetRunner.
 - Dependency bump: `gofiber/fiber/v2` to v2.52.13 (CVE-2026-42554)
 - Docs reconciliation: `.env.example`, AGENTS.md, ARCHITECTURE.md alignment with runtime behavior
 
-[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.3.1...HEAD
+[v0.0.3.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.3...v0.0.3.1
 [v0.0.3]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2...v0.0.3
 [v0.0.2]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-beta.1...v0.0.2
 [v0.0.2-beta.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-b...v0.0.2-beta.1
