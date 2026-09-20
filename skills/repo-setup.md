@@ -33,6 +33,8 @@ cp .env.example .env
 ```
 3. Populate minimum variables in `.env`.
 ```env
+# localhost:5432 is the compose default host publish — set PG_HOST_PORT in
+# .env if that port is taken, and change the port here to match (DJI-504).
 DATABASE_URL=postgresql://musicops:<password>@localhost:5432/musicops?sslmode=disable
 JWT_SECRET=<long-random-secret>
 SLSKD_API_KEY=<slskd-api-key>
