@@ -242,6 +242,58 @@ func TestTestAPI_SeedPeerLocalDerivation(t *testing.T) {
 	assert.NotZero(t, id, "seed with peer must succeed without a fake slskd on the stack")
 }
 
+// TestTestAPI_CleanupCoversDeclaredSeeds pins DJI-502's contract: a seed's own
+// names (request artist + peer TAG artist) must reach the cleanup roster, so a
+// new acceptance clause's residue is removed without editing any fixture list.
+// The decoy scenario is the one that hurts: a peer tagged "On Demand Band"
+// sails through the gate (a matching work), imports, and its residue would
+// short-circuit the next probe via the recording-dedup path if cleanup never
+// learned the name.
+func TestTestAPI_CleanupCoversDeclaredSeeds(t *testing.T) {
+	f := setup(t)
+	body := `{"artist":"On Demand Probe","album":"Fresh Clause","no_fallback":true,` +
+		`"peer":{"username":"on-demand","filename":"CD/01 - Song.flac",` +
+		`"tag_artist":"On Demand Band","tag_album":"Their LP","tag_title":"Song","marker":"fresh clause"}}`
+	seed(t, f, body)
+	roster := cleanupRoster()
+	assert.Contains(t, roster, "On Demand Probe", "the request artist must be declared")
+	assert.Contains(t, roster, "On Demand Band", "the peer's TAG artist must be declared (import lands under it)")
+	// Baseline roster still present.
+	assert.Contains(t, roster, "Clean Success Artist")
+	// The full cleanup removes the declared names' rows and folders too.
+	lib := database.Library{Name: "D Lib", Path: filepath.Join(f.cfg.MusicLibraryPath, "d-lib")}
+	require.NoError(t, f.db.Create(&lib).Error)
+	require.NoError(t, f.db.Create(&database.Track{LibraryID: lib.ID, Artist: "On Demand Band", Album: "x", Title: "t", Path: filepath.Join(f.cfg.MusicLibraryPath, "On Demand Band", "a.flac")}).Error)
+	require.NoError(t, os.MkdirAll(filepath.Join(f.cfg.MusicLibraryPath, "On Demand Band"), 0o755))
+	req := httptest.NewRequest("POST", "/api/test/seed-fallback-refusal/cleanup", nil)
+	resp, err := f.app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+	var n int64
+	require.NoError(t, f.db.Model(&database.Track{}).Where("artist = ?", "On Demand Band").Count(&n).Error)
+	assert.Zero(t, n, "the declared peer artist's rows must be cleaned")
+	_, statErr := os.Stat(filepath.Join(f.cfg.MusicLibraryPath, "On Demand Band"))
+	assert.True(t, os.IsNotExist(statErr), "the declared peer artist's folder must be removed")
+}
+
+// TestTestAPI_CleanupRosterAdditive: roster entries are only ever added — a
+// cleanup run must not trim the map, or a name declared between a spec's runs
+// would be forgotten and the residue hazard would return.
+func TestTestAPI_CleanupRosterAdditive(t *testing.T) {
+	f := setup(t)
+	seed(t, f, `{"artist":"Additive Probe","album":"A","no_fallback":true}`)
+	before := len(cleanupRoster())
+	req := httptest.NewRequest("POST", "/api/test/seed-fallback-refusal/cleanup", nil)
+	resp, err := f.app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, before, len(cleanupRoster()), "cleanup must not shrink the roster")
+	// A second seed with the SAME names is idempotent (no duplicate entries):
+	// the name is already in the set, so the roster stays the same size.
+	seed(t, f, `{"artist":"Additive Probe","album":"A","no_fallback":true}`)
+	assert.Equal(t, before, len(cleanupRoster()), "identical re-seed must not grow the roster")
+}
+
 // TestTestAPI_CleanupRemovesFixtures: rows AND the on-disk folders go, other
 // artists' data survives, and a failed removal is reported loudly.
 func TestTestAPI_CleanupRemovesFixtures(t *testing.T) {

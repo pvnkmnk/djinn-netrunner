@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +37,55 @@ func Mount(router fiber.Router, cfg *config.Config, db *gorm.DB) {
 // scopeSeq disambiguates two seeds sharing a clock tick (Windows ~15ms
 // granularity makes UnixNano collisions real, not theoretical).
 var scopeSeq atomic.Uint64
+
+// cleanupMu and cleanupArtists implement DJI-502's single roster owner.
+// probeFixtureArtists (below) is the BASELINE — the three names the checked-in
+// specs seed. Every seed call ADDS the names its own payload uses, so a new
+// acceptance clause's residue is cleaned by the same endpoint with no
+// fixture-list edit; the drift that hurt was exactly a spec gaining a name
+// cleanup never learned, after which hash/recording dedup (paths that BYPASS
+// the identity gate) silently short-circuits the next probe. Seeds and
+// cleanup run on different requests, so the map is guarded; entries are
+// only ever added (bounded by seeds per process, and identical names are
+// idempotent), never trimmed mid-run — a trimmed name between a spec's
+// seed and its next run's cleanup would reintroduce the residue hazard.
+var (
+	cleanupMu      sync.Mutex
+	cleanupArtists = map[string]struct{}{}
+)
+
+// declareSeedArtists registers a seed's fixture names with cleanup.
+func declareSeedArtists(artists ...string) {
+	cleanupMu.Lock()
+	defer cleanupMu.Unlock()
+	for _, a := range artists {
+		if a != "" {
+			cleanupArtists[a] = struct{}{}
+		}
+	}
+}
+
+// peerTagArtist extracts the name a successfully imported on-demand decoy
+// would carry in the library — the peer's TAG artist, not the request's.
+func peerTagArtist(p *PeerSpec) string {
+	if p == nil {
+		return ""
+	}
+	return p.TagArtist
+}
+
+// cleanupRoster returns the full artist roster cleanup must remove: the
+// baseline fixture names plus everything any seed declared this process.
+func cleanupRoster() []string {
+	cleanupMu.Lock()
+	defer cleanupMu.Unlock()
+	roster := make([]string, 0, len(probeFixtureArtists)+len(cleanupArtists))
+	roster = append(roster, probeFixtureArtists...)
+	for a := range cleanupArtists {
+		roster = append(roster, a)
+	}
+	return roster
+}
 
 func gateEnabled(cfg *config.Config) bool {
 	return cfg != nil && cfg.E2EEnableTestAPI
@@ -151,6 +201,12 @@ func createDir(cfg *config.Config) fiber.Handler {
 // (YTDLP_PROXY) is denied at connect time: the refusal comes from the boundary,
 // not from a dead address. httpbin.org is a public, long-lived documentation
 // service: reachable, harmless, never a media source, and not on the allowlist.
+//
+// Every seed also DECLARES its fixture names to cleanup (sessionCleanup
+// below): the request artist and, when a peer rides the payload, the peer's
+// tag artist — the two names an import could land under. That registration is
+// what makes cleanup self-extending (DJI-502): a new acceptance clause's
+// residue is removed by the same endpoint, with no fixture-list edit.
 func seedFallbackRefusal(cfg *config.Config, db *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if !gateEnabled(cfg) {
@@ -213,6 +269,10 @@ func seedFallbackRefusal(cfg *config.Config, db *gorm.DB) fiber.Handler {
 			return c.Status(502).JSON(fiber.Map{"error": err.Error()})
 		}
 
+		// Declare this seed's fixture names to cleanup: the requested artist
+		// (the folder a refused item is stranded under) and, when a peer is		// specified, the peer's TAG artist (the library name a successfully		// imported decoy would carry). See sessionCleanup.
+		declareSeedArtists(payload.Artist, peerTagArtist(payload.Peer))
+
 		job := database.Job{
 			Type:        "acquisition",
 			State:       "queued",
@@ -263,9 +323,11 @@ func seedFallbackRefusal(cfg *config.Config, db *gorm.DB) fiber.Handler {
 	}
 }
 
-// probeFixtureArtists is the roster cleanup owns: the clean peer's tag artist,
-// the request names the refusal probes seed, and the folder name the refused
-// decoy imports under. Keep in sync with ops/fake-slskd's PEERS and the specs.
+// probeFixtureArtists is the BASELINE roster (DJI-502): the three names the
+// checked-in specs seed. Seeds extend the effective roster per-process via
+// declareSeedArtists (see cleanupRoster), so a new clause never edits this
+// list — the old "keep in sync" contract is what let residue short-circuit
+// the identity gate via the dedup paths.
 var probeFixtureArtists = []string{"Totally Different Band", "Wrong Work Probe", "Clean Success Artist"}
 
 // cleanupProbeResidue: remove the rows and library files the probe specs seed,
@@ -287,7 +349,7 @@ func cleanupProbeResidue(cfg *config.Config, db *gorm.DB) fiber.Handler {
 		}
 
 		var problems []string
-		for _, artist := range probeFixtureArtists {
+		for _, artist := range cleanupRoster() {
 			if err := db.Where("artist = ?", artist).Delete(&database.Track{}).Error; err != nil {
 				problems = append(problems, fmt.Sprintf("tracks %q: %v", artist, err))
 			}
