@@ -14,6 +14,14 @@ Verified against `master` for the Beta Readiness work (see Linear project
 - A Soulseek account for slskd (acquisition is inert without one)
 - ~5 GB free for images plus room for the music library and downloads
 
+Acoustic fingerprinting is the one optional capability with a missing
+ingredient: it shells out to `fpcalc` (Chromaprint), which **the image
+does not install**. Imports are unaffected — each one logs
+`Fingerprinting failed: fpcalc failed: …` as a WARN and carries on, and
+hash-based dedup still works — but AcoustID enrichment never runs, because
+the lookup only fires when a fingerprint exists. Setting `ACOUSTID_API_KEY`
+on its own therefore changes nothing.
+
 ## 1. Configure
 
 ```bash
@@ -277,8 +285,9 @@ only the account password is accepted.
 | Every variable in `.env` seems ignored | The container predates the current compose file. `env_file` is applied at *create* time, so `docker compose restart` does not pick up `.env` changes — run `up -d` (add `--build` after a code change). A local override that replaces `env_file` has the same effect. `docker compose exec ops-web env` shows what actually arrived. |
 | `exec /entrypoint.sh: no such file or directory` when building on Windows | The working copy has CRLF in `backend/entrypoint.sh`. The repo forces LF via `.gitattributes`; `git checkout -- backend/entrypoint.sh` (or `git config core.autocrlf input`) fixes it. |
 | slskd exits immediately / downloads unwritable | `volume-init` must run before slskd; it chowns the shared volumes to UID 1000. Keep it in the stack. |
-| `port is already allocated` | Another stack holds 8080/5432; set `BETA_HTTP_PORT` (or stop the other stack). |
+| `port is already allocated` | Another stack holds a published port. `BETA_HTTP_PORT` covers the HTTP one, but the collision that usually blocks the whole bring-up is postgres: whatever already listens on 5432 (many hosts run a system or containerised postgres) fails the `up` before anything starts. Set `PG_HOST_PORT=15432` in `.env` — the stack itself reaches postgres over the compose network and ignores it, since the publish is for host-side debugging only. `NAVIDROME_PORT` does the same for the optional media server. Setting these beats stopping someone else's stack. |
 | Music plays but nothing rescans in an external server | Set `NAVIDROME_URL` (+ user/pass) so the worker has a library client; `/api/health` then reports a `navidrome` check. |
+| Every import logs `Fingerprinting failed: fpcalc failed: exec: "fpcalc": executable file not found in $PATH` | Expected, not a fault: the image ships no Chromaprint binary (see Prerequisites). The import completes and hash dedup still works; fingerprint dedup and AcoustID enrichment are simply unavailable, so `ACOUSTID_API_KEY` alone changes nothing. Install `fpcalc` in `backend/Dockerfile` if you want them. |
 | yt-dlp fallback fails with a proxy/403 error for a site you trust | The egress boundary's allowlist refused it. Add the host to `ops/squid/allowed-domains.txt` and `docker compose ... up -d egress-proxy` to reload. To run without the boundary entirely (not recommended), set `YTDLP_PROXY=` empty in `.env`. |
 | Every acquisition fails with `ssrf: no public IP found for netrunner-slskd` | `ALLOW_PRIVATE_TARGETS` is missing or `false`. slskd is reached by its compose service name, which resolves to a private IP and trips the SSRF guard. `docker-compose.yml` sets it for both app services; keep it if you write your own compose file. |
 | Every acquisition fails with `401 Unauthorized`, and slskd logs `Unknown API key beginning with: …` | The key is half-wired: `SLSKD_API_KEY` reached the app but not slskd, so the two sides disagree. It must be set on the slskd service as well. Set it once in `.env` and let `docker-compose.yml` pass it to both. (`SLSKD_API_URL`-era guides suggest `web.authentication.api_keys`; that map is awkward to express as an env var, whereas slskd's primary key is a plain `SLSKD_API_KEY`.) |
