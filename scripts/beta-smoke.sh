@@ -52,9 +52,14 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# CHECKS counts every pass()/fail() call — one call, one check — so the summary
+# reports how many ran instead of anyone counting lines. [INFO] output is NOT a
+# check, and counting it is how this 27-check script came to be recorded as 28
+# and 29. Nothing here runs in a subshell, so the counters reach the summary.
+CHECKS=0
 FAILURES=0
-pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
-fail() { echo -e "${RED}[FAIL]${NC} $1"; FAILURES=$((FAILURES + 1)); }
+pass() { echo -e "${GREEN}[PASS]${NC} $1"; CHECKS=$((CHECKS + 1)); }
+fail() { echo -e "${RED}[FAIL]${NC} $1"; CHECKS=$((CHECKS + 1)); FAILURES=$((FAILURES + 1)); }
 info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
 
 compose() { docker compose $COMPOSE_ARGS "$@"; }
@@ -72,10 +77,13 @@ cleanup() {
     fi
     rm -f "$COOKIE_FILE" "$BODY_FILE" "$STATUS_FILE"
     echo
-    if [ "$FAILURES" -eq 0 ]; then
-        echo -e "${GREEN}Beta smoke: all checks passed.${NC}"
+    if [ "$CHECKS" -eq 0 ]; then
+        echo -e "${RED}Beta smoke: no checks ran — the script exited before its first check, so it proved nothing.${NC}"
+        exit 1
+    elif [ "$FAILURES" -eq 0 ]; then
+        echo -e "${GREEN}Beta smoke: all $CHECKS checks passed.${NC}"
     else
-        echo -e "${RED}Beta smoke: $FAILURES check(s) failed.${NC}"
+        echo -e "${RED}Beta smoke: $FAILURES of $CHECKS checks failed.${NC}"
     fi
     exit "$FAILURES"
 }
