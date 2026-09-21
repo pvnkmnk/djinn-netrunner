@@ -373,7 +373,11 @@ fi
 # reports a different version is what shipped v0.1.1 with a v0.1.0 footer.
 DECLARED_VERSION="${APP_VERSION:-}"
 if [ -z "$DECLARED_VERSION" ] && [ -f "$REPO_ROOT/.env" ]; then
-    DECLARED_VERSION="$(grep -E '^APP_VERSION=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '\r')"
+    # Compose strips surrounding quotes and trims whitespace, so match that:
+    # a quoted APP_VERSION="v0.1.1" must compare as v0.1.1, not "v0.1.1".
+    DECLARED_VERSION="$(grep -E '^APP_VERSION=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- \
+        | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+        -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
 fi
 FOOTER_VERSION="$(curl -s -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$BASE_URL/" \
     | grep -o 'NetRunner v[^<|]*' | head -1 | sed 's/[[:space:]]*$//')"
