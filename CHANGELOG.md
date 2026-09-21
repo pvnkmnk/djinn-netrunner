@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The single current release: everything from the v0.0.3 line (GA gap
 closers), the v0.0.3.1 patch, and the post-tag fixes, consolidated. The
-v0.0.3 / v0.0.3.1 tags are deleted; v0.0.2 and earlier remain as history.
+v0.0.3 / v0.0.3.1 CHANGELOG sections are folded in here and their link
+references dropped; the tags themselves stay as history, as do v0.0.2 and
+earlier.
 
 ### Added
 - The Soulseek entrance's wrong-work refusal, driven live (#259): the e2e
@@ -119,6 +121,22 @@ v0.0.3 / v0.0.3.1 tags are deleted; v0.0.2 and earlier remain as history.
   - Section titles rendered twice on Watchlists, Libraries and Artists, and
     the Quality Profile select offered "Default" twice once a profile named
     "Default" existed.
+- **E2E audit pass** (#275): the suite's selectors and text assertions were
+  current, but its 16 skipped tests were hiding the defects below - ten
+  schedules tests parked on a since-fixed HTMX issue, a watchlist test
+  asserting a `GET /api/watchlists/:id` route that never existed, and an
+  auth test whose 302 premise was stale. Each was un-parked and rewritten
+  against the contract the app actually serves:
+  - A disabled schedule could not be created: `Enabled bool` carried
+    `gorm:"default:true"`, and GORM omits zero values for fields with a
+    column default, so an explicit `false` was dropped from the INSERT and
+    the column default wrote `true`. The tag is gone, and a Go test fails
+    on it.
+  - The Add-Schedule modal rendered "Enabled" unchecked while create
+    defaults to enabled, so the box contradicted what saving did.
+  - The schedule card existed as two copies whose Edit targets had drifted;
+    the one returned by a toggle pointed at a 404. Collapsed to the repo's
+    `{% include %}` convention.
 
 ## [v0.0.2] - 2026-09-19
 
