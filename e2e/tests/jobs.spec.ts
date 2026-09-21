@@ -83,10 +83,13 @@ test.describe('Jobs Feature (DJI-431)', () => {
     await page.locator('.filters select[name="state"]').selectOption('failed');
     expect((await byState).url()).toContain('state=failed');
 
-    // Either some failed jobs are listed, or the empty state is: both are answers.
+    // Either some failed jobs are listed, or the empty state is: both are
+    // answers. Assert with a retrying locator, not a one-shot count: the htmx
+    // swap lands a beat after the response, so sampling counts here races it
+    // and a slow re-render reads as a real failure.
     const cards = page.locator('.job-card');
     const empty = page.locator('.empty-state');
-    expect((await cards.count()) + (await empty.count())).toBeGreaterThan(0);
+    await expect(cards.first().or(empty.first())).toBeVisible();
 
     for (let i = 0; i < await cards.count(); i++) {
       await expect(cards.nth(i).locator('.job-state')).toContainText('failed');

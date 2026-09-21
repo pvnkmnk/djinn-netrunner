@@ -18,6 +18,13 @@
 # Exit 0 = the spec bit (mutation caught); exit 1 = the spec passed WITH the
 # mutation (it is testing nothing) or the harness broke.
 #
+# Readiness: after a --force-recreate this waits for the mutated service to
+# report healthy (bounded by MUTATION_READY_TIMEOUT, default 180s) rather than
+# sleeping a fixed interval. A fixed sleep cannot tell "the spec caught the
+# mutation" from "the container had not finished starting", and this harness
+# reports the second as the first — the one error that makes it worthless. If
+# the service never becomes healthy the run exits 3 WITHOUT probing.
+#
 # The restore uses `git stash`-free snapshot copies taken BEFORE mutating, not
 # `git checkout --`: these files carry uncommitted work in progress, and a
 # checkout would silently wipe it (observed live — the fake-slskd service
@@ -84,6 +91,50 @@ service_for() {
     success)  echo "slskd" ;;
     *) echo "unknown mutation: $MUTATION (gate|boundary|success)" >&2; exit 2 ;;
   esac
+}
+
+# How long a force-recreated service may take to come up. Generous headroom on
+# purpose: a cold CI runner builds with --no-cache just before this, and the
+# harness must outlast the slowest legitimate start rather than race it.
+READY_TIMEOUT="${MUTATION_READY_TIMEOUT:-180}"
+
+# Block until the service under mutation is actually serving, or fail loudly.
+# The condition is the service's own healthcheck — the same signal
+# scripts/beta-smoke.sh waits on — never a fixed delay and never merely
+# "running": a container wedged at startup is running too. `running` is
+# accepted only for a service that defines no healthcheck at all, where there
+# is no better signal to wait for. Exit 3, not 1: a stack that will not come up
+# is the harness's fault, and must not be reported as a caught mutation.
+wait_for_ready() {
+  local svc elapsed=0 cid state
+  svc="$(service_for)"
+  while [ "$elapsed" -lt "$READY_TIMEOUT" ]; do
+    cid="$(compose ps -q "$svc" 2>/dev/null | head -1 || true)"
+    state=""
+    if [ -n "$cid" ]; then
+      state="$("$DOCKER" inspect --format \
+        '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck:{{.State.Status}}{{end}}' \
+        "$cid" 2>/dev/null || true)"
+    fi
+    case "$state" in
+      healthy)
+        echo "[mutation-check] $svc healthy after ${elapsed}s"
+        return 0
+        ;;
+      no-healthcheck:running)
+        echo "[mutation-check] $svc defines no healthcheck; a running container is the only signal available."
+        return 0
+        ;;
+      unhealthy|exited|dead|no-healthcheck:exited|no-healthcheck:dead)
+        echo "[mutation-check] $svc is $state — infrastructure fault, not a caught mutation." >&2
+        exit 3
+        ;;
+    esac
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  echo "[mutation-check] $svc did not become healthy within ${READY_TIMEOUT}s (last state: ${state:-absent}) — infrastructure fault, not a caught mutation." >&2
+  exit 3
 }
 
 # Only the test that pins the mutated behavior — running the whole file would
@@ -159,6 +210,10 @@ cleanup() {
     restore_mutation
     echo "[mutation-check] restored $MUTATION; rebuilding clean stack..."
     compose up -d --build --force-recreate "$(service_for)" >/dev/null 2>&1 || true
+    # The control run must not start against a half-started container either: a
+    # probe that failed on a cold start would be reported as a failed control
+    # (exit 4) rather than as the harness's own problem.
+    wait_for_ready
   fi
 }
 trap cleanup EXIT
@@ -182,7 +237,10 @@ echo "[mutation-check] rebuilding $(service_for) with the mutation..."
 # mutation cycle must never reuse the old binary.
 compose build --no-cache "$(service_for)" >/dev/null
 compose up -d --force-recreate "$(service_for)" >/dev/null
-sleep 10
+# Wait for it to actually serve. A fixed sleep here was the harness's own version
+# of the bug it exists to catch: the container starts late, the probe fails, and
+# that failure is indistinguishable from a caught mutation.
+wait_for_ready
 
 run_probe() {
   # Subshell: the cd must not outlive the call, or the script's cwd (and the

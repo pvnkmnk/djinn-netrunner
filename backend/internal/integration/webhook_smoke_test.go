@@ -7,9 +7,9 @@ import (
     "context"
     "encoding/json"
     "io"
+    "net"
     "net/http"
     "testing"
-    "time"
 )
 
 func TestSmoke_Webhook_Delivery(t *testing.T) {
@@ -76,25 +76,24 @@ func startWebhookListener(t *testing.T) (string, *http.Server) {
         w.Write([]byte("OK"))
     })
     
-    // Create server
-    srv := &http.Server{Addr: ":0", Handler: handler}
-    
-    // Start server in background
+    // Bind explicitly and read the port back off the listener. `Addr: ":0"`
+    // leaves srv.Addr as ":0" forever, so the URL handed to the app was
+    // unusable and this listener could never receive a webhook — the fixed
+    // 100ms sleep that used to sit here was a stand-in for a readiness window
+    // that does not exist. Listening is synchronous.
+    ln, err := net.Listen("tcp", "127.0.0.1:0")
+    if err != nil {
+        t.Fatalf("Failed to bind webhook listener: %v", err)
+    }
+    srv := &http.Server{Handler: handler}
+
+    // Serve in background, on the listener already bound above.
     go func() {
-        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+        if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
             t.Errorf("Webhook listener error: %v", err)
         }
     }()
-    
-    // Wait for server to start
-    time.Sleep(100 * time.Millisecond)
-    
-    // Get the URL
-    url := srv.Addr
-    if url == "" {
-        url = "http://localhost:0"
-    }
-    
-    // Return the URL and server for cleanup
-    return url, srv
+
+    // Hand back the address actually bound, plus the server for cleanup.
+    return "http://" + ln.Addr().String(), srv
 }
