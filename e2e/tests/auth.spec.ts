@@ -91,8 +91,10 @@ test.describe('Auth & Navigation (DJI-423)', () => {
   // Registration Tests
   // ==========================================================================
   test.describe('Registration', () => {
-    test.skip('registers a new user via UI form', async ({ page }) => {
-      // SKIPPED: Flaky due to 302 redirect causing resp.ok() to be false in JS handler.
+    test('registers a new user via UI form', async ({ page }) => {
+      // Was parked as "flaky due to 302 redirect causing resp.ok() to be false in
+      // the JS handler". The register API answers 201 (asserted below), so the
+      // premise is worth re-testing rather than trusting.
       const email = `register-ui-${timestamp}@netrunner.dev`;
       await page.goto('/');
 
@@ -104,6 +106,10 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       const onApp = await page.locator('#login-card, #register-card, .dashboard').count();
       expect(onApp).toBeGreaterThan(0);
+
+      // The parked concern was the handler reading the response as a failure, so
+      // the assertion that matters is that no error surfaced.
+      await expect(page.locator('.form-error, .error-banner, #register-error')).toHaveCount(0);
     });
 
     test('registers a new user via API successfully', async ({ page }) => {

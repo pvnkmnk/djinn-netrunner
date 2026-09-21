@@ -234,7 +234,7 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 	// sched still has preloaded Watchlist from initial fetch, no need to reload
 
 	return c.Render("partials/schedule-card", fiber.Map{
-		"Schedule": sched,
+		"schedule": sched,
 	})
 }
 
@@ -275,12 +275,20 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 		}
 	}
 
+	// A new schedule is created enabled (Create defaults the absent field to
+	// true), so the form has to render it checked - an unchecked box would
+	// post nothing and contradict the result.
+	enabled := sched.Enabled
+	if id == "" {
+		enabled = true
+	}
+
 	c.Set("HX-Trigger", "openModal")
 	return c.Render("partials/schedule-form", fiber.Map{
 		"ID":          sched.ID,
 		"WatchlistID": sched.WatchlistID,
 		"CronExpr":    sched.CronExpr,
-		"Enabled":     sched.Enabled,
+		"Enabled":     enabled,
 		"watchlists":  watchlists,
 	})
 }
