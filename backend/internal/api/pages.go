@@ -9,9 +9,13 @@ type PageData struct {
 	Page string
 }
 
-// AppVersion is the running build version, shown in the page footer so it
-// cannot drift from the release it was cut from. Keep in sync with the tag.
-const AppVersion = "0.1.0"
+// AppVersion is the running build version, shown in the page footer. It is
+// stamped in at build time from the release tag (APP_VERSION -> -ldflags -X
+// .../internal/api.AppVersion), so it cannot drift from the release it was
+// cut from. The "dev" default is deliberate: a build that was never told
+// its version reports something obviously un-released instead of claiming a
+// numbered release it is not.
+var AppVersion = "dev"
 
 // RenderPage renders a page with common layout
 func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) error {

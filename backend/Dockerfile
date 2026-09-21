@@ -14,13 +14,20 @@ RUN go mod download
 # Copy all source code
 COPY backend/ ./
 
+# The release version is stamped into every binary rather than hardcoded, so
+# the page footer cannot drift from the tag the image was built from. Compose
+# passes the tag through APP_VERSION; a build never told reports "dev".
+ARG APP_VERSION=dev
+
 # Build the operator binaries. netrunner-cli ships too: the repair runbooks
 # (ops/docs/library-dedup-runbook.md, ops/docs/disaster-recovery.md) run it
 # against a deployed stack, and without it here the operator has to copy a
 # host binary into the container by hand.
-RUN go build -o netrunner-server ./cmd/server/main.go && \
-    go build -o netrunner-worker ./cmd/worker/main.go && \
-    go build -o netrunner-cli ./cmd/cli/main.go
+RUN VERSION="${APP_VERSION#v}" && \
+    LDFLAG="-X github.com/pvnkmnk/netrunner/backend/internal/api.AppVersion=$VERSION" && \
+    go build -ldflags "$LDFLAG" -o netrunner-server ./cmd/server/main.go && \
+    go build -ldflags "$LDFLAG" -o netrunner-worker ./cmd/worker/main.go && \
+    go build -ldflags "$LDFLAG" -o netrunner-cli ./cmd/cli/main.go
 
 # Copy web assets from ops directory
 COPY ops/web/static ./static

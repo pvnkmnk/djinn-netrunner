@@ -366,3 +366,27 @@ if [ -n "$TRACK_ID" ]; then
 else
     fail "skipping stream check: no track id from search3"
 fi
+
+# ── 12. The image reports the version it was built with ─────────────────────
+# The footer version is stamped at build time from APP_VERSION, so when one is
+# declared the rendered footer must agree with it. A release that quietly
+# reports a different version is what shipped v0.1.1 with a v0.1.0 footer.
+DECLARED_VERSION="${APP_VERSION:-}"
+if [ -z "$DECLARED_VERSION" ] && [ -f "$REPO_ROOT/.env" ]; then
+    DECLARED_VERSION="$(grep -E '^APP_VERSION=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '\r')"
+fi
+FOOTER_VERSION="$(curl -s -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$BASE_URL/" \
+    | grep -o 'NetRunner v[^<|]*' | head -1 | sed 's/[[:space:]]*$//')"
+if [ -z "$FOOTER_VERSION" ]; then
+    fail "the dashboard footer names no version"
+elif [ -n "$DECLARED_VERSION" ]; then
+    if [ "$FOOTER_VERSION" = "NetRunner v${DECLARED_VERSION#v}" ]; then
+        pass "footer reports the declared version ($DECLARED_VERSION)"
+    else
+        fail "footer says '$FOOTER_VERSION' but APP_VERSION is '$DECLARED_VERSION'"
+    fi
+elif [ "$FOOTER_VERSION" = "NetRunner vdev" ]; then
+    pass "no APP_VERSION declared; the image reports itself as dev"
+else
+    fail "no APP_VERSION declared but the footer claims '$FOOTER_VERSION'"
+fi

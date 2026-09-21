@@ -48,3 +48,13 @@ func TestRenderIndex_FooterShowsVersion(t *testing.T) {
 	assert.Contains(t, string(body), "NetRunner v"+AppVersion,
 		"the dashboard footer must name the running version")
 }
+
+// TestAppVersion_DefaultIsNotARelease pins the source default. The version is
+// supplied at build time from the release tag (APP_VERSION -> -ldflags -X), so
+// what is compiled into the source must stay a non-release sentinel: a
+// hardcoded "0.1.0" here is what made v0.1.1 render "NetRunner v0.1.0" in the
+// footer of every page while claiming to be v0.1.1.
+func TestAppVersion_DefaultIsNotARelease(t *testing.T) {
+	assert.Equal(t, "dev", AppVersion,
+		"AppVersion must be build-injected; keep the source default a non-release sentinel")
+}

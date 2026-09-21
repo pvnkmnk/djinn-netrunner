@@ -131,6 +131,10 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        # The release tag, stamped into the image so the footer names the
+        # release actually running. Unset builds report "dev".
+        APP_VERSION: ${APP_VERSION:-dev}
     container_name: ops-web
     command: ["./netrunner-server"]
     # Inject .env into the container. Without this, .env is only used for
@@ -187,6 +191,10 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        # The release tag, stamped into the image so the footer names the
+        # release actually running. Unset builds report "dev".
+        APP_VERSION: ${APP_VERSION:-dev}
     container_name: ops-worker
     command: ["./netrunner-worker"]
     # Same passthrough as ops-web: the worker is the process that actually needs
