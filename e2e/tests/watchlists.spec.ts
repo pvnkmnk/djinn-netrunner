@@ -51,6 +51,17 @@ async function createWatchlistViaAPI(page: any, data: {
   return { id: 0, success: false };
 }
 
+// Helper to create a directory inside the web container so a local_directory
+// watchlist points at a real path. There is no equivalent for files, which is
+// what keeps the local_file case parked.
+async function createDirForLocalSource(page: any, path: string): Promise<void> {
+  const csrfToken = await getCsrfToken(page);
+  await page.request.post('/api/test/create-dir', {
+    data: { path },
+    headers: { 'X-CSRF-Token': csrfToken }
+  });
+}
+
 // Helper to delete a watchlist via API
 async function deleteWatchlistViaAPI(page: any, id: number): Promise<boolean> {
   const csrfToken = await getCsrfToken(page);
@@ -169,14 +180,15 @@ test.describe('Watchlists Feature - DJI-426', () => {
   });
 
   test('7. Create watchlist via API - POST /api/watchlists with valid data returns 201', async ({ authenticatedPage: page }) => {
-    // Skip: Backend validates that local_file path exists, which it doesn't in E2E
-    test.skip(true, 'Backend requires local_file path to exist on disk - E2E cannot provide this');
+    // The subject is the 201 contract, so the body has to be valid data. The
+    // parked version posted a local_file pointing at a path that does not exist,
+    // which the backend rightly refuses.
     const csrfToken = await getCsrfToken(page);
     const response = await page.request.post('/api/watchlists', {
       data: {
-        name: 'Test Watchlist',
-        source_type: 'local_file',
-        source_uri: '/music/test',
+        name: `Test Watchlist ${Date.now()}`,
+        source_type: 'rss_feed',
+        source_uri: `https://example.com/feed-${Date.now()}.xml`,
         quality_profile_id: E2E_QUALITY_PROFILE_ID,
       },
       headers: { 'X-CSRF-Token': csrfToken }
@@ -304,8 +316,10 @@ test.describe('Watchlists Feature - DJI-426', () => {
   });
 
   test('10i. Create watchlist with source_type local_file', async ({ authenticatedPage: page }) => {
-    // Skip: Backend validates that local_file path exists, which it doesn't in E2E
-    test.skip(true, 'Backend requires local_file path to exist on disk - E2E cannot provide this');
+    // Still parked, and precisely why: the backend refuses a local_file whose
+    // path is not a real file, and /api/test/create-dir only creates
+    // directories. Unblock by adding a file-creating test endpoint.
+    test.skip(true, 'local_file needs a real file on disk; create-dir only creates directories');
     const { id, success } = await createWatchlistViaAPI(page, {
       name: 'Local File Test',
       source_type: 'local_file',
@@ -316,12 +330,13 @@ test.describe('Watchlists Feature - DJI-426', () => {
   });
 
   test('10j. Create watchlist with source_type local_directory', async ({ authenticatedPage: page }) => {
-    // Skip: Backend validates that local_directory path exists, which it doesn't in E2E
-    test.skip(true, 'Backend requires local_directory path to exist on disk - E2E cannot provide this');
+    const dir = `/app/music/local-directory-${Date.now()}`;
+    await createDirForLocalSource(page, dir);
+
     const { id, success } = await createWatchlistViaAPI(page, {
       name: 'Local Directory Test',
       source_type: 'local_directory',
-      source_uri: '/path/to/directory'
+      source_uri: dir
     });
     expect(success).toBe(true);
     expect(id).toBeTruthy();
@@ -330,11 +345,14 @@ test.describe('Watchlists Feature - DJI-426', () => {
   // ========== Multiple Watchlist Tests ==========
 
   test('11. Multiple watchlists display - create 3 watchlists and verify all appear in list', async ({ authenticatedPage: page }) => {
-    // Skip: Backend requires local_file path to exist - use non-file source types only
-    test.skip(true, 'Backend requires local_file path to exist - test uses non-file source types now');
-    const wl1 = await createWatchlistViaAPI(page, { name: 'Watchlist 1', source_type: 'local_file', source_uri: '/path1' });
-    const wl2 = await createWatchlistViaAPI(page, { name: 'Watchlist 2', source_type: 'rss_feed', source_uri: 'https://feed1.com' });
-    const wl3 = await createWatchlistViaAPI(page, { name: 'Watchlist 3', source_type: 'spotify_playlist', source_uri: 'spotify:playlist:abc' });
+    // Three source types at once; the directory case gets a real directory, and
+    // the URIs are unique so a re-run cannot collide with earlier rows.
+    const dir = `/app/music/multi-${Date.now()}`;
+    await createDirForLocalSource(page, dir);
+
+    const wl1 = await createWatchlistViaAPI(page, { name: `Watchlist 1 ${Date.now()}`, source_type: 'local_directory', source_uri: dir });
+    const wl2 = await createWatchlistViaAPI(page, { name: `Watchlist 2 ${Date.now()}`, source_type: 'rss_feed', source_uri: `https://feed1-${Date.now()}.example.com/rss` });
+    const wl3 = await createWatchlistViaAPI(page, { name: `Watchlist 3 ${Date.now()}`, source_type: 'spotify_playlist', source_uri: `spotify:playlist:multi-${Date.now()}` });
 
     await page.goto('/watchlists');
     await waitForHtmx(page);
@@ -637,23 +655,34 @@ test.describe('Watchlists Feature - DJI-426', () => {
     expect(Array.isArray(watchlists)).toBe(true);
   });
 
-  test('27. GET /api/watchlists/:id returns watchlist detail', async ({ authenticatedPage: page }) => {
-    // Skip: createWatchlistViaAPI returns success:false due to duplicate URI issue in test suite
-    test.skip(true, 'Backend or test issue: createWatchlistViaAPI fails consistently in full suite run');
+  test('27. Watchlist detail is served with the list', async ({ authenticatedPage: page }) => {
+    const name = `Detail Test ${Date.now()}`;
+    const sourceUri = `https://detail.example.com/feed-${Date.now()}.xml`;
     const { id, success } = await createWatchlistViaAPI(page, {
-      name: 'Detail Test',
+      name,
       source_type: 'rss_feed',
-      source_uri: 'https://detail.com/feed'
+      // Unique per run: a fixed URI collides with the row a previous run left
+      // behind, which is what made this helper look like it "fails in the full
+      // suite" while passing in isolation.
+      source_uri: sourceUri
     });
     expect(success).toBe(true);
     expect(id).toBeTruthy();
 
-    const response = await page.request.get(`/api/watchlists/${id}`);
+    // There is no GET /api/watchlists/:id: the router registers only PATCH and
+    // DELETE on that path, so a GET answers 405, and nothing in the UI asks for
+    // one - the edit modal reads /api/watchlists/form?id= and the card reads
+    // /api/watchlists/:id/preview. Every detail field ships with the list.
+    const response = await page.request.get('/api/watchlists');
     expect(response.ok()).toBe(true);
 
-    const watchlist = await response.json();
-    expect(watchlist.Name).toBe('Detail Test');
+    const watchlists = await response.json();
+    const watchlist = watchlists.find((w: any) => (w.ID || w.id) === id);
+    expect(watchlist).toBeTruthy();
+    expect(watchlist.Name).toBe(name);
     expect(watchlist.SourceType).toBe('rss_feed');
+    expect(watchlist.SourceURI).toBe(sourceUri);
+    expect(watchlist.Enabled).toBe(true);
   });
 
   test('28. POST /api/watchlists/:id/sync triggers sync job', async ({ authenticatedPage: page }) => {
@@ -713,11 +742,6 @@ test.describe('Watchlists Feature - DJI-426', () => {
   // ========== Create via HTMX Form Submit ==========
 
   test('31. Create watchlist via HTMX form submit in modal', async ({ authenticatedPage: page }) => {
-    // Skip: HTMX form dynamically loaded into modal doesn't serialize select values
-    // consistently. Backend receives empty source_type despite selectOption + value verification.
-    // This is a test ↔ HTMX timing issue, not a backend bug. DJI-440 fix (HX-Trigger: closeModal)
-    // is verified by the modal overlay click test (test 30) and source-code inspection.
-    test.skip(true, 'Test infrastructure: HTMX form serialization timing issue with select elements in dynamic modals');
     await page.goto('/watchlists');
     await waitForHtmx(page);
 

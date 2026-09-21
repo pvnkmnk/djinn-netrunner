@@ -309,7 +309,10 @@ type Schedule struct {
 	Timezone    string     `gorm:"not null;default:'UTC'"`
 	NextRunAt   *time.Time `gorm:"index"`
 	LastRunAt   *time.Time
-	Enabled     bool `gorm:"not null;default:true;index"`
+	// No column default: GORM omits zero values for fields that have one,
+	// which silently wrote true over an explicit false (a disabled schedule
+	// could not be created). Every create site sets this explicitly.
+	Enabled     bool `gorm:"not null;index"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 

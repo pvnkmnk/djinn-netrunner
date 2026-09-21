@@ -249,6 +249,35 @@ func TestSchedule_WithWatchlist(t *testing.T) {
 	assert.NotZero(t, schedule.ID)
 }
 
+// TestSchedule_ExplicitFalseEnabledIsPersisted pins the GORM zero-value trap
+// that once made a disabled schedule impossible to create: a `default:true`
+// tag on the model makes Create omit the field, so the column default wrote
+// true over an explicit false.
+func TestSchedule_ExplicitFalseEnabledIsPersisted(t *testing.T) {
+	db := setupTestDB(t)
+
+	profile := QualityProfile{Name: "Zero Value Profile", IsDefault: true}
+	require.NoError(t, db.Create(&profile).Error)
+
+	watchlist := Watchlist{
+		Name: "Disabled Schedule Watchlist", SourceType: "rss_feed",
+		SourceURI:        "https://example.com/zero.xml",
+		QualityProfileID: profile.ID, Enabled: true,
+	}
+	require.NoError(t, db.Create(&watchlist).Error)
+
+	schedule := Schedule{
+		WatchlistID: watchlist.ID, CronExpr: "0 5 * * *", Timezone: "UTC",
+		Enabled: false,
+	}
+	require.NoError(t, db.Create(&schedule).Error)
+
+	var stored Schedule
+	require.NoError(t, db.First(&stored, "id = ?", schedule.ID).Error)
+	assert.False(t, stored.Enabled,
+		"an explicit false must survive Create, not be overwritten by a column default")
+}
+
 func TestQualityProfile_WithAdvancedFilters(t *testing.T) {
 	db := setupTestDB(t)
 

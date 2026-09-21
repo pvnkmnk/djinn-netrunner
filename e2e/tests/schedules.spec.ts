@@ -218,6 +218,10 @@ test.describe('Schedules Feature (DJI-429)', () => {
 
       const cronInput = page.locator('#cron_expr, input[name="cron_expr"]');
       await expect(cronInput.first()).toBeVisible();
+
+      // The Add form claims a new schedule will be enabled, which is what
+      // Create does when the field arrives absent.
+      await expect(page.locator('#modal-container input[name="enabled"]')).toBeChecked();
     });
   });
 
@@ -242,29 +246,107 @@ test.describe('Schedules Feature (DJI-429)', () => {
       expect(response.status()).toBeLessThanOrEqual(201);
     });
 
-    // Tests 8-14, 17, 19-20 are skipped due to HTMX partial loading issue:
-    // Schedules created via API don't appear on the /schedules page when loaded via HTMX.
-    // This appears to be a bug in how watchlist ownership is associated with schedules.
-    // TODO: Fix the HTMX partial loading for API-created schedules
-    test.skip('8. Schedule appears after creation - create schedule via API, verify it appears in the list', async ({ adminPage: page }) => {
-      // Skipped - HTMX issue
+    test('8. Schedule appears after creation - create schedule via API, verify it appears in the list', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Schedule List ${Date.now()}`);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 6 * * *', true);
+
+      // A schedule created through the API has a null next_run_at, which is the
+      // shape that used to 500 the partial and hide every row.
+      await page.goto('/schedules');
+      await expect(page.locator(`#schedule-${created.ID || created.id}`)).toBeVisible();
     });
 
-    test.skip('9. Schedule card details - skipped due to HTMX issue', async ({ adminPage: page }) => {});
+    test('9. Schedule card details - the card names the watchlist with its cron and next run', async ({ adminPage: page }) => {
+      const watchlistName = `Schedule Detail ${Date.now()}`;
+      const watchlistId = await createWatchlistViaAPI(page, watchlistName);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 7 * * *', true);
+
+      await page.goto('/schedules');
+      const card = page.locator(`#schedule-${created.ID || created.id}`);
+      await expect(card).toBeVisible();
+      await expect(card.locator('.name')).toContainText(watchlistName);
+      await expect(card.locator('.details')).toContainText('Cron: 0 7 * * *');
+      await expect(card.locator('.details')).toContainText('Next:');
+    });
   });
 
   test.describe('Toggle Enable/Disable', () => {
-    test.skip('10. Toggle enable/disable - skipped due to HTMX issue', async ({ adminPage: page }) => {});
-    test.skip('11. Toggle re-enable - skipped due to HTMX issue', async ({ adminPage: page }) => {});
+    test('10. Toggle enable/disable - the card comes back disabled', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Schedule Toggle ${Date.now()}`);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 6 * * *', true);
+      const scheduleId = created.ID || created.id;
+
+      await page.goto('/schedules');
+      await page.locator(`#schedule-${scheduleId} button[aria-label^="Disable"]`).click();
+
+      // The toggle swaps in the card partial, so this also pins that the card
+      // the server returns is the one the list renders.
+      await expect(page.locator(`#schedule-${scheduleId} button[aria-label^="Enable"]`)).toBeVisible();
+      await expect(page.locator(`#schedule-${scheduleId} .badge-disabled`)).toBeVisible();
+    });
+
+    test('11. Toggle re-enable - a second toggle restores the enabled card', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Schedule Retoggle ${Date.now()}`);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 6 * * *', true);
+      const scheduleId = created.ID || created.id;
+
+      await page.goto('/schedules');
+      await page.locator(`#schedule-${scheduleId} button[aria-label^="Disable"]`).click();
+      await page.locator(`#schedule-${scheduleId} button[aria-label^="Enable"]`).click();
+
+      await expect(page.locator(`#schedule-${scheduleId} button[aria-label^="Disable"]`)).toBeVisible();
+      await expect(page.locator(`#schedule-${scheduleId} .badge-disabled`)).toHaveCount(0);
+    });
   });
 
   test.describe('Edit Schedule', () => {
-    test.skip('12. Edit schedule - skipped due to HTMX issue', async ({ adminPage: page }) => {});
-    test.skip('13. Update schedule via edit - skipped due to HTMX issue', async ({ adminPage: page }) => {});
+    test('12. Edit schedule - the modal opens populated with the schedule values', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Schedule Edit ${Date.now()}`);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 8 * * *', true);
+      const scheduleId = created.ID || created.id;
+
+      await page.goto('/schedules');
+      await page.locator(`#schedule-${scheduleId} button[aria-label^="Edit"]`).click();
+
+      const modal = page.locator('#modal-container');
+      await expect(modal.locator('#modal-title')).toHaveText('Edit Schedule');
+      await expect(modal.locator('#cron_expr')).toHaveValue('0 8 * * *');
+      await expect(modal.locator('#watchlist_id')).toHaveValue(String(watchlistId));
+      await expect(modal.locator('input[name="enabled"]')).toBeChecked();
+    });
+
+    test('13. Update schedule via edit - saving changes the cron and closes the modal', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Schedule Update ${Date.now()}`);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 9 * * *', true);
+      const scheduleId = created.ID || created.id;
+
+      await page.goto('/schedules');
+      await page.locator(`#schedule-${scheduleId} button[aria-label^="Edit"]`).click();
+
+      await page.locator('#cron_expr').fill('0 10 * * *');
+      await page.locator('#modal-container button[type="submit"]').click();
+
+      await expect(page.locator(`#schedule-${scheduleId} .details`)).toContainText('Cron: 0 10 * * *');
+      // The update handler sets HX-Trigger: closeModal, so the modal has to go.
+      await expect(page.locator('#modal-container .modal')).toHaveCount(0);
+    });
   });
 
   test.describe('Delete Schedule', () => {
-    test.skip('14. Delete schedule - skipped due to HTMX issue', async ({ adminPage: page }) => {});
+    test('14. Delete schedule - confirming the dialog removes the card', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Schedule Delete ${Date.now()}`);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 6 * * *', true);
+      const scheduleId = created.ID || created.id;
+
+      await page.goto('/schedules');
+      await expect(page.locator(`#schedule-${scheduleId}`)).toBeVisible();
+
+      // hx-confirm raises a native confirm() before the delete is issued.
+      page.on('dialog', (dialog: any) => dialog.accept());
+      await page.locator(`#schedule-${scheduleId} button[aria-label^="Delete"]`).click();
+
+      await expect(page.locator(`#schedule-${scheduleId}`)).toHaveCount(0);
+    });
   });
 
   test.describe('Form Validation', () => {
@@ -303,7 +385,19 @@ test.describe('Schedules Feature (DJI-429)', () => {
   });
 
   test.describe('Multiple Schedules', () => {
-    test.skip('17. Multiple schedules - skipped due to HTMX issue', async ({ adminPage: page }) => {});
+    test('17. Multiple schedules - both cards render for the one watchlist', async ({ adminPage: page }) => {
+      const watchlistName = `Schedule Multi ${Date.now()}`;
+      const watchlistId = await createWatchlistViaAPI(page, watchlistName);
+      const first = await createScheduleViaAPI(page, watchlistId, '0 1 * * *', true);
+      const second = await createScheduleViaAPI(page, watchlistId, '0 2 * * *', true);
+
+      await page.goto('/schedules');
+      await expect(page.locator(`#schedule-${first.ID || first.id}`)).toBeVisible();
+      await expect(page.locator(`#schedule-${second.ID || second.id}`)).toBeVisible();
+      await expect(
+        page.locator('#schedules-list .schedule-card').filter({ hasText: watchlistName }),
+      ).toHaveCount(2);
+    });
   });
 
   test.describe('Cross-Navigation', () => {
@@ -334,11 +428,29 @@ test.describe('Schedules Feature (DJI-429)', () => {
   });
 
   test.describe('Disabled Watchlist Behavior', () => {
-    test.skip('19. Schedule with disabled watchlist - skipped due to HTMX issue', async ({ adminPage: page }) => {});
+    test('19. Schedule with disabled watchlist - the schedule still renders', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Schedule Disabled Watchlist ${Date.now()}`);
+      await disableWatchlist(page, watchlistId);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 3 * * *', true);
+
+      await page.goto('/schedules');
+      await expect(page.locator(`#schedule-${created.ID || created.id}`)).toBeVisible();
+    });
   });
 
   test.describe('Disabled State Persistence', () => {
-    test.skip('20. Disabled state persistence - skipped due to HTMX issue', async ({ adminPage: page }) => {});
+    test('20. Disabled state persistence - a disabled schedule stays disabled across reloads', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Schedule Disabled State ${Date.now()}`);
+      const created = await createScheduleViaAPI(page, watchlistId, '0 4 * * *', false);
+      const scheduleId = created.ID || created.id;
+
+      await page.goto('/schedules');
+      await expect(page.locator(`#schedule-${scheduleId} .badge-disabled`)).toBeVisible();
+
+      await page.reload();
+      await expect(page.locator(`#schedule-${scheduleId} .badge-disabled`)).toBeVisible();
+      await expect(page.locator(`#schedule-${scheduleId} button[aria-label^="Enable"]`)).toBeVisible();
+    });
   });
 
   test.describe('Error Handling', () => {
