@@ -44,6 +44,24 @@ as the runtime environment of the `ops-web` / `ops-worker` containers (`env_file
 in `docker-compose.yml`). Values the compose files set explicitly — `DATABASE_URL`,
 `SLSKD_URL`, `MUSIC_LIBRARY`, `DOWNLOAD_STAGING`, paths — win over `.env`.
 
+### Versioning the image
+
+The page footer names the running version, and that version is stamped into
+the image at build time rather than hardcoded: compose passes `APP_VERSION`
+through as a build arg and the Dockerfile writes it into the binary. Set it to
+the tag you are deploying, so the footer names the release you are actually
+running:
+
+```bash
+APP_VERSION=$(git describe --tags)   # e.g. v0.1.1
+```
+
+Add that to `.env`. Leave it empty and the image reports `NetRunner vdev` —
+deliberately not a release number, so an un-stamped image cannot masquerade as
+a release it is not. `scripts/beta-smoke.sh` compares the footer against the
+declared `APP_VERSION`, so a mismatch fails the smoke run instead of shipping
+quietly.
+
 ### Deployment boundary
 
 The app talks to slskd as `http://netrunner-slskd:5030` over the compose

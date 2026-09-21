@@ -121,21 +121,27 @@ Weekly:
 
 ## Beta release checklist (operator)
 0. Reproducible bring-up and per-check verification: [BETA_DEPLOYMENT.md](BETA_DEPLOYMENT.md).
-1. Automated gate:
+1. Stamp the version:
+   - Set `APP_VERSION` to the tag being released (`APP_VERSION=$(git describe --tags)`)
+     **before** building; the page footer is written from it at image-build time.
+   - A build with no `APP_VERSION` reports `vdev`, and `scripts/beta-smoke.sh`
+     fails when the footer disagrees with the declared value — so a mismatch is
+     caught by the smoke run rather than by a user reading the footer.
+2. Automated gate:
    - `pwsh -File scripts/validate.ps1 -SkipVulnCheck`
-2. Manual Docker acceptance:
+3. Manual Docker acceptance:
    - Login/logout and registration flow.
    - Watchlist create/edit/sync/preview.
    - Library create/scan and job completion.
    - Artist + schedule CRUD.
    - Live console attach/filter/copy/clear behavior.
-3. Security/tenancy checks:
+4. Security/tenancy checks:
    - Non-admin cannot access other users' watchlists/libraries/jobs/partials.
    - Admin can view global data and event stream as expected.
-4. Notification/quotas:
+5. Notification/quotas:
    - Webhook completion payload observed.
    - Quota warning path exercised and logged.
-5. Browser suite — **a manual pre-release step, not a required check**:
+6. Browser suite — **a manual pre-release step, not a required check**:
    - `bash scripts/e2e.sh test` (or `gh workflow run e2e.yml`).
    - It is not a `pull_request` gate: it builds every image and drives real
      Chromium, which is too slow to sit on every PR. It runs on push to `master`
