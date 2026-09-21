@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.1.1] - 2026-09-21
+
+A patch release. Both fixes come from deploying v0.1.0 from a fresh clone
+following only the documented steps, and neither changes how the stack
+runs: one is a missing version string in the page footer, the other two
+corrections to the deployment guide itself.
+
+### Fixed
+- The dashboard footer rendered `NetRunner v` with no version while every
+  other page rendered `NetRunner v0.1.0` (#277). `RenderIndex` called
+  `c.Render` directly with its own map, bypassing `RenderPage`, which is
+  what supplies `Version` from `AppVersion` to the base layout — so the one
+  page every signed-in user lands on was the only one missing it. Pinned by
+  a test that renders through the real pongo2 engine and fails on the old
+  code.
+
+### Documentation
+- The deployment guide's `port is already allocated` row named
+  `BETA_HTTP_PORT` for what it described as "8080/5432" (#278). The
+  collision that actually blocks a bring-up is usually postgres already on
+  5432, and the knob for that is `PG_HOST_PORT` (`NAVIDROME_PORT` does the
+  same for the optional media server). The stack itself ignores both, since
+  the publish is host-side debugging only.
+- The `fpcalc` (Chromaprint) requirement is now documented, in
+  Prerequisites and as its own troubleshooting row (#278). No image
+  installs it, so every import logs `Fingerprinting failed: fpcalc failed:
+  …` as a WARN and continues: hash-based dedup still works, but fingerprint
+  dedup and AcoustID enrichment are unavailable, and `ACOUSTID_API_KEY` on
+  its own is inert because the lookup only fires when a fingerprint exists.
+  The enrichment comment in `.env.beta.example` claimed the opposite and
+  was corrected.
+
 ## [v0.1.0] - 2026-09-19
 
 The single current release: everything from the v0.0.3 line (GA gap
@@ -315,7 +347,8 @@ Initial release of Djinn NetRunner.
 - Dependency bump: `gofiber/fiber/v2` to v2.52.13 (CVE-2026-42554)
 - Docs reconciliation: `.env.example`, AGENTS.md, ARCHITECTURE.md alignment with runtime behavior
 
-[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.1.1...HEAD
+[v0.1.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2...v0.1.0
 [v0.0.2]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-beta.1...v0.0.2
 [v0.0.2-beta.1]: https://github.com/pvnkmnk/djinn-netrunner/compare/v0.0.2-b...v0.0.2-beta.1
