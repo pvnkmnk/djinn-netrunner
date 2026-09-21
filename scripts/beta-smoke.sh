@@ -14,6 +14,10 @@
 # Options:
 #   --keep    leave the smoke user, library and audio fixtures in place
 #
+# Environment:
+#   BETA_HEALTH_TIMEOUT   seconds to wait for a container to report healthy
+#                         before failing (default 180)
+#
 # Exits non-zero if any check fails.
 
 set -uo pipefail
@@ -38,7 +42,7 @@ KEEP=0
 for arg in "$@"; do
     case "$arg" in
         --keep) KEEP=1 ;;
-        -h|--help) sed -n '2,19p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        -h|--help) sed -n '2,22p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -132,14 +136,46 @@ pass "docker and curl available"
 # ── 2. Containers running and healthy ───────────────────────────────────────
 SMOKE_CONTAINERS=("$WEB_CONTAINER" "$WORKER_CONTAINER")
 docker inspect "$SLSKD_CONTAINER" >/dev/null 2>&1 && SMOKE_CONTAINERS+=("$SLSKD_CONTAINER")
+
+# Wait for health rather than sampling it once. A stack that was just brought
+# up or restarted reports `starting` until its first successful check, which
+# for these services is start_period + interval x retries — over a minute.
+# Sampling once failed a deployment that was still coming up, which made the
+# gate noisy at exactly the moment an operator runs it.
+HEALTH_TIMEOUT="${BETA_HEALTH_TIMEOUT:-180}"
 for c in "${SMOKE_CONTAINERS[@]}"; do
-    state="$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo missing)"
-    health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null || echo none)"
-    if [ "$state" = "running" ] && { [ "$health" = "healthy" ] || [ "$health" = "none" ]; }; then
-        pass "$c is running (health: $health)"
-    else
-        fail "$c is not healthy (state=$state health=$health)"
-    fi
+    waited=0
+    while true; do
+        state="$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo missing)"
+        health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null || echo none)"
+
+        if [ "$state" = "running" ] && { [ "$health" = "healthy" ] || [ "$health" = "none" ]; }; then
+            if [ "$waited" -gt 0 ]; then
+                pass "$c is running (health: $health, after ${waited}s)"
+            else
+                pass "$c is running (health: $health)"
+            fi
+            break
+        fi
+
+        # An absent, exited or dead container will not fix itself, and
+        # `unhealthy` means it ran its checks and failed. Report those now:
+        # waiting out the timeout would only delay the same answer.
+        case "$state" in
+            missing|exited|dead) fail "$c is not healthy (state=$state health=$health)"; break ;;
+        esac
+        if [ "$health" = "unhealthy" ]; then
+            fail "$c is not healthy (state=$state health=$health)"
+            break
+        fi
+
+        if [ "$waited" -ge "$HEALTH_TIMEOUT" ]; then
+            fail "$c is not healthy after ${HEALTH_TIMEOUT}s (state=$state health=$health)"
+            break
+        fi
+        sleep 3
+        waited=$((waited + 3))
+    done
 done
 
 # ── 3. ffmpeg present — tag writes shell out to it ──────────────────────────
