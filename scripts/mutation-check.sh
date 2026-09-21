@@ -109,7 +109,11 @@ wait_for_ready() {
   local svc elapsed=0 cid state
   svc="$(service_for)"
   while [ "$elapsed" -lt "$READY_TIMEOUT" ]; do
-    cid="$(compose ps -q "$svc" 2>/dev/null | head -1 || true)"
+    # -a: a crashed container is not "running", so plain `ps -q` reports
+    # nothing and the loop would burn the whole timeout before saying "absent".
+    # With stopped containers visible, `inspect` names the real state and the
+    # infrastructure branch below fires at once.
+    cid="$(compose ps -aq "$svc" 2>/dev/null | head -1 || true)"
     state=""
     if [ -n "$cid" ]; then
       state="$("$DOCKER" inspect --format \
