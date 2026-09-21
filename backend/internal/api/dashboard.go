@@ -25,10 +25,14 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 		authUserID = strconv.FormatUint(user.ID, 10)
 	}
 
-	return c.Render("index", fiber.Map{
+	// RenderPage, not a bare c.Render: the base layout's footer renders
+	// {{ Version }}, and RenderPage is what supplies it from AppVersion.
+	// Rendering directly left the variable empty, so the one page every
+	// signed-in user lands on showed "NetRunner v" with no version while
+	// every other page showed it.
+	return RenderPage(c, "dashboard", "index", fiber.Map{
 		"User":       user,
 		"authUserID": authUserID,
 		"IsAdmin":    user.Role == "admin",
-		"Page":       "dashboard",
 	})
 }

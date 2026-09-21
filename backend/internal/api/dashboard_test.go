@@ -1,9 +1,15 @@
 package api
 
 import (
+	"io"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gofiber/fiber/v2"
+	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -20,4 +26,25 @@ func TestDashboardHandler_NewDashboardHandler(t *testing.T) {
 	// Verify the db field is set (even if nil)
 	var db *gorm.DB
 	assert.Equal(t, db, handler.db)
+}
+
+// TestRenderIndex_FooterShowsVersion pins the version in the footer of the
+// page every signed-in user lands on. It rendered empty there while every
+// other page showed it, because RenderIndex called c.Render directly
+// instead of going through RenderPage, which is what supplies Version from
+// AppVersion. Rendering through the real engine is what makes this bite.
+func TestRenderIndex_FooterShowsVersion(t *testing.T) {
+	engine := templates.NewPongo2("../../../ops/web/templates", ".html")
+
+	app := fiber.New(fiber.Config{Views: engine})
+	app.Use(withUser(database.User{ID: 1, Email: "footer@test.com", Role: "user"}))
+	app.Get("/", (&DashboardHandler{}).RenderIndex)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/", nil))
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(body), "NetRunner v"+AppVersion,
+		"the dashboard footer must name the running version")
 }
