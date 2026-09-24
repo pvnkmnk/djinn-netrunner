@@ -19,10 +19,11 @@
                     then copy the <code>sp_dc</code> cookie from DevTools (Application &rarr; Cookies).
                 </p>
                 <form id="spdc-form" class="inline-form">
-                    <input type="text" id="spdc_cookie" name="sp_dc" placeholder="sp_dc cookie value" autocomplete="off">
+                    <label for="spdc_cookie" class="sr-only">Spotify sp_dc cookie</label>
+                    <input type="text" id="spdc_cookie" name="sp_dc" placeholder="sp_dc cookie value" autocomplete="off" aria-label="Spotify sp_dc cookie">
                     <button type="submit" class="btn btn-sm btn-primary">{% if spDcLinked %}Update{% else %}Link{% endif %}</button>
                 </form>
-                <div id="spdc-status" class="form-status"></div>
+                <div id="spdc-status" class="form-status" role="status" aria-live="polite"></div>
             </div>
         </details>
     </div>
