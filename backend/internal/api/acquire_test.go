@@ -65,3 +65,44 @@ func TestAcquireHandler_CreateSongWorkflowQueuesArtistTitleQuery(t *testing.T) {
 	assert.Equal(t, "Radiohead Paranoid Android", item.NormalizedQuery)
 	assert.Equal(t, &user.ID, item.OwnerUserID)
 }
+
+func TestAcquireHandler_CreateWithUnauthorizedQualityProfile(t *testing.T) {
+	app, db, _ := setupAcquireTestApp(t)
+
+	otherUser := database.User{Email: "other@test.local", PasswordHash: "hash", Role: "user"}
+	require.NoError(t, db.Create(&otherUser).Error)
+
+	otherProfile := database.QualityProfile{
+		Name:        "Other Private Profile",
+		OwnerUserID: &otherUser.ID,
+		IsDefault:   false,
+	}
+	require.NoError(t, db.Create(&otherProfile).Error)
+
+	body := "artist=Radiohead&album=Kid+A&quality_profile_id=" + otherProfile.ID.String()
+	req := httptest.NewRequest("POST", "/api/acquire", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := app.Test(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestAcquireHandler_CreateWithAuthorizedQualityProfile(t *testing.T) {
+	app, db, user := setupAcquireTestApp(t)
+
+	ownProfile := database.QualityProfile{
+		Name:        "My Own Profile",
+		OwnerUserID: &user.ID,
+		IsDefault:   false,
+	}
+	require.NoError(t, db.Create(&ownProfile).Error)
+
+	body := "artist=Radiohead&album=Kid+A&quality_profile_id=" + ownProfile.ID.String()
+	req := httptest.NewRequest("POST", "/api/acquire", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := app.Test(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, 201, resp.StatusCode)
+}
