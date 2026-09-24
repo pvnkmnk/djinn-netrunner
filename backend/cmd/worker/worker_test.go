@@ -1324,7 +1324,7 @@ func TestFinalizeAcquisition_ReleasesWriteBack(t *testing.T) {
 	// primary key into GORM's implicit conditions.
 	statusOf := func(id uuid.UUID) string {
 		var rel database.TrackedRelease
-		require.NoError(t, w.db.First(&rel, id).Error)
+		require.NoError(t, w.db.First(&rel, "id = ?", id).Error)
 		return rel.Status
 	}
 	require.Equal(t, "acquired", statusOf(hitWanted.ID), "wanted + imported this job -> acquired")
