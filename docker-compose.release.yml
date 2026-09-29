@@ -62,8 +62,11 @@ services:
 
   ops-worker:
     environment:
-      ENVIRONMENT: ${ENVIRONMENT:-production}
-      CONFIG_ENV: ${CONFIG_ENV:-production}
+      # Pinned for the same reason as ops-web: a `.env` carrying development
+      # would otherwise leave the worker in dev mode while the web process ran
+      # production — one deploy path, two modes.
+      ENVIRONMENT: production
+      CONFIG_ENV: production
       # No-colon ${VAR-default}: unset picks the sidecar, an explicit empty
       # value means direct egress. Only yt-dlp is routed; the app's own
       # traffic (postgres, slskd, providers) is unaffected.
