@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than kept as a parallel path: `docker-compose.beta.yml` →
   `docker-compose.release.yml`, `.env.beta.example` → `.env.release.example`,
   `docs/BETA_DEPLOYMENT.md` → `docs/DEPLOYMENT.md` and `scripts/beta-smoke.sh` →
-  `scripts/smoke.sh` (#288). The gate is unchanged in substance — same 28 checks, same
-  `--dev` / `--release` modes — so an existing invocation only needs the new name. The
+  `scripts/smoke.sh` (#288). The gate is unchanged in substance — the same checks, the
+  same `--dev` / `--release` modes — so an existing invocation only needs the new name. The
   acceptance record and the dated `docs/plans/*` artefacts are kept as written: they
   record past runs, not instructions.
 - `scripts/deploy.sh` is the documented bring-up, and derives `APP_VERSION` from the
@@ -25,10 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
-- Published GHCR images no longer report `NetRunner vdev` in the page footer. The build
-  workflow resolves the version from the tag being published (and the `dev` sentinel
-  from any other ref) and passes it to the Dockerfile's `APP_VERSION` build arg, so a
-  released image is stamped with the version it was built from (#288).
+- An image published for a `v*` tag no longer reports `NetRunner vdev` in the page
+  footer. The build workflow resolves the version from the tag being published and
+  passes it to the Dockerfile's `APP_VERSION` build arg, so a released image is stamped
+  with the version it was built from; an image built from any other ref deliberately
+  reports the `dev` sentinel (#288).
 
 ### Documentation
 - `docs/DEPLOYMENT.md` (renamed) presents dev and release as the only two paths, states
