@@ -87,6 +87,10 @@ export APP_VERSION
 ENV_FILE="$REPO_ROOT/.env"
 if [ -f "$ENV_FILE" ]; then
     ENV_TMP="$ENV_FILE.deploy.tmp"
+    # cp -p before rewriting: .env holds secrets and is often mode 0600, and a
+    # fresh file created by the shell's redirection would land on the umask's
+    # default instead. Truncating the copy keeps the original mode and owner.
+    cp -p "$ENV_FILE" "$ENV_TMP"
     # Replace the first APP_VERSION line and drop any duplicates: both compose
     # and beta-smoke.sh resolve the *last* value, so a leftover later line would
     # silently win over the version this script reported and built.
