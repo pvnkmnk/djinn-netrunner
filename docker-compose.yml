@@ -128,6 +128,12 @@ services:
     restart: unless-stopped
 
   ops-web:
+    # The image tag carries the version its binary was stamped with, so a
+    # dev build (`:dev`) and a release build (`:v0.1.1`) can never occupy
+    # the same tag: an undeclared bring-up resolves to `:dev` and
+    # structurally cannot reuse a release image, even without --build.
+    # See "Versioning the image" in docs/BETA_DEPLOYMENT.md.
+    image: djinn-netrunner-ops-web:${APP_VERSION:-dev}
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -188,6 +194,8 @@ services:
       retries: 3
       start_period: 15s
   ops-worker:
+    # Version-scoped tag, same rule as ops-web: see the note there.
+    image: djinn-netrunner-ops-worker:${APP_VERSION:-dev}
     build:
       context: .
       dockerfile: backend/Dockerfile

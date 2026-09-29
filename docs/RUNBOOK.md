@@ -122,8 +122,11 @@ Weekly:
 ## Beta release checklist (operator)
 0. Reproducible bring-up and per-check verification: [BETA_DEPLOYMENT.md](BETA_DEPLOYMENT.md).
 1. Stamp the version:
-   - Set `APP_VERSION` to the tag being released (`APP_VERSION=$(git describe --tags)`)
-     **before** building; the page footer is written from it at image-build time.
+   - Run `scripts/deploy.sh` (or export `APP_VERSION` yourself) **before** the
+     build. It derives `APP_VERSION` from the checked-out tag
+     (`git describe --tags --exact-match`, else `dev`) and writes it to `.env`;
+     the page footer and the image tag (`djinn-netrunner-ops-web:${APP_VERSION}`)
+     both come from it, so a dev build and a release build cannot share a tag.
    - A build with no `APP_VERSION` reports `vdev`, and `scripts/beta-smoke.sh`
      fails when the footer disagrees with the declared value — so a mismatch is
      caught by the smoke run rather than by a user reading the footer.
