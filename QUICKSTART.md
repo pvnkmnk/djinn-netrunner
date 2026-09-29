@@ -16,8 +16,8 @@ cp .env.example .env
 
 `.env` is injected into the `ops-web` and `ops-worker` containers as well as
 driving `${VAR}` substitution in the compose files, so the values below actually
-reach the app. For a full single-machine beta (streaming, verification,
-troubleshooting) see [docs/BETA_DEPLOYMENT.md](docs/BETA_DEPLOYMENT.md).
+reach the app. For a full single-machine deployment (dev and release paths,
+streaming, verification, troubleshooting) see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 2. Edit `.env` with minimum required values:
 ```env
@@ -30,9 +30,9 @@ JWT_SECRET=replace_with_a_long_random_secret
 DOMAIN=localhost
 ```
 
-3. Launch stack:
+3. Launch the dev stack:
 ```bash
-docker compose up -d --build
+./scripts/deploy.sh
 ```
 
 4. Verify health:
@@ -52,7 +52,7 @@ curl -i -X POST http://localhost:8080/api/auth/register \
   -b $JAR -c $JAR \
   -d '{"email":"user@example.com","password":"replace-me"}'
 ```
-Then open `http://localhost` and log in.
+Then open `http://localhost:8080` and log in — the `edge` profile's Caddy is what would serve port 80.
 
 ## Add Your First Watchlist
 

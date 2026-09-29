@@ -1,5 +1,12 @@
 # Beta acceptance record
 
+> **The beta path is retired (2026-09-28).** This record was produced against a
+> deployment that no longer exists: `docker-compose.beta.yml`, `.env.beta.example`
+> and `docs/BETA_DEPLOYMENT.md` were replaced by the canonical dev and release
+> paths — see `docs/DEPLOYMENT.md`. The commands and outputs below are kept
+> verbatim as the evidence trail; run the current gate with `scripts/smoke.sh`.
+
+
 Every row below was **executed against a live stack** on the date shown — no row
 is inferred from reading code. Rows marked FAIL with a strikethrough were
 reproduced, root-caused, and fixed on the same commit; the remaining FAIL is an

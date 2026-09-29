@@ -1,47 +1,39 @@
-# NetRunner beta deployment overlay.
+# NetRunner release deployment overlay.
 #
-#   cp .env.beta.example .env      # then set the required values
-#   docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d --build
+#   cp .env.release.example .env     # then set the required values
+#   ./scripts/deploy.sh --release    # derives APP_VERSION from the git tag
 #
-# What this adds on top of docker-compose.yml:
-#   * ops-web published on ${BETA_HTTP_PORT:-8080}; Caddy moves behind the
-#     `edge` profile so a local beta speaks plain HTTP instead of presenting a
-#     local-CA certificate. Add `--profile edge` when you do want TLS on :443.
-#   * production semantics (ENVIRONMENT/CONFIG_ENV) plus the Subsonic streaming
-#     endpoint enabled, so a music client can actually play from NetRunner.
+# The canonical release path is the base docker-compose.yml — which is the dev
+# path on its own — plus this overlay. What this adds:
+#   * production semantics (ENVIRONMENT/CONFIG_ENV), pinned so a stray .env
+#     cannot silently turn a release into a development stack, and the
+#     Subsonic streaming endpoint enabled so a music client can actually play.
 #   * restart policies and bounded container logs.
+#   * a validating egress sidecar for yt-dlp (the egress-proxy service).
 #   * an optional Navidrome (`--profile media-server`) for deployments that want
 #     an external Subsonic server in front of the same music volume.
 #
-# The app now fails fast when a required production setting is missing
+# The app fails fast when a required production setting is missing
 # (JWT_SECRET, and SUBSONIC_PASSWORD when Subsonic is enabled), so a
-# misconfigured beta exits with a readable error instead of silently degrading.
-# See docs/BETA_DEPLOYMENT.md.
+# misconfigured release exits with a readable error instead of degrading.
+# See docs/DEPLOYMENT.md.
 
-x-beta-logging: &beta-logging
+x-release-logging: &release-logging
   driver: json-file
   options:
     max-size: "10m"
     max-file: "3"
 
 services:
-  # TLS terminator from the base stack — opt in with `--profile edge`.
-  caddy:
-    profiles: ["edge"]
-
   ops-web:
-    ports:
-      # Loopback by default. This port speaks plain HTTP and carries session
-      # cookies and Subsonic credentials, so publishing it on every interface
-      # exposes them in cleartext. Reach it remotely through the `edge`
-      # profile's Caddy, or set BETA_BIND_ADDR when a TLS terminator fronts it.
-      - "${BETA_BIND_ADDR:-127.0.0.1}:${BETA_HTTP_PORT:-8080}:8080"
     environment:
-      ENVIRONMENT: ${ENVIRONMENT:-production}
-      CONFIG_ENV: ${CONFIG_ENV:-production}
+      # Pinned, not ${ENVIRONMENT:-production}: the deploy path decides the
+      # mode, so nothing in .env can quietly turn a release into a dev stack.
+      ENVIRONMENT: production
+      CONFIG_ENV: production
       SUBSONIC_ENABLED: ${SUBSONIC_ENABLED:-true}
     restart: unless-stopped
-    logging: *beta-logging
+    logging: *release-logging
 
   # Validating egress boundary for yt-dlp (DJI-501). The downloader follows its
   # own redirects after the app's pre-flight check hands the URL over; this
@@ -66,7 +58,7 @@ services:
       retries: 6
       start_period: 20s
     restart: unless-stopped
-    logging: *beta-logging
+    logging: *release-logging
 
   ops-worker:
     environment:
@@ -80,15 +72,15 @@ services:
       egress-proxy:
         condition: service_healthy
     restart: unless-stopped
-    logging: *beta-logging
+    logging: *release-logging
 
   postgres:
     restart: unless-stopped
-    logging: *beta-logging
+    logging: *release-logging
 
   slskd:
     restart: unless-stopped
-    logging: *beta-logging
+    logging: *release-logging
 
   # Optional external Subsonic server over the same music volume.
   # Enable with `--profile media-server` and set NAVIDROME_URL in .env so the
@@ -116,7 +108,7 @@ services:
       volume-init:
         condition: service_completed_successfully
     restart: unless-stopped
-    logging: *beta-logging
+    logging: *release-logging
 
 volumes:
   netrunner-navidrome-data:

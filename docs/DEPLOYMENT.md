@@ -1,12 +1,28 @@
-# Beta Deployment (single machine)
+# Deployment (single machine)
 
-Bring up NetRunner as a self-contained beta on one Docker host: PostgreSQL,
+Bring up NetRunner as a self-contained deployment on one Docker host: PostgreSQL,
 slskd (Soulseek), the API/UI, the background worker, and optionally an external
 Subsonic server. NetRunner serves its own Subsonic-compatible API, so a music
 client can stream from it without any extra service.
 
-Verified against `master` for the Beta Readiness work (see Linear project
-*NetRunner Beta Readiness*).
+Verified against `master` for the release-readiness work (see the Linear
+project *NetRunner Beta Readiness*).
+
+## Two canonical paths
+
+NetRunner has exactly two ways to run, and they differ in the mode the app runs
+in and in the version it reports:
+
+| Path | Bring it up | Mode | Footer version |
+|---|---|---|---|
+| **dev** | `./scripts/deploy.sh` | development — base `docker-compose.yml` | `NetRunner vdev`, unless you set `APP_VERSION` |
+| **release** | `./scripts/deploy.sh --release` | production — base + `docker-compose.release.yml` | the tag on HEAD, e.g. `NetRunner v0.1.1` |
+
+Both publish the app on `127.0.0.1:${APP_HTTP_PORT:-8080}` over plain HTTP (see
+the deployment boundary below), so run one at a time. `--profile edge` adds Caddy
+for TLS on `:443`; `--profile media-server` adds the bundled Navidrome. One gate
+covers both: `./scripts/smoke.sh --dev` or `./scripts/smoke.sh --release` (the
+default).
 
 ## Prerequisites
 
@@ -27,7 +43,8 @@ on its own therefore changes nothing.
 ```bash
 git clone https://github.com/pvnkmnk/djinn-netrunner.git
 cd djinn-netrunner
-cp .env.beta.example .env
+cp .env.release.example .env   # release path
+# dev path instead:  cp .env.example .env
 ```
 
 Change every `change_me_` value. The four that matter most:
@@ -57,7 +74,7 @@ earlier run built — you do not need `--build` to be safe from that collision.
 `scripts/deploy.sh` decides `APP_VERSION` for you, from the checked-out tag:
 
 ```bash
-./scripts/deploy.sh --beta        # base stack + beta overlay
+./scripts/deploy.sh --release        # base stack + release overlay
 ```
 
 It resolves the version in this order — an explicit `APP_VERSION` (an override,
@@ -65,11 +82,11 @@ as a CI build of an untagged commit would set), then the tag pointing at HEAD
 (`git describe --tags --exact-match`), then `dev` — writes the result back to
 `.env` as `APP_VERSION=…`, and runs the compose bring-up. Check out the tag you
 are releasing, run it once, and the tag you deploy is the version you build;
-the declaration lives in `.env`, where `scripts/beta-smoke.sh` reads it.
+the declaration lives in `.env`, where `scripts/smoke.sh` reads it.
 
 **`vdev` is a deliberate contract, not a defect.** A build that declares no
 version reports `NetRunner vdev` — not a release number, so an un-stamped image
-can never masquerade as a release it is not. Check 12 of `scripts/beta-smoke.sh`
+can never masquerade as a release it is not. Check 12 of `scripts/smoke.sh`
 encodes exactly that expectation:
 
 * a declared `APP_VERSION` must match the footer, or smoke fails with
@@ -96,26 +113,26 @@ is not sent in the clear.
 ## 2. Bring it up
 
 ```bash
-./scripts/deploy.sh --beta
+./scripts/deploy.sh --release
 ```
 
 The script derives `APP_VERSION` from the checked-out tag and runs the
 equivalent of:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.release.yml up -d --build
 ```
 
-The overlay publishes the app on `${BETA_HTTP_PORT:-8080}`, applies production
-semantics, enables Subsonic, and adds restart/log policies. Caddy (the TLS edge
-in the base file) is moved behind the `edge` profile so a local beta talks plain
-HTTP instead of presenting a local-CA certificate; add `--profile edge` when you
-want TLS on `:443`.
+The base file publishes the app on `${APP_HTTP_PORT:-8080}` and pins development
+semantics; the overlay pins production, enables Subsonic, adds restart/log
+policies, and runs the yt-dlp egress sidecar. Caddy is behind the `edge` profile
+in both, so the stack serves plain HTTP instead of presenting a local-CA
+certificate; add `--profile edge` when you want TLS on `:443`.
 
 Optional external Subsonic server over the same music volume:
 
 ```bash
-./scripts/deploy.sh --beta --profile media-server
+./scripts/deploy.sh --release --profile media-server
 # then set NAVIDROME_URL=http://navidrome:4533 in .env and re-run -- the build is cached
 ```
 
@@ -127,13 +144,13 @@ restart, library scanning, Subsonic visibility and real audio bytes, and exits
 non-zero listing every failing check:
 
 ```bash
-./scripts/beta-smoke.sh
+./scripts/smoke.sh
 # ...
-# Beta smoke: all checks passed.
+# NetRunner smoke: all checks passed.
 ```
 
 Add `--keep` to leave the throwaway library and audio fixtures in place for
-inspection. Point it at another host with `BETA_BASE_URL=https://music.example`.
+inspection. Point it at another host with `SMOKE_BASE_URL=https://music.example`.
 
 For a manual pass, start with the health endpoint:
 
@@ -143,10 +160,10 @@ curl -s http://localhost:8080/api/health
 ```
 
 Confirm the environment actually reached the container — this was the class of
-bug that made earlier betas behave inexplicably:
+bug that made earlier deployments behave inexplicably:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.beta.yml exec ops-web env | grep -E '^(JWT_SECRET|SUBSONIC_ENABLED|CONFIG_ENV)='
+docker compose -f docker-compose.yml -f docker-compose.release.yml exec ops-web env | grep -E '^(JWT_SECRET|SUBSONIC_ENABLED|CONFIG_ENV)='
 ```
 
 Then create the first account. **Every state-changing request needs the CSRF
@@ -176,7 +193,7 @@ curl -s -b $JAR -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/watch
 Sessions must survive a restart — this is what `JWT_SECRET` buys:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.beta.yml restart ops-web
+docker compose -f docker-compose.yml -f docker-compose.release.yml restart ops-web
 curl -s -b $JAR -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/watchlists   # still 200
 ```
 
@@ -254,7 +271,7 @@ peers that queue a transfer and never start sending, results that are not
 plausible audio, and files that fail their audio probe:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.beta.yml logs -f ops-worker
+docker compose -f docker-compose.yml -f docker-compose.release.yml logs -f ops-worker
 ```
 
 A full discography is dozens of independent Soulseek searches and transfers, so
@@ -278,13 +295,13 @@ last one. Note the `.view` suffix — see the troubleshooting table for why:
 
 ```bash
 # artists, with stable resolvable ids
-curl -s "http://localhost:8080/rest/getIndexes.view?u=you@example.com&p=change-this&v=1.16.1&c=beta"
+curl -s "http://localhost:8080/rest/getIndexes.view?u=you@example.com&p=change-this&v=1.16.1&c=netrunner"
 
 # that artist and its albums
-curl -s "http://localhost:8080/rest/getArtist.view?u=you@example.com&p=change-this&v=1.16.1&c=beta&id=artist-PUP"
+curl -s "http://localhost:8080/rest/getArtist.view?u=you@example.com&p=change-this&v=1.16.1&c=netrunner&id=artist-PUP"
 
 # one track's audio
-curl -s -o /tmp/track.m4a -w '%{http_code} %{size_download} bytes %{content_type}\n' "http://localhost:8080/rest/stream.view?u=you@example.com&p=change-this&v=1.16.1&c=beta&id=<track id>"
+curl -s -o /tmp/track.m4a -w '%{http_code} %{size_download} bytes %{content_type}\n' "http://localhost:8080/rest/stream.view?u=you@example.com&p=change-this&v=1.16.1&c=netrunner&id=<track id>"
 # 200 29087926 bytes audio/m4a
 ```
 
@@ -308,15 +325,15 @@ only the account password is accepted.
 
 | Concern | Command |
 |---|---|
-| Logs | `docker compose -f docker-compose.yml -f docker-compose.beta.yml logs -f ops-web ops-worker` |
+| Logs | `docker compose -f docker-compose.yml -f docker-compose.release.yml logs -f ops-web ops-worker` |
 | State | `docker volume ls \| grep netrunner` (postgres, downloads, music, config, logs, slskd) |
-| Upgrade | `git fetch --tags && git checkout <tag> && ./scripts/deploy.sh --beta`. Check out the release tag first — the script derives `APP_VERSION` from the tag on HEAD, so on an untagged branch commit it stamps `dev`, not the release. |
+| Upgrade | `git fetch --tags && git checkout <tag> && ./scripts/deploy.sh --release`. Check out the release tag first — the script derives `APP_VERSION` from the tag on HEAD, so on an untagged branch commit it stamps `dev`, not the release. |
 | Back up | see `ops/docs/backup.md` — back up the Postgres volume *and* the music volume together |
 | Deduplicate a pre-existing library | `ops/docs/library-dedup-runbook.md` |
 | Worker concurrency | `MAX_CONCURRENT_JOBS` in `.env` caps how many jobs one worker runs at once (default 5). Each running job holds peer connections and a download pipeline — raise only with the RAM to match. With SQLite the worker runs one at a time regardless (no advisory locks). Apply with the usual `up -d` to recreate the worker. |
-| Reach it from another host | The beta port binds to `127.0.0.1` because it serves plain HTTP with session cookies and Subsonic credentials. Put the `edge` profile's Caddy in front, or set `BETA_BIND_ADDR=0.0.0.0` behind your own TLS terminator. `NAVIDROME_BIND_ADDR` works the same way for the optional media server. |
+| Reach it from another host | The app port binds to `127.0.0.1` because it serves plain HTTP with session cookies and Subsonic credentials. Put the `edge` profile's Caddy in front, or set `APP_BIND_ADDR=0.0.0.0` behind your own TLS terminator. `NAVIDROME_BIND_ADDR` works the same way for the optional media server. |
 | Cancel a running job | `POST /api/jobs/:id/cancel` (CSRF header required). The worker aborts within one item and finishes the job as `cancelled`, keeping what it had already imported. |
-| yt-dlp egress boundary | The overlay runs an `egress-proxy` sidecar (squid) that denies private/loopback ranges at connect time for every hop yt-dlp takes — including redirects the downloader follows on its own after handover (proven live: a source on a public address that 302s to an RFC1918 host is denied at the hop, `TCP_DENIED/403` in squid's log, and the item fails with the refusal in its log). The worker points yt-dlp at it via `YTDLP_PROXY`. **The allowlist is a feature, not a bug:** extraction sites live in `ops/squid/allowed-domains.txt`, and a host not on it is refused even when public — that is the boundary's default-deny posture, so add every site you acquire from. After editing it, apply with `docker compose -f docker-compose.yml -f docker-compose.beta.yml restart egress-proxy` (a plain `up -d` leaves the running squid on its old in-memory allowlist). |
+| yt-dlp egress boundary | The overlay runs an `egress-proxy` sidecar (squid) that denies private/loopback ranges at connect time for every hop yt-dlp takes — including redirects the downloader follows on its own after handover (proven live: a source on a public address that 302s to an RFC1918 host is denied at the hop, `TCP_DENIED/403` in squid's log, and the item fails with the refusal in its log). The worker points yt-dlp at it via `YTDLP_PROXY`. **The allowlist is a feature, not a bug:** extraction sites live in `ops/squid/allowed-domains.txt`, and a host not on it is refused even when public — that is the boundary's default-deny posture, so add every site you acquire from. After editing it, apply with `docker compose -f docker-compose.yml -f docker-compose.release.yml restart egress-proxy` (a plain `up -d` leaves the running squid on its old in-memory allowlist). |
 | Tear down (keep data) | `docker compose ... down` |
 | Destroy (lose everything) | `docker compose ... down -v` |
 
@@ -331,7 +348,7 @@ only the account password is accepted.
 | Every variable in `.env` seems ignored | The container predates the current compose file. `env_file` is applied at *create* time, so `docker compose restart` does not pick up `.env` changes — run `up -d` (add `--build` after a code change). A local override that replaces `env_file` has the same effect. `docker compose exec ops-web env` shows what actually arrived. |
 | `exec /entrypoint.sh: no such file or directory` when building on Windows | The working copy has CRLF in `backend/entrypoint.sh`. The repo forces LF via `.gitattributes`; `git checkout -- backend/entrypoint.sh` (or `git config core.autocrlf input`) fixes it. |
 | slskd exits immediately / downloads unwritable | `volume-init` must run before slskd; it chowns the shared volumes to UID 1000. Keep it in the stack. |
-| `port is already allocated` | Another stack holds a published port. `BETA_HTTP_PORT` covers the HTTP one, but the collision that usually blocks the whole bring-up is postgres: whatever already listens on 5432 (many hosts run a system or containerised postgres) fails the `up` before anything starts. Set `PG_HOST_PORT=15432` in `.env` — the stack itself reaches postgres over the compose network and ignores it, since the publish is for host-side debugging only. `NAVIDROME_PORT` does the same for the optional media server. Setting these beats stopping someone else's stack. |
+| `port is already allocated` | Another stack holds a published port. `APP_HTTP_PORT` covers the HTTP one, but the collision that usually blocks the whole bring-up is postgres: whatever already listens on 5432 (many hosts run a system or containerised postgres) fails the `up` before anything starts. Set `PG_HOST_PORT=15432` in `.env` — the stack itself reaches postgres over the compose network and ignores it, since the publish is for host-side debugging only. `NAVIDROME_PORT` does the same for the optional media server. Setting these beats stopping someone else's stack. |
 | Music plays but nothing rescans in an external server | Set `NAVIDROME_URL` (+ user/pass) so the worker has a library client; `/api/health` then reports a `navidrome` check. |
 | Every import logs `Fingerprinting failed: fpcalc failed: exec: "fpcalc": executable file not found in $PATH` | Expected, not a fault: the image ships no Chromaprint binary (see Prerequisites). The import completes and hash dedup still works; fingerprint dedup and AcoustID enrichment are simply unavailable, so `ACOUSTID_API_KEY` alone changes nothing. Install `fpcalc` in `backend/Dockerfile` if you want them. |
 | yt-dlp fallback fails with a proxy/403 error for a site you trust | The egress boundary's allowlist refused it. Add the host to `ops/squid/allowed-domains.txt` and `docker compose ... up -d egress-proxy` to reload. To run without the boundary entirely (not recommended), set `YTDLP_PROXY=` empty in `.env`. |
