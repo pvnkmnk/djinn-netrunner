@@ -1,5 +1,11 @@
 # Implementation History
 
+> **Dated files in this directory are point-in-time records, not instructions.** The
+> `YYYY-MM-DD-*.md` plans, gap lists and release checklists are kept as written: their
+> unticked boxes, file names and commands describe the state on the date in the file
+> name. Current guidance is `docs/DEPLOYMENT.md` for the dev and release paths,
+> `docs/RUNBOOK.md` for operations, and `README.md` / `QUICKSTART.md` for a first setup.
+
 ## Phase 1-3: Foundation (PRs #22-24)
 - Go backend initialization
 - Database models and migrations
