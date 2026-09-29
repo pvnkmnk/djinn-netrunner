@@ -28,8 +28,11 @@
 #      `NetRunner vdev` and can never masquerade as a release.
 #
 # Arguments:
-#   --beta       also apply docker-compose.beta.yml (production overlay)
-#   <anything>   passed through to `docker compose up`, e.g. --profile
+#   --beta            also apply docker-compose.beta.yml (production overlay)
+#   --profile <name>  enable a compose profile. `--profile` is a compose *global*
+#                     option and is rejected after the subcommand, so the script
+#                     positions it before `up`.
+#   <anything else>   passed through to `docker compose up`
 #
 # Environment:
 #   APP_VERSION  explicit override of the derived version
@@ -41,13 +44,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 BETA=0
+PROFILES=()
 EXTRA=()
-for arg in "$@"; do
-    case "$arg" in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --beta) BETA=1 ;;
+        --profile)
+            [ $# -ge 2 ] || { echo "[deploy] --profile needs a value" >&2; exit 2; }
+            PROFILES+=(--profile "$2"); shift ;;
+        --profile=*) PROFILES+=("$1") ;;
         -h|--help) awk 'NR == 1 { next } /^set -euo pipefail/ { exit } { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; exit 0 ;;
-        *) EXTRA+=("$arg") ;;
+        *) EXTRA+=("$1") ;;
     esac
+    shift
 done
 
 # 1. Honour an explicit override, 2. take the checked-out tag, 3. fall back to
@@ -60,6 +69,16 @@ if [ -z "${APP_VERSION:-}" ]; then
         APP_VERSION="dev"
     fi
 fi
+
+# Docker image tags allow [A-Za-z0-9_][A-Za-z0-9_.-]{0,127}. A git tag may legally
+# contain a slash or plus (`release/1.0.0`, `v1.0.0+build`), which would make
+# `image: djinn-netrunner-ops-web:$APP_VERSION` an invalid reference and fail the
+# whole bring-up — reject it here with a clear message instead.
+if [[ ! "$APP_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+    echo "[deploy] APP_VERSION '$APP_VERSION' is not a valid Docker tag (letters, digits, '_', '.', '-' only)" >&2
+    echo "[deploy] a git tag like 'release/1.0.0' or 'v1.0.0+build' cannot tag an image; override with APP_VERSION=v1.0.0" >&2
+    exit 1
+fi
 export APP_VERSION
 
 # Persist it where `docker compose` (for ${APP_VERSION} substitution and as the
@@ -68,8 +87,15 @@ export APP_VERSION
 ENV_FILE="$REPO_ROOT/.env"
 if [ -f "$ENV_FILE" ]; then
     ENV_TMP="$ENV_FILE.deploy.tmp"
+    # Replace the first APP_VERSION line and drop any duplicates: both compose
+    # and beta-smoke.sh resolve the *last* value, so a leftover later line would
+    # silently win over the version this script reported and built.
     awk -v v="$APP_VERSION" '
-        /^APP_VERSION=/ && !set { print "APP_VERSION=" v; set = 1; next }
+        /^APP_VERSION=/ {
+            if (!set) print "APP_VERSION=" v
+            set = 1
+            next
+        }
         { print }
         END { if (!set) print "APP_VERSION=" v }
     ' "$ENV_FILE" > "$ENV_TMP"
@@ -84,5 +110,5 @@ if [ "$BETA" -eq 1 ]; then
 fi
 
 echo "[deploy] APP_VERSION=$APP_VERSION (image tag djinn-netrunner-ops-web:$APP_VERSION)"
-echo "[deploy] docker compose ${FILES[*]} up -d --build ${EXTRA[*]:-}"
-exec docker compose "${FILES[@]}" up -d --build "${EXTRA[@]}"
+echo "[deploy] docker compose ${PROFILES[*]:-} ${FILES[*]} up -d --build ${EXTRA[*]:-}"
+exec docker compose "${PROFILES[@]}" "${FILES[@]}" up -d --build "${EXTRA[@]}"

@@ -310,7 +310,7 @@ only the account password is accepted.
 |---|---|
 | Logs | `docker compose -f docker-compose.yml -f docker-compose.beta.yml logs -f ops-web ops-worker` |
 | State | `docker volume ls \| grep netrunner` (postgres, downloads, music, config, logs, slskd) |
-| Upgrade | `git pull && ./scripts/deploy.sh --beta` (re-derives `APP_VERSION` from the new tag) |
+| Upgrade | `git fetch --tags && git checkout <tag> && ./scripts/deploy.sh --beta`. Check out the release tag first — the script derives `APP_VERSION` from the tag on HEAD, so on an untagged branch commit it stamps `dev`, not the release. |
 | Back up | see `ops/docs/backup.md` — back up the Postgres volume *and* the music volume together |
 | Deduplicate a pre-existing library | `ops/docs/library-dedup-runbook.md` |
 | Worker concurrency | `MAX_CONCURRENT_JOBS` in `.env` caps how many jobs one worker runs at once (default 5). Each running job holds peer connections and a download pipeline — raise only with the RAM to match. With SQLite the worker runs one at a time regardless (no advisory locks). Apply with the usual `up -d` to recreate the worker. |
