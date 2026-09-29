@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The beta deployment path is retired; dev and release are the only two.** Nothing
+  ever shipped as a beta, so the assets carrying the phase name were renamed rather
+  than kept as a parallel path: `docker-compose.beta.yml` →
+  `docker-compose.release.yml`, `.env.beta.example` → `.env.release.example`,
+  `docs/BETA_DEPLOYMENT.md` → `docs/DEPLOYMENT.md` and `scripts/beta-smoke.sh` →
+  `scripts/smoke.sh` (#288). The gate is unchanged in substance — same 28 checks, same
+  `--dev` / `--release` modes — so an existing invocation only needs the new name. The
+  acceptance record and the dated `docs/plans/*` artefacts are kept as written: they
+  record past runs, not instructions.
+- `scripts/deploy.sh` is the documented bring-up, and derives `APP_VERSION` from the
+  checked-out tag, falling back to the deliberate `dev` sentinel on an untagged commit
+  and writing the result back to `.env` so the smoke gate checks the same value.
+  `docker-compose.yml` tags the images it builds by that version
+  (`djinn-netrunner-ops-web:${APP_VERSION:-dev}`), so a bring-up that declares nothing
+  cannot pick up a release image (#287).
+
+### Fixed
+- Published GHCR images no longer report `NetRunner vdev` in the page footer. The build
+  workflow resolves the version from the tag being published (and the `dev` sentinel
+  from any other ref) and passes it to the Dockerfile's `APP_VERSION` build arg, so a
+  released image is stamped with the version it was built from (#288).
+
+### Documentation
+- `docs/DEPLOYMENT.md` (renamed) presents dev and release as the only two paths, states
+  the version each reports, and documents `NetRunner vdev` as the deliberate sentinel for
+  an undeclared build rather than a defect (#287, #288).
+
 ## [v0.1.1] - 2026-09-21
 
 A patch release. Both fixes come from deploying v0.1.0 from a fresh clone
