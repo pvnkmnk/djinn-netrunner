@@ -19,10 +19,10 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - docs/RUNBOOK.md — operational procedures and failure modes.
 - docs/DEPLOYMENT.md — bringing up the dev or release deployment from a clone.
 - CHANGELOG.md — what changed in each release, newest first.
-- docs/BETA_ACCEPTANCE.md — the acceptance matrix, with the output each row observed.
-- docs/project-history.md — how the project got here, wave by wave, with PR links.
 
 ### History
+- docs/project-history.md — how the project got here, wave by wave, with PR links.
+- docs/BETA_ACCEPTANCE.md — the acceptance matrix for the retired beta path: the output each row observed, kept as written rather than as a bring-up guide.
 - docs/plans/ — dated point-in-time records (plans, gap lists, release checklists) kept as written, never as instructions; see docs/plans/HISTORICAL.md.
 
 ## What to read when

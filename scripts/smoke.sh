@@ -74,8 +74,11 @@ NC='\033[0m'
 
 # CHECKS counts every pass()/fail() call — one call, one check — so the summary
 # reports how many ran instead of anyone counting lines. [INFO] output is NOT a
-# check, and counting it is how this 27-check script came to be recorded as 28
-# and 29. Nothing here runs in a subshell, so the counters reach the summary.
+# check; counting it is how the acceptance record came to state a different
+# number than a run emits. The total also follows the stack's shape — the health
+# loop below covers slskd only when that container exists under the name it
+# inspects — so cite the run's own summary rather than a fixed figure. Nothing
+# here runs in a subshell, so the counters reach the summary.
 CHECKS=0
 FAILURES=0
 pass() { echo -e "${GREEN}[PASS]${NC} $1"; CHECKS=$((CHECKS + 1)); }

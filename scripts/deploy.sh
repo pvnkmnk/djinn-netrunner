@@ -20,7 +20,9 @@
 # replaced in place) so `scripts/smoke.sh` — which reads the declared
 # version from there — checks against the same value the image was built with.
 #
-# Version resolution, first match wins:
+# Version resolution, first match wins — implemented in scripts/version.sh,
+# which the published-image workflow calls with the ref it is building, so both
+# release paths are stamped by one rule:
 #   1. `APP_VERSION` in the environment — an explicit override, for building an
 #      untagged commit (e.g. CI).
 #   2. the tag pointing at HEAD (`git describe --tags --exact-match`).
@@ -59,26 +61,12 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# 1. Honour an explicit override, 2. take the checked-out tag, 3. fall back to
-# the dev sentinel. `describe --exact-match` fails (non-zero) off a tag, which
-# is the common case during development.
-if [ -z "${APP_VERSION:-}" ]; then
-    if APP_VERSION="$(git describe --tags --exact-match HEAD 2>/dev/null)"; then
-        :
-    else
-        APP_VERSION="dev"
-    fi
-fi
-
-# Docker image tags allow [A-Za-z0-9_][A-Za-z0-9_.-]{0,127}. A git tag may legally
-# contain a slash or plus (`release/1.0.0`, `v1.0.0+build`), which would make
-# `image: djinn-netrunner-ops-web:$APP_VERSION` an invalid reference and fail the
-# whole bring-up — reject it here with a clear message instead.
-if [[ ! "$APP_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-    echo "[deploy] APP_VERSION '$APP_VERSION' is not a valid Docker tag (letters, digits, '_', '.', '-' only)" >&2
-    echo "[deploy] a git tag like 'release/1.0.0' or 'v1.0.0+build' cannot tag an image; override with APP_VERSION=v1.0.0" >&2
-    exit 1
-fi
+# Resolution and validation both live in scripts/version.sh — the one owner
+# shared with the published-image workflow, so neither which version is stamped
+# nor what may be one can drift between the two paths. It exits non-zero on a
+# value that cannot tag an image, and `set -e` aborts this bring-up there rather
+# than after a partial build.
+APP_VERSION="$(bash "$SCRIPT_DIR/version.sh" "${APP_VERSION:-}")"
 export APP_VERSION
 
 # Persist it where `docker compose` (for ${APP_VERSION} substitution and as the
