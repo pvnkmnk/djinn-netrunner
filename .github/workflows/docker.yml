@@ -28,19 +28,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The release path stamps the version the footer reports, from the tag
-      # being published; any other ref reports the deliberate `dev` sentinel,
-      # so an image pushed from a branch cannot advertise a release it is not.
-      # Without this the build arg defaults to `dev` and every published image
-      # shows `NetRunner vdev` in its footer.
+      # The version rule has one owner: scripts/version.sh, which this workflow
+      # and scripts/deploy.sh both call. So the version stamped into a published
+      # image and the version a local bring-up builds cannot drift apart, and
+      # neither can the constraint on them — the Docker-tag check applies to
+      # both, where a ref like `release/1.0.0` would otherwise publish a footer
+      # claiming a name that is not a release. The tag being published is the
+      # version; any other ref passes the deliberate `dev` sentinel, so an image
+      # pushed from a branch cannot advertise a release it is not.
       - name: Resolve APP_VERSION
         id: version
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=dev" >> "$GITHUB_OUTPUT"
-          fi
+          ref="dev"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then ref="${GITHUB_REF_NAME}"; fi
+          version="$(bash scripts/version.sh "$ref")"
+          echo "value=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Docker metadata
         id: meta
