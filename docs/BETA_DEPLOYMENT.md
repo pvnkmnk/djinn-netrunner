@@ -46,21 +46,42 @@ in `docker-compose.yml`). Values the compose files set explicitly — `DATABASE_
 
 ### Versioning the image
 
-The page footer names the running version, and that version is stamped into
-the image at build time rather than hardcoded: compose passes `APP_VERSION`
-through as a build arg and the Dockerfile writes it into the binary. Set it to
-the tag you are deploying, so the footer names the release you are actually
-running:
+The page footer names the running version. That version is stamped into the
+image at build time rather than hardcoded, and it is also the image **tag**:
+compose builds `djinn-netrunner-ops-web:${APP_VERSION}` and
+`djinn-netrunner-ops-worker:${APP_VERSION}`, so a dev build (`:dev`) and a
+release (`:v0.1.1`) can never occupy the same tag. An undeclared bring-up
+resolves to `:dev`, so it structurally cannot pick up the release image an
+earlier run built — you do not need `--build` to be safe from that collision.
+
+`scripts/deploy.sh` decides `APP_VERSION` for you, from the checked-out tag:
 
 ```bash
-APP_VERSION=$(git describe --tags)   # e.g. v0.1.1
+./scripts/deploy.sh --beta        # base stack + beta overlay
 ```
 
-Add that to `.env`. Leave it empty and the image reports `NetRunner vdev` —
-deliberately not a release number, so an un-stamped image cannot masquerade as
-a release it is not. `scripts/beta-smoke.sh` compares the footer against the
-declared `APP_VERSION`, so a mismatch fails the smoke run instead of shipping
-quietly.
+It resolves the version in this order — an explicit `APP_VERSION` (an override,
+as a CI build of an untagged commit would set), then the tag pointing at HEAD
+(`git describe --tags --exact-match`), then `dev` — writes the result back to
+`.env` as `APP_VERSION=…`, and runs the compose bring-up. Check out the tag you
+are releasing, run it once, and the tag you deploy is the version you build;
+the declaration lives in `.env`, where `scripts/beta-smoke.sh` reads it.
+
+**`vdev` is a deliberate contract, not a defect.** A build that declares no
+version reports `NetRunner vdev` — not a release number, so an un-stamped image
+can never masquerade as a release it is not. Check 12 of `scripts/beta-smoke.sh`
+encodes exactly that expectation:
+
+* a declared `APP_VERSION` must match the footer, or smoke fails with
+  `footer says '…' but APP_VERSION is '…'`;
+* no declared version must render as `NetRunner vdev`, or smoke fails with
+  `no APP_VERSION declared but the footer claims '…'`.
+
+So `NetRunner vdev` in the footer, and `[PASS] no APP_VERSION declared; the
+image reports itself as dev` in the smoke output, both mean the mechanism is
+working. You see them when you build by hand (`docker compose … up -d --build`
+with nothing declared) rather than through `scripts/deploy.sh`, which always
+declares a version.
 
 ### Deployment boundary
 
@@ -75,6 +96,13 @@ is not sent in the clear.
 ## 2. Bring it up
 
 ```bash
+./scripts/deploy.sh --beta
+```
+
+The script derives `APP_VERSION` from the checked-out tag and runs the
+equivalent of:
+
+```bash
 docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d --build
 ```
 
@@ -87,8 +115,8 @@ want TLS on `:443`.
 Optional external Subsonic server over the same music volume:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.beta.yml --profile media-server up -d
-# then set NAVIDROME_URL=http://navidrome:4533 in .env and re-run without --build
+./scripts/deploy.sh --beta --profile media-server
+# then set NAVIDROME_URL=http://navidrome:4533 in .env and re-run -- the build is cached
 ```
 
 ## 3. Verify
@@ -282,7 +310,7 @@ only the account password is accepted.
 |---|---|
 | Logs | `docker compose -f docker-compose.yml -f docker-compose.beta.yml logs -f ops-web ops-worker` |
 | State | `docker volume ls \| grep netrunner` (postgres, downloads, music, config, logs, slskd) |
-| Upgrade | `git pull && docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d --build` |
+| Upgrade | `git pull && ./scripts/deploy.sh --beta` (re-derives `APP_VERSION` from the new tag) |
 | Back up | see `ops/docs/backup.md` — back up the Postgres volume *and* the music volume together |
 | Deduplicate a pre-existing library | `ops/docs/library-dedup-runbook.md` |
 | Worker concurrency | `MAX_CONCURRENT_JOBS` in `.env` caps how many jobs one worker runs at once (default 5). Each running job holds peer connections and a download pipeline — raise only with the RAM to match. With SQLite the worker runs one at a time regardless (no advisory locks). Apply with the usual `up -d` to recreate the worker. |
