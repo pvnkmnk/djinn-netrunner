@@ -7,6 +7,11 @@ the canonical folder, tagged, scanned into the library, playable through Subsoni
 by an external client, with sessions that survive a restart — is met against a
 deployed stack, not a test harness.
 
+> **The beta deployment path is retired.** The canonical assets are
+> `docker-compose.release.yml`, `.env.release.example` and `docs/DEPLOYMENT.md`,
+> brought up by `./scripts/deploy.sh`; `./scripts/smoke.sh` is the gate. The
+> acceptance record is history, not a bring-up guide.
+
 **The live record is [`docs/BETA_ACCEPTANCE.md`](docs/BETA_ACCEPTANCE.md)**, which
 carries the observed output and environment per row. This file is the roadmap;
 that one is the evidence. Where they disagree, believe that one.
@@ -75,7 +80,7 @@ The ordered work queue lives in Linear as the *NetRunner Beta Readiness* project
 
 #### Infrastructure
 - [x] Docker Compose stack (PostgreSQL 16 + slskd + Caddy)
-- [x] Beta overlay (`docker-compose.beta.yml`) with `.env.beta.example`
+- [x] Release overlay (`docker-compose.release.yml`) with `.env.release.example`
 - [x] SQLite WAL for local dev
 - [x] LiteFS primary-node detection and write-forwarding middleware
 - [x] PostgreSQL advisory locks with concurrent test coverage
@@ -90,7 +95,7 @@ The ordered work queue lives in Linear as the *NetRunner Beta Readiness* project
 #### Documentation & DX
 - [x] `AGENTS.md` with repo map, API reference, MCP tool schemas
 - [x] Ops runbooks (backup, upgrade, DR, SQLite→Postgres migration)
-- [x] `docs/BETA_DEPLOYMENT.md` — the documented deployment path
+- [x] `docs/DEPLOYMENT.md` — the documented deployment path
 - [x] Database tier guidance, watchlist provider reference
 - [x] ADR 0001: multi-node SQLite with LiteFS
 - [x] ADR 0002: config-as-code evaluation (rejected — env vars stay)
@@ -107,7 +112,7 @@ The ordered work queue lives in Linear as the *NetRunner Beta Readiness* project
 
 ## Known Gaps & Future Work
 
-### Beta-scoped, still open
+### Release-scoped, still open
 
 - [ ] **Subsonic `getAlbum` reports `duration="0"` and an empty `contentType`** for
       tracks whose duration/format the scanner did not record. Streaming itself is
