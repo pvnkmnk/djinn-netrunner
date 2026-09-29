@@ -119,15 +119,15 @@ Weekly:
 - Check disk space for downloads + library paths.
 - Review failed jobs and error patterns.
 
-## Beta release checklist (operator)
-0. Reproducible bring-up and per-check verification: [BETA_DEPLOYMENT.md](BETA_DEPLOYMENT.md).
+## Release checklist (operator)
+0. Reproducible bring-up and per-check verification: [DEPLOYMENT.md](DEPLOYMENT.md).
 1. Stamp the version:
-   - Run `scripts/deploy.sh` (or export `APP_VERSION` yourself) **before** the
-     build. It derives `APP_VERSION` from the checked-out tag
+   - Run `./scripts/deploy.sh --release` (or export `APP_VERSION` yourself) **before**
+     the build. It derives `APP_VERSION` from the checked-out tag
      (`git describe --tags --exact-match`, else `dev`) and writes it to `.env`;
      the page footer and the image tag (`djinn-netrunner-ops-web:${APP_VERSION}`)
      both come from it, so a dev build and a release build cannot share a tag.
-   - A build with no `APP_VERSION` reports `vdev`, and `scripts/beta-smoke.sh`
+   - A build with no `APP_VERSION` reports `vdev`, and `scripts/smoke.sh`
      fails when the footer disagrees with the declared value — so a mismatch is
      caught by the smoke run rather than by a user reading the footer.
 2. Automated gate:

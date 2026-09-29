@@ -157,7 +157,7 @@ func (s *YtdlpService) DownloadAudio(ctx context.Context, rawURL, outputDir, aud
 	// never sees (DJI-500's residual). YTDLP_PROXY is the one control point the
 	// binary offers: when set, every hop yt-dlp takes is subject to the
 	// proxy's connect-time rules, so a disallowed destination fails inside the
-	// downloader instead of being contacted. See ops/squid/ and the beta overlay.
+	// downloader instead of being contacted. See ops/squid/ and the release overlay.
 	if s.proxy != "" {
 		args = append(args, "--proxy", s.proxy)
 	}

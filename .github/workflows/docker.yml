@@ -28,6 +28,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The release path stamps the version the footer reports, from the tag
+      # being published; any other ref reports the deliberate `dev` sentinel,
+      # so an image pushed from a branch cannot advertise a release it is not.
+      # Without this the build arg defaults to `dev` and every published image
+      # shows `NetRunner vdev` in its footer.
+      - name: Resolve APP_VERSION
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
@@ -46,6 +60,8 @@ jobs:
           file: backend/Dockerfile
           platforms: linux/amd64
           push: true
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

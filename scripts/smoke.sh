@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
-# NetRunner beta smoke test
+# NetRunner smoke test
 #
-# Asserts that a *running* deployment is actually healthy — the things the
-# deploy-and-tear-down scripts/smoke-test.sh cannot see: that configuration
-# reached the containers, that sessions survive a restart, that scanning indexes
-# every file it finds, and that a Subsonic client can stream the result.
+# Asserts that a *running* deployment is actually healthy — the things a
+# build-and-unit-test pass cannot see: that configuration reached the
+# containers, that sessions survive a restart, that scanning indexes every file
+# it finds, and that a Subsonic client can stream the result.
 #
 # Usage:
-#   ./scripts/beta-smoke.sh                                  # http://localhost:8080
-#   BETA_BASE_URL=https://music.example ./scripts/beta-smoke.sh
-#   BETA_COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.beta.yml" ./scripts/beta-smoke.sh
+#   ./scripts/smoke.sh                        # release stack, http://localhost:8080
+#   ./scripts/smoke.sh --dev                  # dev stack (base compose only)
+#   SMOKE_BASE_URL=https://music.example ./scripts/smoke.sh
+#   SMOKE_COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.e2e.yml" ./scripts/smoke.sh
 #
 # Options:
-#   --keep    leave the smoke user, library and audio fixtures in place
+#   --dev      target the dev stack: base docker-compose.yml only
+#   --release  target the release stack (default): base + release overlay
+#   --keep     leave the smoke user, library and audio fixtures in place
 #
 # Environment:
-#   BETA_HEALTH_TIMEOUT   seconds to wait for a container to report healthy
+#   SMOKE_COMPOSE_ARGS    overrides the compose files the mode flags select
+#   SMOKE_HEALTH_TIMEOUT  seconds to wait for a container to report healthy
 #                         before failing (default 180)
 #
 # Exits non-zero if any check fails.
@@ -25,15 +29,19 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-BASE_URL="${BETA_BASE_URL:-http://localhost:8080}"
-COMPOSE_ARGS="${BETA_COMPOSE_ARGS:--f docker-compose.yml -f docker-compose.beta.yml}"
-WEB_CONTAINER="${BETA_WEB_CONTAINER:-ops-web}"
-WORKER_CONTAINER="${BETA_WORKER_CONTAINER:-ops-worker}"
-SLSKD_CONTAINER="${BETA_SLSKD_CONTAINER:-netrunner-slskd}"
+# The gate covers both canonical stacks: `--dev` against the base dev stack,
+# the default `--release` against base + the release overlay. Both publish the
+# app on loopback:8080, so only one of them can be up at a time.
+MODE="release"
 
-SMOKE_USER="beta-smoke+$(date +%s)@smoke.test"
-SMOKE_PASS="Betasmoke123!"
-LIBRARY_PATH="/app/music/beta-smoke-$(date +%s)"
+BASE_URL="${SMOKE_BASE_URL:-http://localhost:8080}"
+WEB_CONTAINER="${SMOKE_WEB_CONTAINER:-ops-web}"
+WORKER_CONTAINER="${SMOKE_WORKER_CONTAINER:-ops-worker}"
+SLSKD_CONTAINER="${SMOKE_SLSKD_CONTAINER:-netrunner-slskd}"
+
+SMOKE_USER="smoke+$(date +%s)@smoke.test"
+SMOKE_PASS="Netrunnersmoke123!"
+LIBRARY_PATH="/app/music/smoke-$(date +%s)"
 COOKIE_FILE="$(mktemp)"
 BODY_FILE="$(mktemp)"
 STATUS_FILE="$(mktemp)"
@@ -41,11 +49,23 @@ KEEP=0
 
 for arg in "$@"; do
     case "$arg" in
+        --dev) MODE="dev" ;;
+        --release) MODE="release" ;;
         --keep) KEEP=1 ;;
-        -h|--help) sed -n '2,22p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        -h|--help) awk 'NR == 1 { next } /^set -uo pipefail/ { exit } { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
+
+# SMOKE_COMPOSE_ARGS wins when set, so the gate can be pointed at any stack —
+# the e2e overlay, a differently-named project, or another host's files.
+if [ -n "${SMOKE_COMPOSE_ARGS:-}" ]; then
+    COMPOSE_ARGS="$SMOKE_COMPOSE_ARGS"
+elif [ "$MODE" = "dev" ]; then
+    COMPOSE_ARGS="-f docker-compose.yml"
+else
+    COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.release.yml"
+fi
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -78,12 +98,12 @@ cleanup() {
     rm -f "$COOKIE_FILE" "$BODY_FILE" "$STATUS_FILE"
     echo
     if [ "$CHECKS" -eq 0 ]; then
-        echo -e "${RED}Beta smoke: no checks ran — the script exited before its first check, so it proved nothing.${NC}"
+        echo -e "${RED}NetRunner smoke: no checks ran — the script exited before its first check, so it proved nothing.${NC}"
         exit 1
     elif [ "$FAILURES" -eq 0 ]; then
-        echo -e "${GREEN}Beta smoke: all $CHECKS checks passed.${NC}"
+        echo -e "${GREEN}NetRunner smoke: all $CHECKS checks passed.${NC}"
     else
-        echo -e "${RED}Beta smoke: $FAILURES of $CHECKS checks failed.${NC}"
+        echo -e "${RED}NetRunner smoke: $FAILURES of $CHECKS checks failed.${NC}"
     fi
     exit "$FAILURES"
 }
@@ -131,7 +151,8 @@ json_field() { printf '%s' "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | sed 's
 json_count() { printf '%s' "$1" | grep -o -- "$2" | wc -l | tr -d ' '; }
 urlencode() { printf '%s' "$1" | sed 's/@/%40/;s/+/%2B/'; }
 
-echo "== NetRunner beta smoke =="
+echo "== NetRunner smoke =="
+echo "mode:    $MODE"
 echo "base:    $BASE_URL"
 echo "compose: docker compose $COMPOSE_ARGS"
 echo
@@ -150,7 +171,7 @@ docker inspect "$SLSKD_CONTAINER" >/dev/null 2>&1 && SMOKE_CONTAINERS+=("$SLSKD_
 # for these services is start_period + interval x retries — over a minute.
 # Sampling once failed a deployment that was still coming up, which made the
 # gate noisy at exactly the moment an operator runs it.
-HEALTH_TIMEOUT="${BETA_HEALTH_TIMEOUT:-180}"
+HEALTH_TIMEOUT="${SMOKE_HEALTH_TIMEOUT:-180}"
 for c in "${SMOKE_CONTAINERS[@]}"; do
     waited=0
     while true; do
@@ -306,7 +327,7 @@ fi
 
 # ── 8. Subsonic ping, both auth styles ──────────────────────────────────────
 SUBSONIC_PASS="$(docker exec "$WEB_CONTAINER" printenv SUBSONIC_PASSWORD 2>/dev/null || true)"
-QA="v=1.16.1&c=beta-smoke&f=json"
+QA="v=1.16.1&c=netrunner-smoke&f=json"
 SU_U="u=$(urlencode "$SMOKE_USER")"
 
 PING_ACCOUNT="$(curl -s "$BASE_URL/rest/ping.view?$QA&$SU_U&p=$SMOKE_PASS")"
@@ -341,7 +362,7 @@ for i in 1 2 3; do
 done
 pass "created $FIXTURE_COUNT audio fixtures under $LIBRARY_PATH"
 
-LIBRARY_RESP="$(api POST /api/libraries "{\"name\":\"beta-smoke\",\"path\":\"$LIBRARY_PATH\"}")"
+LIBRARY_RESP="$(api POST /api/libraries "{\"name\":\"smoke\",\"path\":\"$LIBRARY_PATH\"}")"
 LIB_ID="$(json_field "$LIBRARY_RESP" ID)"
 [ -n "$LIB_ID" ] || LIB_ID="$(json_field "$LIBRARY_RESP" id)"
 if [ -n "$LIB_ID" ]; then

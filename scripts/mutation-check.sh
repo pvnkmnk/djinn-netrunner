@@ -100,7 +100,7 @@ READY_TIMEOUT="${MUTATION_READY_TIMEOUT:-180}"
 
 # Block until the service under mutation is actually serving, or fail loudly.
 # The condition is the service's own healthcheck — the same signal
-# scripts/beta-smoke.sh waits on — never a fixed delay and never merely
+# scripts/smoke.sh waits on — never a fixed delay and never merely
 # "running": a container wedged at startup is running too. `running` is
 # accepted only for a service that defines no healthcheck at all, where there
 # is no better signal to wait for. Exit 3, not 1: a stack that will not come up

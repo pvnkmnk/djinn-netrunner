@@ -1,21 +1,21 @@
 # E2E overlay.
 #
 # Two identities are pinned here, both for the same reason: this stack must never
-# be able to reach the beta deployment on the same machine.
+# be able to reach the canonical deployment on the same machine.
 #
 # * `name:` sets the compose project. Without it the project defaults to the
-#   checkout directory, so the suite shared the beta stack's named volumes:
-#   `down -v` would delete the beta library, and ops-web authenticated against a
+#   checkout directory, so the suite shared the canonical stack's named volumes:
+#   `down -v` would delete the canonical library, and ops-web authenticated against a
 #   database whose stored role password predated .env.e2e, which crash-looped it
 #   on 'password authentication failed for user musicops'.
 # * `container_name` is overridden for every service the base file names, because
 #   container names are global. Sharing them meant the e2e stack could only start
-#   after the beta stack's containers were gone, and left containers mislabelled
+#   after the canonical stack's containers were gone, and left containers mislabelled
 #   between projects when it did not.
 #
 # The suite's own `docker exec` targets follow these names (see
-# e2e/fixtures/auth.fixture.ts). Port 8080 is still shared with the beta stack;
-# only one of the two can be up, which is why the acceptance docs stop the beta
+# e2e/fixtures/auth.fixture.ts). Port 8080 is still shared with the dev/release stack;
+# only one of the two can be up, which is why the acceptance docs stop the canonical
 # stack before running the suite.
 name: netrunner-e2e
 
@@ -41,7 +41,7 @@ services:
     build:
       context: ./ops/fake-slskd
     # Own tag: building the stand-in under slskd/slskd:latest shadows the
-    # REAL slskd image on any host that later runs the beta compose — the
+    # REAL slskd image on any host that later runs the release compose — the
     # container named netrunner-slskd silently runs the python stand-in and
     # every real-slskd healthcheck 401s (observed in the v0.0.3 RC smoke).
     image: netrunner/fake-slskd:e2e
@@ -71,8 +71,8 @@ services:
 
   ops-web:
     container_name: e2e-ops-web
-    ports:
-      - "8080:8080"
+    # Port comes from the base file's loopback publish; declaring it here as
+    # well would bind 8080 twice.
     environment:
       # E2E tests make many auth requests; higher limit for testing
       AUTH_RATE_LIMIT_MAX: 1000
@@ -86,15 +86,14 @@ services:
       SUBSONIC_ENABLED: "true"
       # Enable E2E test helper API (create-dir, etc.)
       E2E_ENABLE_TEST_API: "true"
-      # Pinned so a developer's local `.env` (picked up by the base compose's
-      # `env_file`) cannot put the e2e stack into production mode, where a
-      # missing JWT_SECRET or Subsonic password refuses to boot. The suite must
-      # behave identically in CI, where no `.env` exists at all.
+      # The base file already pins development; repeated so the suite's mode is
+      # visible in this overlay. CI has no `.env` at all, so the suite must not
+      # depend on one.
       ENVIRONMENT: development
       CONFIG_ENV: development
 
-  # The same validating egress boundary as the beta overlay, under the e2e
-  # naming rules. This overlay merges with the BASE compose, not the beta one,
+  # The same validating egress boundary as the release overlay, under the e2e
+  # naming rules. This overlay merges with the BASE compose, not the release one,
   # so the service is defined here in full rather than overridden. The static
   # deny list already covers RFC1918 (the compose network's own ranges
   # included); only yt-dlp is routed, so the stack's internal traffic

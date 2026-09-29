@@ -66,7 +66,7 @@ The worker orchestrates multiple specialized services:
 - `GET /partials/stats` - Stats partial (HTMX)
 - `GET /partials/watchlists` - Watchlists partial (HTMX)
 
-## UI/UX Contract (Beta)
+## UI/UX Contract
 - Authenticated routes and HTMX partial endpoints rely on `AuthMiddleware`-populated `c.Locals("user")` for authorization context.
 - The UI remains server-rendered + HTMX-first; client JS is limited to modal flow, console controls, CSRF headers, and responsive nav toggling.
 - Console and operations pages must remain keyboard-navigable with visible focus states and clear loading/empty/error feedback.

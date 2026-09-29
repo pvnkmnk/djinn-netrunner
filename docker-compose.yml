@@ -112,6 +112,10 @@ services:
     restart: "no"
 
   caddy:
+    # TLS edge, opt-in with `--profile edge`. The dev and release paths
+    # both serve plain HTTP on loopback, so Caddy does not start — or bind
+    # :80/:443 — unless it is asked for.
+    profiles: ["edge"]
     image: caddy:2-alpine
     container_name: netrunner-caddy
     volumes:
@@ -132,7 +136,7 @@ services:
     # dev build (`:dev`) and a release build (`:v0.1.1`) can never occupy
     # the same tag: an undeclared bring-up resolves to `:dev` and
     # structurally cannot reuse a release image, even without --build.
-    # See "Versioning the image" in docs/BETA_DEPLOYMENT.md.
+    # See "Versioning the image" in docs/DEPLOYMENT.md.
     image: djinn-netrunner-ops-web:${APP_VERSION:-dev}
     build:
       context: .
@@ -143,6 +147,12 @@ services:
         APP_VERSION: ${APP_VERSION:-dev}
     container_name: ops-web
     command: ["./netrunner-server"]
+    # Publish the app so a local bring-up is reachable. Plain HTTP with
+    # session cookies and Subsonic credentials, so loopback by default;
+    # expose it beyond this host through the `edge` profile's Caddy, or
+    # set APP_BIND_ADDR behind your own TLS terminator.
+    ports:
+      - "${APP_BIND_ADDR:-127.0.0.1}:${APP_HTTP_PORT:-8080}:8080"
     # Inject .env into the container. Without this, .env is only used for
     # ${VAR} substitution *inside this file*: JWT_SECRET, CONFIG_ENV,
     # PROXY_URL, NAVIDROME_*, SUBSONIC_* and every provider key documented in
@@ -164,6 +174,12 @@ services:
       ALLOW_PRIVATE_TARGETS: "true"
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      # The deploy path decides the mode, not `.env`: a developer's file
+      # could otherwise put a dev stack into production, where a missing
+      # JWT_SECRET refuses to boot. docker-compose.release.yml pins both
+      # to production.
+      ENVIRONMENT: development
+      CONFIG_ENV: development
       PORT: "8080"
       STATIC_FILES_PATH: /app/static
       TEMPLATES_PATH: /app/templates
@@ -220,6 +236,9 @@ services:
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
       MUSIC_LIBRARY: /app/music
+      # Mode is the deploy path's decision, same as ops-web.
+      ENVIRONMENT: development
+      CONFIG_ENV: development
       WORKER_ID: ${HOSTNAME:-ops-worker-1}
       WORKER_HEALTH_ADDR: ":9091"
     volumes:

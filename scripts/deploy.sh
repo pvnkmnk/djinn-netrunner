@@ -4,9 +4,9 @@
 # Brings the stack up with the image stamped by the version of the tag you are
 # on, instead of whatever APP_VERSION happened to be exported in the shell:
 #
-#   ./scripts/deploy.sh --beta                # base stack + beta overlay
-#   ./scripts/deploy.sh --beta --profile media-server
-#   ./scripts/deploy.sh                       # base stack only
+#   ./scripts/deploy.sh                       # dev: base stack only
+#   ./scripts/deploy.sh --release             # release overlay
+#   ./scripts/deploy.sh --release --profile media-server
 #
 # Why this exists: the composed image tag is
 # `djinn-netrunner-ops-{web,worker}:${APP_VERSION}`, so the version has to be
@@ -17,7 +17,7 @@
 # can never occupy the same image tag.
 #
 # The resolved version is written back to `.env` (a single `APP_VERSION=` line,
-# replaced in place) so `scripts/beta-smoke.sh` — which reads the declared
+# replaced in place) so `scripts/smoke.sh` — which reads the declared
 # version from there — checks against the same value the image was built with.
 #
 # Version resolution, first match wins:
@@ -28,7 +28,7 @@
 #      `NetRunner vdev` and can never masquerade as a release.
 #
 # Arguments:
-#   --beta            also apply docker-compose.beta.yml (production overlay)
+#   --release         also apply docker-compose.release.yml (production overlay)
 #   --profile <name>  enable a compose profile. `--profile` is a compose *global*
 #                     option and is rejected after the subcommand, so the script
 #                     positions it before `up`.
@@ -43,12 +43,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-BETA=0
+RELEASE=0
 PROFILES=()
 EXTRA=()
 while [ $# -gt 0 ]; do
     case "$1" in
-        --beta) BETA=1 ;;
+        --release) RELEASE=1 ;;
         --profile)
             [ $# -ge 2 ] || { echo "[deploy] --profile needs a value" >&2; exit 2; }
             PROFILES+=(--profile "$2"); shift ;;
@@ -82,7 +82,7 @@ fi
 export APP_VERSION
 
 # Persist it where `docker compose` (for ${APP_VERSION} substitution and as the
-# image tag) and scripts/beta-smoke.sh (for the declared-version check) both
+# image tag) and scripts/smoke.sh (for the declared-version check) both
 # read it. Idempotent: an existing APP_VERSION line is replaced, not appended.
 ENV_FILE="$REPO_ROOT/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -92,7 +92,7 @@ if [ -f "$ENV_FILE" ]; then
     # default instead. Truncating the copy keeps the original mode and owner.
     cp -p "$ENV_FILE" "$ENV_TMP"
     # Replace the first APP_VERSION line and drop any duplicates: both compose
-    # and beta-smoke.sh resolve the *last* value, so a leftover later line would
+    # and smoke.sh resolve the *last* value, so a leftover later line would
     # silently win over the version this script reported and built.
     awk -v v="$APP_VERSION" '
         /^APP_VERSION=/ {
@@ -109,8 +109,8 @@ else
 fi
 
 FILES=(-f "$REPO_ROOT/docker-compose.yml")
-if [ "$BETA" -eq 1 ]; then
-    FILES+=(-f "$REPO_ROOT/docker-compose.beta.yml")
+if [ "$RELEASE" -eq 1 ]; then
+    FILES+=(-f "$REPO_ROOT/docker-compose.release.yml")
 fi
 
 echo "[deploy] APP_VERSION=$APP_VERSION (image tag djinn-netrunner-ops-web:$APP_VERSION)"

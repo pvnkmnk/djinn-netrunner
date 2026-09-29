@@ -5,7 +5,7 @@ promises them at each step. Every flow below was driven through the real UI
 against a live stack; the [Known rough edges](#known-rough-edges) section lists
 what still trips a new user, including the parts this pass could not fix.
 
-Deployment itself is in [`docs/BETA_DEPLOYMENT.md`](BETA_DEPLOYMENT.md); day-two
+Deployment itself is in [`docs/DEPLOYMENT.md`](DEPLOYMENT.md); day-two
 operations are in [`docs/RUNBOOK.md`](RUNBOOK.md).
 
 ## Who this is for

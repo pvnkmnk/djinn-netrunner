@@ -40,7 +40,7 @@ cd backend && go build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent
 cd backend && go run ./cmd/server   # auto-runs migrations; worker/agent/cli likewise
 docker compose up -d                # full stack; logs: docker compose logs -f netrunner[-slskd]
 ./scripts/integration-tests.sh test # or, from backend/: go test ./internal/integration/... -tags=integration -v
-./scripts/smoke-test.sh             # deploy + health/auth/CRUD checks
+./scripts/smoke.sh                  # smoke gate vs a running stack (--dev | --release)
 ./scripts/validate.sh            # (Windows PowerShell: ./scripts/validate.ps1)
 govulncheck ./...                   # CI fails on reachable CVEs
 ```
@@ -144,7 +144,7 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   a new clause — and its roster is add-only, never trimmed (DJI-502).
 - The e2e overlay tags the slskd stand-in `netrunner/fake-slskd:e2e` — never
   build it under `slskd/slskd:latest` (that shadowed the real image and later
-  beta bring-ups ran a python stand-in as netrunner-slskd, DJI-503).
+  earlier bring-ups ran a python stand-in as netrunner-slskd, DJI-503).
 - Compose publishes postgres as `127.0.0.1:${PG_HOST_PORT:-5432}:5432`;
   host-side client URLs must follow `PG_HOST_PORT` (DJI-504).
 - `scripts/mutation-check.sh <gate|boundary|success>` automates mutation proofs:
@@ -524,7 +524,7 @@ Postgres for concurrent production workloads.
   with the audio: moving only the `.mp3` leaves the source dir populated and
   never reclaimed (`dirs removed: 0`). A track's own file is excluded from
   its sidecar set by suffix match — `.mp3` shares the stem.
-- Standing casing repro in the beta library: `music/PUP/The Unraveling Of
+- Standing casing repro in the live deployment's library: `music/PUP/The Unraveling Of
   Puptheband` beside `music/PUP/The Unraveling of Puptheband` (`acquisitions`
   id 4 = lowercase `of`, id 9 = capital `Of`). Use it for identity/path work
   — don't rebuild a fixture.
@@ -566,11 +566,11 @@ Postgres for concurrent production workloads.
   generated random secret` and sessions dying every restart. Verify with
   `docker compose exec ops-web env`.
 - Duplicate keys in an env template take the **last** occurrence silently:
-  `.env.beta.example` declared `NAVIDROME_ADMIN_PASSWORD` twice, so the
+  `.env.release.example` declared `NAVIDROME_ADMIN_PASSWORD` twice, so the
   placeholder below overrode the value a user set above it.
-- Profile-gated services (beta overlay: Caddy behind `edge`, Navidrome
-  behind `media-server`) disappear from `docker compose config` output
-  entirely — correct, not a failed merge.
+- Profile-gated services (Caddy behind `edge` in the base file, Navidrome
+  behind `media-server` in the release overlay) disappear from
+  `docker compose config` output entirely — correct, not a failed merge.
 - `docker compose --env-file X` replaces `.env` for `${VAR}` *substitution*
   only; a service declaring `env_file: .env` still receives that file's
   values *inside the container*. `docker compose config` can print two
@@ -598,14 +598,14 @@ Postgres for concurrent production workloads.
 - `ENVIRONMENT=production` hard-fails on missing `JWT_SECRET` (or Subsonic
   enabled without a password); development warns only. Integration/e2e
   stacks run development, so they're unaffected.
-- Base `docker-compose.yml` publishes no ops-web port; only the beta overlay
-  does (`${BETA_BIND_ADDR:-127.0.0.1}:${BETA_HTTP_PORT:-8080}:8080`) —
-  host-side API work (`scripts/beta-smoke.sh`, curl `:8080`) needs
-  `docker compose -f docker-compose.yml -f docker-compose.beta.yml up`.
-- The live beta stack runs from a *second clone*
-  (`projects/beta-bringup/djinn-netrunner`), not the working repo — sync
-  changed files there and rebuild `ops-worker` before live verification, or
-  you test the previous binary and report it as evidence.
+- The base `docker-compose.yml` is the **dev** path and publishes the app on
+  `${APP_BIND_ADDR:-127.0.0.1}:${APP_HTTP_PORT:-8080}:8080`;
+  `docker-compose.release.yml` adds production semantics to the same stack.
+  Host-side work (`scripts/smoke.sh`, curl `:8080`) needs one of them up, so
+  only one stack can run at a time.
+- The live deployment runs from a *separate clone*, not the working repo — sync
+  changed files there and rebuild `ops-worker` before live verification, or you
+  test the previous binary and report it as evidence.
 - The runtime image ships only `netrunner-server`/`netrunner-worker` — **no
   `netrunner-cli` inside it**, so documented
   `docker compose exec ops-web netrunner-cli ...` repair steps cannot work.
@@ -616,7 +616,7 @@ Postgres for concurrent production workloads.
   SSRF dialer rejects every request with `ssrf: no public IP found for
   <host>`. Provider APIs stay guarded either way. Note the yt-dlp pre-flight
   walk (`checkPublicHost`/`resolveRedirectTarget`) is UNCONDITIONAL — the
-  flag only affects the app's service-mesh client, so even in beta a source
+  flag only affects the app's service-mesh client, so even on the release path a
   URL that resolves private is refused before the egress proxy is consulted.
 - The egress-proxy sidecar logs to `/var/log/squid/` — **never `stdio:/dev/stdout`**:
   squid drops privileges to `proxy` before opening its logs, and root owns
