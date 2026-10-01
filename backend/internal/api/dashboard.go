@@ -10,10 +10,24 @@ import (
 
 type DashboardHandler struct {
 	db *gorm.DB
+
+	// minPasswordLength is shown on the registration form. Zero falls back to
+	// DefaultMinPasswordLength so a zero-valued handler never renders "at
+	// least 0 characters".
+	minPasswordLength int
 }
 
 func NewDashboardHandler(db *gorm.DB) *DashboardHandler {
 	return &DashboardHandler{db: db}
+}
+
+// NewDashboardHandlerWithPolicy returns a dashboard handler that states
+// minLength on its registration form. Pass 0 for the default.
+func NewDashboardHandlerWithPolicy(db *gorm.DB, minLength int) *DashboardHandler {
+	if minLength < 1 {
+		minLength = DefaultMinPasswordLength
+	}
+	return &DashboardHandler{db: db, minPasswordLength: minLength}
 }
 
 func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
@@ -28,6 +42,10 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	data := fiber.Map{
 		"User":       user,
 		"authUserID": authUserID,
+		// The registration form states the floor rather than leaving a person to
+		// discover it by being rejected. The server is what enforces it; see
+		// AuthHandler.Register.
+		"MinPasswordLength": h.minPasswordLength,
 		// Where to send the user once they sign in. Validated here rather
 		// than in the browser, so a hostile ?next= cannot turn the sign-in
 		// page into an open redirect.

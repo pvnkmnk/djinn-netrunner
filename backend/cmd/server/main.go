@@ -153,8 +153,8 @@ func main() {
 
 	// Handlers
 	healthHandler := api.NewHealthHandler(db, cfg)
-	authHandler := api.NewAuthHandlerWithBootstrapAdmin(db, cfg.BootstrapAdminEmail)
-	dashHandler := api.NewDashboardHandler(db)
+	authHandler := api.NewAuthHandlerWithPolicy(db, cfg.BootstrapAdminEmail, cfg.MinPasswordLength)
+	dashHandler := api.NewDashboardHandlerWithPolicy(db, cfg.MinPasswordLength)
 	statsHandler := api.NewStatsHandler(db)
 	libraryHandler := api.NewLibraryHandler(db)
 	profileHandler := api.NewProfileHandler(db)

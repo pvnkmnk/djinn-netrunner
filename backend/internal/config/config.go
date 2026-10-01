@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -29,6 +30,12 @@ type Config struct {
 	// and again when that address registers. Empty disables the bootstrap,
 	// which is the default and safe to leave unset.
 	BootstrapAdminEmail string
+
+	// MinPasswordLength is the shortest password registration accepts. It is
+	// enforced on the server: the form only mirrors it, and registration used
+	// to accept a three-character password with no complaint and no stated
+	// minimum anywhere in the product.
+	MinPasswordLength int
 
 	// Database
 	DatabaseURL string
@@ -279,6 +286,8 @@ func Load(filenames ...string) (*Config, error) {
 
 		BootstrapAdminEmail: getEnv("BOOTSTRAP_ADMIN_EMAIL", ""),
 
+		MinPasswordLength: getEnvInt("MIN_PASSWORD_LENGTH", 12),
+
 		DatabaseURL: getEnv("DATABASE_URL", ""),
 		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
 
@@ -441,6 +450,21 @@ func Load(filenames ...string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// getEnvInt reads an integer environment variable, falling back to def
+// when unset or unparseable. A malformed value must not stop the
+// process starting: the default is a safe floor, not a crash.
+func getEnvInt(key string, def int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return def
+	}
+	return value
 }
 
 // getEnv retrieves an environment variable or returns a default value

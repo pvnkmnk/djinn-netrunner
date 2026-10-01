@@ -10,10 +10,16 @@
         <select name="job_type" aria-label="Filter by job type"
                 hx-get="/partials/jobs" hx-target="#jobs-region" hx-swap="innerHTML" hx-trigger="change" hx-include="closest .filters">
             <option value=""{% if JobType == "" %} selected{% endif %}>All Types</option>
-            <option value="sync"{% if JobType == "sync" %} selected{% endif %}>Sync</option>
-            <option value="scan"{% if JobType == "scan" %} selected{% endif %}>Scan</option>
-            <option value="acquisition"{% if JobType == "acquisition" %} selected{% endif %}>Acquisition</option>
-            <option value="enrich"{% if JobType == "enrich" %} selected{% endif %}>Enrich</option>
+            <!-- Rendered from database.JobTypes, not a list maintained
+                 here. The hand-written version omitted release_monitor -
+                 the scheduler's own job type, 39 of them on the playtest
+                 instance - so those jobs could not be filtered to at all,
+                 and any type added later would have been invisible the
+                 same way. An HTML comment because pongo2 comments cannot
+                 span lines. -->
+            {% for jt in JobTypes %}
+            <option value="{{ jt.Value }}"{% if JobType == jt.Value %} selected{% endif %}>{{ jt.Label }}</option>
+            {% endfor %}
         </select>
         <select name="state" aria-label="Filter by job state"
                 hx-get="/partials/jobs" hx-target="#jobs-region" hx-swap="innerHTML" hx-trigger="change" hx-include="closest .filters">

@@ -31,7 +31,7 @@ func TestRegister_NewUser(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{
 		"email":    "new@example.com",
-		"password": "password123",
+		"password": "correct-horse-battery-staple",
 	})
 	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -52,7 +52,7 @@ func TestRegister_ExistingUser_NoEnumeration(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{
 		"email":    "existing@example.com",
-		"password": "password123",
+		"password": "correct-horse-battery-staple",
 	})
 
 	// First registration
@@ -108,14 +108,14 @@ func TestLogin_Success(t *testing.T) {
 	app.Post("/login", auth.Login)
 
 	// Register first
-	body, _ := json.Marshal(map[string]string{"email": "user@example.com", "password": "pass123"})
+	body, _ := json.Marshal(map[string]string{"email": "user@example.com", "password": "correct-horse-battery-staple"})
 	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	regResp, _ := app.Test(req)
 	require.Equal(t, 201, regResp.StatusCode)
 
 	// Login
-	body, _ = json.Marshal(map[string]string{"email": "user@example.com", "password": "pass123"})
+	body, _ = json.Marshal(map[string]string{"email": "user@example.com", "password": "correct-horse-battery-staple"})
 	req = httptest.NewRequest("POST", "/login", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := app.Test(req)
@@ -175,14 +175,14 @@ func TestLogout(t *testing.T) {
 	app.Post("/logout", auth.Logout)
 
 	// Register
-	regBody, _ := json.Marshal(map[string]string{"email": "user@example.com", "password": "pass"})
+	regBody, _ := json.Marshal(map[string]string{"email": "user@example.com", "password": "correct-horse-battery-staple"})
 	regReq := httptest.NewRequest("POST", "/register", bytes.NewBuffer(regBody))
 	regReq.Header.Set("Content-Type", "application/json")
 	regResp, _ := app.Test(regReq)
 	require.Equal(t, 201, regResp.StatusCode)
 
 	// Login
-	loginBody, _ := json.Marshal(map[string]string{"email": "user@example.com", "password": "pass"})
+	loginBody, _ := json.Marshal(map[string]string{"email": "user@example.com", "password": "correct-horse-battery-staple"})
 	loginReq := httptest.NewRequest("POST", "/login", bytes.NewBuffer(loginBody))
 	loginReq.Header.Set("Content-Type", "application/json")
 	loginResp, _ := app.Test(loginReq)
