@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 )
 
 // PageData contains common page data
@@ -19,7 +20,16 @@ var AppVersion = "dev"
 
 // RenderPage renders a page with common layout
 func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) error {
-	base := fiber.Map{"Page": page, "Version": AppVersion}
+	// IsAdmin and CurrentUserEmail are derived here rather than passed by each
+	// handler. The base layout decides whether to show the admin link and the
+	// sign-out control from them, and a page that forgot to set them would
+	// quietly render chrome that lies - an admin who cannot sign out, or an
+	// ordinary user shown an admin link that refuses them.
+	base := fiber.Map{"Page": page, "Version": AppVersion, "IsAdmin": false, "CurrentUserEmail": ""}
+	if user, ok := currentUserFromLocals(c); ok {
+		base["IsAdmin"] = user.Role == services.AdminRole
+		base["CurrentUserEmail"] = user.Email
+	}
 	// SECURITY: Expose CSRF token to templates for HTMX state-changing requests
 	if csrf := c.Locals("csrf"); csrf != nil {
 		base["CSRFToken"] = csrf

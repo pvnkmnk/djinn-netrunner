@@ -33,6 +33,9 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 	return RenderPage(c, "dashboard", "index", fiber.Map{
 		"User":       user,
 		"authUserID": authUserID,
-		"IsAdmin":    user.Role == "admin",
+		// Where to send the user once they sign in. Validated here rather
+		// than in the browser, so a hostile ?next= cannot turn the sign-in
+		// page into an open redirect.
+		"NextPath": safeNextPath(c.Query("next")),
 	})
 }

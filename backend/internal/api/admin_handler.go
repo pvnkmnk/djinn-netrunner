@@ -26,12 +26,27 @@ func NewAdminHandler(db *gorm.DB) *AdminHandler {
 }
 
 // AdminOnly middleware checks the authenticated user has admin role.
+//
+// An ordinary user who lands here in a browser gets the refusal rendered as a
+// page in the app's own styling, not a JSON body. The link that leads here is
+// hidden from non-admins, so this is the path for a typed URL, a stale
+// bookmark or a shared link - it has to be a real page too.
+//
+// It is deliberately not a redirect: "you are not an admin" and "sign in" are
+// different facts, and quietly sending someone to the dashboard would hide the
+// second one from them.
 func (h *AdminHandler) AdminOnly(c *fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
+		if shouldRenderPage(c) {
+			return redirectToSignIn(c)
+		}
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 	if user.Role != "admin" {
+		if shouldRenderPage(c) {
+			return renderForbiddenPage(c)
+		}
 		return c.Status(403).JSON(fiber.Map{"error": "forbidden: admin only"})
 	}
 	return c.Next()
@@ -100,9 +115,12 @@ func normalizeAdminSection(section string) string {
 func (h *AdminHandler) AdminPage(c *fiber.Ctx) error {
 	section := normalizeAdminSection(c.Query("section"))
 	_, data := h.adminSection(section)
-	data["Page"] = "admin"
-	data["Version"] = AppVersion
-	return c.Render("pages/admin", data)
+	// RenderPage, not a bare c.Render: the admin page is the one place an
+	// administrator most needs the chrome to be right, and RenderPage is what
+	// supplies IsAdmin and the signed-in identity the layout renders the
+	// admin link and the sign-out control from. Rendering directly left both
+	// unset, which is exactly the "keep admins out of their own pages" bug.
+	return RenderPage(c, "admin", "pages/admin", data)
 }
 
 // GET /api/admin/users — list all users (sensitive fields excluded)

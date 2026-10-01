@@ -189,6 +189,16 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	}
 
 	c.ClearCookie(SessionCookie)
+
+	// The sign-out control is a plain form post, so a browser must be sent to
+	// the signed-out dashboard it will actually render. This decision is
+	// wantsHTMLPage alone, not shouldRenderPage: the route lives under /api,
+	// but its browser caller is the chrome of the page you are standing on,
+	// and the criterion is that a person ends up back at the signed-out
+	// dashboard. API and htmx callers still get the JSON acknowledgement.
+	if wantsHTMLPage(c) {
+		return c.Redirect("/", fiber.StatusFound)
+	}
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
@@ -215,11 +225,16 @@ func (h *AuthHandler) OptionalAuthMiddleware(c *fiber.Ctx) error {
 	return c.Next()
 }
 
-// AuthMiddleware protects routes
+// AuthMiddleware protects routes.
+//
+// A browser asking for a page is redirected to sign-in with the page it wanted
+// remembered, so a bookmark, a refresh or a shared deep link lands on the login
+// page and returns to where it was going. Everything else - the JSON API,
+// Subsonic, htmx fragments - keeps the 401 JSON body it has always returned.
 func (h *AuthHandler) AuthMiddleware(c *fiber.Ctx) error {
 	sessionID := c.Cookies(SessionCookie)
 	if sessionID == "" {
-		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+		return h.rejectUnauthenticated(c)
 	}
 
 	var user database.User
@@ -228,12 +243,20 @@ func (h *AuthHandler) AuthMiddleware(c *fiber.Ctx) error {
 		First(&user).Error
 
 	if err != nil {
-		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+		return h.rejectUnauthenticated(c)
 	}
 
 	// Store user in context
 	c.Locals("user", user)
 	return c.Next()
+}
+
+// rejectUnauthenticated answers a request that has no valid session.
+func (h *AuthHandler) rejectUnauthenticated(c *fiber.Ctx) error {
+	if shouldRenderPage(c) {
+		return redirectToSignIn(c)
+	}
+	return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 }
 
 func generateSessionID() (string, error) {

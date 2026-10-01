@@ -115,6 +115,19 @@ func main() {
 	if cfg.CSRFEnabled {
 		app.Use(csrf.New(csrf.Config{
 			KeyLookup:      "header:X-CSRF-Token",
+			// A plain <form> cannot set a header, and the sign-out control
+			// is a plain form on purpose: ending a session must not depend
+			// on JavaScript having loaded. The header is tried first so every
+			// existing caller is unaffected, then the form body. Same token,
+			// same cookie-backed double-submit check - only the delivery
+			// differs. KeyLookup is a single string in this Fiber version,
+			// which is why this is an Extractor rather than a second lookup.
+			Extractor: func(c *fiber.Ctx) (string, error) {
+				if token := c.Get("X-CSRF-Token"); token != "" {
+					return token, nil
+				}
+				return c.FormValue("csrf_token"), nil
+			},
 			CookieName:     "csrf_",
 			CookieSameSite: "Lax",
 			Expiration:     24 * time.Hour,
