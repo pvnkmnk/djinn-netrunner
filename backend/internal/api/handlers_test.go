@@ -90,7 +90,9 @@ func TestRegister_Idempotent(t *testing.T) {
 	db := setupAPITestDB(t)
 	app := setupTestApp(t, db)
 
-	body, _ := json.Marshal(map[string]string{"email": "dup@test.com", "password": "pass123"})
+	// Long enough to clear the registration policy; this test is about
+	// idempotency, not about the password floor.
+	body, _ := json.Marshal(map[string]string{"email": "dup@test.com", "password": "correct-horse-battery"})
 	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp1, _ := app.Test(req)

@@ -38,7 +38,7 @@ func TestAuthFlow(t *testing.T) {
 
 	// Use UUID-based email for test isolation
 	email := "test-" + uuid.New().String() + "@example.com"
-	password := "password123"
+	password := "correct-horse-battery-staple"
 
 	// 1. Register
 	regPayload := map[string]string{

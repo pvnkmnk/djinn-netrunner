@@ -16,6 +16,10 @@
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
+                <!-- No minlength here on purpose: a password set before
+                     the floor existed must still be able to sign in. The
+                     policy is on registration only. An HTML comment
+                     because pongo2 comments cannot span lines. -->
                 <input type="password" id="password" name="password" required placeholder="••••••••">
             </div>
             <button type="submit" class="btn btn-primary btn-block">Sign In</button>
@@ -36,7 +40,10 @@
             </div>
             <div class="form-group">
                 <label for="reg-password">Password</label>
-                <input type="password" id="reg-password" name="password" required placeholder="••••••••">
+                <input type="password" id="reg-password" name="password" required
+                       minlength="{{ MinPasswordLength }}" aria-describedby="reg-password-hint"
+                       placeholder="At least {{ MinPasswordLength }} characters">
+                <small id="reg-password-hint" class="text-secondary">At least {{ MinPasswordLength }} characters.</small>
             </div>
             <button type="submit" class="btn btn-primary btn-block">Create Account</button>
             <div id="register-error" class="error-message hidden"></div>

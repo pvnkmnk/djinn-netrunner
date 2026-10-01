@@ -157,5 +157,6 @@ func renderJobsRegion(c *fiber.Ctx, db *gorm.DB, user database.User) error {
 		"QueueStatuses": statuses,
 		"JobType":       jobType,
 		"State":         state,
+		"JobTypes":      database.JobTypes,
 	})
 }

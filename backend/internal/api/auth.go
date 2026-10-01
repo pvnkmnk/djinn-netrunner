@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/mail"
 	"strings"
@@ -31,6 +32,28 @@ type AuthHandler struct {
 	// exist, so without this hook an operator who sets the address before
 	// registering would never become an admin.
 	bootstrapAdminEmail string
+
+	// minPasswordLength is the floor registration enforces. Zero means the
+	// package default, so a zero-valued handler - which every test that builds
+	// one as a struct literal produces - still enforces a policy rather than
+	// silently accepting anything.
+	minPasswordLength int
+}
+
+// DefaultMinPasswordLength is the floor used when nothing is configured.
+const DefaultMinPasswordLength = 12
+
+// NewAuthHandlerWithPolicy returns a handler that enforces minLength at
+// registration. Pass 0 for DefaultMinPasswordLength.
+func NewAuthHandlerWithPolicy(db *gorm.DB, bootstrapAdminEmail string, minLength int) *AuthHandler {
+	if minLength < 1 {
+		minLength = DefaultMinPasswordLength
+	}
+	return &AuthHandler{
+		db:                  db,
+		bootstrapAdminEmail: bootstrapAdminEmail,
+		minPasswordLength:   minLength,
+	}
 }
 
 func NewAuthHandler(db *gorm.DB) *AuthHandler {
@@ -57,6 +80,24 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 
 	if payload.Email == "" || payload.Password == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
+	}
+
+	// Enforced here, on the server, and the message names the minimum: the
+	// playtest registered with a three-character password, got a 201 and a
+	// session, and nothing in the product ever said a floor existed. A browser
+	// hint is not a policy, and this endpoint is reachable by anything.
+	minLength := h.minPasswordLength
+	if minLength < 1 {
+		minLength = DefaultMinPasswordLength
+	}
+	// Count runes, not bytes: a 12-character password in any script must not be
+	// rejected because its encoding is longer than 12 bytes.
+	if length := len([]rune(payload.Password)); length < minLength {
+		return c.Status(400).JSON(fiber.Map{
+			"error":          fmt.Sprintf("password must be at least %d characters", minLength),
+			"minLength":      minLength,
+			"passwordLength": length,
+		})
 	}
 
 	// Validate and normalize email format using net/mail.ParseAddress (RFC 5322)
