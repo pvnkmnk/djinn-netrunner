@@ -260,6 +260,15 @@ Postgres for concurrent production workloads.
 
 ## Pitfalls & Gotchas
 
+- **Python's `open(path, "w")` defaults to the Windows locale encoding
+  (cp1252), not UTF-8.** Writing an em-dash through it lands the single byte
+  `0x97`, and the symptom is a *Go compile error* — `illegal UTF-8 encoding`
+  — not a Python `UnicodeEncodeError`. Pass `encoding="utf-8"` explicitly on
+  every write; the existing stdout/read rule below does not cover this, because
+  reading decodes fine and the damage only appears in the file. Byte-probe with
+  `py -c "d=open(f,'rb').read(); print([b for b in d if b>127])"` when a
+  patch script rewrites a Go source file containing prose.
+
 - Prior-guide corrections: auth is session-cookie (not JWT+RBAC); rate
   limiting uses Fiber limiter defaults (no Redis); reverse proxy is Caddy
   (`ops/caddy/Caddyfile`), not Nginx; explicit `"admin"` role checks exist —
@@ -351,6 +360,10 @@ Postgres for concurrent production workloads.
 
 ### GitHub, CI & review workflow
 
+- **`gh api` accepts neither `-o` nor `-w`** — use `--silent` / `--jq`.
+  `gh pr checks --json name,state` reports **UPPERCASE** states
+  (`PENDING`/`IN_PROGRESS`/`SUCCESS`), so poll for the uppercase set.
+
 - Default branch is `master`, not `main`.
 - Merge PRs with `gh pr merge N --repo pvnkmnk/djinn-netrunner --squash
   --delete-branch`. It often prints **nothing** on success (exit 0, empty
@@ -389,6 +402,43 @@ Postgres for concurrent production workloads.
 - Runner Go installs can be transiently corrupted (`compile: version X does
   not match go tool version Y` in stdlib internals unrelated to your diff) —
   re-run before debugging.
+
+### Linear MCP quirks
+
+- **Every array argument arrives as an object** and fails schema validation:
+  `save_issue.labels`, `list_issues.fields`, `save_project.patch`. **Scalars
+  work**, including `save_project.description` as one full string — that is the
+  only way to edit a project description. `priority` arrives as a string and
+  fails; omit it.
+- **Booleans are coerced to strings** and fail: `get_issue(includeRelations:
+  "true")`. Omit the flag.
+- Linear re-renders a GitHub PR URL as a `<pull-request>` element, and a bare
+  markdown link inside prose sometimes nests duplicated ones. Always read a
+  saved project description back and check for doubled elements.
+- Defect tickets stay **open behind** the slice that fixes them (DJI-521/523/520
+  all outlived their slices). When a slice lands, close the defect ticket in the
+  same pass or record where it went — otherwise the backlog overstates what is
+  broken.
+
+### Ad-hoc mutation harnesses
+
+Beyond `scripts/mutation-check.sh`, one-off harnesses written to prove a
+specific claim carry four traps, all of which inflate the score:
+
+- **`[setup failed]` / `build failed` is VOID, not caught.** A mutation that
+  does not compile fails every case including the control, and a harness that
+  counts that as a catch reports 19/19 while proving nothing.
+- **Every mutation must still compile.** Deleting `return f(tx, …)` inside a
+  closure leaves `missing return` and voids the run — replace it with
+  `return nil` so the mutation is semantic, not syntactic.
+- **Include the package path in `go test`** (`./internal/api/ ./cmd/server/`).
+  Omitting it makes every case fail via `[setup failed]`, i.e. all VOID.
+- **Carry a benign CONTROL that must pass**, and re-anchor after any refactor —
+  a stale anchor silently matches zero times and reads as a caught mutation.
+
+A guard for "must *not* do X" needs an assertion of **absence**
+(`assert.NotContains`), not just presence. Flipping `renderAdoptionOffer(c,
+library, false)` to `true` passes any test that only asserts the offer is there.
 
 ### Build, test & integration
 
@@ -707,3 +757,39 @@ Postgres for concurrent production workloads.
   context, routing), `go-gorm__gorm` v1.31.1 (query building, preloading,
   transactions, migrations), `mark3labs__mcp-go` v0.45.0 (MCP SDK, tool
   definitions, transports).
+
+## Product facts that cost time to rediscover
+
+- **No webfont is loaded anywhere.** `styles.css` names `Inter` and
+  `JetBrains Mono`; the README names `Orbitron`. There is no `@font-face` and
+  no font link in the repo, so every one resolves to a system fallback. Any
+  screenshot showing the "brand" typeface is showing a fallback. See
+  `PRODUCT.md`.
+- **Before extending a service, read what its decode already drops.**
+  `SearchArtist` captured only id/name/sort-name/disambiguation, so MusicBrainz's
+  `country` and `type` — the two fields that actually separate same-named artists
+  — were discarded before any UI could show them. `90605e4` (#311) added them.
+  "The service cannot return that" is a claim to check in the decode struct.
+- **An ambiguous artist must be chosen, not resolved.** `artists.Add` took
+  `results[0]` behind a comment claiming a confidence check. Typing "Death"
+  monitored **Napalm Death**. The picker in #311 is the fix; the bare-name
+  `POST /api/artists` path still auto-accepts a top result deliberately, so the
+  documented 201 keeps working — an API affordance, not the UI path.
+- **A failed search and an empty search must not share a status.** `artists.Add`
+  answered 404 for both "MusicBrainz found nothing" and "MusicBrainz was
+  unreachable". #311 splits them (502 vs 404). See the htmx 4xx pitfall above for
+  why the shared status was invisible rather than merely wrong.
+
+## Baseline verification traps
+
+Two checks that look like they pass but do not:
+
+- **The Postgres role is `musicops`, not `netrunner`** — `psql -U netrunner`
+  fails with `role does not exist` and reads like a broken container. The role
+  and database are both `musicops` (`docker-compose.yml:33-34`), but the
+  **password is `${POSTGRES_PASSWORD}` from `.env`**, not `musicops`. Read it
+  from the running container rather than guessing:
+  `docker exec netrunner-postgres printenv | sed -n 's/^POSTGRES_PASSWORD=//p'`.
+- **The volume `immich_pgdata` is not a NetRunner leak.** It belongs to the
+  Immich compose project. A `pgdata`-outside-compose check must exclude it, or
+  it reports a phantom leak forever.
