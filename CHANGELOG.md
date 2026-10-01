@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passes it to the Dockerfile's `APP_VERSION` build arg, so a released image is stamped
   with the version it was built from; an image built from any other ref deliberately
   reports the `dev` sentinel (#288).
+- One scope-locked job no longer stalls the entire pipeline. The worker claimed
+  only the oldest queued job; if that job's scope was already held it went straight
+  back to `queued` without changing `requested_at`, so it was the oldest job again on
+  the next tick and nothing behind it was ever examined. Observed on a release stack:
+  259 requeues of a single job while an unrelated library scan and a user-submitted
+  acquisition sat queued and never ran (#541). Claiming now skips queued jobs whose
+  scope a running job holds, walks past any candidate it cannot lock and starts the
+  next one in the same tick, and a requeued job moves to the back of the queue.
 
 ### Documentation
 - `docs/DEPLOYMENT.md` (renamed) presents dev and release as the only two paths, states

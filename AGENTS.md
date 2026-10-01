@@ -105,9 +105,13 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   poll specs must read both casings or terminal-state detection never fires.
 - Acquisition jobs need a **unique `scope_type:scope_id`**: the advisory lock
   key is a hash of that pair, so every empty-scope job contends on one key —
-  a leaked lock requeues them forever ("Scope locked, requeueing") and an
-  older stuck job wins `ORDER BY requested_at` and starves newer seeds.
+  a leaked lock requeues them forever ("Scope locked, requeueing").
   Production jobs are always scoped; seed helpers must be too.
+- **Claiming is fair as of #541, but contention is still serial per scope.**
+  `claimCandidates` filters out queued jobs sharing a running job's scope, and
+  `claimAndProcess` walks the batch, so a blocked job can no longer starve newer
+  ones. Two queued jobs with the *same* scope are still one-at-a-time by design
+  — give a test or seed helper distinct scopes or it will look hung.
 - An acquisition item's full failed lifecycle is ~5 min (max_attempts ×
   retry backoff); a spec asserting terminal state needs a ≥7 min deadline and
   must break ONLY on the terminal state — breaking on a log line races the
