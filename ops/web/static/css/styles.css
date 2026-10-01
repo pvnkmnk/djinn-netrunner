@@ -1347,3 +1347,51 @@ textarea:focus-visible,
 .status-err { color: var(--accent-danger, #f85149); }
 .form-hint { color: var(--text-secondary); font-size: 0.8rem; display: block; margin-top: 0.25rem; }
 
+/* Add Artist candidate picker.
+
+   The row is the button: the whole thing is the target, so an operator is never
+   hunting for a "Select" link at the end of it, and the accessible name is the
+   artist's name plus the detail rather than the word "Select".
+
+   Elevation is declared once, as the 1px border the other cards use. The hover
+   treatment is the incumbent card language — border colour, a 4px shift, a soft
+   cyan shadow — so a candidate reads as the same object as everything else in
+   the console rather than as a new kind of thing. Detail text is
+   --text-secondary (6.1:1 on --bg-card); --text-muted is 2.3:1 and fails AA. */
+.candidate-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0 0 1rem;
+}
+
+.candidate-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 0;
+    padding: 0.9rem 1.25rem;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.candidate-row:hover,
+.candidate-row:focus-visible {
+    border-color: var(--accent-cyan);
+    transform: translateX(4px);
+    box-shadow: 0 0 20px rgba(0, 255, 245, 0.15);
+}
+
+.candidate-row:focus-visible {
+    outline: 2px solid var(--accent-cyan);
+    outline-offset: 2px;
+}
+
+.candidate-prompt {
+    margin-bottom: 0.75rem;
+}
+

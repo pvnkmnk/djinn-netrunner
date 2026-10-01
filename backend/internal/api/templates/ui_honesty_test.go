@@ -169,3 +169,96 @@ func TestASearchWithNoResultsDoesNotOfferAScan(t *testing.T) {
 		"the no-results search arm offers a library scan; a search that matched "+
 			"nothing is not an unscanned library (DJI-532)")
 }
+
+// The picker only works if the two halves are wired to each other, and the Go
+// tests cannot see that: they call the handlers directly. Pointing the Add
+// Artist form straight back at /api/artists makes the whole feature disappear
+// while every api test stays green, because the browser — not the handler — is
+// what routes through the search.
+func TestAddArtistFormPostsToTheSearchNotStraightToAdd(t *testing.T) {
+	body := readTemplate(t, "partials/artist-form.html")
+
+	assert.Contains(t, body, `hx-post="/api/artists/search"`,
+		"the form must search first, or the candidate picker is never reached")
+	assert.NotContains(t, body, `hx-post="/api/artists"`,
+		"a direct post to Add is the silent-first-result behaviour this slice removed")
+	assert.Contains(t, body, `hx-target="#artist-form-body"`,
+		"the swap must target the modal body so the overlay survives the state change")
+	assert.Contains(t, body, `id="artist-form-body"`,
+		"the swap target has to exist")
+}
+
+// Each candidate is its own confirm control carrying the ID that was chosen, and
+// the button must say what it does — a bare "Select" repeated five times names
+// nothing about which artist it picks.
+func TestEachCandidateIsItsOwnConfirmControl(t *testing.T) {
+	body := readTemplate(t, "partials/artist-candidates.html")
+
+	assert.Contains(t, body, `hx-post="/api/artists"`,
+		"choosing a candidate has to post back to Add")
+	assert.Contains(t, body, `data-mbid="{{ candidate.ID | escape }}"`,
+		"the chosen candidate's ID must be sent, or Add falls back to the top result")
+	assert.Regexp(t, `musicbrainz_id: this\.dataset\.mbid`, body,
+		"the ID has to reach the request, not just sit on the element")
+	assert.Contains(t, body, `class="candidate-row"`,
+		"the row itself is the target")
+	assert.NotContains(t, body, ">Select<",
+		"a control labelled Select does not say which artist it chooses")
+}
+
+// Retrying after an outage must not quietly discard the profile the operator
+// chose. The first search carried it; the retry did not, so a confirmed pick
+// after a retry landed on the global default instead.
+func TestCandidateRetryCarriesTheChosenQualityProfile(t *testing.T) {
+	body := readTemplate(t, "partials/artist-candidates.html")
+
+	retry := body[strings.Index(body, "Try again")-600:]
+	retry = retry[:strings.Index(retry, "Try again")]
+	assert.Contains(t, retry, `data-profile-id="{{ quality_profile_id | escape }}"`,
+		"the retry button must carry the profile forward, or it is silently dropped")
+	assert.Regexp(t, `quality_profile_id: this\.dataset\.profileId`, retry,
+		"the carried profile must actually reach the request")
+}
+
+// hx-vals used to hold a JSON object built with HTML escaping. That is the wrong
+// escaping context: the browser decodes &quot; back to a bare quote, so a name
+// containing one produced invalid JSON and the confirm never fired. Values live
+// in data-* attributes now, where HTML escaping is correct and htmx builds a
+// real object, so there is no JSON text to get wrong.
+func TestCandidateControlsDoNotSerialiseValuesAsJSONText(t *testing.T) {
+	body := readTemplate(t, "partials/artist-candidates.html")
+
+	assert.NotContains(t, body, `hx-vals='{"`,
+		"a JSON object in an attribute cannot be escaped correctly for both contexts at once")
+	assert.Contains(t, body, `hx-vals='js:{name: this.dataset.artistName`,
+		"the candidate name must be read off the element, not serialised into the attribute")
+	assert.Contains(t, body, `data-artist-name="{{ candidate.Name | escape }}"`,
+		"the name must live in an attribute, where HTML escaping is the right one")
+}
+
+// role="listitem" on the <button> overrides its native role, so assistive tech
+// loses the fact that the row is an action control. The list semantics belong
+// on a wrapper.
+func TestCandidateRowKeepsItsNativeButtonRole(t *testing.T) {
+	body := readTemplate(t, "partials/artist-candidates.html")
+
+	start := strings.Index(body, `class="candidate-row"`)
+	require.NotEqual(t, -1, start, "the candidate row must exist")
+	end := start + strings.Index(body[start:], ">")
+	openTag := body[strings.LastIndex(body[:start], "<button"):end]
+
+	assert.NotContains(t, openTag, `role=`,
+		"a role on the button overrides the native button role")
+	assert.Contains(t, body, `<div role="listitem">`,
+		"the list still needs its items marked, on a wrapper around the button")
+}
+
+// readTemplate returns one template's body so a wiring guard can assert on the
+// markup rather than on a handler's behaviour.
+func readTemplate(t *testing.T, rel string) string {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "..", "ops", "web", "templates", rel)
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err, "template %s must exist", rel)
+	return string(raw)
+}

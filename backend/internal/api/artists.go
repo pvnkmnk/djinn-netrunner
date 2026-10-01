@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -46,6 +48,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 
 	var payload struct {
 		Name             string `json:"name" form:"name"`
+		MusicBrainzID    string `json:"musicbrainz_id" form:"musicbrainz_id"`
 		QualityProfileID string `json:"quality_profile_id" form:"quality_profile_id"`
 	}
 
@@ -90,19 +93,41 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		profileID = profile.ID
 	}
 
-	// Search MusicBrainz
-	results, err := h.mbService.SearchArtist(payload.Name)
-	if err != nil || len(results) == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "artist not found in MusicBrainz"})
-	}
-
-	// Check confidence: verify first result matches closely
-	artist := results[0]
-	// Simple confidence check: exact match or very close match
-	// MusicBrainz search returns results sorted by relevance
-	// Log ambiguous results for debugging
-	if len(results) > 1 {
-		slog.Warn("Ambiguous artist search", "query", payload.Name, "results", len(results), "selected", results[0].Name)
+	// Resolve which artist was actually chosen.
+	//
+	// A confirmed pick arrives as a MusicBrainz ID and is re-read from
+	// MusicBrainz rather than trusted from the form, so the row stored is the
+	// row MusicBrainz holds for that ID. A bare name still takes the top result:
+	// docs/DEPLOYMENT.md, the CLI and the MCP server all post one, and that is
+	// a documented contract rather than a default we may quietly withdraw. The
+	// browser never takes this path — it chooses from the candidate list first.
+	var artist services.MusicBrainzArtist
+	if payload.MusicBrainzID != "" {
+		found, err := h.mbService.GetArtist(payload.MusicBrainzID)
+		if err != nil {
+			if errors.Is(err, services.ErrArtistNotFound) {
+				return c.Status(404).JSON(fiber.Map{"error": "that MusicBrainz artist does not exist"})
+			}
+			slog.Error("Failed to resolve chosen artist", "mbid", payload.MusicBrainzID, "error", err)
+			return c.Status(502).JSON(fiber.Map{"error": "could not reach MusicBrainz to confirm that choice"})
+		}
+		artist = *found
+	} else {
+		results, err := h.mbService.SearchArtist(payload.Name)
+		if err != nil {
+			// A search that failed is not a search that found nothing. Reporting
+			// an outage as "not found" sends the operator to re-check a spelling
+			// that was always right, and then gives up on a working artist.
+			slog.Error("Artist search failed", "query", payload.Name, "error", err)
+			return c.Status(502).JSON(fiber.Map{"error": "could not reach MusicBrainz"})
+		}
+		if len(results) == 0 {
+			return c.Status(404).JSON(fiber.Map{"error": "artist not found in MusicBrainz"})
+		}
+		if len(results) > 1 {
+			slog.Warn("Ambiguous artist search resolved without a choice", "query", payload.Name, "results", len(results), "selected", results[0].Name)
+		}
+		artist = results[0]
 	}
 
 	// Create monitored artist with name and sort name
@@ -117,6 +142,93 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 		return h.RenderPartial(c)
 	}
 	return c.Status(201).JSON(monitored)
+}
+
+// Search returns MusicBrainz candidates for a name, and creates nothing.
+//
+// POST /api/artists/search
+//
+// The picker exists because resolving an ambiguous name silently monitored an
+// artist the operator never chose: typing "Death" returned Napalm Death first
+// and stored it, with a WARN in a log file as the only signal that a choice had
+// been made. This handler is the other half of that fix — it does the lookup
+// and hands the decision back.
+//
+// Every outcome answers 200 with a renderable body. htmx does not swap a 4xx,
+// so an error status here renders nothing: the operator clicks Add, the modal
+// stays exactly as it was, and the click appears to have done nothing at all.
+func (h *ArtistsHandler) Search(c *fiber.Ctx) error {
+	if _, hasAuth := currentUserFromLocals(c); !hasAuth {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	// The form posts form-encoded and the documented API posts JSON.
+	// BodyParser takes both; reading FormValue alone meant a JSON caller
+	// searched for the empty string and was told MusicBrainz had failed.
+	var payload struct {
+		Name             string `json:"name" form:"name"`
+		QualityProfileID string `json:"quality_profile_id" form:"quality_profile_id"`
+	}
+	if err := c.BodyParser(&payload); err != nil {
+		return h.renderCandidates(c, "", "", nil, errNoSearchName)
+	}
+
+	name := strings.TrimSpace(payload.Name)
+
+	// Carried into the picker so a confirmed pick lands on the profile the
+	// operator chose before they searched, not on whatever the default is by
+	// the time they click.
+	profileID := strings.TrimSpace(payload.QualityProfileID)
+
+	if name == "" {
+		return h.renderCandidates(c, "", profileID, nil, errNoSearchName)
+	}
+
+	candidates, err := h.mbService.SearchArtist(name)
+	if err != nil {
+		slog.Error("Artist candidate search failed", "query", name, "error", err)
+		return h.renderCandidates(c, name, profileID, nil, err)
+	}
+	return h.renderCandidates(c, name, profileID, candidates, nil)
+}
+
+// errNoSearchName marks the "you sent no name" case, which is a caller error
+// rather than a MusicBrainz failure. The UI reaches it by submitting the form
+// empty, which is why it renders as its own state instead of a retry.
+var errNoSearchName = errors.New("a name is required")
+
+// renderCandidates renders the picker. A single result is rendered as a list of
+// one, never accepted on the operator's behalf: the choice is the whole point,
+// and "there was only one" is not the same as "I chose that one".
+func (h *ArtistsHandler) renderCandidates(c *fiber.Ctx, name, profileID string, candidates []services.MusicBrainzArtist, searchErr error) error {
+	switch {
+	case errors.Is(searchErr, errNoSearchName):
+		// No search ran, so this must not read as an outage.
+		return c.Render("partials/artist-candidates", fiber.Map{
+			"query":              name,
+			"quality_profile_id": profileID,
+			"noName":             true,
+		})
+	case searchErr != nil:
+		return c.Render("partials/artist-candidates", fiber.Map{
+			"query":              name,
+			"quality_profile_id": profileID,
+			"searchFailed":       true,
+			"retryEndpoint":      "/api/artists/search",
+		})
+	case len(candidates) == 0:
+		return c.Render("partials/artist-candidates", fiber.Map{
+			"query":              name,
+			"quality_profile_id": profileID,
+			"noMatch":            true,
+		})
+	default:
+		return c.Render("partials/artist-candidates", fiber.Map{
+			"query":              name,
+			"quality_profile_id": profileID,
+			"candidates":         candidates,
+		})
+	}
 }
 
 // DELETE /api/artists/:id - Remove monitored artist

@@ -1,0 +1,95 @@
+<!-- Add Artist candidate picker.
+
+     Four states, all rendered at 200 so htmx swaps every one of them:
+       candidates present -> the list, which may be a list of one
+       noMatch            -> MusicBrainz has nothing under that name
+       searchFailed       -> MusicBrainz could not be reached; a different remedy
+       noName             -> nothing was searched, so nothing can have failed
+
+     noName exists because an empty submit used to fall through to
+     searchFailed and tell the operator to retry a search that never ran.
+
+     A single result renders as a list of one on purpose. "There was only
+     one" is not "I chose that one", and collapsing the two is the exact
+     behaviour this picker exists to remove. Note: pongo2 {# #} comments
+     cannot span lines, so this is an HTML comment. -->
+{% if noName %}
+<div class="notice" role="status">
+    <strong>Type an artist name to search.</strong>
+    Nothing was looked up and no artist was added.
+</div>
+<div class="form-actions">
+    <button type="button" class="btn" data-close-modal>Cancel</button>
+</div>
+
+{% elif searchFailed %}
+<div class="notice" role="alert">
+    <strong>Could not search MusicBrainz.</strong>
+    {% if query %}Nothing was looked up for &ldquo;{{ query | escape }}&rdquo;, and no artist was added.{% else %}No artist was added.{% endif %}
+    This is usually the search timing out, not a spelling mistake &mdash; try again.
+</div>
+<div class="form-actions">
+    <button type="button" class="btn" data-close-modal>Cancel</button>
+    <button class="btn btn-primary"
+            data-query="{{ query | escape }}"
+            data-profile-id="{{ quality_profile_id | escape }}"
+            hx-post="{{ retryEndpoint }}"
+            hx-vals='js:{name: this.dataset.query, quality_profile_id: this.dataset.profileId}'
+            hx-target="#artist-form-body"
+            hx-swap="innerHTML">
+        Try again
+    </button>
+</div>
+
+{% elif noMatch %}
+<div class="notice" role="status">
+    <strong>No artist matched that name in MusicBrainz.</strong>
+    Nothing was added. Check the spelling, or try the name the artist is usually
+    listed under.
+</div>
+<div class="form-actions">
+    <button type="button" class="btn" data-close-modal>Cancel</button>
+</div>
+
+{% else %}
+<!-- State two of the modal. The header above still reads "Add Artist", so the operator never loses their place; only the body changed. -->
+<p class="text-secondary candidate-prompt">
+    {% if candidates|length == 1 %}
+        One artist matched. Confirm it is the one you meant.
+    {% else %}
+        {{ candidates|length }} artists matched. Choose the one you meant.
+    {% endif %}
+</p>
+
+<div class="candidate-list" role="list">
+    {% for candidate in candidates %}
+    <!-- The whole row is the target. A small "Select" link at the end of a row makes the operator hunt for it, and gives it a one-word accessible name that says nothing about which artist it picks. -->
+    <!-- role="listitem" sits on this wrapper, not on the button: put it on the button and it overrides the native role, so assistive tech loses the fact that the row is an action control. -->
+    <div role="listitem">
+        <button type="button"
+                class="candidate-row"
+                data-artist-name="{{ candidate.Name | escape }}"
+                data-mbid="{{ candidate.ID | escape }}"
+                data-profile-id="{{ quality_profile_id | escape }}"
+                hx-post="/api/artists"
+                hx-vals='js:{name: this.dataset.artistName, musicbrainz_id: this.dataset.mbid, quality_profile_id: this.dataset.profileId}'
+                hx-target="#artists-region"
+                hx-swap="innerHTML">
+            <span class="artist-info">
+                <span class="name">{{ candidate.Name | escape }}</span>
+                <span class="details">
+                    {% if candidate.Disambiguation %}{{ candidate.Disambiguation | escape }}{% endif %}
+                    {% if candidate.Country %}{% if candidate.Disambiguation %} &middot; {% endif %}{{ candidate.Country | escape }}{% endif %}
+                    {% if candidate.Type %}{% if candidate.Disambiguation or candidate.Country %} &middot; {% endif %}{{ candidate.Type | escape }}{% endif %}
+                    {% if not candidate.Disambiguation and not candidate.Country and not candidate.Type %}MusicBrainz holds no further detail for this one{% endif %}
+                </span>
+            </span>
+        </button>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="form-actions">
+    <button type="button" class="btn" data-close-modal>Cancel</button>
+</div>
+{% endif %}

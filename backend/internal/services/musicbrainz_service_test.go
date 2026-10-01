@@ -795,3 +795,102 @@ func TestMusicBrainzService_SearchRecording_NoReleases(t *testing.T) {
 	require.Len(t, recordings, 1)
 	assert.Equal(t, "", recordings[0].ReleaseID) // empty when no releases
 }
+
+// The candidate picker shows country and type because they are what tell two
+// same-named artists apart, and MusicBrainz sends both. An earlier api-level
+// test asserted them through a stubbed service and therefore never touched this
+// decode — dropping Country/Type from the mapping below left the whole suite
+// green, which is exactly the kind of test that proves nothing.
+func TestMusicBrainzService_SearchArtistCarriesCountryAndType(t *testing.T) {
+	server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"artists": []map[string]string{
+				{
+					"id": "ce7bba8b-026b-4aa6-bddb-f98ed6d595e4", "name": "Napalm Death",
+					"sort-name": "Napalm Death", "disambiguation": "",
+					"country": "GB", "type": "Group",
+				},
+				{
+					"id": "5b11f4ce-a62d-471e-81fc-69aaba8edd61", "name": "Death",
+					"sort-name": "Death", "disambiguation": "US death metal band",
+					"country": "US", "type": "Group",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+	defer server.Close()
+
+	svc := &MusicBrainzService{
+		cfg:         &config.Config{MusicBrainzUserAgent: "NetRunnerTest/1.0.0"},
+		baseURL:     server.URL,
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
+		rateLimiter: time.NewTicker(time.Nanosecond),
+	}
+	defer svc.Close()
+
+	artists, err := svc.SearchArtist("Death")
+	require.NoError(t, err)
+	require.Len(t, artists, 2)
+
+	assert.Equal(t, "GB", artists[0].Country, "country is half of what distinguishes these two")
+	assert.Equal(t, "Group", artists[0].Type)
+	assert.Equal(t, "US", artists[1].Country)
+	assert.Equal(t, "US death metal band", artists[1].Disambiguation)
+}
+
+// GetArtist is what a confirmed pick resolves through, so the same two fields
+// have to survive that path as well.
+func TestMusicBrainzService_GetArtistCarriesCountryAndType(t *testing.T) {
+	server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/ws/2/artist/") {
+			t.Errorf("expected a by-id lookup, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"id": "ce7bba8b-026b-4aa6-bddb-f98ed6d595e4", "name": "Napalm Death",
+			"sort-name": "Napalm Death", "country": "GB", "type": "Group",
+		})
+	})
+	defer server.Close()
+
+	svc := &MusicBrainzService{
+		cfg:         &config.Config{MusicBrainzUserAgent: "NetRunnerTest/1.0.0"},
+		baseURL:     server.URL,
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
+		rateLimiter: time.NewTicker(time.Nanosecond),
+	}
+	defer svc.Close()
+
+	artist, err := svc.GetArtist("ce7bba8b-026b-4aa6-bddb-f98ed6d595e4")
+	require.NoError(t, err)
+	require.NotNil(t, artist)
+	assert.Equal(t, "Napalm Death", artist.Name)
+	assert.Equal(t, "GB", artist.Country)
+	assert.Equal(t, "Group", artist.Type)
+}
+
+// A 404 from the by-id endpoint is "that is not an artist", which the caller
+// must be able to tell apart from MusicBrainz being unreachable.
+func TestMusicBrainzService_GetArtistNotFoundIsDistinct(t *testing.T) {
+	server := mockMusicBrainzHandler(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	})
+	defer server.Close()
+
+	svc := &MusicBrainzService{
+		cfg:         &config.Config{MusicBrainzUserAgent: "NetRunnerTest/1.0.0"},
+		baseURL:     server.URL,
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
+		rateLimiter: time.NewTicker(time.Nanosecond),
+	}
+	defer svc.Close()
+
+	artist, err := svc.GetArtist("00000000-0000-0000-0000-000000000000")
+	assert.Nil(t, artist)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrArtistNotFound)
+	assert.NotContains(t, err.Error(), "api error",
+		"a missing artist is not an API failure, and must not read like one")
+}
