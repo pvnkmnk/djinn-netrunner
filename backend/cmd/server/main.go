@@ -52,6 +52,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 3a. Bootstrap admin.
+	//
+	// Run in the web process only: it owns the admin surface, and a single
+	// process writing the one-way bootstrap marker avoids two replicas racing
+	// for it. Idempotent, so leaving the variable set costs nothing.
+	bootstrapResult, err := services.BootstrapAdmin(db, cfg.BootstrapAdminEmail)
+	if err != nil {
+		slog.Error("Bootstrap admin failed", "error", err)
+	} else {
+		services.LogBootstrapResult(bootstrapResult)
+	}
+
 	// 4. Seed default quality profiles
 	profileService := services.NewProfileService(db)
 	if _, err := profileService.EnsureDefaultProfile(); err != nil {
@@ -124,7 +136,7 @@ func main() {
 
 	// Handlers
 	healthHandler := api.NewHealthHandler(db, cfg)
-	authHandler := api.NewAuthHandler(db)
+	authHandler := api.NewAuthHandlerWithBootstrapAdmin(db, cfg.BootstrapAdminEmail)
 	dashHandler := api.NewDashboardHandler(db)
 	statsHandler := api.NewStatsHandler(db)
 	libraryHandler := api.NewLibraryHandler(db)

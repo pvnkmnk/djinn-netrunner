@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -22,10 +23,25 @@ const (
 
 type AuthHandler struct {
 	db *gorm.DB
+
+	// bootstrapAdminEmail is the address configured as BOOTSTRAP_ADMIN_EMAIL.
+	// Registration still hardcodes the user role; this is applied immediately
+	// afterwards by services.BootstrapAdmin, which owns the promotion and its
+	// one-way bookkeeping. The bootstrap at boot covers accounts that already
+	// exist, so without this hook an operator who sets the address before
+	// registering would never become an admin.
+	bootstrapAdminEmail string
 }
 
 func NewAuthHandler(db *gorm.DB) *AuthHandler {
 	return &AuthHandler{db: db}
+}
+
+// NewAuthHandlerWithBootstrapAdmin returns a handler that promotes the account
+// registered with bootstrapAdminEmail to admin. The one-argument constructor is
+// kept so every existing call site - and every existing test - is unaffected.
+func NewAuthHandlerWithBootstrapAdmin(db *gorm.DB, bootstrapAdminEmail string) *AuthHandler {
+	return &AuthHandler{db: db, bootstrapAdminEmail: bootstrapAdminEmail}
 }
 
 // Register handles user registration
@@ -72,6 +88,21 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 
 	if err := h.db.Create(&user).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to create user"})
+	}
+
+	// An operator who configured BOOTSTRAP_ADMIN_EMAIL before registering is
+	// promoted as soon as the account exists. Failure here must not fail the
+	// registration - the account is already created and usable, and the next
+	// boot retries the same promotion.
+	if h.bootstrapAdminEmail != "" &&
+		services.NormalizeBootstrapEmail(h.bootstrapAdminEmail) == user.Email {
+		result, err := services.BootstrapAdmin(h.db, h.bootstrapAdminEmail)
+		if err != nil {
+			slog.Error("Bootstrap admin failed during registration",
+				"email", user.Email, "error", err)
+		} else {
+			services.LogBootstrapResult(result)
+		}
 	}
 
 	return c.Status(201).JSON(fiber.Map{"status": "ok"})
