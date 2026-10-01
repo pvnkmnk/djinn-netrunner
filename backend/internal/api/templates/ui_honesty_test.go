@@ -196,8 +196,10 @@ func TestEachCandidateIsItsOwnConfirmControl(t *testing.T) {
 
 	assert.Contains(t, body, `hx-post="/api/artists"`,
 		"choosing a candidate has to post back to Add")
-	assert.Contains(t, body, `"musicbrainz_id"`,
+	assert.Contains(t, body, `data-mbid="{{ candidate.ID | escape }}"`,
 		"the chosen candidate's ID must be sent, or Add falls back to the top result")
+	assert.Regexp(t, `musicbrainz_id: this\.dataset\.mbid`, body,
+		"the ID has to reach the request, not just sit on the element")
 	assert.Contains(t, body, `class="candidate-row"`,
 		"the row itself is the target")
 	assert.NotContains(t, body, ">Select<",
@@ -212,8 +214,26 @@ func TestCandidateRetryCarriesTheChosenQualityProfile(t *testing.T) {
 
 	retry := body[strings.Index(body, "Try again")-600:]
 	retry = retry[:strings.Index(retry, "Try again")]
-	assert.Contains(t, retry, `"quality_profile_id"`,
-		"the retry button must send the profile forward, or it is silently dropped")
+	assert.Contains(t, retry, `data-profile-id="{{ quality_profile_id | escape }}"`,
+		"the retry button must carry the profile forward, or it is silently dropped")
+	assert.Regexp(t, `quality_profile_id: this\.dataset\.profileId`, retry,
+		"the carried profile must actually reach the request")
+}
+
+// hx-vals used to hold a JSON object built with HTML escaping. That is the wrong
+// escaping context: the browser decodes &quot; back to a bare quote, so a name
+// containing one produced invalid JSON and the confirm never fired. Values live
+// in data-* attributes now, where HTML escaping is correct and htmx builds a
+// real object, so there is no JSON text to get wrong.
+func TestCandidateControlsDoNotSerialiseValuesAsJSONText(t *testing.T) {
+	body := readTemplate(t, "partials/artist-candidates.html")
+
+	assert.NotContains(t, body, `hx-vals='{"`,
+		"a JSON object in an attribute cannot be escaped correctly for both contexts at once")
+	assert.Contains(t, body, `hx-vals='js:{name: this.dataset.artistName`,
+		"the candidate name must be read off the element, not serialised into the attribute")
+	assert.Contains(t, body, `data-artist-name="{{ candidate.Name | escape }}"`,
+		"the name must live in an attribute, where HTML escaping is the right one")
 }
 
 // role="listitem" on the <button> overrides its native role, so assistive tech

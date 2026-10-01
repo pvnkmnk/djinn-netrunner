@@ -355,6 +355,30 @@ func TestSearch_CandidatesCarryCountryAndType(t *testing.T) {
 	assert.Contains(t, body, "Person")
 }
 
+// A name containing a quote must survive into the confirm control. hx-vals
+// used to hold a JSON object escaped for HTML, so &quot; decoded back to a
+// bare quote on the way in, the JSON never parsed, and the pick was silently
+// lost. Backslashes broke it the same way.
+func TestCandidateNameWithQuotesAndBackslashesStillReachesTheConfirm(t *testing.T) {
+	h := newPickerTestApp(t)
+	name := `Death "The" Band \ Reign`
+	h.stub.artists = []services.MusicBrainzArtist{
+		{ID: "q", Name: name, Disambiguation: "quoted", Country: "US", Type: "Group"},
+	}
+
+	body := bodyOf(t, postForm(t, h.app, "/api/artists/search",
+		map[string]string{"name": "Death"}, true))
+
+	assert.Contains(t, body, `data-artist-name=`,
+		"the name must be carried on the element, not serialised into the attribute")
+	assert.Contains(t, body, `name: this.dataset.artistName`,
+		"the request must be built from the element's own value")
+	assert.NotContains(t, body, `hx-vals='{"`,
+		"a JSON object in an attribute cannot be escaped for both contexts at once")
+	assert.NotContains(t, body, `hx-vals='js:{name: "Death`,
+		"no value may be interpolated back into the expression")
+}
+
 // stubMusicBrainz replaces the network client so the suite is deterministic and
 // can make a search fail on demand.
 type stubMusicBrainz struct {
