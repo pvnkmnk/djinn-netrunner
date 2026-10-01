@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -302,6 +301,12 @@ func (h *LibraryHandler) AdoptLibrary(c *fiber.Ctx) error {
 			}
 			return c.Status(200).JSON(library)
 		}
+		if isHTMXRequest(c) {
+			// The adopt control is an htmx request, and htmx does not swap a
+			// 4xx. Answering with JSON here would make the click do nothing —
+			// the same defect this handler's sibling path was fixed for.
+			return h.renderAdoptionOffer(c, library, false)
+		}
 		return c.Status(409).JSON(fiber.Map{
 			"error":         "that library already has an owner",
 			"adoptable":     false,
@@ -309,24 +314,47 @@ func (h *LibraryHandler) AdoptLibrary(c *fiber.Ctx) error {
 		})
 	}
 
-	// owner_user_id IS NULL in the WHERE, so a row claimed between the read
-	// above and this write matches nothing rather than being taken from its
-	// owner.
-	result := h.db.Model(&database.Library{}).
-		Where("id = ? AND owner_user_id IS NULL", id).
-		Update("owner_user_id", user.ID)
-	if result.Error != nil {
-		return internalServerError(c, result.Error)
+	// The claim and its audit entry share a transaction. Rolling the claim back
+	// when the trail cannot be written is deliberate: recordAdoption's own
+	// comment argues the trail is what makes an ownership change recoverable,
+	// so a claim without one is the one outcome that argument rules out. The
+	// caller can retry safely, because the IS NULL guard leaves the row
+	// claimable and the failed transaction wrote nothing.
+	var lost bool
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		// owner_user_id IS NULL in the WHERE, so a row claimed between the
+		// read above and this write matches nothing rather than being taken
+		// from its owner.
+		result := tx.Model(&database.Library{}).
+			Where("id = ? AND owner_user_id IS NULL", id).
+			Update("owner_user_id", user.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			lost = true
+			return nil
+		}
+		library.OwnerUserID = &user.ID
+		return recordAdoption(tx, library, user)
+	})
+	if err != nil {
+		return internalServerError(c, err)
 	}
-	if result.RowsAffected == 0 {
+	if lost {
+		if isHTMXRequest(c) {
+			// Re-read: the row now has whoever won it, and the message should
+			// say so rather than naming the caller as the loser.
+			var taken database.Library
+			if readErr := h.db.Where("id = ?", id).First(&taken).Error; readErr == nil {
+				return h.renderAdoptionOffer(c, taken, false)
+			}
+		}
 		return c.Status(409).JSON(fiber.Map{
 			"error":     "that library was adopted by someone else",
 			"adoptable": false,
 		})
 	}
-
-	library.OwnerUserID = &user.ID
-	h.recordAdoption(library, user)
 
 	c.Set("HX-Trigger", "closeModal")
 	if isHTMXRequest(c) {
@@ -335,24 +363,22 @@ func (h *LibraryHandler) AdoptLibrary(c *fiber.Ctx) error {
 	return c.Status(200).JSON(library)
 }
 
-// recordAdoption writes the audit entry. Losing the owner that left a library
-// unowned is unrecoverable — the row is invisible to every non-admin — so the
-// trail has to name who took it and which library and path.
-func (h *LibraryHandler) recordAdoption(library database.Library, user database.User) {
+// recordAdoption writes the audit entry inside the caller's transaction.
+// Losing the owner that left a library unowned is unrecoverable — the row is
+// invisible to every non-admin — so the trail has to name who took it and which
+// library and path. It returns the insert error rather than logging it: a
+// swallowed error here would leave an ownership change with no record of it,
+// which is the outcome the comment above exists to prevent.
+func recordAdoption(tx *gorm.DB, library database.Library, user database.User) error {
 	metadata := fmt.Sprintf(`{"path":%q,"name":%q}`, library.Path, library.Name)
-	entry := database.AuditLog{
+	return tx.Create(&database.AuditLog{
 		Action:     "library_adopted",
 		ActorID:    user.ID,
 		TargetType: "library",
 		TargetID:   library.ID.String(),
 		Metadata:   metadata,
 		CreatedAt:  time.Now(),
-	}
-	if err := h.db.Create(&entry).Error; err != nil {
-		// The adoption itself already landed; failing to note it must not turn a
-		// successful claim into a failed request the user will retry.
-		slog.Error("Failed to write library adoption audit entry", "library_id", library.ID, "error", err)
-	}
+	}).Error
 }
 
 // UpdateLibrary updates an existing library

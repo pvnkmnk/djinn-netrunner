@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -404,4 +405,145 @@ func TestCreateLibrary_FreePathIsUnchanged(t *testing.T) {
 	require.NoError(t, db.First(&created, "path = ?", filepath.Clean(tmpDir)).Error)
 	require.NotNil(t, created.OwnerUserID)
 	assert.Equal(t, user.ID, *created.OwnerUserID, "a free path is claimed outright, not adopted")
+}
+
+// A refused adoption clicked in the browser must still say something. The adopt
+// control is an htmx request, and htmx does not swap a 4xx: returning the JSON
+// 409 for a row someone else owns leaves the button doing nothing at all — the
+// identical defect this slice was opened for on the create path, reintroduced
+// one handler over.
+func TestAdoptLibrary_HtmxRefusalRendersInsteadOfDoingNothing(t *testing.T) {
+	app, db, user := adoptionTestApp(t)
+
+	tmpDir, err := os.MkdirTemp("", "netrunner-htmx-refuse-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	other := database.User{Email: "other@example.com", PasswordHash: "hashed", Role: "user"}
+	require.NoError(t, db.Create(&other).Error)
+	taken := database.Library{Name: "Theirs", Path: filepath.Clean(tmpDir), OwnerUserID: &other.ID}
+	require.NoError(t, db.Create(&taken).Error)
+
+	resp := postJSON(t, app, "/api/libraries/"+taken.ID.String()+"/adopt", map[string]string{}, true)
+	require.Equal(t, 200, resp.StatusCode,
+		"a 409 is not swapped by htmx, so the refusal needs a body at 200")
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	body := string(raw)
+
+	assert.Contains(t, body, `role="alert"`, "the refusal must be announced, not only drawn")
+	assert.NotContains(t, body, "Adopt this library",
+		"a row with an owner must not offer adoption again")
+	assert.Empty(t, resp.Header.Get("HX-Trigger"),
+		"a refused adoption must not close the modal as if it had worked")
+
+	var after database.Library
+	require.NoError(t, db.First(&after, "id = ?", taken.ID).Error)
+	require.NotNil(t, after.OwnerUserID)
+	assert.Equal(t, other.ID, *after.OwnerUserID, "the original owner must be untouched")
+	assert.NotEqual(t, user.ID, *after.OwnerUserID)
+}
+
+// The same rule for the race: losing the guarded write is a conflict the user
+// has to be told about in the page, not a click that vanishes. The row is
+// re-read so the message names the situation it is actually in.
+func TestAdoptLibrary_HtmxLostRaceRendersTheRefusal(t *testing.T) {
+	app, db, _ := adoptionTestApp(t)
+
+	tmpDir, err := os.MkdirTemp("", "netrunner-htmx-race-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	orphan := database.Library{Name: "Legacy", Path: filepath.Clean(tmpDir)}
+	require.NoError(t, db.Create(&orphan).Error)
+
+	tracer := database.User{Email: "racer@example.com", PasswordHash: "hashed", Role: "user"}
+	require.NoError(t, db.Create(&tracer).Error)
+
+	var fired bool
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register(
+		"dji543:htmx-racer", func(d *gorm.DB) {
+			if fired {
+				return
+			}
+			if _, ok := d.Statement.Dest.(*database.Library); !ok {
+				return
+			}
+			fired = true
+			require.NoError(t, db.Model(&database.Library{}).
+				Where("id = ?", orphan.ID).
+				Update("owner_user_id", tracer.ID).Error)
+		}))
+	t.Cleanup(func() {
+		_ = db.Callback().Query().Remove("dji543:htmx-racer")
+	})
+
+	resp := postJSON(t, app, "/api/libraries/"+orphan.ID.String()+"/adopt", map[string]string{}, true)
+	require.Equal(t, 200, resp.StatusCode, "a lost race still needs a body htmx will swap")
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	body := string(raw)
+
+	assert.Contains(t, body, `role="alert"`)
+	assert.NotContains(t, body, "Adopt this library",
+		"the row was claimed while the click was in flight; re-offering it would be a lie")
+	assert.Empty(t, resp.Header.Get("HX-Trigger"),
+		"losing the race must not close the modal as if it had worked")
+
+	var after database.Library
+	require.NoError(t, db.First(&after, "id = ?", orphan.ID).Error)
+	require.NotNil(t, after.OwnerUserID)
+	assert.Equal(t, tracer.ID, *after.OwnerUserID)
+}
+
+// An ownership change with no audit record is the one outcome recordAdoption's
+// own comment rules out, so the claim and the trail share a transaction. Make
+// the insert fail and the claim must be rolled back: the row stays claimable,
+// and the caller can simply try again.
+func TestAdoptLibrary_RollsTheClaimBackWhenTheAuditTrailFails(t *testing.T) {
+	app, db, user := adoptionTestApp(t)
+
+	tmpDir, err := os.MkdirTemp("", "netrunner-rollback-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	orphan := database.Library{Name: "Legacy", Path: filepath.Clean(tmpDir)}
+	require.NoError(t, db.Create(&orphan).Error)
+
+	// Stand in for the database refusing the insert — a constraint, a full disk,
+	// a connection lost. Swallowing it and logging is what this test forbids.
+	const failCreate = "dji543:audit-insert-fails"
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register(
+		failCreate, func(d *gorm.DB) {
+			if _, ok := d.Statement.Dest.(*database.AuditLog); ok {
+				d.AddError(errors.New("audit_logs insert refused"))
+			}
+		}))
+
+	resp := postJSON(t, app, "/api/libraries/"+orphan.ID.String()+"/adopt", map[string]string{}, false)
+	require.Equal(t, 500, resp.StatusCode, "a claim that cannot be recorded must not report success")
+
+	var after database.Library
+	require.NoError(t, db.First(&after, "id = ?", orphan.ID).Error)
+	assert.Nil(t, after.OwnerUserID,
+		"the claim must roll back with the audit entry it could not record")
+
+	var entries int64
+	require.NoError(t, db.Model(&database.AuditLog{}).Count(&entries).Error)
+	assert.Zero(t, entries)
+
+	// The rollback has to leave the row claimable rather than wedged in a
+	// half-adopted state, which is the claim the handler's comment makes.
+	require.NoError(t, db.Callback().Create().Remove(failCreate))
+
+	resp = postJSON(t, app, "/api/libraries/"+orphan.ID.String()+"/adopt", map[string]string{}, false)
+	require.Equal(t, 200, resp.StatusCode, "the retry after a rollback must succeed")
+
+	require.NoError(t, db.First(&after, "id = ?", orphan.ID).Error)
+	require.NotNil(t, after.OwnerUserID)
+	assert.Equal(t, user.ID, *after.OwnerUserID)
+
+	require.NoError(t, db.Where("action = ?", "library_adopted").First(&database.AuditLog{}).Error)
 }
