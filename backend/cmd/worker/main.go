@@ -523,11 +523,19 @@ func (w *WorkerOrchestrator) claimCandidates(limit int) ([]database.Job, error) 
 	return candidates, nil
 }
 
-// refreshQueuedGauge recomputes the queued-jobs metric after a claim or a
-// requeue, so the gauge tracks the queue instead of drifting.
+// refreshQueuedGauge recomputes the queued-jobs metric after a claim walk, so
+// the gauge tracks the queue instead of drifting. Called once per tick rather
+// than once per candidate: the walk can touch the whole batch, and a COUNT(*)
+// per candidate would mean up to claimCandidateBatch of them for one number.
+//
+// A failed count leaves the previous gauge value alone and is logged — zeroing
+// it would report an empty queue and hide the failure behind it.
 func (w *WorkerOrchestrator) refreshQueuedGauge() {
 	var queuedCount int64
-	w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&queuedCount)
+	if err := w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&queuedCount).Error; err != nil {
+		slog.Error("Failed to count queued jobs for gauge", "worker_id", w.workerID, "error", err)
+		return
+	}
 	metrics.JobsQueued.Set(float64(queuedCount))
 }
 
@@ -588,9 +596,10 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		job.StartedAt = &claimTime
 		job.HeartbeatAt = &claimTime
 
-		w.refreshQueuedGauge()
-
-		// requeue resets a claimed job back to queued and updates the gauge.
+		// requeue resets a claimed job back to queued. It deliberately does not
+		// touch the gauge: one tick can walk the entire batch, and refreshing per
+		// candidate turns a single queue count into claimCandidateBatch queries.
+		// refreshQueuedGauge runs once, after the walk.
 		// Bumping requested_at sends it to the *back* of the queue: without that,
 		// a job that cannot run right now is the oldest queued job again on the
 		// very next tick and is re-claimed forever (DJI-535).
@@ -602,7 +611,6 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 				slog.Error("Failed to requeue job", "worker_id", w.workerID, "job_id", job.ID, "reason", reason, "error", err)
 				return
 			}
-			w.refreshQueuedGauge()
 		}
 
 		// Acquire advisory lock for scope (use worker context to allow cancellation).
@@ -657,6 +665,9 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 		slog.Info("Claimed job", "worker_id", w.workerID, "job_id", job.ID, "job_type", job.Type)
 		return
 	}
+
+	// One gauge refresh per tick, whichever way the walk ended.
+	w.refreshQueuedGauge()
 }
 
 func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {
