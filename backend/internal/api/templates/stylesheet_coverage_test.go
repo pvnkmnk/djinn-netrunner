@@ -82,7 +82,10 @@ var intentionallyUnstyled = map[string]string{
 	"libraries-region": "htmx region wrapper, never styled (P-DJI-28)",
 	"profiles-region":  "htmx region wrapper, never styled (P-DJI-28)",
 	"schedules-region": "htmx region wrapper, never styled (P-DJI-28)",
-	"page-header":      "page heading block, never styled (DJI-525 removes these)",
+	// Jobs keeps its page-header: its partial renders no heading, so the page
+	// owns both the heading and the New Acquisition button. The six pages that
+	// duplicated their partial's heading dropped theirs (DJI-551).
+	"page-header":      "jobs heading block, never styled (DJI-551)",
 	"error-banner":     "error banner, never styled (P-DJI-28)",
 	"job-error-detail": "job error detail, never styled (P-DJI-28)",
 

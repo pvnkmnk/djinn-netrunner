@@ -1,15 +1,12 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}Artists - NETRUNNER{% endblock %}
+{% block title %}Monitored Artists - NETRUNNER{% endblock %}
 
 {% block content %}
 <noscript>
     <div class="error-banner">JavaScript is required for this page. Please enable JavaScript or use a supported browser.</div>
 </noscript>
 
-<div class="page-header">
-    <h2>Monitored Artists</h2>
-</div>
 <section id="artists-region" hx-get="/partials/artists" hx-trigger="load">
     <div class="loading">Loading...</div>
 </section>

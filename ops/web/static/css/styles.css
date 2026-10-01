@@ -278,6 +278,14 @@ textarea:focus-visible,
     margin-bottom: 1.5rem;
 }
 
+/* The element that names a page. Exactly one per page: either the page
+   template renders it or the partial it loads does, never both (DJI-551). */
+.page-heading {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
 .section-header h2 {
     margin: 0;
     font-size: 1.25rem;
