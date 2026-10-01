@@ -1,6 +1,6 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}Dashboard - NETRUNNER{% endblock %}
+{% block title %}{% if authUserID == "" %}Sign In{% else %}Dashboard{% endif %} - NETRUNNER{% endblock %}
 
 {% block content %}
 {% if authUserID == "" %}
