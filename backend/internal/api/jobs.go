@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"log/slog"
 	"strconv"
 
@@ -65,7 +66,14 @@ func (h *JobHandler) Cancel(c *fiber.Ctx) error {
 
 	var job database.Job
 	if err := h.db.First(&job, jobID).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "job not found"})
+		// Only a genuinely absent job is a 404. A connection failure or a
+		// timeout reported as "job not found" tells the operator the job is gone
+		// when it is not, and it would otherwise go unlogged entirely.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(404).JSON(fiber.Map{"error": "job not found"})
+		}
+		slog.Error("Failed to load job", "job_id", jobID, "user", user.Email, "error", err)
+		return c.Status(500).JSON(fiber.Map{"error": "failed to load job"})
 	}
 	if !mayActOnJob(user, job) {
 		return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
@@ -99,7 +107,14 @@ func (h *JobHandler) Retry(c *fiber.Ctx) error {
 
 	var job database.Job
 	if err := h.db.First(&job, jobID).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "job not found"})
+		// Only a genuinely absent job is a 404. A connection failure or a
+		// timeout reported as "job not found" tells the operator the job is gone
+		// when it is not, and it would otherwise go unlogged entirely.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(404).JSON(fiber.Map{"error": "job not found"})
+		}
+		slog.Error("Failed to load job", "job_id", jobID, "user", user.Email, "error", err)
+		return c.Status(500).JSON(fiber.Map{"error": "failed to load job"})
 	}
 	if !mayActOnJob(user, job) {
 		return c.Status(403).JSON(fiber.Map{"error": "forbidden"})

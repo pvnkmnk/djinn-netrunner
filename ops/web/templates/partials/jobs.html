@@ -62,6 +62,12 @@
             <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ job.ID }}" hx-target="#job-logs-container" hx-swap="innerHTML" aria-label="View logs for job #{{ job.ID }}">
                 View Logs
             </button>
+            <!-- The filter values are echoed back into these URLs, and this
+                 engine does not autoescape, so they are URL-encoded on the way
+                 out: a filter carrying a quote or an ampersand cannot break out
+                 of the attribute or corrupt the query string. urlencode also
+                 settles the HTML-safety question, so no second escape filter is
+                 wanted here - that would double-encode the percent signs. -->
             <!-- Cancel covers running jobs, not just queued ones. A running job
                  whose worker died is exactly the job an operator needs to clear,
                  and it was the one state with no way to clear it from the page.
@@ -69,12 +75,12 @@
                  the endpoint answers with the region, and swapping one card would
                  leave the View Logs target behind for that row. -->
             {% if job.State == "queued" or job.State == "running" %}
-            <button class="btn btn-sm btn-danger" hx-post="/api/jobs/{{ job.ID }}/cancel?job_type={{ JobType }}&amp;state={{ State }}" hx-target="#jobs-region" hx-swap="innerHTML" hx-confirm="Are you sure you want to cancel job #{{ job.ID }}?" aria-label="Cancel job #{{ job.ID }}">
+            <button class="btn btn-sm btn-danger" hx-post="/api/jobs/{{ job.ID }}/cancel?job_type={{ JobType | urlencode }}&amp;state={{ State | urlencode }}" hx-target="#jobs-region" hx-swap="innerHTML" hx-confirm="Are you sure you want to cancel job #{{ job.ID }}?" aria-label="Cancel job #{{ job.ID }}">
                 Cancel
             </button>
             {% endif %}
             {% if job.State == "failed" %}
-            <button class="btn btn-sm btn-warning" hx-post="/api/jobs/{{ job.ID }}/retry?job_type={{ JobType }}&amp;state={{ State }}" hx-target="#jobs-region" hx-swap="innerHTML" hx-confirm="Retry job #{{ job.ID }}?" aria-label="Retry job #{{ job.ID }}">
+            <button class="btn btn-sm btn-warning" hx-post="/api/jobs/{{ job.ID }}/retry?job_type={{ JobType | urlencode }}&amp;state={{ State | urlencode }}" hx-target="#jobs-region" hx-swap="innerHTML" hx-confirm="Retry job #{{ job.ID }}?" aria-label="Retry job #{{ job.ID }}">
                 Retry
             </button>
             {% endif %}

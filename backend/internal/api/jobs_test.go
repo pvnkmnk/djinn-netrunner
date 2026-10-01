@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -308,4 +309,54 @@ func TestCancel_HtmxResponseKeepsTheActiveFilter(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 	assert.Contains(t, body(t, resp), `value="queued" selected`,
 		"the state filter the operator was looking at has to survive the swap")
+}
+
+// The filter values are echoed back into the cancel and retry URLs, and the
+// template engine does not autoescape, so a filter carrying markup has to be
+// URL-encoded on the way out. Without that, a quote in a filter breaks out of
+// the hx-post attribute.
+func TestJobsRegion_FilterValueIsURLEncodedInActionURLs(t *testing.T) {
+	db, _, _, admin := setupPartialsTestDB(t)
+
+	hostile := `<img src=x onerror=alert(1)>`
+	job := database.Job{Type: hostile, State: "queued", RequestedAt: time.Now()}
+	require.NoError(t, db.Create(&job).Error)
+
+	html := renderJobsHTML(t, db, admin, "job_type="+url.QueryEscape(hostile))
+
+	cancelURL := "/api/jobs/" + strconv.FormatUint(job.ID, 10) + "/cancel?job_type="
+	require.Contains(t, html, cancelURL+"%3Cimg", "the filter must be percent-encoded in the action URL")
+	assert.NotContains(t, html, "job_type=<img", "a raw angle bracket must never reach the attribute")
+	assert.NotContains(t, html, `onerror=alert(1)"`, "the attribute must not be breakable")
+}
+
+// Encoding on the way out has to survive the round trip, or applying the filter
+// would silently change it.
+func TestJobsRegion_EncodedFilterStillMatchesItsOwnRow(t *testing.T) {
+	db, _, _, admin := setupPartialsTestDB(t)
+
+	tricky := `a&b=c`
+	job := database.Job{Type: tricky, State: "queued", RequestedAt: time.Now()}
+	require.NoError(t, db.Create(&job).Error)
+
+	html := renderJobsHTML(t, db, admin, "job_type="+url.QueryEscape(tricky))
+	assert.Contains(t, html, "job-"+strconv.FormatUint(job.ID, 10), "the row the filter names has to be the row it renders")
+	assert.Contains(t, html, "job_type=a%26b%3Dc", "the ampersand and equals must be encoded, not passed through")
+}
+
+// A job that does not exist is a 404. A database that did not answer is a 500,
+// and saying 404 would tell the operator their job is gone when the only thing
+// that is gone is the connection.
+func TestCancel_DatabaseFailureIsNotReportedAsNotFound(t *testing.T) {
+	db, _, _, admin := setupPartialsTestDB(t)
+
+	// Closing the pool is the closest a test gets to a database that refuses to
+	// answer, without reaching for a fault injection hook.
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	resp := cancelJob(t, jobsApp(db, admin), 1, "", false)
+	assert.Equal(t, 500, resp.StatusCode)
+	assert.NotEqual(t, 404, resp.StatusCode)
 }
