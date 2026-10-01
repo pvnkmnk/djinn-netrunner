@@ -543,6 +543,28 @@ func TestLoadYAMLOverrides(t *testing.T) {
 // Load function edge case tests
 // =============================================================================
 
+// The registration floor has to stay under bcrypt's ceiling. Above it the
+// minimum is not strict but impossible, so it must be caught at load rather
+// than at registration as a 500 from bcrypt.
+func TestLoad_MinPasswordLengthCannotExceedBcryptCeiling(t *testing.T) {
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
+	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+
+	os.Setenv("MIN_PASSWORD_LENGTH", "73")
+	_, err := Load(".non-existent-env")
+	if err == nil {
+		t.Fatal("Expected error for MIN_PASSWORD_LENGTH above the bcrypt ceiling, got nil")
+	}
+
+	// Exactly at the ceiling is the largest usable floor.
+	os.Setenv("MIN_PASSWORD_LENGTH", "72")
+	if _, err := Load(".non-existent-env"); err != nil {
+		t.Fatalf("MIN_PASSWORD_LENGTH at the bcrypt ceiling should load, got: %v", err)
+	}
+}
+
 func TestLoad_ProductionRequiresGonicCredentials(t *testing.T) {
 	cleanup := saveRestoreEnv()
 	defer cleanup()

@@ -15,6 +15,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// BcryptMaxPasswordBytes is bcrypt's own ceiling. A longer password is an
+// error, not a truncation, so the registration floor has to stay under it.
+const BcryptMaxPasswordBytes = 72
+
 // Config holds all configuration for the application
 type Config struct {
 	// Server
@@ -436,6 +440,15 @@ func Load(filenames ...string) (*Config, error) {
 			return nil, fmt.Errorf("SUBSONIC_PASSWORD is required in production when SUBSONIC_ENABLED=true")
 		}
 		slog.Warn("SUBSONIC_PASSWORD not set — Subsonic token authentication is disabled; clients must authenticate with their account password (p= parameter).")
+	}
+
+	// A floor above bcrypt's ceiling does not make registration strict, it
+	// makes it impossible: passwords short enough to be refused get a 400
+	// here, and everything that clears the floor reaches bcrypt and comes
+	// back as a 500. Fail at load, where an operator can read and fix it.
+	if cfg.MinPasswordLength > BcryptMaxPasswordBytes {
+		return nil, fmt.Errorf("MIN_PASSWORD_LENGTH is %d but bcrypt accepts at most %d bytes, so no password could satisfy it",
+			cfg.MinPasswordLength, BcryptMaxPasswordBytes)
 	}
 
 	// Validate proxy URL if set

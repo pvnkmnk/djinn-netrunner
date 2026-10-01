@@ -249,6 +249,25 @@ func TestRegisterFormStatesTheMinimum(t *testing.T) {
 	assert.Contains(t, html, "At least 14 characters")
 }
 
+// A dashboard handler built by NewDashboardHandler or a struct literal has no
+// policy and still renders the registration form. The form must state the
+// default, not a floor of zero: the server enforces the default, so a form
+// reading 0 beside a server demanding 12 is a form that lies.
+func TestRegisterFormStatesTheDefaultWhenNoPolicyIsConfigured(t *testing.T) {
+	engine := templates.NewPongo2("../../../ops/web/templates", ".html")
+	app := fiber.New(fiber.Config{Views: engine})
+	app.Get("/", NewDashboardHandler(nil).RenderIndex)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/", nil))
+	require.NoError(t, err)
+	html := policyBody(t, resp)
+
+	assert.NotContains(t, html, `minlength="0"`, "a zero policy must not render a floor of zero")
+	assert.NotContains(t, html, "At least 0 characters")
+	assert.Contains(t, html, fmt.Sprintf(`minlength="%d"`, DefaultMinPasswordLength))
+	assert.Contains(t, html, fmt.Sprintf("At least %d characters", DefaultMinPasswordLength))
+}
+
 // policyBody reads a response body as text, so an assertion failure can quote
 // what the endpoint actually said.
 func policyBody(t *testing.T, resp *http.Response) string {
