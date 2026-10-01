@@ -259,5 +259,55 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 
 	// Update last scan date
 	scanNow := time.Now()
-	return s.db.Model(&artist).Update("last_scan_date", &scanNow).Error
+	if err := s.db.Model(&artist).Update("last_scan_date", &scanNow).Error; err != nil {
+		return err
+	}
+
+	// A scan is the only place that knows the artist's release totals.
+	return RefreshArtistReleaseCounters(s.db, artist.ID)
+}
+
+// RefreshArtistReleaseCounters recomputes an artist's denormalised release
+// counters from tracked_releases.
+//
+// Recomputed, never incremented. The two numbers are a count of rows this
+// package owns, so calling this twice gives the same answer and two writers
+// cannot drift apart by one of them forgetting an increment.
+//
+// The count is over rows we keep, not over rows MusicBrainz just returned. A
+// scan that comes back empty - a rate limit, a dropped connection, an artist
+// with nothing published - therefore leaves both counters exactly as they were.
+// That is deliberate: a rescan must never be able to make the numbers worse,
+// and tracked_releases rows are never deleted, so an acquired release cannot
+// fall out of the denominator either.
+//
+// The two callers are the two places that change the underlying truth:
+// SyncDiscography at the end of a scan, and the worker's acquisition finaliser
+// when releases flip to acquired. Writing acquired_releases from the scan
+// alone would leave it stale for exactly as long as no scan happens to run -
+// which is the common case, because acquisitions finish between scans.
+func RefreshArtistReleaseCounters(db *gorm.DB, artistID uuid.UUID) error {
+	// One statement, not a count followed by an update. A scan finishing while an
+	// acquisition for the same artist finishes would otherwise each read a count
+	// and then write its own stale copy over the other's. As a single UPDATE the
+	// two serialise on the row lock, and each evaluates its subqueries against one
+	// snapshot of tracked_releases.
+	//
+	// A single SET also means zero is always written. A GORM struct update would
+	// skip zero values and leave an artist with no releases reading its last
+	// non-zero count forever.
+	//
+	// Plain SQL rather than a GORM map update, so both columns come from the same
+	// subquery pass, and portable to SQLite where these services are also tested
+	// (no FILTER, no IS DISTINCT FROM).
+	return db.Exec(`
+		UPDATE monitored_artists SET
+			total_releases = (
+				SELECT count(*) FROM tracked_releases tr WHERE tr.artist_id = ?
+			),
+			acquired_releases = (
+				SELECT count(*) FROM tracked_releases tr
+				WHERE tr.artist_id = ? AND tr.status = 'acquired'
+			)
+		WHERE id = ?`, artistID, artistID, artistID).Error
 }

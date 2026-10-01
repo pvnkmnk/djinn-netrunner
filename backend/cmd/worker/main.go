@@ -1051,9 +1051,18 @@ func (w *WorkerOrchestrator) finalizeAcquisition(jobID uint64, err error) (final
 		if artistID, perr := uuid.Parse(acqJob.ScopeID); perr == nil {
 			var artist database.MonitoredArtist
 			if nerr := w.db.First(&artist, "id = ?", artistID).Error; nerr == nil {
-				w.db.Model(&database.TrackedRelease{}).Where(
+				res := w.db.Model(&database.TrackedRelease{}).Where(
 					"artist_id = ? AND status IN ('wanted', 'queued') AND EXISTS (SELECT 1 FROM jobitems ji WHERE ji.job_id = ? AND ji.normalized_query = ? || ' ' || tracked_releases.title AND (ji.status = 'imported' OR ji.status LIKE 'completed%'))",
 					artistID, jobID, artist.Name).Update("status", "acquired")
+				if res.Error == nil {
+					// The artist row's counters are denormalised, so whoever flips a
+					// release to acquired owns refreshing them. Waiting for a scan to
+					// notice would leave the row stale until an unrelated event.
+					if err := services.RefreshArtistReleaseCounters(w.db, artistID); err != nil {
+						slog.Error("Failed to refresh artist release counters",
+							"artist_id", artistID, "job_id", jobID, "error", err)
+					}
+				}
 			}
 		}
 	}

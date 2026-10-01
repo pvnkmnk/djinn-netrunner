@@ -141,5 +141,39 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to auto-migrate: %w", err)
 	}
 
+	// Backfill the artist release counters.
+	//
+	// total_releases and acquired_releases were declared on MonitoredArtist but
+	// never written by anything, so every row has sat at 0 while
+	// tracked_releases holds the real counts - which is why every artist read
+	// "Releases: 0/0" no matter how much had been acquired. Only rows that
+	// disagree are touched, so this is a no-op once
+	// services.RefreshArtistReleaseCounters is maintaining them.
+	//
+	// Deliberately portable SQL: Migrate also runs against SQLite in tests, so
+	// this avoids FILTER (WHERE ...) and IS DISTINCT FROM.
+	if db.Migrator().HasTable("tracked_releases") && db.Migrator().HasTable("monitored_artists") {
+		if err := db.Exec(`
+			UPDATE monitored_artists SET
+				total_releases = (
+					SELECT count(*) FROM tracked_releases tr
+					WHERE tr.artist_id = monitored_artists.id
+				),
+				acquired_releases = (
+					SELECT count(*) FROM tracked_releases tr
+					WHERE tr.artist_id = monitored_artists.id AND tr.status = 'acquired'
+				)
+			WHERE coalesce(total_releases, 0) <> (
+					SELECT count(*) FROM tracked_releases tr
+					WHERE tr.artist_id = monitored_artists.id
+				)
+			   OR coalesce(acquired_releases, 0) <> (
+					SELECT count(*) FROM tracked_releases tr
+					WHERE tr.artist_id = monitored_artists.id AND tr.status = 'acquired'
+				)`).Error; err != nil {
+			return fmt.Errorf("failed to backfill artist release counters: %w", err)
+		}
+	}
+
 	return nil
 }
