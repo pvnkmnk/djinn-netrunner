@@ -111,6 +111,14 @@
         {% else %}
         <p>No tracks in this library yet</p>
         <p class="text-secondary">Run a scan to populate the library.</p>
+        <button class="btn"
+                hx-post="/api/libraries/{{ library.ID }}/scan"
+                hx-target="#browse-scan-status"
+                hx-swap="innerHTML"
+                aria-label="Scan library {{ library.Name | escape }}">
+            Scan now
+        </button>
+        <div id="browse-scan-status" role="status" aria-live="polite"></div>
         {% endif %}
     </div>
     {% endif %}
