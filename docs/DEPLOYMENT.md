@@ -166,6 +166,33 @@ bug that made earlier deployments behave inexplicably:
 docker compose -f docker-compose.yml -f docker-compose.release.yml exec ops-web env | grep -E '^(JWT_SECRET|SUBSONIC_ENABLED|CONFIG_ENV)='
 ```
 
+### Become the first admin
+
+Registration creates every account as a plain user, and nothing else in the
+stack promotes anyone. So before registering, put the account you want to
+administer NetRunner into `.env`:
+
+```bash
+BOOTSTRAP_ADMIN_EMAIL=you@example.com
+```
+
+That address is promoted to `admin` **once**: at the next start if the account
+already exists, or the moment it registers if it does not exist yet. Either
+ordering works, so this step survives the mistake of setting it afterwards —
+restart the web container and the existing account is promoted then. Startup
+says which happened:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.release.yml logs ops-web | grep -i bootstrap
+# Bootstrap admin promoted email=you@example.com result="promoted you@example.com to admin"
+```
+
+It is safe to leave the variable set: the promotion is recorded, so later
+boots are no-ops and a role you change afterwards — including demoting this
+account — is never reverted. Clear it and recreate `ops-web` once you are
+signed in as admin anyway, so the address is not left lying around in a
+plaintext config file.
+
 Then create the first account. **Every state-changing request needs the CSRF
 header**: any request (including `GET /`) sets a `csrf_` cookie, whose value must be echoed in
 `X-CSRF-Token`.
@@ -188,6 +215,14 @@ it worked — a missing session cookie is the failure. (The `+` in an email addr
 space in a query string, so URL-encode it in Subsonic requests.)
 
 curl -s -b $JAR -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/watchlists   # 200
+```
+
+The bootstrap is what makes the admin surface answer at all — a plain user gets
+`403` on it — so this is the check that the account is genuinely an admin:
+
+```bash
+curl -s -b $JAR -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/admin/users   # 200
+# or open /admin: users, audit log, runtime config
 ```
 
 Sessions must survive a restart — this is what `JWT_SECRET` buys:

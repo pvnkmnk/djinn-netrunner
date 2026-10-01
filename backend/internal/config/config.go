@@ -25,6 +25,11 @@ type Config struct {
 	// Security
 	JWTSecret string
 
+	// BootstrapAdminEmail, when set, is promoted to the admin role at startup
+	// and again when that address registers. Empty disables the bootstrap,
+	// which is the default and safe to leave unset.
+	BootstrapAdminEmail string
+
 	// Database
 	DatabaseURL string
 
@@ -271,6 +276,8 @@ func Load(filenames ...string) (*Config, error) {
 		Port:        getEnv("PORT", "8080"),
 		Domain:      getEnv("DOMAIN", "localhost"),
 		JWTSecret:   jwtSecret,
+
+		BootstrapAdminEmail: getEnv("BOOTSTRAP_ADMIN_EMAIL", ""),
 
 		DatabaseURL: getEnv("DATABASE_URL", ""),
 		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
