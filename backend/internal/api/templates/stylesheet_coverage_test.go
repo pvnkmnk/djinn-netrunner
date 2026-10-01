@@ -48,18 +48,9 @@ import (
 // The way to resolve a genuine failure is to write the rule. Only add an entry
 // when the class is meant to be unstyled.
 var intentionallyUnstyled = map[string]string{
-	// Now-playing player in the track detail modal. Shipped unstyled.
-	"np-current":       "now-playing player markup, never styled (P-DJI-28)",
-	"np-info":          "now-playing player markup, never styled (P-DJI-28)",
-	"np-controls":      "now-playing player markup, never styled (P-DJI-28)",
-	"np-buttons":       "now-playing player markup, never styled (P-DJI-28)",
-	"np-play-btn":      "now-playing player markup, never styled (P-DJI-28)",
-	"np-progress":      "now-playing player markup, never styled (P-DJI-28)",
-	"np-progress-bar":  "now-playing player markup, never styled (P-DJI-28)",
-	"np-progress-fill": "now-playing player markup, never styled (P-DJI-28)",
-	"np-total":         "now-playing player markup, never styled (P-DJI-28)",
-	"np-track-title":   "now-playing player markup, never styled (P-DJI-28)",
-	"np-track-artist":  "now-playing player markup, never styled (P-DJI-28)",
+	// The now-playing player's classes left this register when the player
+	// gained real rules: .np-progress-bar had no height, so the seek control
+	// rendered as nothing at all and the two time readouts stacked.
 
 	// Admin surface. Unreachable until DJI-542 lands, so never styled.
 	"admin-dashboard": "admin surface, unreachable until DJI-542 lands",
