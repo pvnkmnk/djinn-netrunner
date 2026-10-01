@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,7 +18,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/pvnkmnk/netrunner/backend/internal/agent"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/testapi"
@@ -170,6 +167,7 @@ func main() {
 	acquireHandler := api.NewAcquireHandler(db)
 	adminHandler := api.NewAdminHandler(db)
 	playlistHandler := api.NewPlaylistHandler(db)
+	jobHandler := api.NewJobHandler(db)
 
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
@@ -204,7 +202,7 @@ func main() {
 	}()
 
 	// Routes
-	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler, adminHandler, playlistHandler)
+	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler, adminHandler, playlistHandler, jobHandler)
 
 	// Start server
 	go func() {
@@ -231,7 +229,7 @@ func listenAddress(cfg *config.Config) string {
 	return ":" + port
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler, adminHandler *api.AdminHandler, playlistHandler *api.PlaylistHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler, adminHandler *api.AdminHandler, playlistHandler *api.PlaylistHandler, jobHandler *api.JobHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -435,50 +433,8 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		}
 		return c.Status(400).JSON(fiber.Map{"error": "no scope specified"})
 	})
-	jobRoutes.Post("/:id/retry", func(c *fiber.Ctx) error {
-		jobID, err := parseUint64(c.Params("id"))
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
-		}
-		user, ok := c.Locals("user").(database.User)
-		if !ok {
-			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
-		}
-		var job database.Job
-		if err := db.First(&job, jobID).Error; err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "job not found"})
-		}
-		if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
-			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
-		}
-		if err := agent.RetryJob(db, jobID); err != nil {
-			slog.Error("Failed to retry job", "job_id", jobID, "error", err)
-			return c.Status(400).JSON(fiber.Map{"error": "failed to retry job"})
-		}
-		return c.JSON(fiber.Map{"status": "retry_queued", "job_id": jobID})
-	})
-	jobRoutes.Post("/:id/cancel", func(c *fiber.Ctx) error {
-		jobID, err := parseUint64(c.Params("id"))
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
-		}
-		user, ok := c.Locals("user").(database.User)
-		if !ok {
-			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
-		}
-		var job database.Job
-		if err := db.First(&job, jobID).Error; err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "job not found"})
-		}
-		if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
-			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
-		}
-		if err := agent.CancelJob(db, jobID); err != nil {
-			slog.Error("Failed to cancel job", "job_id", jobID, "error", err)
-			return c.Status(400).JSON(fiber.Map{"error": "failed to cancel job"})
-		}
-		return c.JSON(fiber.Map{"status": "cancelled", "job_id": jobID})
-	})
+	jobRoutes.Post("/:id/retry", jobHandler.Retry)
+	jobRoutes.Post("/:id/cancel", jobHandler.Cancel)
 
 	// WebSockets
 	// ✅ SECURITY: Apply authentication middleware to WebSocket endpoints
@@ -531,12 +487,4 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		subsonic.Get("/createPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.CreatePlaylist)
 		subsonic.Get("/deletePlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.DeletePlaylist)
 	}
-}
-
-func parseUint64(s string) (uint64, error) {
-	n, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid uint64: %s", s)
-	}
-	return n, nil
 }

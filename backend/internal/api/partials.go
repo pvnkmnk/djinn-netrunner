@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"gorm.io/gorm"
 )
 
 // StatsData holds the stats for the dashboard
@@ -100,12 +101,24 @@ func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
+	return renderJobsRegion(c, h.db, user)
+}
 
+// renderJobsRegion renders the Jobs list for one viewer, applying that viewer's
+// ownership scope and the filters on the request.
+//
+// Every renderer of this partial goes through here. The region is not only a
+// list of rows: it also carries the filter selects (which echo the requested
+// filters back as `selected`) and the queue explanations. A caller that renders
+// the partial with a hand-built context ships a region whose dropdowns silently
+// reset and whose queued rows claim to be waiting for no stated reason, which is
+// the exact failure this slice exists to remove.
+func renderJobsRegion(c *fiber.Ctx, db *gorm.DB, user database.User) error {
 	var jobs []database.Job
 	// Bolt Optimization: Select only necessary columns to reduce memory allocation and database I/O.
 	// summary carries the human-readable outcome ("Acquired 21/25 items…") and
 	// live progress ("Waiting for retry: …") for acquisition jobs.
-	query := h.db.Select("id, job_type, state, requested_at, created_by, error_detail, summary").Order("requested_at DESC").Limit(50)
+	query := db.Select("id, job_type, state, requested_at, created_by, error_detail, summary").Order("requested_at DESC").Limit(50)
 
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
@@ -127,12 +140,22 @@ func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
 		return c.SendString("<div class=\"error\">Error loading jobs.</div>")
 	}
 
+	// The queue explanation is additive. Losing it is a reporting problem, not
+	// grounds for blanking the page an operator is reading to find out what is
+	// stuck, so a failure here degrades to rows without a stated reason.
+	statuses, err := queueStatus(db)
+	if err != nil {
+		slog.Error("Error computing job queue status", "error", err)
+		statuses = map[uint64]JobQueueStatus{}
+	}
+
 	// The filters are part of this partial, so the response has to carry what
 	// was asked for: without it the swap resets the dropdowns to their defaults
 	// and the operator cannot tell what they are looking at.
 	return c.Render("partials/jobs", fiber.Map{
-		"jobs": jobs,
-		"JobType": jobType,
-		"State":   state,
+		"jobs":          jobs,
+		"QueueStatuses": statuses,
+		"JobType":       jobType,
+		"State":         state,
 	})
 }

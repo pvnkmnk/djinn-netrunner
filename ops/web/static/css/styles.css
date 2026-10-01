@@ -399,6 +399,29 @@ textarea:focus-visible,
     color: var(--text-secondary);
 }
 
+/* Why a queued job has not started: its place in the queue, and the plain
+   reason. Carries the same weight as .job-meta so it reads as a footnote on
+   the row rather than as another status badge. */
+.job-queue {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.job-queue-position {
+    display: inline-block;
+    margin-right: 0.5rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    white-space: nowrap;
+}
+
+.job-queue-reason {
+    overflow-wrap: anywhere;
+}
+
 .job-meta span { margin-right: 1rem; }
 
 .empty-state {
