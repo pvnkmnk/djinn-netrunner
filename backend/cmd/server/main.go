@@ -293,9 +293,14 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/admin", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.AdminPage)
 	app.Get("/playlists", auth.AuthMiddleware, playlistHandler.PlaylistsPage)
 
-	// Console attach (minimal implementation)
+	// Console attach. Nothing selects a job yet (DJI-562: the console
+	// streams /ws/jobs/:job_id and the page never names one), so this
+	// reports the state honestly instead of replying with a constant
+	// that reads like an instruction. The button targets #console-socket,
+	// so the region that shows the console is the one that explains
+	// itself, and the Attach label survives the swap.
 	app.Post("/console/attach", auth.AuthMiddleware, func(c *fiber.Ctx) error {
-		return c.Type("html").SendString(`<div class="console-entry">Select a running job to attach to its console output.</div>`)
+		return c.Type("html").SendString(`<div class="console-entry">Not attached: no job is selected. The console shows the output of one running job at a time.</div>`)
 	})
 
 	// Partial routes (all protected)

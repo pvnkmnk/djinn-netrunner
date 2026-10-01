@@ -80,7 +80,7 @@
     <section class="console-region" aria-labelledby="console-heading">
         <h2 id="console-heading" class="sr-only">Live Console</h2>
         <div class="console-controls">
-            <button class="btn" id="btn-attach" hx-post="/console/attach" aria-label="Attach to job console">Attach</button>
+            <button class="btn" id="btn-attach" hx-post="/console/attach" hx-target="#console-socket" hx-swap="innerHTML" aria-label="Attach to job console">Attach</button>
             <button class="btn" id="btn-detach" aria-label="Detach from job console">Detach</button>
             <span class="filter-group" role="group" aria-label="Filter logs by level">
                 <button class="filter-btn active" data-filter="all" aria-label="Show all logs">ALL</button>
@@ -94,7 +94,7 @@
             <button class="btn" id="btn-resume" aria-label="Resume live log scrolling">Resume Live</button>
         </div>
         
-        <div id="console-socket" class="console-socket">
+        <div id="console-socket" class="console-socket" role="status" aria-live="polite">
             <div class="console-placeholder">Select a job to attach</div>
         </div>
         
