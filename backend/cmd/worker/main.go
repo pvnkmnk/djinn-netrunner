@@ -1072,6 +1072,14 @@ func (w *WorkerOrchestrator) finalizeAcquisition(jobID uint64, err error) (final
 func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 	slog.Info("Executing monolithic job", "worker_id", w.workerID, "job_id", jc.job.ID, "job_type", jc.job.Type)
 
+	// Record the start before dispatching. Only the acquisition path and the
+	// scanner's prune routine wrote job_logs before this, so artist_scan,
+	// release_monitor, scan, enrich and index_refresh produced an empty VIEW
+	// LOGS panel for every job they ever ran - on a job that had succeeded
+	// minutes earlier. The rows were never missing because a write failed;
+	// nothing was ever asked to write them.
+	w.logJob(jc.job.ID, "INFO", fmt.Sprintf("Starting %s job", jc.job.Type))
+
 	var err error
 	switch jc.job.Type {
 	case "artist_scan":
@@ -1093,13 +1101,13 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		libraryID, err := uuid.Parse(jc.job.ScopeID)
 		if err != nil {
 			err = fmt.Errorf("invalid library UUID: %w", err)
-			w.finishJob(jc.job.ID, err)
+			w.completeMonolithicJob(jc, err)
 			return
 		}
 		// Look up the library path from the database
 		var library database.Library
 		if err := w.db.First(&library, "id = ?", libraryID).Error; err != nil {
-			w.finishJob(jc.job.ID, err)
+			w.completeMonolithicJob(jc, err)
 			return
 		}
 		slog.Info("Scanning library", "name", library.Name, "path", library.Path)
@@ -1112,7 +1120,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		libraryID, err := uuid.Parse(jc.job.ScopeID)
 		if err != nil {
 			err = fmt.Errorf("invalid library UUID: %w", err)
-			w.finishJob(jc.job.ID, err)
+			w.completeMonolithicJob(jc, err)
 			return
 		}
 		slog.Info("Starting metadata enrichment for library", "library_id", libraryID)
@@ -1120,7 +1128,7 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		// Get library
 		var library database.Library
 		if err := w.db.First(&library, "id = ?", libraryID).Error; err != nil {
-			w.finishJob(jc.job.ID, err)
+			w.completeMonolithicJob(jc, err)
 			return
 		}
 
@@ -1165,12 +1173,12 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		libraryID, err := uuid.Parse(jc.job.ScopeID)
 		if err != nil {
 			err = fmt.Errorf("invalid library UUID: %w", err)
-			w.finishJob(jc.job.ID, err)
+			w.completeMonolithicJob(jc, err)
 			return
 		}
 		var library database.Library
 		if err := w.db.First(&library, "id = ?", libraryID).Error; err != nil {
-			w.finishJob(jc.job.ID, err)
+			w.completeMonolithicJob(jc, err)
 			return
 		}
 		slog.Info("Pruning library", "name", library.Name, "library_id", libraryID)
@@ -1179,15 +1187,48 @@ func (w *WorkerOrchestrator) runMonolithicJob(jc *jobContext) {
 		err = fmt.Errorf("unsupported job type: %s", jc.job.Type)
 	}
 
-	w.finishJob(jc.job.ID, err)
+	w.completeMonolithicJob(jc, err)
 }
 
-func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
+// completeMonolithicJob records the outcome of a dispatched job and then
+// finalises it. Every exit from runMonolithicJob's switch goes through
+// here, including the early returns on an unparseable scope or a library
+// that does not exist, so VIEW LOGS ends with the truth even when the job
+// never reached the service it was dispatched to.
+//
+// The state comes back from finishJob rather than from err, because a
+// cancel that landed while the job was finishing outranks the derived
+// outcome: a job the operator stopped did not fail, and saying so is the
+// point of this slice.
+func (w *WorkerOrchestrator) completeMonolithicJob(jc *jobContext, err error) {
+	switch w.finishJob(jc.job.ID, err) {
+	case "":
+		// finishJob does not own this job, so it decided nothing to report.
+	case "cancelled":
+		w.logJob(jc.job.ID, "WARN", "Job cancelled by request")
+	case "failed":
+		w.logJob(jc.job.ID, "ERR", fmt.Sprintf("Job failed: %v", err))
+	default:
+		w.logJob(jc.job.ID, "OK", "Job completed")
+	}
+}
+
+// logJob appends one job_logs row for a job the worker dispatched itself,
+// rather than one a service handler ran. A failure to write is logged and
+// dropped: the job's own outcome must not be rewritten because its
+// diagnostic row could not be stored.
+func (w *WorkerOrchestrator) logJob(jobID uint64, level, message string) {
+	if err := database.AppendJobLog(w.db, jobID, level, message, nil); err != nil {
+		slog.Error("Failed to append job log", "worker_id", w.workerID, "job_id", jobID, "error", err)
+	}
+}
+
+func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) string {
 	w.jobMutex.Lock()
 	jc, ok := w.activeJobs[jobID]
 	if !ok {
 		w.jobMutex.Unlock()
-		return
+		return ""
 	}
 	delete(w.activeJobs, jobID)
 	runningCount := len(w.activeJobs)
@@ -1266,6 +1307,8 @@ func (w *WorkerOrchestrator) finishJob(jobID uint64, err error) {
 	metrics.JobsRunning.Set(float64(runningCount))
 
 	slog.Info("Finished job", "worker_id", w.workerID, "job_id", jobID, "state", finalState)
+
+	return finalState
 }
 
 func main() {
