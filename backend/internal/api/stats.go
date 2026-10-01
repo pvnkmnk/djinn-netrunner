@@ -439,7 +439,7 @@ func statsRegionContext(db *gorm.DB, user database.User) fiber.Map {
 		// carried in the data rather than sent as a response: a stats query that
 		// fails must not take the whole dashboard down with it.
 		slog.Error("Error fetching stats", "error", err)
-		ctx["Error"] = "Error loading stats."
+		ctx["StatsError"] = "Error loading stats."
 	}
 	return ctx
 }

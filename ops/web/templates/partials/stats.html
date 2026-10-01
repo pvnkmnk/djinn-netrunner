@@ -3,8 +3,8 @@
     is a real reading; a query that did not answer is not, and the difference is
     exactly what an operator is looking at this page to find out.
 {% endcomment %}
-{% if Error %}
-<div class="error">{{ Error }}</div>
+{% if StatsError %}
+<div class="error">{{ StatsError }}</div>
 {% else %}
 <div class="stats-region">
     {% if IsAdmin %}<div class="stats-scope-label">All Users</div>{% endif %}

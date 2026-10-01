@@ -366,7 +366,7 @@ func watchlistsRegionContext(db *gorm.DB, user database.User) fiber.Map {
 	ctx := fiber.Map{}
 	if err := query.Find(&watchlists).Error; err != nil {
 		slog.Error("Error fetching watchlists", "error", err)
-		ctx["Error"] = "Error loading watchlists."
+		ctx["WatchlistsError"] = "Error loading watchlists."
 	} else {
 		ctx["watchlists"] = watchlists
 	}

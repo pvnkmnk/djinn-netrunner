@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"path/filepath"
@@ -8,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -124,6 +127,83 @@ func TestRenderIndex_EmptyAccountShowsAnEmptyStateNotALoadingState(t *testing.T)
 	assert.Contains(t, html, "No watchlists configured",
 		"an account with no watchlists must be told so in the first response")
 	assert.Contains(t, html, "Add Watchlist", "the empty state has to offer the action that creates one")
+}
+
+// A failed count is not zero. Rendering four confident zeroes after a query
+// error is the same class of lie this slice exists to remove.
+// One broken region must not take the other one down with it. RenderIndex
+// merges both builders into a single render context and a pongo2 include
+// inherits the parent context, so a shared error key meant a watchlists
+// failure also erased the stat cards that had rendered fine - the exact
+// failure this slice is about, reappearing one layer up.
+func TestRenderIndex_OneFailingRegionDoesNotBlankTheOther(t *testing.T) {
+	tests := []struct {
+		name      string
+		failTable string
+		wantError string
+		wantGone  string
+		wantKept  string
+	}{
+		{
+			name:      "watchlists query fails, stats still render",
+			failTable: "watchlists",
+			wantError: "Error loading watchlists.",
+			wantGone:  "Road Trip",
+			wantKept:  "stat-card",
+		},
+		{
+			name:      "jobs query fails, watchlists still render",
+			failTable: "jobs",
+			wantError: "Error loading stats.",
+			wantGone:  "stat-value",
+			wantKept:  "Road Trip",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// A shared-cache in-memory database, because a plain
+			// ":memory:" belongs to a single connection: when the pool
+			// opens a second one it sees no tables at all, which looks
+			// exactly like the query failure injected below.
+			dsn := fmt.Sprintf("file:dji549_%s?mode=memory&cache=shared", t.Name())
+			db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+			require.NoError(t, err)
+			require.NoError(t, database.Migrate(db))
+
+			user := database.User{Email: "onefail@test.com", PasswordHash: "xxx", Role: "user"}
+			require.NoError(t, db.Create(&user).Error)
+
+			now := time.Now()
+			queued := database.Job{Type: "scan", State: "queued", RequestedAt: now, OwnerUserID: &user.ID}
+			require.NoError(t, db.Create(&queued).Error)
+
+			wl := database.Watchlist{Name: "Road Trip", SourceType: "spotify_playlist", OwnerUserID: &user.ID}
+			require.NoError(t, db.Create(&wl).Error)
+
+			// Fail exactly one table, so the surviving region is a real
+			// success rather than a second failure. Both processors are
+			// registered because the counts arrive through Scan, which is
+			// a Row callback, while the watchlists arrive through Find.
+			failOne := func(tx *gorm.DB) {
+				if tx.Statement.Table == tc.failTable {
+					tx.AddError(errors.New("query failed"))
+				}
+			}
+			name := "fail_" + tc.failTable
+			require.NoError(t, db.Callback().Query().Register(name, failOne))
+			require.NoError(t, db.Callback().Row().Register(name, failOne))
+
+			resp, err := dashboardTestApp(t, db, &user).Test(httptest.NewRequest("GET", "/", nil))
+			require.NoError(t, err)
+			require.Equal(t, 200, resp.StatusCode)
+			html := body(t, resp)
+
+			assert.Contains(t, html, tc.wantError, "the failed region says so")
+			assert.NotContains(t, html, tc.wantGone, "the failed region must not render content")
+			assert.Contains(t, html, tc.wantKept, "the healthy region must still render")
+		})
+	}
 }
 
 // A failed count is not zero. Rendering four confident zeroes after a query
