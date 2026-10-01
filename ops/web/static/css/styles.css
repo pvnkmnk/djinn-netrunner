@@ -656,6 +656,109 @@ textarea:focus-visible,
     to { transform: translateY(0); opacity: 1; }
 }
 
+/* Notice region
+
+   A page-level status line for actions that only report back through the
+   response body - a queued job, a completed scan. It lives in the base layout
+   so every page has one. The Sync buttons used to point at #console-logs, which
+   only the dashboard renders, so on every other page htmx found no target and
+   dropped the request before sending it. */
+
+.notice {
+    margin: 0 auto 1rem;
+    max-width: 1400px;
+    padding: 0.75rem 1rem;
+    border-left: 3px solid var(--accent-primary, #58a6ff);
+    background: var(--bg-secondary, #161b22);
+    color: var(--text-primary, #e6edf3);
+    font-size: 0.9rem;
+}
+
+.notice:empty {
+    display: none;
+}
+
+/* Now-playing player in the track detail modal
+
+   These rules did not exist, so .np-progress-bar had no height and rendered as
+   nothing at all: the seek control was invisible. Laying .np-progress out as a
+   row also stops .np-current and .np-total from stacking, which is what made
+   the elapsed and total times read as two stacked 0:00 lines.
+
+   .np-progress-fill starts at width 0 from here rather than from a style
+   attribute: `style-src 'self'` refuses inline style attributes, so the one the
+   template carried was never applied and the bar read full before playback.
+   player.js drives the width through the CSSOM, which the policy allows. */
+
+.np-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color, #30363d);
+}
+
+.np-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.np-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.np-current,
+.np-total {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    color: var(--text-secondary, #8b949e);
+    min-width: 3rem;
+}
+
+.np-total {
+    text-align: right;
+}
+
+.np-progress-bar {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary, #21262d);
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.np-progress-fill {
+    width: 0;
+    height: 100%;
+    background: var(--accent-primary, #58a6ff);
+}
+
+.np-info {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary, #8b949e);
+}
+
+.np-track-title {
+    font-weight: 600;
+    color: var(--text-primary, #e6edf3);
+}
+
+.np-track-artist {
+    color: var(--text-secondary, #8b949e);
+}
+
+/* The play button carries .btn already; this only pins the player-specific
+   sizing so it lines up with the transport row above the seek bar. */
+.np-play-btn {
+    min-width: 6rem;
+}
+
 /* Master audio element. Hidden here rather than by the style="" attribute it
    used to carry: `style-src 'self'` refuses inline style attributes, so that
    attribute was never applied and logged a CSP violation on every page. */
