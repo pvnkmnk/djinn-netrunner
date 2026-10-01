@@ -47,9 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now fills it, which is what `app.js` expects when it closes a modal on a backdrop
   click. `.htmx-indicator` is now declared in the stylesheet as well: htmx injects those
   rules itself as an inline `<style>`, which `style-src 'self'` refuses, so a
-  "Searching…" indicator could never be hidden. A guard now fails the build when a
-  template class has no stylesheet rule, with a reviewed register for the classes that
-  are deliberately unstyled.
+  "Searching…" indicator could never be hidden. The master audio element's inline
+  `style="display:none"` is gone too, so no page logs a refused style on load.
+  A guard now fails the build when a template class has no stylesheet rule,
+  with a reviewed register for the classes that are deliberately unstyled.
 
 ### Documentation
 - `docs/DEPLOYMENT.md` (renamed) presents dev and release as the only two paths, states

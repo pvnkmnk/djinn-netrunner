@@ -112,8 +112,6 @@ var (
 	// turning a declaration into a state-specific mention: .btn:hover,
 	// .btn::before, .btn[disabled], .btn:not(.x).
 	qualifierRE = regexp.MustCompile(`^[A-Za-z_:\-\[(]`)
-	// compoundSplitRE splits a selector into compound selectors.
-	compoundSplitRE = regexp.MustCompile(`\s*[>+~]\s*|\s+`)
 	// commentRE strips CSS comments.
 	commentRE = regexp.MustCompile(`(?s)/\*.*?\*/`)
 	// templateTagRE matches a Pongo2 expression or statement. These are removed
@@ -365,7 +363,7 @@ func declaredClasses(css string) map[string]bool {
 // only when nothing qualifies it, so `.btn.block` declares both but `.btn:hover`
 // declares neither — it is a state, not a declaration of .btn.
 func addCompoundClasses(selector string, into map[string]bool) {
-	for _, compound := range compoundSplitRE.Split(selector, -1) {
+	for _, compound := range splitCompounds(selector) {
 		compound = strings.TrimSpace(compound)
 		if compound == "" {
 			continue
@@ -374,9 +372,66 @@ func addCompoundClasses(selector string, into map[string]bool) {
 			if loc[1] < len(compound) && qualifierRE.MatchString(compound[loc[1]:]) {
 				continue
 			}
+			// A class inside a functional pseudo-class argument or an attribute
+			// selector is a condition on some other element, not a declaration of
+			// itself. In `.foo:not(.bar)` the rule styles .foo; it says nothing
+			// about how .bar looks.
+			if nestingDepth(compound, loc[0]) > 0 {
+				continue
+			}
 			into[compound[loc[2]:loc[3]]] = true
 		}
 	}
+}
+
+// splitCompounds splits a selector into compound selectors on whitespace and
+// combinators, ignoring anything nested inside parentheses or square brackets —
+// so `:is(.a, .b)`, `:not(.a + .b)` and `[title="x y"]` are not torn in half.
+func splitCompounds(selector string) []string {
+	var out []string
+	depth, start := 0, 0
+	flush := func(end int) {
+		if end > start {
+			out = append(out, selector[start:end])
+		}
+	}
+	for i := 0; i < len(selector); i++ {
+		switch selector[i] {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			if depth > 0 {
+				depth--
+			}
+		case ' ', '\t', '\n', '\r', '\f', '>', '+', '~':
+			if depth == 0 {
+				flush(i)
+				start = i + 1
+			}
+		}
+	}
+	if start < len(selector) {
+		out = append(out, selector[start:])
+	}
+	return out
+}
+
+// nestingDepth reports how deeply the given offset sits inside parentheses or
+// square brackets.
+func nestingDepth(s string, offset int) int {
+	depth := 0
+	for i := 0; i < offset && i < len(s); i++ {
+		switch s[i] {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			depth--
+			if depth < 0 {
+				depth = 0
+			}
+		}
+	}
+	return depth
 }
 
 // skipBlock returns the index just past the block opened at openIdx.
@@ -394,4 +449,113 @@ func skipBlock(css string, openIdx int) int {
 		}
 	}
 	return len(css)
+}
+
+// TestDeclaredClasses pins what the guard counts as a declaration, because
+// every judgement the guard makes rests on it. The subtle rows are the ones
+// that decide whether a deletion is caught: after 3734d90 the only surviving
+// `.btn` was qualified (:focus-visible) and inside a reduced-motion block, and
+// a checker that counted either would have reported it as styled.
+func TestDeclaredClasses(t *testing.T) {
+	tests := []struct {
+		name string
+		css  string
+		want []string
+		omit []string
+	}{
+		{
+			name: "a plain rule declares its class",
+			css:  ".btn { color: red; }",
+			want: []string{"btn"},
+		},
+		{
+			name: "a selector list declares every class in it",
+			css:  ".btn,\n.link { color: red; }",
+			want: []string{"btn", "link"},
+		},
+		{
+			name: "a qualified class is a state, not a declaration",
+			css:  ".btn:hover { color: red; }",
+			omit: []string{"btn"},
+		},
+		{
+			name: "a pseudo-element is not a declaration",
+			css:  ".btn::before { content: ''; }",
+			omit: []string{"btn"},
+		},
+		{
+			name: "an attribute-qualified class is not a declaration",
+			css:  ".btn[disabled] { color: red; }",
+			omit: []string{"btn"},
+		},
+		{
+			name: "a compound of two bare classes declares both",
+			css:  ".btn.block { color: red; }",
+			want: []string{"btn", "block"},
+		},
+		{
+			name: "a descendant selector declares both sides",
+			css:  ".modal .form-group { color: red; }",
+			want: []string{"modal", "form-group"},
+		},
+		{
+			// Deliberately conservative: only an unqualified class counts. A class
+			// styled solely through some qualified selector is reported as needing a
+			// base rule, which errs towards a build failure rather than towards
+			// missing a deletion — the direction this guard has to be safe in.
+			name: "a class styled only through a qualified selector does not count",
+			css:  ".btn:not(.legacy) { color: red; }",
+			omit: []string{"btn", "legacy"},
+		},
+		{
+			name: "a class inside :is() does not declare itself",
+			css:  ":is(.alpha, .beta) { color: red; }",
+			omit: []string{"alpha", "beta"},
+		},
+		{
+			name: "keyframes bodies are not selectors",
+			css:  "@keyframes spin {\n  from { opacity: 0; }\n  to { opacity: 1; }\n}\n.spinner { animation: spin 1s; }",
+			want: []string{"spinner"},
+			omit: []string{"from", "to"},
+		},
+		{
+			name: "a rule inside prefers-reduced-motion does not declare",
+			css:  "@media (prefers-reduced-motion: reduce) {\n  .card { animation: none; }\n}",
+			omit: []string{"card"},
+		},
+		{
+			name: "an ordinary media query still declares",
+			css:  "@media (max-width: 980px) {\n  .nav { display: none; }\n}",
+			want: []string{"nav"},
+		},
+		{
+			name: "a rule after a reduced-motion block still declares",
+			css: "@media (prefers-reduced-motion: reduce) {\n  .card { animation: none; }\n}\n" +
+				".after { display: block; }",
+			want: []string{"after"},
+		},
+		{
+			name: "comments do not declare",
+			css:  "/* .ghost { color: red; } */\n.real { color: red; }",
+			want: []string{"real"},
+			omit: []string{"ghost"},
+		},
+		{
+			name: "a class named inside an attribute selector is not declared",
+			css:  `[class~="fake"] { color: red; }`,
+			omit: []string{"fake"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := declaredClasses(tc.css)
+			for _, class := range tc.want {
+				assert.True(t, got[class], "%s should be declared as a class with a rule", class)
+			}
+			for _, class := range tc.omit {
+				assert.False(t, got[class], "%s should NOT count as having a rule", class)
+			}
+		})
+	}
 }
