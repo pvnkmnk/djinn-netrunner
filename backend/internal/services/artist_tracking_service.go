@@ -259,5 +259,54 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 
 	// Update last scan date
 	scanNow := time.Now()
-	return s.db.Model(&artist).Update("last_scan_date", &scanNow).Error
+	if err := s.db.Model(&artist).Update("last_scan_date", &scanNow).Error; err != nil {
+		return err
+	}
+
+	// A scan is the only place that knows the artist's release totals.
+	return RefreshArtistReleaseCounters(s.db, artist.ID)
+}
+
+// RefreshArtistReleaseCounters recomputes an artist's denormalised release
+// counters from tracked_releases.
+//
+// Recomputed, never incremented. The two numbers are a count of rows this
+// package owns, so calling this twice gives the same answer and two writers
+// cannot drift apart by one of them forgetting an increment.
+//
+// The count is over rows we keep, not over rows MusicBrainz just returned. A
+// scan that comes back empty - a rate limit, a dropped connection, an artist
+// with nothing published - therefore leaves both counters exactly as they were.
+// That is deliberate: a rescan must never be able to make the numbers worse,
+// and tracked_releases rows are never deleted, so an acquired release cannot
+// fall out of the denominator either.
+//
+// The two callers are the two places that change the underlying truth:
+// SyncDiscography at the end of a scan, and the worker's acquisition finaliser
+// when releases flip to acquired. Writing acquired_releases from the scan
+// alone would leave it stale for exactly as long as no scan happens to run -
+// which is the common case, because acquisitions finish between scans.
+func RefreshArtistReleaseCounters(db *gorm.DB, artistID uuid.UUID) error {
+	var totals struct {
+		Total    int64
+		Acquired int64
+	}
+	// Plain CASE rather than FILTER (WHERE ...): Migrate and these services are
+	// also exercised against SQLite, where FILTER is not universally available.
+	if err := db.Model(&database.TrackedRelease{}).
+		Where("artist_id = ?", artistID).
+		Select(`count(*) as total,
+				coalesce(sum(case when status = 'acquired' then 1 else 0 end), 0) as acquired`).
+		Scan(&totals).Error; err != nil {
+		return err
+	}
+
+	// A map, not a struct: GORM's struct updates skip zero values, which would
+	// silently leave an artist with no releases still reading its old counts.
+	return db.Model(&database.MonitoredArtist{}).
+		Where("id = ?", artistID).
+		Updates(map[string]interface{}{
+			"total_releases":    totals.Total,
+			"acquired_releases": totals.Acquired,
+		}).Error
 }
