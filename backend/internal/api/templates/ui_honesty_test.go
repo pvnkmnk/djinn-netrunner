@@ -204,6 +204,35 @@ func TestEachCandidateIsItsOwnConfirmControl(t *testing.T) {
 		"a control labelled Select does not say which artist it chooses")
 }
 
+// Retrying after an outage must not quietly discard the profile the operator
+// chose. The first search carried it; the retry did not, so a confirmed pick
+// after a retry landed on the global default instead.
+func TestCandidateRetryCarriesTheChosenQualityProfile(t *testing.T) {
+	body := readTemplate(t, "partials/artist-candidates.html")
+
+	retry := body[strings.Index(body, "Try again")-600:]
+	retry = retry[:strings.Index(retry, "Try again")]
+	assert.Contains(t, retry, `"quality_profile_id"`,
+		"the retry button must send the profile forward, or it is silently dropped")
+}
+
+// role="listitem" on the <button> overrides its native role, so assistive tech
+// loses the fact that the row is an action control. The list semantics belong
+// on a wrapper.
+func TestCandidateRowKeepsItsNativeButtonRole(t *testing.T) {
+	body := readTemplate(t, "partials/artist-candidates.html")
+
+	start := strings.Index(body, `class="candidate-row"`)
+	require.NotEqual(t, -1, start, "the candidate row must exist")
+	end := start + strings.Index(body[start:], ">")
+	openTag := body[strings.LastIndex(body[:start], "<button"):end]
+
+	assert.NotContains(t, openTag, `role=`,
+		"a role on the button overrides the native button role")
+	assert.Contains(t, body, `<div role="listitem">`,
+		"the list still needs its items marked, on a wrapper around the button")
+}
+
 // readTemplate returns one template's body so a wiring guard can assert on the
 // markup rather than on a handler's behaviour.
 func readTemplate(t *testing.T, rel string) string {
