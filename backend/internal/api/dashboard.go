@@ -25,17 +25,44 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 		authUserID = strconv.FormatUint(user.ID, 10)
 	}
 
-	// RenderPage, not a bare c.Render: the base layout's footer renders
-	// {{ Version }}, and RenderPage is what supplies it from AppVersion.
-	// Rendering directly left the variable empty, so the one page every
-	// signed-in user lands on showed "NetRunner v" with no version while
-	// every other page showed it.
-	return RenderPage(c, "dashboard", "index", fiber.Map{
+	data := fiber.Map{
 		"User":       user,
 		"authUserID": authUserID,
 		// Where to send the user once they sign in. Validated here rather
 		// than in the browser, so a hostile ?next= cannot turn the sign-in
 		// page into an open redirect.
 		"NextPath": safeNextPath(c.Query("next")),
-	})
+	}
+
+	// Server-render both regions for a signed-in user. The page shipped a
+	// hard-coded "Loading stats..." / "Loading watchlists..." placeholder and
+	// triggered only on "every 30s" / "every 60s" — no load trigger — so the
+	// first real content arrived half a minute to a minute after the page. To
+	// a new user that is indistinguishable from a broken account: they cannot
+	// tell "you have nothing yet" from "nothing is ever coming", and the only
+	// way to find out was to reload and wait again.
+	//
+	// Only for a signed-in user. These contexts are owner-scoped, so asking
+	// them for a zero-valued user would render somebody else's empty account.
+	//
+	// h.db == nil is the unwired-handler case: a DashboardHandler built as a
+	// struct literal instead of through NewDashboardHandler. Every query
+	// builder below nil-derefs, so serve the sign-in screen rather than panic
+	// on a live request.
+	if authUserID != "" && h.db != nil {
+		for k, v := range statsRegionContext(h.db, user) {
+			data[k] = v
+		}
+		for k, v := range watchlistsRegionContext(h.db, user) {
+			data[k] = v
+		}
+		data["DashboardReady"] = true
+	}
+
+	// RenderPage, not a bare c.Render: the base layout's footer renders
+	// {{ Version }}, and RenderPage is what supplies it from AppVersion.
+	// Rendering directly left the variable empty, so the one page every
+	// signed-in user lands on showed "NetRunner v" with no version while
+	// every other page showed it.
+	return RenderPage(c, "dashboard", "index", data)
 }

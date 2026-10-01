@@ -345,29 +345,41 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 		return c.Redirect("/", 302)
 	}
 
+	return c.Render("partials/watchlists", watchlistsRegionContext(h.db, user))
+}
+
+// watchlistsRegionContext builds the render context for partials/watchlists.
+//
+// Shared with the dashboard page for the same reason as statsRegionContext: the
+// page rendered a placeholder and waited out hx-trigger="every 60s" before the
+// first real content, so a brand-new account looked empty for a minute. This
+// partial already carries the honest "No watchlists configured" empty state —
+// it just was not reaching the first screen.
+func watchlistsRegionContext(db *gorm.DB, user database.User) fiber.Map {
 	var watchlists []database.Watchlist
 	// Bolt Optimization: Select only necessary columns and remove unnecessary Preload to reduce database I/O and memory usage.
-	query := h.db.Select("id, name, source_type, source_uri, enabled").Order("name")
+	query := db.Select("id, name, source_type, source_uri, enabled").Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
 
+	ctx := fiber.Map{}
 	if err := query.Find(&watchlists).Error; err != nil {
 		slog.Error("Error fetching watchlists", "error", err)
-		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
+		ctx["Error"] = "Error loading watchlists."
+	} else {
+		ctx["watchlists"] = watchlists
 	}
 
 	// Check if user has linked Spotify sp_dc cookie
 	var spDcLinked bool
 	var spotifyToken database.SpotifyToken
-	if err := h.db.Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
+	if err := db.Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
 		spDcLinked = spotifyToken.SpDcCookie != ""
 	}
+	ctx["spDcLinked"] = spDcLinked
 
-	return c.Render("partials/watchlists", fiber.Map{
-		"watchlists":  watchlists,
-		"spDcLinked":  spDcLinked,
-	})
+	return ctx
 }
 
 // SyncWatchlist triggers a sync job for a watchlist

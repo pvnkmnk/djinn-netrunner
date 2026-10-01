@@ -49,12 +49,23 @@
 
 {% else %}
 <div class="dashboard" data-page="dashboard">
-    <section class="stats-region" hx-get="/partials/stats" hx-trigger="every 30s" aria-live="polite" aria-atomic="true">
-        <div class="stats-loading">Loading stats...</div>
+    <!-- Server-rendered on arrival, then refreshed on a timer.
+         Both regions used to ship a hard-coded "Loading ..." placeholder and
+         trigger only on "every 30s" / "every 60s" - no load trigger - so the
+         first real content arrived between thirty and sixty seconds after the
+         page did. A new user could not tell an empty account from a broken one,
+         and the only way to find out was to reload and wait again.
+
+         The sections deliberately carry no class of their own. partials/stats.html
+         is itself .stats-region, and that rule is display:grid with an auto-fit
+         track list; a grid nested inside a grid collapses the stat cards to one
+         column. The section is the swap target and needs nothing else. -->
+    <section hx-get="/partials/stats" hx-trigger="every 30s" aria-live="polite" aria-atomic="true">
+        {% include "partials/stats.html" %}
     </section>
-    
-    <section class="watchlists-region" hx-get="/partials/watchlists" hx-trigger="every 60s" aria-live="polite" aria-atomic="true">
-        <div class="watchlists-loading">Loading watchlists...</div>
+
+    <section hx-get="/partials/watchlists" hx-trigger="every 60s" aria-live="polite" aria-atomic="true">
+        {% include "partials/watchlists.html" %}
     </section>
     
     <div id="status-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>

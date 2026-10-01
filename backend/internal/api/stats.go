@@ -401,28 +401,45 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 		return c.Redirect("/", 302)
 	}
 
+	return c.Render("partials/stats", statsRegionContext(h.db, user))
+}
+
+// statsRegionContext builds the render context for partials/stats.
+//
+// It exists so the dashboard page can server-render the same region the
+// /partials/stats route serves. The page used to ship a hard-coded "Loading
+// stats..." placeholder with hx-trigger="every 30s" and no load trigger, so the
+// first real content arrived half a minute after the page did — a new user
+// could not tell an empty account from a broken one. Sharing the builder means
+// the first response and every later poll cannot drift apart.
+func statsRegionContext(db *gorm.DB, user database.User) fiber.Map {
 	var stats StatsData
 
 	since := time.Now().Add(-24 * time.Hour)
 
 	// Use conditional aggregation for efficient single-query stats
-	jobQuery := h.db.Model(&database.Job{}).Where("requested_at > ?", since)
+	jobQuery := db.Model(&database.Job{}).Where("requested_at > ?", since)
 	if user.Role != "admin" {
 		jobQuery = jobQuery.Where("owner_user_id = ?", user.ID)
 	}
 
-	if err := jobQuery.
+	err := jobQuery.
 		Select("COUNT(*) FILTER (WHERE state = 'queued') as queued_count, " +
 			"COUNT(*) FILTER (WHERE state = 'running') as running_count, " +
 			"COUNT(*) FILTER (WHERE state = 'succeeded') as succeeded_count, " +
 			"COUNT(*) FILTER (WHERE state = 'failed') as failed_count").
-		Scan(&stats).Error; err != nil {
-		slog.Error("Error fetching stats", "error", err)
-		return c.SendString("<div class=\"error\">Error loading stats.</div>")
-	}
+		Scan(&stats).Error
 
-	return c.Render("partials/stats", fiber.Map{
+	ctx := fiber.Map{
 		"stats":   stats,
 		"IsAdmin": user.Role == "admin",
-	})
+	}
+	if err != nil {
+		// The page and the partial both render this context, so the failure is
+		// carried in the data rather than sent as a response: a stats query that
+		// fails must not take the whole dashboard down with it.
+		slog.Error("Error fetching stats", "error", err)
+		ctx["Error"] = "Error loading stats."
+	}
+	return ctx
 }
