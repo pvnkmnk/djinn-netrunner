@@ -102,6 +102,13 @@ func main() {
 	litefs := database.NewLiteFSGuard(cfg.DatabaseURL)
 	app.Use(api.LiteFSWriteForward(litefs, "http", cfg.Port))
 
+	// DJI-556: without an explicit freshness instruction the browser reuses a
+	// stored copy heuristically, so a deploy silently does not reach anyone who
+	// already has the app open. no-cache means "you may store this, but ask
+	// before using it"; Last-Modified then answers the ask with a bodiless 304
+	// when nothing changed. See api.StaticAssetRevalidation for why there is
+	// deliberately no ETag here.
+	app.Use("/static", api.StaticAssetRevalidation())
 	app.Static("/static", cfg.StaticFilesPath)
 
 	// Prometheus metrics endpoint (no auth, no CSRF — scraped by monitoring)
