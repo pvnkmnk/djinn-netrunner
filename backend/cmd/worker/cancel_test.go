@@ -281,3 +281,41 @@ func TestFinalizeOrphanedCancellations_LeavesActiveJobsAlone(t *testing.T) {
 	require.NoError(t, w.db.First(&job, jc.job.ID).Error)
 	assert.Nil(t, job.FinishedAt, "the owning goroutine finalizes it, not the janitor")
 }
+
+// Cancelling a running job has to release its scope lock, not only its row. The
+// next job queued on that scope is held off by the lock, so a cancel that
+// flipped the state and kept the lock would leave the scope wedged until
+// somebody restarted the worker — which is the outcome the operator was trying
+// to escape when they reached for the button.
+func TestFinishCancelledJob_ReleasesTheScopeLock(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	ctx := context.Background()
+	key, err := w.lockManager.GetScopeLockKey(ctx, "artist", "artist-a")
+	require.NoError(t, err)
+
+	// A sync job keeps this off the acquisition finalisation path; the scope is
+	// independent of the job type, and the lock is what is under test.
+	jc := registerActiveJob(t, w, &database.Job{
+		Type: "sync", ScopeType: "artist", ScopeID: "artist-a",
+	}, "cancelled", false)
+
+	acquired, err := w.lockManager.AcquireTryLock(ctx, key)
+	require.NoError(t, err)
+	require.True(t, acquired, "test setup must hold the lock the job holds")
+	jc.lockKey = key
+
+	blocked, err := w.lockManager.AcquireTryLock(ctx, key)
+	require.NoError(t, err)
+	require.False(t, blocked, "while the job runs, nothing else may enter its scope")
+
+	w.processActiveJobsRoundRobin()
+
+	free, err := w.lockManager.AcquireTryLock(ctx, key)
+	require.NoError(t, err)
+	assert.True(t, free, "cancelling a running job must release its scope lock")
+
+	var job database.Job
+	require.NoError(t, w.db.First(&job, jc.job.ID).Error)
+	assert.Equal(t, "cancelled", job.State, "the state the request wrote must survive the teardown")
+}

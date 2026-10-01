@@ -25,7 +25,7 @@ func TestHealthCheck(t *testing.T) {
 	healthHandler := api.NewHealthHandler(nil, cfg)
 	app.Get("/api/health", healthHandler.GetHealth)
 	acquireHandler := &api.AcquireHandler{}
-	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{})
+	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{}, &api.JobHandler{})
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
 	assert.NoError(t, err)
@@ -66,7 +66,7 @@ func newRouteTestApp(t *testing.T, cfg *config.Config) *fiber.App {
 	artistsHandler := &api.ArtistsHandler{}
 	schedulesHandler := &api.SchedulesHandler{}
 	acquireHandler := &api.AcquireHandler{}
-	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{})
+	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{}, &api.JobHandler{})
 	return app
 }
 

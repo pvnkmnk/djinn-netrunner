@@ -175,16 +175,10 @@ func (h *AcquireHandler) renderFormWithError(c *fiber.Ctx, artist, album, title,
 	})
 }
 
+// renderJobsList answers the modal's jobs list. It defers to renderJobsRegion
+// rather than rendering the partial itself: this path used to pass a bare
+// {"jobs": ...} context, so the region arrived with its filters reset and with
+// no queue explanations at all.
 func (h *AcquireHandler) renderJobsList(c *fiber.Ctx, user database.User) error {
-	var jobs []database.Job
-	query := h.db.Select("id, job_type, state, requested_at, created_by, error_detail, attempt, max_attempts").
-		Order("requested_at DESC").Limit(50)
-	if user.Role != "admin" {
-		query = query.Where("owner_user_id = ?", user.ID)
-	}
-	if err := query.Find(&jobs).Error; err != nil {
-		slog.Error("Error fetching jobs", "error", err)
-		return c.SendString("<div class=\"error\">Error loading jobs.</div>")
-	}
-	return c.Render("partials/jobs", fiber.Map{"jobs": jobs})
+	return renderJobsRegion(c, h.db, user)
 }
