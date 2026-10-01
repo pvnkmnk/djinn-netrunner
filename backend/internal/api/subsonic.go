@@ -768,42 +768,40 @@ func albumArtistID(name string) string {
 // artistAlbums lists an artist's albums with the counts and year a client needs
 // to render them, scoped to the libraries the caller owns.
 func (h *SubsonicHandler) artistAlbums(user database.User, artistName string) ([]subsonicAlbum, error) {
-	var names []string
+	// Bolt Optimization: Consolidate per-album metrics (song count, year, genre, cover art)
+	// into a single aggregated GROUP BY database query. Reduces DB roundtrips from 2N+1 to 1.
+	type albumRow struct {
+		Album     string `gorm:"column:album"`
+		SongCount int    `gorm:"column:song_count"`
+		Year      *int   `gorm:"column:year"`
+		Genre     string `gorm:"column:genre"`
+		CoverArt  string `gorm:"column:cover_art"`
+	}
+
+	var rows []albumRow
 	if err := h.db.Table("tracks").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
 		Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
 		Where("album <> ''").
-		Distinct("album").
+		Select("album, COUNT(*) as song_count, MAX(year) as year, MAX(genre) as genre, MAX(cover_url) as cover_art").
+		Group("album").
 		Order("album").
-		Pluck("album", &names).Error; err != nil {
+		Find(&rows).Error; err != nil {
 		return nil, err
 	}
 
-	albums := make([]subsonicAlbum, 0, len(names))
-	for _, name := range names {
-		var songCount int64
-		h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND artist = ? AND album = ?", user.ID, artistName, name).
-			Count(&songCount)
-
-		var first database.Track
-		h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND artist = ? AND album = ?", user.ID, artistName, name).
-			Order("COALESCE(track_num, 0)").
-			First(&first)
-
+	albums := make([]subsonicAlbum, 0, len(rows))
+	for _, row := range rows {
 		albums = append(albums, subsonicAlbum{
-			ID:        albumID(name, artistName),
-			Name:      name,
+			ID:        albumID(row.Album, artistName),
+			Name:      row.Album,
 			Artist:    artistName,
 			ArtistID:  artistID(artistName),
-			SongCount: int(songCount),
-			Year:      safeDeref(first.Year),
-			Genre:     first.Genre,
-			CoverArt:  first.CoverURL,
-			Duration:  h.getAlbumDuration(user, name, artistName),
+			SongCount: row.SongCount,
+			Year:      safeDeref(row.Year),
+			Genre:     row.Genre,
+			CoverArt:  row.CoverArt,
+			Duration:  h.getAlbumDuration(user, row.Album, artistName),
 		})
 	}
 
