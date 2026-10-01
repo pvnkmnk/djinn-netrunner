@@ -75,7 +75,7 @@ func getAsset(t *testing.T, app *fiber.App, headers map[string]string) *http.Res
 
 // Criterion: a deploy must never leave a browser running last week's
 // JavaScript. no-cache is the instruction that makes the browser ask at all.
-func TestStaticAssets_CarryAnExplicitMustRevalidateHeader(t *testing.T) {
+func TestStaticAssets_CarryAnExplicitRevalidationHeader(t *testing.T) {
 	root := staticTestRoot(t)
 	writeAsset(t, root, "app.js", "console.log('v1')")
 

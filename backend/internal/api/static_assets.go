@@ -37,7 +37,13 @@ import (
 // both directions in a warm browser profile, which is the only way to tell a
 // caching fix from a header that merely looks right.
 
-// StaticAssetRevalidation marks static responses as must-revalidate.
+// StaticAssetRevalidation requires revalidation of static responses.
+//
+// It sends "Cache-Control: no-cache": the browser may store the asset, and must
+// not reuse the stored copy without validating it first. That is the directive
+// for this job. It is deliberately not "must-revalidate", which is a different
+// directive - it only bites once a response has gone stale, and it needs a
+// freshness lifetime to be meaningful, which this response does not send.
 //
 // Scoped to the static prefix by the caller, so nothing about the API,
 // Subsonic or page routes changes. It sets the header before calling Next
