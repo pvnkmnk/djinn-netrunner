@@ -287,26 +287,27 @@ func (s *ArtistTrackingService) SyncDiscography(artistID uuid.UUID) error {
 // alone would leave it stale for exactly as long as no scan happens to run -
 // which is the common case, because acquisitions finish between scans.
 func RefreshArtistReleaseCounters(db *gorm.DB, artistID uuid.UUID) error {
-	var totals struct {
-		Total    int64
-		Acquired int64
-	}
-	// Plain CASE rather than FILTER (WHERE ...): Migrate and these services are
-	// also exercised against SQLite, where FILTER is not universally available.
-	if err := db.Model(&database.TrackedRelease{}).
-		Where("artist_id = ?", artistID).
-		Select(`count(*) as total,
-				coalesce(sum(case when status = 'acquired' then 1 else 0 end), 0) as acquired`).
-		Scan(&totals).Error; err != nil {
-		return err
-	}
-
-	// A map, not a struct: GORM's struct updates skip zero values, which would
-	// silently leave an artist with no releases still reading its old counts.
-	return db.Model(&database.MonitoredArtist{}).
-		Where("id = ?", artistID).
-		Updates(map[string]interface{}{
-			"total_releases":    totals.Total,
-			"acquired_releases": totals.Acquired,
-		}).Error
+	// One statement, not a count followed by an update. A scan finishing while an
+	// acquisition for the same artist finishes would otherwise each read a count
+	// and then write its own stale copy over the other's. As a single UPDATE the
+	// two serialise on the row lock, and each evaluates its subqueries against one
+	// snapshot of tracked_releases.
+	//
+	// A single SET also means zero is always written. A GORM struct update would
+	// skip zero values and leave an artist with no releases reading its last
+	// non-zero count forever.
+	//
+	// Plain SQL rather than a GORM map update, so both columns come from the same
+	// subquery pass, and portable to SQLite where these services are also tested
+	// (no FILTER, no IS DISTINCT FROM).
+	return db.Exec(`
+		UPDATE monitored_artists SET
+			total_releases = (
+				SELECT count(*) FROM tracked_releases tr WHERE tr.artist_id = ?
+			),
+			acquired_releases = (
+				SELECT count(*) FROM tracked_releases tr
+				WHERE tr.artist_id = ? AND tr.status = 'acquired'
+			)
+		WHERE id = ?`, artistID, artistID, artistID).Error
 }
