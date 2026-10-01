@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,8 +78,21 @@ func TestHtmxDoesNotInjectIndicatorStyles(t *testing.T) {
 			"indicator rules as an inline <style> block and `style-src 'self'` "+
 			"will refuse it on every page load")
 
-	assert.Contains(t, match[1], `"includeIndicatorStyles":false`,
-		"the meta tag is present but does not disable indicator-style injection: %s", match[1])
+	// Parsed, not pattern-matched. A substring check passes for a value htmx
+	// cannot parse - an unclosed brace, a trailing comma, the property written
+	// as the string "false" - and htmx then ignores the whole configuration and
+	// goes back to injecting the block this guard exists to prevent. The
+	// pointer distinguishes an absent property from an explicit false.
+	var cfg struct {
+		IncludeIndicatorStyles *bool `json:"includeIndicatorStyles"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(match[1]), &cfg),
+		"the htmx-config meta is not valid JSON, so htmx ignores it: %s", match[1])
+	require.NotNil(t, cfg.IncludeIndicatorStyles,
+		"the htmx-config meta has no includeIndicatorStyles property, so the "+
+			"default (true) stands and htmx injects the style block: %s", match[1])
+	assert.False(t, *cfg.IncludeIndicatorStyles,
+		"the meta tag turns indicator-style injection back on: %s", match[1])
 }
 
 // TestTheStylesheetCarriesTheIndicatorRules is the coupling that makes the meta
