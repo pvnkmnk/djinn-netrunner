@@ -169,3 +169,47 @@ func TestASearchWithNoResultsDoesNotOfferAScan(t *testing.T) {
 		"the no-results search arm offers a library scan; a search that matched "+
 			"nothing is not an unscanned library (DJI-532)")
 }
+
+// The picker only works if the two halves are wired to each other, and the Go
+// tests cannot see that: they call the handlers directly. Pointing the Add
+// Artist form straight back at /api/artists makes the whole feature disappear
+// while every api test stays green, because the browser — not the handler — is
+// what routes through the search.
+func TestAddArtistFormPostsToTheSearchNotStraightToAdd(t *testing.T) {
+	body := readTemplate(t, "partials/artist-form.html")
+
+	assert.Contains(t, body, `hx-post="/api/artists/search"`,
+		"the form must search first, or the candidate picker is never reached")
+	assert.NotContains(t, body, `hx-post="/api/artists"`,
+		"a direct post to Add is the silent-first-result behaviour this slice removed")
+	assert.Contains(t, body, `hx-target="#artist-form-body"`,
+		"the swap must target the modal body so the overlay survives the state change")
+	assert.Contains(t, body, `id="artist-form-body"`,
+		"the swap target has to exist")
+}
+
+// Each candidate is its own confirm control carrying the ID that was chosen, and
+// the button must say what it does — a bare "Select" repeated five times names
+// nothing about which artist it picks.
+func TestEachCandidateIsItsOwnConfirmControl(t *testing.T) {
+	body := readTemplate(t, "partials/artist-candidates.html")
+
+	assert.Contains(t, body, `hx-post="/api/artists"`,
+		"choosing a candidate has to post back to Add")
+	assert.Contains(t, body, `"musicbrainz_id"`,
+		"the chosen candidate's ID must be sent, or Add falls back to the top result")
+	assert.Contains(t, body, `class="candidate-row"`,
+		"the row itself is the target")
+	assert.NotContains(t, body, ">Select<",
+		"a control labelled Select does not say which artist it chooses")
+}
+
+// readTemplate returns one template's body so a wiring guard can assert on the
+// markup rather than on a handler's behaviour.
+func readTemplate(t *testing.T, rel string) string {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "..", "ops", "web", "templates", rel)
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err, "template %s must exist", rel)
+	return string(raw)
+}

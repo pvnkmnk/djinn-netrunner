@@ -358,6 +358,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	artistsRoutes := apiProtected.Group("/artists")
 	artistsRoutes.Get("/", artistsHandler.List)
 	artistsRoutes.Get("/form", artistsHandler.GetForm)
+	artistsRoutes.Post("/search", artistsHandler.Search)
 	artistsRoutes.Post("/", artistsHandler.Add)
 	artistsRoutes.Delete("/:id", artistsHandler.Delete)
 	artistsRoutes.Patch("/:id", artistsHandler.Update)
