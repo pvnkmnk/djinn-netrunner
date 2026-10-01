@@ -1,6 +1,7 @@
 # Agents Guide — NetRunner
 
 > Condensed 2026-09-18 (reference prose compressed; every lesson kept).
+> Refreshed 2026-09-30: deploy/versioning rework (#287-#291), skills, counts.
 
 ## Orientation
 
@@ -25,7 +26,8 @@ slskd (Soulseek), metadata enrichment, local libraries, Fiber + HTMX UI.
   (tagged tests), `internal/testutil` (test doubles). Ops in `ops/`
   (compose, `caddy/` reverse proxy, `db/` init+migrations, `web/` Pongo2
   templates + static JS); `e2e/` Playwright; `scripts/` helpers;
-  `.github/workflows/` (Go CI + coverage, Docker, E2E, PRGuard/PR-Sentry);
+  `.github/workflows/` (Go CI + coverage, Docker to GHCR publish, E2E, integration, scheduled
+  mutation checks, PRGuard/PR-Sentry);
   `conductor/` removed (content in Linear).
 
 ## Setup & commands
@@ -39,8 +41,10 @@ cd backend && go test ./... # full non-tagged suite
 cd backend && go build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent
 cd backend && go run ./cmd/server   # auto-runs migrations; worker/agent/cli likewise
 docker compose up -d                # full stack; logs: docker compose logs -f netrunner[-slskd]
+./scripts/deploy.sh [--release] [--profile x]  # documented bring-up; resolves APP_VERSION (git tag, else `dev`) into .env
 ./scripts/integration-tests.sh test # or, from backend/: go test ./internal/integration/... -tags=integration -v
-./scripts/smoke.sh                  # smoke gate vs a running stack (--dev | --release)
+./scripts/smoke.sh                  # smoke gate vs a running stack (--dev | --release; release is the default, 28 checks)
+./scripts/smoke-test.sh             # self-contained: up netrunner-smoke (:18081/:18443/:18444), health/auth/CRUD checks, down
 ./scripts/validate.sh            # (Windows PowerShell: ./scripts/validate.ps1)
 govulncheck ./...                   # CI fails on reachable CVEs
 ```
@@ -52,6 +56,10 @@ SQLite path), `SLSKD_API_KEY` (required for acquisition), `JWT_SECRET`
 `POSTGRES_PASSWORD`, `SLSKD_USERNAME`/`SLSKD_PASSWORD`; test-only
 `SKIP_INTEGRATION_TESTS`, `SKIP_NETWORK_TESTS`; integration vars
 (`INTEGRATION_*`, `SLSKD_TEST_*`) per `scripts/integration-tests.sh`.
+`CONFIG_ENV` selects `config.<env>.yaml` over `config.yaml` (multi-environment
+YAML config); compose pins `ENVIRONMENT`/`CONFIG_ENV` per deploy path — the
+deploy path, not `.env`, decides the mode (dev base pins development, the
+release overlay pins production).
 
 ## E2E (Playwright)
 
@@ -59,7 +67,8 @@ Entry point: `bash scripts/e2e.sh test` from the repo root (or `bash ../scripts/
 stack lifecycle**: `webServer` runs `e2e/setup-test-db.sh`
 (build/create-DB/start/seed, `.env.e2e` materialised from the checked-in
 `.env.e2e.example`), `globalTeardown` tears down only when `CI=true`.
-Full run ~5 min / ~266 tests (18 skip). `reuseExistingServer: !process.env.CI` — local
+Full run ~5 min / a few hundred tests (skip counts move as parked specs get
+unparked). `reuseExistingServer: !process.env.CI` — local
 runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
 
 - **After backend/frontend changes, rebuild the stack first** — it runs
@@ -603,6 +612,19 @@ Postgres for concurrent production workloads.
   `docker-compose.release.yml` adds production semantics to the same stack.
   Host-side work (`scripts/smoke.sh`, curl `:8080`) needs one of them up, so
   only one stack can run at a time.
+- **Version stamping has one rule — `scripts/version.sh`** (called by
+  `deploy.sh` and the published-image workflow): `APP_VERSION` env override
+  -> the exact git tag on HEAD -> the `dev` sentinel. Images tag as
+  `djinn-netrunner-ops-{web,worker}:${APP_VERSION}`, and `deploy.sh` writes
+  the resolved value back to `.env` so `smoke.sh` checks the version the
+  image carries. A git tag with `/` or `+` is rejected (invalid Docker tag);
+  override with `APP_VERSION`. `docker.yml` publishes to `ghcr.io` on `v*`
+  tags under the same rule — a released image's footer shows its real
+  version, any other build reports `NetRunner vdev` (deliberate sentinel,
+  not a defect).
+- **The beta path is retired (#288)** — dev and release are the only paths;
+  rename map: CHANGELOG `[Unreleased]`; doc policy: `docs/MANIFEST.md`;
+  `docs/BETA_ACCEPTANCE.md`/`docs/plans/*` are history, never instructions.
 - The live deployment runs from a *separate clone*, not the working repo — sync
   changed files there and rebuild `ops-worker` before live verification, or you
   test the previous binary and report it as evidence.
@@ -651,12 +673,13 @@ Postgres for concurrent production workloads.
 
 ## Skills & dependency sources
 
-- `.agents/skills/`: `release-readiness-review` (two-phase audit+closure),
-  `e2e-test-spec-generator` (Playwright specs from Linear issues),
-  `auto-linear-update` (Linear updates from E2E results); see
-  `.agents/skills/` for the rest.
-- Read-only dependency clones live under `.slim/clonedeps/repos/` for
-  inspection (do not edit): `gofiber__fiber` v2.52.13 (middleware chain,
+- `.agents/skills/`: `release-readiness-review` (two-phase audit+closure) and
+  `testing-watchlist-ui` (UI testing notes incl. resolved CSP/route issues).
+  Repo-root `skills/` holds the task guides (`add-feature`, `fix-bug`,
+  `run-tests`, `deploy`, `api-usage`, `data-model`, ...). The 2026-09-18
+  `e2e-test-spec-generator`/`auto-linear-update` skills no longer exist.
+- Read-only dependency clones (materialised on demand, not in a fresh clone)
+  live under `.slim/clonedeps/repos/` for inspection (do not edit): `gofiber__fiber` v2.52.13 (middleware chain,
   context, routing), `go-gorm__gorm` v1.31.1 (query building, preloading,
   transactions, migrations), `mark3labs__mcp-go` v0.45.0 (MCP SDK, tool
   definitions, transports).
