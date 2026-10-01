@@ -1,3 +1,11 @@
+{% comment %}
+    A failed count is reported, never rendered as four zeroes. Zero queued jobs
+    is a real reading; a query that did not answer is not, and the difference is
+    exactly what an operator is looking at this page to find out.
+{% endcomment %}
+{% if StatsError %}
+<div class="error">{{ StatsError }}</div>
+{% else %}
 <div class="stats-region">
     {% if IsAdmin %}<div class="stats-scope-label">All Users</div>{% endif %}
     <div class="stat-card">
@@ -17,3 +25,4 @@
         <div class="stat-label">Failed (24h)</div>
     </div>
 </div>
+{% endif %}
