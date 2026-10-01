@@ -6,6 +6,23 @@
         </button>
     </div>
     
+    {% if pathConflict %}
+    <div class="notice" role="alert">
+        <p><strong>{{ pathConflictHeading | escape }}</strong></p>
+        <p>{{ pathConflictBody | escape }}</p>
+        <p class="text-secondary">{{ pathConflict.Path | escape }}</p>
+        {% if pathConflictAdoptable %}
+        <button class="btn btn-primary"
+                hx-post="/api/libraries/{{ pathConflict.ID }}/adopt"
+                hx-target="#libraries-region"
+                hx-swap="innerHTML"
+                aria-label="Adopt library {{ pathConflict.Name | escape }} at {{ pathConflict.Path | escape }}">
+            Adopt this library
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div id="libraries-list">
     {% for library in libraries %}
     <div class="library-card" id="library-{{ library.ID }}">

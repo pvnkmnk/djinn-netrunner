@@ -382,6 +382,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	libraryRoutes.Delete("/:id", library.DeleteLibrary)
 	libraryRoutes.Post("/:id/scan", library.TriggerScan)
 	libraryRoutes.Post("/:id/enrich", library.TriggerEnrich)
+	libraryRoutes.Post("/:id/adopt", library.AdoptLibrary)
 	libraryRoutes.Post("/:id/prune", library.TriggerPrune)
 	libraryRoutes.Get("/:id/tracks", library.ListTracks)
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -189,6 +190,14 @@ func (h *LibraryHandler) libraryAtPath(path string) (database.Library, bool, err
 // when the caller came from the UI, JSON otherwise — so a second submission
 // behaves like the first one did, instead of closing no modal and returning a
 // body the UI cannot swap.
+//
+// A row with no owner is a third case, not a second one. Path uniqueness is
+// global while listing is owner-scoped, so such a row is invisible to the user
+// who most wants it: the empty state says "No libraries configured" while the
+// row that holds their path cannot be seen and cannot be created around. It is
+// also claimable by anyone, which is the point — so the answer is an offer to
+// adopt, not a conflict. Collapsing this into the same 409 as a foreign-owned
+// row is what left the documented path uncreatable.
 func (h *LibraryHandler) respondWithExistingLibrary(c *fiber.Ctx, existing database.Library, user database.User) error {
 	if existing.OwnerUserID != nil && *existing.OwnerUserID == user.ID {
 		c.Set("HX-Trigger", "closeModal")
@@ -197,15 +206,153 @@ func (h *LibraryHandler) respondWithExistingLibrary(c *fiber.Ctx, existing datab
 		}
 		return c.Status(200).JSON(existing)
 	}
-	return c.Status(409).JSON(fiber.Map{
-		"error": "a library already exists at this path",
+
+	adoptable := existing.OwnerUserID == nil
+	if isHTMXRequest(c) {
+		// htmx does not swap a 4xx, so a 409 here renders nothing at all and
+		// the user sees the click do nothing with the modal still open. The UI
+		// needs a body it will actually swap, so the offer comes back at 200.
+		return h.renderAdoptionOffer(c, existing, adoptable)
+	}
+
+	message := "a library already exists at this path"
+	payload := fiber.Map{
+		"error":     message,
+		"adoptable": adoptable,
 		"existing_library": fiber.Map{
 			"id":            existing.ID,
 			"name":          existing.Name,
 			"path":          existing.Path,
 			"owner_user_id": existing.OwnerUserID,
 		},
+	}
+	if adoptable {
+		// Hand out the route only when adopting is actually possible. Naming it
+		// on a foreign-owned conflict offers the caller an action that can only
+		// ever refuse them.
+		message = "a library already exists at this path and has no owner; adopt it to use it"
+		payload["error"] = message
+		payload["adopt_path"] = fmt.Sprintf("/api/libraries/%s/adopt", existing.ID)
+	}
+	return c.Status(409).JSON(payload)
+}
+
+// renderAdoptionOffer renders the Libraries region with a message about the row
+// already sitting at this path. When the row has no owner the message carries
+// the adopt control; when someone else owns it, the message says so and offers
+// nothing, because there is nothing this user may do about it.
+func (h *LibraryHandler) renderAdoptionOffer(c *fiber.Ctx, existing database.Library, adoptable bool) error {
+	var libraries []database.Library
+	query := h.db.Select(libraryListColumns).Order("name")
+	if user, ok := currentUserFromLocals(c); ok && user.Role != "admin" {
+		query = query.Where("owner_user_id = ?", user.ID)
+	}
+	if err := query.Find(&libraries).Error; err != nil {
+		return internalServerError(c, err)
+	}
+
+	heading := "Someone else already registered a library at this path."
+	body := "It belongs to another account, so you cannot create your own here. Ask them to add you, or choose a different path."
+	if adoptable {
+		heading = "A library already exists at this path and has no owner."
+		body = "It is not on your list, so you cannot see it, but its path is taken. Adopt it and it becomes yours."
+	}
+
+	return c.Render("partials/libraries", fiber.Map{
+		"libraries":             libraries,
+		"pathConflict":          existing,
+		"pathConflictAdoptable": adoptable,
+		"pathConflictHeading":   heading,
+		"pathConflictBody":      body,
 	})
+}
+
+// AdoptLibrary claims a library row that has no owner.
+//
+// Ownership changes who can see, scan, enrich and delete a library, so it is a
+// deliberate action with an audit record rather than a side effect of a create
+// attempt. The row must still be unowned when the write lands — the check and
+// the update share one statement, so two people racing for the same orphan row
+// cannot both win it.
+func (h *LibraryHandler) AdoptLibrary(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(database.User)
+	if !ok {
+		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	}
+
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid library ID"})
+	}
+
+	var library database.Library
+	if err := h.db.Where("id = ?", id).First(&library).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(404).JSON(fiber.Map{"error": "library not found"})
+		}
+		return internalServerError(c, err)
+	}
+
+	if library.OwnerUserID != nil {
+		if *library.OwnerUserID == user.ID {
+			// Already theirs: idempotent, same reasoning as the create path.
+			if isHTMXRequest(c) {
+				c.Set("HX-Trigger", "closeModal")
+				return h.RenderLibrariesPartial(c)
+			}
+			return c.Status(200).JSON(library)
+		}
+		return c.Status(409).JSON(fiber.Map{
+			"error":         "that library already has an owner",
+			"adoptable":     false,
+			"owner_user_id": library.OwnerUserID,
+		})
+	}
+
+	// owner_user_id IS NULL in the WHERE, so a row claimed between the read
+	// above and this write matches nothing rather than being taken from its
+	// owner.
+	result := h.db.Model(&database.Library{}).
+		Where("id = ? AND owner_user_id IS NULL", id).
+		Update("owner_user_id", user.ID)
+	if result.Error != nil {
+		return internalServerError(c, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return c.Status(409).JSON(fiber.Map{
+			"error":     "that library was adopted by someone else",
+			"adoptable": false,
+		})
+	}
+
+	library.OwnerUserID = &user.ID
+	h.recordAdoption(library, user)
+
+	c.Set("HX-Trigger", "closeModal")
+	if isHTMXRequest(c) {
+		return h.RenderLibrariesPartial(c)
+	}
+	return c.Status(200).JSON(library)
+}
+
+// recordAdoption writes the audit entry. Losing the owner that left a library
+// unowned is unrecoverable — the row is invisible to every non-admin — so the
+// trail has to name who took it and which library and path.
+func (h *LibraryHandler) recordAdoption(library database.Library, user database.User) {
+	metadata := fmt.Sprintf(`{"path":%q,"name":%q}`, library.Path, library.Name)
+	entry := database.AuditLog{
+		Action:     "library_adopted",
+		ActorID:    user.ID,
+		TargetType: "library",
+		TargetID:   library.ID.String(),
+		Metadata:   metadata,
+		CreatedAt:  time.Now(),
+	}
+	if err := h.db.Create(&entry).Error; err != nil {
+		// The adoption itself already landed; failing to note it must not turn a
+		// successful claim into a failed request the user will retry.
+		slog.Error("Failed to write library adoption audit entry", "library_id", library.ID, "error", err)
+	}
 }
 
 // UpdateLibrary updates an existing library
