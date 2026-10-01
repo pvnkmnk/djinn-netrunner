@@ -827,12 +827,16 @@ textarea:focus-visible,
 
 /* HTMX loading state
 
-   The .htmx-indicator pair is not decoration. htmx 1.9.10 injects exactly
-   these rules itself, as an inline <style> block at DOMContentLoaded. The app
-   sends `style-src 'self'`, which refuses inline style elements, so htmx's
-   copy never applies and a .htmx-indicator stays visible forever. The same
-   rules in a stylesheet served from 'self' are allowed, so they are declared
-   here instead. */
+   The .htmx-indicator pair is not decoration, and these four rules are the only
+   copy that applies. htmx 1.9.10 used to inject them itself as an inline
+   <style> block at DOMContentLoaded; `style-src 'self'` refused that block, so
+   the rules never applied and a .htmx-indicator stayed visible forever, and
+   every page load logged a CSP violation for the attempt.
+
+   The injection is now switched off (see the htmx-config meta in base.html),
+   which means these rules are load-bearing rather than a copy: delete them and
+   every loading indicator in the product stays on screen for good. A test
+   asserts that coupling - see TestTheStylesheetCarriesTheIndicatorRules. */
 .htmx-indicator { opacity: 0; }
 
 .htmx-request .htmx-indicator,
