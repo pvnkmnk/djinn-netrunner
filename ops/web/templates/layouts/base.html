@@ -25,7 +25,13 @@
             <a href="/artists" {% if Page == "artists" %}class="active" aria-current="page"{% endif %}>Artists</a>
             <a href="/playlists" {% if Page == "playlists" %}class="active" aria-current="page"{% endif %}>Playlists</a>
             <a href="/jobs" {% if Page == "jobs" %}class="active" aria-current="page"{% endif %}>Jobs</a>
-            <a href="/admin" {% if Page == "admin" %}class="active" aria-current="page"{% endif %}>Admin</a>
+            {% if IsAdmin %}<a href="/admin" {% if Page == "admin" %}class="active" aria-current="page"{% endif %}>Admin</a>{% endif %}
+            {% if CurrentUserEmail %}
+            <form class="signout-form" method="post" action="/api/auth/logout">
+                <input type="hidden" name="csrf_token" value="{{ CSRFToken }}">
+                <button type="submit" class="signout-button">Sign out</button>
+            </form>
+            {% endif %}
         </nav>
     </header>
     <main id="main-content" class="app-main" role="main" tabindex="-1">

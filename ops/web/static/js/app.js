@@ -433,7 +433,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: JSON.stringify({email: email, password: password})
                 });
                 if (resp.ok) {
-                    window.location.href = '/';
+                    // data-next was validated server-side (see safeNextPath),
+                    // so this is either empty or a local path.
+                    window.location.href = loginForm.getAttribute('data-next') || '/';
                 } else {
                     var data = await resp.json();
                     errorDiv.textContent = data.error || 'Login failed';
