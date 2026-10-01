@@ -291,6 +291,26 @@ Postgres for concurrent production workloads.
   discriminates on `requestConfig.verb`: the section regions also carry
   `hx-get`, so the target's attributes cannot tell a failed save from a
   failed load (DJI-438).
+- **The CSP refuses htmx's own indicator styles.** htmx 1.9.10 injects
+  `.htmx-indicator{opacity:0}` as an inline `<style>` block at DOMContentLoaded
+  (unless `includeIndicatorStyles: false`). This app sends `style-src 'self'`,
+  which refuses inline style *elements*, so htmx's copy never applies and any
+  `.htmx-indicator` stays visible forever — the permanent "Searching…" on the
+  browse page. The pair is now declared in `styles.css`, which `'self'` allows.
+  Same rule for any `style="..."` attribute: it needs `'unsafe-hashes'` or
+  `'unsafe-inline'`, so move it to a stylesheet instead of relaxing the policy.
+- **A class merely *mentioned* in the CSS is not a styled class.** After `3734d90`
+  the only surviving `.btn` in `styles.css` was inside a `:focus-visible` list and
+  inside the `prefers-reduced-motion` block, so any "does this class appear in the
+  stylesheet" check said yes while the button had no appearance at all. `declaredClasses`
+  in `stylesheet_coverage_test.go` only counts an *unconditional* declaration, skips
+  reduced-motion blocks and `@keyframes` bodies, and is why the deletion is caught
+  rather than argued about.
+- **`ops/web/templates` and `styles.css` drift silently** — Playwright asserts
+  behaviour, and a raw native `<button>` passes every behavioural assertion.
+  `TestTemplateClassesHaveStylesheetRules` is the gate. Classes with no rule must be
+  added to `intentionallyUnstyled` with a reason; that register fails the build if an
+  entry gains a rule or stops being used, so it cannot rot into a blanket exemption.
 - **Every modal-bearing handler — create *and* update — must set
   `HX-Trigger: closeModal`** before returning its partial (DJI-440), or an
   edit leaves the modal open over an already-updated list. `hx-on:submit`

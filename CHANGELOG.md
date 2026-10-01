@@ -38,6 +38,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   acquisition sat queued and never ran (#541). Claiming now skips queued jobs whose
   scope a running job holds, walks past any candidate it cannot lock and starts the
   next one in the same tick, and a requeued job moves to the back of the queue.
+- The component stylesheet is back. Commit `3734d90` replaced the block covering
+  buttons, filters, the live console, forms and modals instead of editing it, and the
+  331 lines went missing unnoticed: every button rendered as a raw native button, every
+  "modal" rendered inline over the header, and 14 classes used by templates lost their
+  only rule (#540). `.modal-overlay` is restored adapted rather than verbatim — the
+  rewrite gave `#modal-container.active` the positioning and backdrop, and the overlay
+  now fills it, which is what `app.js` expects when it closes a modal on a backdrop
+  click. `.htmx-indicator` is now declared in the stylesheet as well: htmx injects those
+  rules itself as an inline `<style>`, which `style-src 'self'` refuses, so a
+  "Searching…" indicator could never be hidden. The master audio element's inline
+  `style="display:none"` is gone too, so no page logs a refused style on load.
+  A guard now fails the build when a template class has no stylesheet rule,
+  with a reviewed register for the classes that are deliberately unstyled.
 
 ### Documentation
 - `docs/DEPLOYMENT.md` (renamed) presents dev and release as the only two paths, states
