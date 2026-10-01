@@ -193,6 +193,14 @@ account — is never reverted. Clear it and recreate `ops-web` once you are
 signed in as admin anyway, so the address is not left lying around in a
 plaintext config file.
 
+One thing to be deliberate about: the promotion follows the **address**, not the
+person holding it. Registration is open to whoever can reach the port — that
+is unchanged by this variable — so whoever registers the configured address
+first gets the admin role. On a fresh install, set the variable, register your
+own account, and clear it before pointing anything else at the instance. If the
+address does get claimed first, point the variable at a different one: the
+promotion is recorded per address, so an unused address is promoted at once.
+
 Then create the first account. **Every state-changing request needs the CSRF
 header**: any request (including `GET /`) sets a `csrf_` cookie, whose value must be echoed in
 `X-CSRF-Token`.
