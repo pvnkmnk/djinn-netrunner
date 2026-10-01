@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,6 +30,12 @@ import (
 // conservative default: each running job holds peer connections and a
 // download pipeline.
 const DefaultMaxConcurrentJobs = 5
+
+// claimCandidateBatch bounds how many queued jobs one tick will consider.
+// Claiming walks past candidates it cannot lock rather than stopping at the
+// first one, so this is the size of that walk: big enough to reach past a run
+// of same-scope jobs, small enough to keep the query cheap.
+const claimCandidateBatch = 25
 
 type WorkerOrchestrator struct {
 	workerID string
@@ -489,6 +496,41 @@ func (w *WorkerOrchestrator) maxConcurrentJobs() int {
 	return DefaultMaxConcurrentJobs
 }
 
+// claimCandidates returns queued jobs, oldest first, skipping any whose scope
+// is already held by a running job.
+//
+// The skip is the point (DJI-535). A worker holds an advisory lock for the
+// scope of every job it is running, so a queued job sharing that scope cannot
+// start until the running one finishes. Filtering those out in SQL lets the
+// claim reach the jobs behind it instead of repeatedly re-examining a scope
+// it can never win.
+func (w *WorkerOrchestrator) claimCandidates(limit int) ([]database.Job, error) {
+	var candidates []database.Job
+	err := w.db.Model(&database.Job{}).
+		Where("state = ?", "queued").
+		Where(`NOT EXISTS (
+			SELECT 1 FROM jobs AS running
+			WHERE running.state = 'running'
+			  AND running.scope_type = jobs.scope_type
+			  AND running.scope_id = jobs.scope_id
+		)`).
+		Order("requested_at ASC").
+		Limit(limit).
+		Find(&candidates).Error
+	if err != nil {
+		return nil, err
+	}
+	return candidates, nil
+}
+
+// refreshQueuedGauge recomputes the queued-jobs metric after a claim or a
+// requeue, so the gauge tracks the queue instead of drifting.
+func (w *WorkerOrchestrator) refreshQueuedGauge() {
+	var queuedCount int64
+	w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&queuedCount)
+	metrics.JobsQueued.Set(float64(queuedCount))
+}
+
 func (w *WorkerOrchestrator) claimAndProcess() {
 	w.jobMutex.Lock()
 	if len(w.activeJobs) >= w.maxConcurrentJobs() {
@@ -497,116 +539,124 @@ func (w *WorkerOrchestrator) claimAndProcess() {
 	}
 	w.jobMutex.Unlock()
 
-	var job database.Job
+	candidates, err := w.claimCandidates(claimCandidateBatch)
+	if err != nil {
+		slog.Error("Error listing claim candidates", "worker_id", w.workerID, "error", err)
+		return
+	}
 
-	// Capture claim timestamp before the transaction so the same value is
-	// persisted in the DB and kept on the local struct (see post-tx block).
-	claimTime := time.Now()
+	// Walk the candidates rather than stopping at the first (DJI-535). A job we
+	// cannot run right now goes back to the end of the queue and the next
+	// candidate gets its turn in this same tick.
+	for i := range candidates {
+		job := candidates[i]
 
-	// Start an immediate transaction to "lock" the row for SQLite
-	err := w.db.Transaction(func(tx *gorm.DB) error {
-		// 1. Find next queued job
-		err := tx.Where("state = ?", "queued").Order("requested_at ASC").First(&job).Error
-		if err != nil {
-			return err // Will rollback and we'll try again next tick
-		}
+		// Capture claim timestamp before the transaction so the same value is
+		// persisted in the DB and kept on the local struct (see post-tx block).
+		claimTime := time.Now()
 
-		// 2. Mark as running — guard with state='queued' to prevent two workers
-		//    claiming the same job (see also DJI-331 for item-level fix).
-		result := tx.Model(&job).Where("state = ?", "queued").Updates(map[string]interface{}{
-			"state":        "running",
-			"worker_id":    w.workerID,
-			"started_at":   &claimTime,
-			"heartbeat_at": &claimTime,
+		// Mark as running — guard with state='queued' to prevent two workers
+		// claiming the same job (see also DJI-331 for item-level fix). The
+		// transaction is what serializes the write for SQLite.
+		err := w.db.Transaction(func(tx *gorm.DB) error {
+			result := tx.Model(&database.Job{}).Where("id = ? AND state = ?", job.ID, "queued").
+				Updates(map[string]interface{}{
+					"state":        "running",
+					"worker_id":    w.workerID,
+					"started_at":   &claimTime,
+					"heartbeat_at": &claimTime,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return gorm.ErrRecordNotFound // already claimed by another worker
+			}
+			return nil
 		})
-		if result.Error != nil {
-			return result.Error
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				slog.Error("Error claiming job", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+			}
+			continue
 		}
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound // already claimed by another worker
+
+		// GORM map-based Updates doesn't write back into the struct, so populate
+		// the fields we just set in the DB to keep the local copy consistent.
+		job.State = "running"
+		job.WorkerID = &w.workerID
+		job.StartedAt = &claimTime
+		job.HeartbeatAt = &claimTime
+
+		w.refreshQueuedGauge()
+
+		// requeue resets a claimed job back to queued and updates the gauge.
+		// Bumping requested_at sends it to the *back* of the queue: without that,
+		// a job that cannot run right now is the oldest queued job again on the
+		// very next tick and is re-claimed forever (DJI-535).
+		requeue := func(reason string) {
+			if err := w.db.Model(&job).Updates(map[string]interface{}{
+				"state": "queued", "worker_id": nil, "started_at": nil,
+				"heartbeat_at": nil, "requested_at": time.Now(),
+			}).Error; err != nil {
+				slog.Error("Failed to requeue job", "worker_id", w.workerID, "job_id", job.ID, "reason", reason, "error", err)
+				return
+			}
+			w.refreshQueuedGauge()
 		}
-		return nil
-	})
 
-	if err != nil {
-		if err != gorm.ErrRecordNotFound {
-			slog.Error("Error claiming job", "worker_id", w.workerID, "error", err)
+		// Acquire advisory lock for scope (use worker context to allow cancellation).
+		// If lock key computation or acquisition fails, requeue the job immediately
+		// rather than leaving it in 'running' state for ZombieRecovery to clean up.
+		lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
+		if err != nil {
+			slog.Error("Error computing lock key, requeueing", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+			requeue("lock_key_error")
+			continue
 		}
-		return
-	}
 
-	// GORM map-based Updates doesn't write back into the struct, so populate
-	// the fields we just set in the DB to keep the local copy consistent.
-	job.State = "running"
-	job.WorkerID = &w.workerID
-	job.StartedAt = &claimTime
-	job.HeartbeatAt = &claimTime
-
-	// Update queued gauge after claiming
-	var queuedCount int64
-	w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&queuedCount)
-	metrics.JobsQueued.Set(float64(queuedCount))
-
-	// requeue resets a claimed job back to queued state and updates the gauge.
-	requeue := func(reason string) {
-		if err := w.db.Model(&job).Updates(map[string]interface{}{
-			"state": "queued", "worker_id": nil, "started_at": nil, "heartbeat_at": nil,
-		}).Error; err != nil {
-			slog.Error("Failed to requeue job", "worker_id", w.workerID, "job_id", job.ID, "reason", reason, "error", err)
-			return
+		acquired, err := w.lockManager.AcquireTryLock(w.ctx, lockKey)
+		if err != nil {
+			slog.Error("Error acquiring advisory lock, requeueing", "worker_id", w.workerID, "job_id", job.ID, "error", err)
+			requeue("lock_acquire_error")
+			continue
 		}
-		var qc int64
-		w.db.Model(&database.Job{}).Where("state = ?", "queued").Count(&qc)
-		metrics.JobsQueued.Set(float64(qc))
-	}
 
-	// Acquire advisory lock for scope (use worker context to allow cancellation).
-	// If lock key computation or acquisition fails, requeue the job immediately
-	// rather than leaving it in 'running' state for ZombieRecovery to clean up.
-	lockKey, err := w.lockManager.GetScopeLockKey(w.ctx, job.ScopeType, job.ScopeID)
-	if err != nil {
-		slog.Error("Error computing lock key, requeueing", "worker_id", w.workerID, "job_id", job.ID, "error", err)
-		requeue("lock_key_error")
-		return
-	}
+		if !acquired {
+			// Debug, not info: a job whose scope is busy is the ordinary path, and
+			// at info it drowns out the claim it just caused.
+			slog.Debug("Scope locked, skipping candidate", "worker_id", w.workerID, "job_id", job.ID,
+				"scope_type", job.ScopeType, "scope_id", job.ScopeID)
+			requeue("scope_locked")
+			continue
+		}
 
-	acquired, err := w.lockManager.AcquireTryLock(w.ctx, lockKey)
-	if err != nil {
-		slog.Error("Error acquiring advisory lock, requeueing", "worker_id", w.workerID, "job_id", job.ID, "error", err)
-		requeue("lock_acquire_error")
-		return
-	}
+		ctx, cancel := context.WithCancel(w.ctx)
 
-	if !acquired {
-		slog.Info("Scope locked, requeueing", "worker_id", w.workerID, "job_id", job.ID, "scope_type", job.ScopeType, "scope_id", job.ScopeID)
-		requeue("scope_locked")
-		return
-	}
+		jc := &jobContext{
+			job:     job,
+			cancel:  cancel,
+			ctx:     ctx,
+			lockKey: lockKey,
+		}
 
-	ctx, cancel := context.WithCancel(w.ctx)
-
-	jc := &jobContext{
-		job:     job,
-		cancel:  cancel,
-		ctx:     ctx,
-		lockKey: lockKey,
-	}
-
-	w.jobMutex.Lock()
-	// Re-check capacity while holding lock — prevents race between check and insertion (DJI-339)
-	if len(w.activeJobs) >= w.maxConcurrentJobs() {
+		w.jobMutex.Lock()
+		// Re-check capacity while holding lock — prevents race between check and insertion (DJI-339)
+		if len(w.activeJobs) >= w.maxConcurrentJobs() {
+			w.jobMutex.Unlock()
+			cancel()
+			w.lockManager.ReleaseLock(context.Background(), lockKey)
+			slog.Info("Capacity reached, requeueing", "worker_id", w.workerID, "job_id", job.ID)
+			requeue("capacity_exceeded")
+			continue
+		}
+		w.activeJobs[job.ID] = jc
+		metrics.JobsRunning.Set(float64(len(w.activeJobs)))
 		w.jobMutex.Unlock()
-		cancel()
-		w.lockManager.ReleaseLock(context.Background(), lockKey)
-		slog.Info("Capacity reached, requeueing", "worker_id", w.workerID, "job_id", job.ID)
-		requeue("capacity_exceeded")
+
+		slog.Info("Claimed job", "worker_id", w.workerID, "job_id", job.ID, "job_type", job.Type)
 		return
 	}
-	w.activeJobs[job.ID] = jc
-	metrics.JobsRunning.Set(float64(len(w.activeJobs)))
-	w.jobMutex.Unlock()
-
-	slog.Info("Claimed job", "worker_id", w.workerID, "job_id", job.ID, "job_type", job.Type)
 }
 
 func (w *WorkerOrchestrator) processActiveJobsRoundRobin() {

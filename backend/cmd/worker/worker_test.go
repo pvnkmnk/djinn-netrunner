@@ -1332,3 +1332,134 @@ func TestFinalizeAcquisition_ReleasesWriteBack(t *testing.T) {
 	require.Equal(t, "wanted", statusOf(miss.ID), "miss keeps its status")
 	require.Equal(t, "acquired", statusOf(earlierHit.ID), "earlier acquisition never downgraded")
 }
+
+// queuedJob inserts a queued job with an explicit age, so ordering by
+// requested_at is deterministic rather than dependent on insert timing.
+func queuedJob(t *testing.T, w *WorkerOrchestrator, jobType, scopeType, scopeID string, age time.Duration) database.Job {
+	t.Helper()
+	job := database.Job{
+		Type:        jobType,
+		State:       "queued",
+		ScopeType:   scopeType,
+		ScopeID:     scopeID,
+		RequestedAt: time.Now().Add(-age),
+	}
+	require.NoError(t, w.db.Create(&job).Error)
+	return job
+}
+
+// runningJob inserts a running job standing in for one that already holds
+// its scope's advisory lock.
+func runningJob(t *testing.T, w *WorkerOrchestrator, jobType, scopeType, scopeID string) database.Job {
+	t.Helper()
+	started := time.Now()
+	job := database.Job{
+		Type:        jobType,
+		State:       "running",
+		ScopeType:   scopeType,
+		ScopeID:     scopeID,
+		RequestedAt: started.Add(-time.Hour),
+		StartedAt:   &started,
+		HeartbeatAt: &started,
+	}
+	require.NoError(t, w.db.Create(&job).Error)
+	return job
+}
+
+func reloadJob(t *testing.T, w *WorkerOrchestrator, id uint64) database.Job {
+	t.Helper()
+	var job database.Job
+	require.NoError(t, w.db.First(&job, id).Error)
+	return job
+}
+
+// TestClaimAndProcess_SkipsJobsWhoseScopeIsHeld is the DJI-535 regression.
+//
+// The playtest shape: a long artist-scoped acquisition is running and holds
+// that scope, a queued job waits behind it on the same scope, and a user
+// submits an unrelated library scan. Before the fix the claim looked only at
+// the head of the queue, so the library scan was never reached — 259 requeues
+// of the blocked job, and a pipeline that looked wedged.
+func TestClaimAndProcess_SkipsJobsWhoseScopeIsHeld(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	runningJob(t, w, "acquisition", "artist", "artist-a")
+	starved := queuedJob(t, w, "acquisition", "artist", "artist-a", 30*time.Minute)
+	wanted := queuedJob(t, w, "scan", "library", "library-b", time.Minute)
+
+	w.claimAndProcess()
+
+	// The unrelated library scope is claimed...
+	require.Equal(t, "running", reloadJob(t, w, wanted.ID).State,
+		"a job whose scope is free must be claimed even when an older job is scope-blocked")
+
+	// ...and the scope-blocked job is left alone rather than thrashed.
+	require.Equal(t, "queued", reloadJob(t, w, starved.ID).State,
+		"a job whose scope is held must stay queued, not be claimed and requeued")
+
+	w.jobMutex.Lock()
+	defer w.jobMutex.Unlock()
+	require.Len(t, w.activeJobs, 1, "exactly one job should be active")
+	require.Contains(t, w.activeJobs, wanted.ID)
+}
+
+// TestClaimAndProcess_SkipsPastHeldAdvisoryLock covers the other half: the
+// scope's advisory lock is held by something the query cannot see, so the
+// lock acquisition itself fails. Claiming must walk to the next candidate
+// rather than stopping, and the blocked job must go to the back of the queue
+// so it cannot monopolise every future tick.
+func TestClaimAndProcess_SkipsPastHeldAdvisoryLock(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	blocked := queuedJob(t, w, "acquisition", "artist", "artist-a", 30*time.Minute)
+	wanted := queuedJob(t, w, "scan", "library", "library-b", time.Minute)
+
+	// Hold the lock the way a live job on that scope would.
+	key, err := w.lockManager.GetScopeLockKey(context.Background(), "artist", "artist-a")
+	require.NoError(t, err)
+	acquired, err := w.lockManager.AcquireTryLock(context.Background(), key)
+	require.NoError(t, err)
+	require.True(t, acquired, "test setup must hold the lock")
+
+	w.claimAndProcess()
+
+	require.Equal(t, "running", reloadJob(t, w, wanted.ID).State,
+		"claim must walk past the lock-blocked candidate to the next one")
+
+	stillBlocked := reloadJob(t, w, blocked.ID)
+	require.Equal(t, "queued", stillBlocked.State)
+	require.True(t, stillBlocked.RequestedAt.After(blocked.RequestedAt),
+		"a requeued job must move to the back of the queue, or it is re-claimed first forever")
+	require.True(t, stillBlocked.RequestedAt.After(reloadJob(t, w, wanted.ID).RequestedAt),
+		"the requeued job should now be younger than the job claimed ahead of it")
+}
+
+// TestClaimCandidates_AllBlocked pins the degenerate case: when every queued
+// job shares a scope with a running job there is nothing to claim, and that
+// is a quiet no-op rather than an error or a livelock.
+func TestClaimCandidates_AllBlocked(t *testing.T) {
+	w := setupWorkerTestDB(t)
+
+	runningJob(t, w, "acquisition", "artist", "artist-a")
+	queuedJob(t, w, "artist_scan", "artist", "artist-a", time.Minute)
+	queuedJob(t, w, "artist_scan", "artist", "artist-a", 2*time.Minute)
+
+	candidates, err := w.claimCandidates(claimCandidateBatch)
+	require.NoError(t, err)
+	require.Empty(t, candidates, "a queued job sharing a running job's scope is not claimable")
+
+	before := reloadJob(t, w, w.firstQueuedJobID(t))
+	w.claimAndProcess()
+	after := reloadJob(t, w, w.firstQueuedJobID(t))
+	require.Equal(t, "queued", after.State)
+	require.Equal(t, before.RequestedAt.UTC(), after.RequestedAt.UTC(),
+		"a job that is never a candidate must not be touched at all")
+}
+
+// firstQueuedJobID returns the id of any queued job, for state assertions.
+func (w *WorkerOrchestrator) firstQueuedJobID(t *testing.T) uint64 {
+	t.Helper()
+	var job database.Job
+	require.NoError(t, w.db.Where("state = ?", "queued").Order("id ASC").First(&job).Error)
+	return job.ID
+}
