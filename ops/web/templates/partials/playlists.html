@@ -12,16 +12,16 @@
     {% for playlist in playlists %}
     <div class="playlist-card" id="playlist-{{ playlist.ID }}">
         <div class="playlist-info">
-            <div class="name">{{ playlist.Name | escape }}</div>
+            <div class="name">{{ playlist.Name }}</div>
             {% if playlist.Description %}
-            <div class="description">{{ playlist.Description | escape }}</div>
+            <div class="description">{{ playlist.Description }}</div>
             {% endif %}
             <div class="meta">
                 {% if playlist.Public %}Public{% else %}Private{% endif %}
             </div>
         </div>
         <div class="actions">
-            <button class="btn btn-sm btn-danger" hx-delete="/api/playlists/{{ playlist.ID }}" hx-target="#playlists-region" hx-swap="innerHTML" hx-confirm="Delete playlist {{ playlist.Name | escape }}?" aria-label="Delete playlist {{ playlist.Name | escape }}">
+            <button class="btn btn-sm btn-danger" hx-delete="/api/playlists/{{ playlist.ID }}" hx-target="#playlists-region" hx-swap="innerHTML" hx-confirm="Delete playlist {{ playlist.Name }}?" aria-label="Delete playlist {{ playlist.Name }}">
                 Delete
             </button>
         </div>
