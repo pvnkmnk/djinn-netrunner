@@ -25,6 +25,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **A session can be ended from the app, and the header says whose it is.** The sign-out
+  route and its tests predate the first playtest, but no template rendered a control: the
+  header held the wordmark and nine links, so the only way to leave was to close the
+  browser or clear cookies, and nothing in the UI said which account was signed in
+  (#524). The header now carries the operator's address beside a sign-out button that
+  posts through the same CSRF plumbing the other mutation forms use. The address arrives
+  from a registration form, so a test renders a hostile one and asserts that it comes
+  out escaped exactly once — the markup is neutralised *and* no `&amp;lt;` reaches the
+  operator, which is the double-escape defect filed separately as DJI-590.
+- **The tertiary text token clears WCAG AA.** `--text-muted` was `#484f58`, 2.3:1 against
+  `--bg-primary`, and it painted the page footer and the track-detail labels — text a
+  person reads, not decoration. Two comments in the stylesheet already recorded the
+  failure and routed around it (`--text-secondary` was chosen for the artist picker for
+  exactly this reason), so the value was known to be wrong and nothing failed. It is now
+  `#7a8290`: 5.0:1 on `--bg-primary`, 4.9:1 on `--bg-card`, 4.6:1 on `--bg-secondary`,
+  and still a visible step below `--text-secondary` (6.1:1) so the hierarchy survives.
+  A test now recomputes every text token against every background surface from the
+  stylesheet and fails under 4.5:1, carries a reviewed register of the one pairing that
+  is deliberately below it (`--text-muted` on `--bg-tertiary`, 4.1:1) together with a
+  check that no rule actually renders that pairing, and refuses the cheapest way to pass
+  the floor — flattening all three text tokens into one grey.
 - **Acoustic fingerprinting actually runs.** The image shipped without Chromaprint for the
   project's entire history, so every scan and every import reported success while
   fingerprinting nothing, every `tracks.fingerprint` was an empty string (so

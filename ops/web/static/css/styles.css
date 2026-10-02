@@ -9,7 +9,18 @@
     /* Text colors */
     --text-primary: #e6edf3;
     --text-secondary: #8b949e;
-    --text-muted: #484f58;
+    /* The tertiary text token. It was #484f58, which measures 2.3:1 on
+       --bg-primary and fails the WCAG 2.1 AA floor PRODUCT.md calls
+       confirmed rather than aspirational; the footer and the track-detail
+       labels rendered in it were unreadable, not merely quiet. #7a8290
+       clears 4.5:1 on the three surfaces it is used or could land on
+       (--bg-primary 5.0:1, --bg-card 4.9:1, --bg-secondary 4.6:1) and still
+       sits a visible step below --text-secondary (6.1:1), so the hierarchy
+       survives. It does NOT clear 4.5:1 on --bg-tertiary (4.1:1) - check
+       before using it on a hover/active surface. Guarded by
+       TestStylesheet_TextTokensClearWCAAContrast, which recomputes these
+       ratios from this file. */
+    --text-muted: #7a8290;
     
     /* Neon accent colors */
     --accent-cyan: #00fff5;
@@ -75,6 +86,9 @@ body {
     font-size: 0.75rem;
     padding: 0.5rem 0;
     border-bottom: 2px solid transparent;
+    /* A nav label is one word or two and neither half is useful alone: a
+       squeezed row must push a label to a new line, never break it in half. */
+    white-space: nowrap;
 }
 .app-header nav a:focus-visible,
 .btn:focus-visible,
@@ -149,6 +163,30 @@ textarea:focus-visible,
 .primary-nav {
     display: flex;
     gap: 0.75rem;
+    /* Above 980px this is one row of eight links plus the account cluster, and
+       the row is at capacity: before the address was added it filled the header
+       with about 17px to spare at 1280px. The first cut of the address let the
+       row overflow instead, and because "Sign out" was the only label with a
+       space in it, that one wrapped to two lines and stretched every nav item
+       to match (header 69px -> 85px, and 7px of horizontal overflow on the
+       document). Wrapping is the graceful answer: when the row is full the
+       account cluster drops to its own right-aligned line and no label is
+       broken or squeezed. Below 980px the media query turns all of this into a
+       hamburger and these two properties are inert. */
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+/* The account cluster - who is signed in, and the way out - is one item of the
+   nav row rather than two, so the two halves never separate. With the row at
+   capacity the cluster as a whole moves to its own right-aligned line; split
+   into two items, the sign-out control wrapped on its own and the address
+   stayed behind on the row above. */
+.primary-nav .account-cluster {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: 2rem;
 }
 
 /* The sign-out control is a form so it works without JavaScript, but it sits
@@ -170,6 +208,10 @@ textarea:focus-visible,
     font-size: 0.75rem;
     padding: 0.5rem 0;
     transition: color 0.2s;
+    /* Two words, so it is the label that breaks first when the row is tight.
+       It is also the control that leaves the account, and "Sign / out" on two
+       lines reads as two controls. */
+    white-space: nowrap;
 }
 
 .primary-nav .signout-button:hover {
@@ -179,6 +221,30 @@ textarea:focus-visible,
 .primary-nav .signout-button:focus-visible {
     outline: 2px solid var(--accent-cyan);
     outline-offset: 2px;
+}
+
+/* The signed-in operator, sat with the sign-out control because the two
+   answer the same question: which account is this, and how do I leave it.
+   It keeps sentence case rather than the nav links' uppercase so identity
+   reads as a label rather than as a tenth destination.
+   `--text-secondary`, never `--text-muted`: who you are signed in as is not
+   tertiary metadata, and the muted token would say that leaving the account
+   unnamed is a detail. */
+.primary-nav .signed-in-as {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    padding: 0.5rem 0;
+    /* A long address must not push the nav apart; the full value stays in
+       the DOM and in the title attribute, so truncation costs nothing. The cap
+       is where the address starts truncating, `min-width: 0` is what lets it
+       be the item that gives way: without it a flex item will not shrink below
+       its own text, so the squeeze would land on whichever neighbour has a
+       space in its label instead. */
+    max-width: 12rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .app-main { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
@@ -1357,7 +1423,9 @@ textarea:focus-visible,
    treatment is the incumbent card language — border colour, a 4px shift, a soft
    cyan shadow — so a candidate reads as the same object as everything else in
    the console rather than as a new kind of thing. Detail text is
-   --text-secondary (6.1:1 on --bg-card); --text-muted is 2.3:1 and fails AA. */
+   --text-secondary (6.1:1 on --bg-card); --text-muted is the tertiary token
+   (4.9:1 on --bg-card) and is deliberately not used for the detail text a
+   person reads to tell one candidate from another. */
 .candidate-list {
     display: flex;
     flex-direction: column;
