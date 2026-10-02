@@ -35,10 +35,20 @@
             <a href="/jobs" {% if Page == "jobs" %}class="active" aria-current="page"{% endif %}>Jobs</a>
             {% if IsAdmin %}<a href="/admin" {% if Page == "admin" %}class="active" aria-current="page"{% endif %}>Admin</a>{% endif %}
             {% if CurrentUserEmail %}
-            <form class="signout-form" method="post" action="/api/auth/logout">
-                <input type="hidden" name="csrf_token" value="{{ CSRFToken }}">
-                <button type="submit" class="signout-button">Sign out</button>
-            </form>
+            {# Who you are, next to the way out: a sign-out control answers "how do I #}
+            {# leave" and nothing answered "who am I", which on a shared instance is the #}
+            {# difference between two operators' libraries and one pile of both. #}
+            {# No `| escape` here on purpose: pongo2 autoescapes by default and this engine #}
+            {# never calls SetAutoescape(false), so the address is escaped once already. #}
+            {# Adding it escapes twice and prints `&amp;` for a plain `&` (DJI-590). #}
+            {# One wrapper, so the pair moves together when the nav row is full. #}
+            <div class="account-cluster">
+                <span class="signed-in-as" title="{{ CurrentUserEmail }}">{{ CurrentUserEmail }}</span>
+                <form class="signout-form" method="post" action="/api/auth/logout">
+                    <input type="hidden" name="csrf_token" value="{{ CSRFToken }}">
+                    <button type="submit" class="signout-button">Sign out</button>
+                </form>
+            </div>
             {% endif %}
         </nav>
     </header>
