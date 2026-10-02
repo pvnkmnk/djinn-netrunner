@@ -134,6 +134,64 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Put the request indicator back when the request ends (DJI-571).
+    //
+    // htmx 1.9.10 keeps ONE requestCount per element and spends it on two
+    // separate jobs: marking the element as in-flight (`requestClass`, i.e.
+    // `htmx-request`, which the stylesheet dims to opacity 0.7 and gives
+    // `cursor: wait !important`) and disabling whatever `hx-disabled-elt`
+    // names. An element that is both - which is every control here carrying
+    // hx-disabled-elt="this" - is counted twice and released once, so its
+    // indicator count never reaches zero and htmx never removes the class. The
+    // control stays dimmed and claims to be busy for the rest of the session,
+    // long after the request settled. Measured on the watchlist SYNC button
+    // (requestCount 2 at afterSwap, class still present at afterRequest,
+    // `disabled` correctly cleared), and absent from a control that does not
+    // carry the attribute - the dashboard Attach button, whose indicator was
+    // added and removed five milliseconds apart.
+    //
+    // htmx fires htmx:afterRequest *after* its own release step, so this is the
+    // last point at which the control can be returned to its idle state. It
+    // fires for success, 4xx/5xx, abort and timeout alike, which is exactly
+    // the set that has to be covered.
+    //
+    // `disabled` is deliberately left to htmx. Its second decrement does clear
+    // that attribute - the measurement above caught it cleared while the class
+    // stuck - so the attribute is not part of this defect, and a control left
+    // disabled would be a different bug wanting a different fix.
+    function clearRequestIndicator(elt) {
+        if (!elt || !elt.classList) return;
+        var targets = [elt];
+        // htmx resolves hx-indicator by inheritance, so look for it the same
+        // way rather than only on the issuing element.
+        var source = elt.closest ? elt.closest('[hx-indicator]') : null;
+        var indicator = source ? source.getAttribute('hx-indicator') : null;
+        if (indicator && indicator !== 'this') {
+            indicator.split(',').forEach(function (selector) {
+                selector = selector.trim();
+                if (!selector) return;
+                try {
+                    targets.push.apply(targets, document.querySelectorAll(selector));
+                } catch (e) {
+                    // An unparseable selector is htmx's to report; the issuing
+                    // element is cleared either way.
+                }
+            });
+        }
+        targets.forEach(function (node) {
+            if (!node || !node.classList) return;
+            Array.from(node.classList)
+                .filter(function (name) {
+                    return name === 'htmx-request' || name.indexOf('htmx-request-') === 0;
+                })
+                .forEach(function (name) { node.classList.remove(name); });
+        });
+    }
+
+    document.body.addEventListener('htmx:afterRequest', function (evt) {
+        clearRequestIndicator(evt.detail && evt.detail.elt);
+    });
+
     // Listen for HTMX modal trigger headers
     document.body.addEventListener('htmx:afterOnLoad', function(evt) {
         const xhr = evt.detail.xhr;

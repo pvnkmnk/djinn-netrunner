@@ -418,6 +418,45 @@ test.describe('Watchlists Feature - DJI-426', () => {
     await expect(syncButton).toBeVisible();
   });
 
+  // The control has to go back to idle when the request ends (DJI-571).
+  //
+  // htmx adds `requestClass` to the issuing element while a request is in
+  // flight and is supposed to remove it on the way out. It does not, on any
+  // control that also carries hx-disabled-elt, because 1.9.10 spends one
+  // requestCount per element on both jobs and releases it once: the element is
+  // counted twice and settled once. The button was then left at opacity 0.7
+  // with cursor: wait for the rest of the session, claiming to be busy long
+  // after the sync finished.
+  //
+  // Asserted on the rendered control rather than on the class alone, because
+  // the stylesheet is what turns the class into the lie an operator reads.
+  // The three assertions auto-retry, so they catch the class sticking for any
+  // reason, not just the one this test was written against.
+  test('14b. Sync button returns to idle once the request has answered', async ({ authenticatedPage: page }) => {
+    const { id } = await createWatchlistViaAPI(page, {
+      name: 'Sync Idle Test',
+      source_type: 'rss_feed',
+      source_uri: `https://sync-idle-${Date.now()}.example.com/feed`
+    });
+    expect(id).toBeTruthy();
+
+    await page.goto('/watchlists');
+    await waitForHtmx(page);
+
+    const syncButton = page.locator(`#watchlist-${id} button:has-text("Sync")`);
+    await expect(syncButton).toBeVisible();
+
+    await syncButton.click();
+
+    // The dimming has to be gone, not merely faded: the request has answered.
+    await expect(syncButton).not.toHaveClass(/htmx-request/, { timeout: 10000 });
+    await expect(syncButton).toHaveCSS('opacity', '1', { timeout: 10000 });
+    await expect(syncButton).toHaveCSS('cursor', 'pointer', { timeout: 10000 });
+    // hx-disabled-elt releases correctly; a control stuck disabled would be
+    // the next defect this same control could produce.
+    await expect(syncButton).toBeEnabled({ timeout: 10000 });
+  });
+
   // ========== Edit Tests ==========
 
   test('15. Edit button opens form with pre-filled data', async ({ authenticatedPage: page }) => {

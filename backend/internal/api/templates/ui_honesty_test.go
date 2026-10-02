@@ -82,20 +82,28 @@ func TestAttachReplyLandsInTheConsoleRegionNotTheButton(t *testing.T) {
 			"not a live region, so a screen-reader user never hears it (DJI-532)")
 }
 
-// hx-disabled-elt is deliberately absent from the Attach button.
+// hx-disabled-elt is still absent from the Attach button, and the reason it
+// reads as one is worth keeping straight: the attribute does work.
 //
-// It reads like the pending state, and on this htmx build it is not one. Live on
-// 2026-10-01: the attribute never applies `disabled`, and htmx's own
-// `htmx-request` class - `opacity: 0.7; cursor: wait !important` - is added to
-// the issuing element and, because the reply now swaps into a different
-// target, never removed. The control is left permanently dimmed and claiming to
-// be busy. The watchlist SYNC button, which has carried the attribute all
-// along, behaves identically, so this is the app-wide indicator lifecycle
-// rather than anything about Attach.
+// It was recorded as inert on 2026-10-01 on the strength of the Attach button
+// measuring `disabled: false` throughout a request - but Attach carries no
+// hx-disabled-elt attribute at all, so that measured the attribute's absence
+// rather than its behaviour. Measured on the watchlist SYNC button, which has
+// carried the attribute throughout: `disabled` is applied when the request
+// starts and cleared when it answers, correctly, 9ms apart.
 //
-// A test here would only assert that an inert attribute is still present. The
-// lifecycle is filed as DJI-563; if it lands and hx-disabled-elt starts working,
-// this is the place to write down what "pending" has to mean.
+// What is genuinely broken beside it is htmx's own indicator. `htmx-request` -
+// `opacity: 0.7; cursor: wait !important` - was added to every such control and
+// never removed, because htmx 1.9.10 spends one `requestCount` per element on
+// two jobs, and an element that is both the indicator and its own disabled
+// element is counted twice and released once. That is DJI-571, it is app-wide,
+// and indicator_lifecycle_test.go guards both halves of the fix.
+//
+// So the attribute stays off Attach deliberately rather than because it is
+// dead. Adding it would be a UX change to a control DJI-532 already pinned. If
+// it is added, the pending state it buys has to mean "this control will not fire
+// again until the request lands", which is the property the new guard keeps
+// true for the controls that do carry it.
 
 // browseEmptyStateRE isolates the two arms of the empty state: the no-results
 // search on the left, the never-scanned library on the right.
