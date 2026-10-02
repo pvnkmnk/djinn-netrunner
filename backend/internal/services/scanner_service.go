@@ -46,6 +46,14 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 		indexed  int
 		failed   int
 		firstErr error
+
+		// Fingerprinting is best-effort and never fails a scan, so its
+		// outcome is counted rather than returned. Both call sites used to drop
+		// fpErr on the floor - a scan against an image with no fpcalc reported
+		// a clean "Finished scan" and wrote an empty string into every
+		// fingerprint column, with nothing anywhere saying so.
+		fingerprinted   int
+		fingerprintFail int
 	)
 
 	for i := 0; i < numWorkers; i++ {
@@ -58,7 +66,8 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 					return
 				default:
 				}
-				if err := s.processFile(job.Path, job.LibraryID); err != nil {
+				fp, err := s.processFile(job.Path, job.LibraryID)
+				if err != nil {
 					slog.Error("Error indexing file", "library_id", job.LibraryID, "path", job.Path, "error", err)
 					mu.Lock()
 					failed++
@@ -70,6 +79,12 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 				}
 				mu.Lock()
 				indexed++
+				switch fp {
+				case fingerprintStored:
+					fingerprinted++
+				case fingerprintFailed:
+					fingerprintFail++
+				}
 				mu.Unlock()
 			}
 		}()
@@ -103,7 +118,20 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 		return fmt.Errorf("scan cancelled with %d of %d file(s) indexed: %w", indexed, indexed+failed, ctxErr)
 	}
 
-	slog.Info("Finished scan", "library_id", libraryID, "path", path, "indexed", indexed, "failed", failed)
+	slog.Info("Finished scan", "library_id", libraryID, "path", path,
+		"indexed", indexed, "failed", failed,
+		"fingerprinted", fingerprinted, "fingerprint_failed", fingerprintFail)
+
+	// Spelled out rather than left to the counter: "fingerprinted 0 of 812" is
+	// a number, while this is the sentence an operator needs at 3am - the image
+	// is missing its fingerprint binary, and nothing else in the product is
+	// going to say so.
+	if fingerprintFail > 0 {
+		slog.Warn("Fingerprinting did not run for every indexed file",
+			"library_id", libraryID, "path", path,
+			"indexed", indexed, "fingerprint_failed", fingerprintFail,
+			"hint", "a missing fpcalc is a deployment fault: install chromaprint in backend/Dockerfile")
+	}
 	if err != nil {
 		return err
 	}
@@ -113,11 +141,27 @@ func (s *ScannerService) ScanLibrary(ctx context.Context, libraryID uuid.UUID, p
 	return nil
 }
 
-func (s *ScannerService) processFile(path string, libraryID uuid.UUID) error {
+// fingerprintOutcome records what happened when the scanner tried to
+// fingerprint one file, for the scan-level summary above. It is deliberately
+// not an error: a file whose audio cannot be fingerprinted is still worth
+// indexing for its tags.
+type fingerprintOutcome int
+
+const (
+	// fingerprintKept means the track already had a fingerprint and none was
+	// computed - the backfill case, and neither a success nor a failure.
+	fingerprintKept fingerprintOutcome = iota
+	// fingerprintStored means a real fingerprint was computed and saved.
+	fingerprintStored
+	// fingerprintFailed means fpcalc was asked and did not produce one.
+	fingerprintFailed
+)
+
+func (s *ScannerService) processFile(path string, libraryID uuid.UUID) (fingerprintOutcome, error) {
 	// Extract metadata
 	meta, err := s.metadata.Extract(path)
 	if err != nil {
-		return fmt.Errorf("extract metadata: %w", err)
+		return fingerprintKept, fmt.Errorf("extract metadata: %w", err)
 	}
 
 	// Compute hash
@@ -131,8 +175,16 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) error {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		// Track not found — new, fingerprint and create
+		outcome := fingerprintStored
 		fp, _, fpErr := s.metadata.Fingerprint(path)
-		if fpErr == nil {
+		if fpErr != nil {
+			// Logged rather than dropped. fpcalc being absent is the single
+			// most common cause and it is a deployment fault, not a bad file:
+			// the file is still indexed, but the empty fingerprint column is
+			// otherwise indistinguishable from a track nobody ever tried.
+			slog.Warn("Fingerprinting failed while indexing", "path", path, "error", fpErr)
+			outcome = fingerprintFailed
+		} else {
 			fingerprint = fp
 		}
 		// Path is NOT NULL with a unique index: leaving it empty makes the first
@@ -155,21 +207,26 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) error {
 			track.Year = &meta.Year
 		}
 		if createErr := s.db.Create(&track).Error; createErr != nil {
-			return fmt.Errorf("save track: %w", createErr)
+			return outcome, fmt.Errorf("save track: %w", createErr)
 		}
-		return nil
+		return outcome, nil
 	case err != nil:
-		return fmt.Errorf("look up track: %w", err)
+		return fingerprintKept, fmt.Errorf("look up track: %w", err)
 	}
 
 	// Track exists — preserve fingerprint if already set; only recompute if missing
+	outcome := fingerprintKept
 	if existing.Fingerprint != "" {
 		fingerprint = existing.Fingerprint
 	} else {
 		// Track was indexed before Phase 8 introduced fingerprinting — backfill it
 		fp, _, fpErr := s.metadata.Fingerprint(path)
-		if fpErr == nil {
+		if fpErr != nil {
+			slog.Warn("Fingerprinting failed while backfilling", "path", path, "error", fpErr)
+			outcome = fingerprintFailed
+		} else {
 			fingerprint = fp
+			outcome = fingerprintStored
 		}
 	}
 
@@ -194,9 +251,9 @@ func (s *ScannerService) processFile(path string, libraryID uuid.UUID) error {
 		existing.Year = &meta.Year
 	}
 	if err := s.db.Save(&existing).Error; err != nil {
-		return fmt.Errorf("update track: %w", err)
+		return outcome, fmt.Errorf("update track: %w", err)
 	}
-	return nil
+	return outcome, nil
 }
 
 func (s *ScannerService) PruneTracks(ctx context.Context, libraryID uuid.UUID, jobID uint64) error {

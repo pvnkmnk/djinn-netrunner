@@ -30,13 +30,21 @@ default).
 - A Soulseek account for slskd (acquisition is inert without one)
 - ~5 GB free for images plus room for the music library and downloads
 
-Acoustic fingerprinting is the one optional capability with a missing
-ingredient: it shells out to `fpcalc` (Chromaprint), which **the image
-does not install**. Imports are unaffected — each one logs
-`Fingerprinting failed: fpcalc failed: …` as a WARN and carries on, and
-hash-based dedup still works — but AcoustID enrichment never runs, because
-the lookup only fires when a fingerprint exists. Setting `ACOUSTID_API_KEY`
-on its own therefore changes nothing.
+Acoustic fingerprinting shells out to `fpcalc` (Chromaprint), which the image
+installs and the build asserts is present — an image without it cannot be
+built at all. Fingerprinting runs on every scanned and imported file, and each
+scan reports how many files it fingerprinted. AcoustID enrichment is the one
+optional step left: it needs `ACOUSTID_API_KEY`, and without a key the lookup is
+not attempted and the track is recorded as **unscored** rather than as a zero.
+
+`acoustid_score` is deliberately nullable. `NULL` means the lookup never produced
+a measurement — no key, no fingerprint, the lookup failed, or AcoustID had no
+match — and `0` means the lookup ran and returned that confidence. The two are
+different facts, and before this was fixed the column was a plain `int`, so every
+track in every deployment reported a score of zero that had never been measured.
+Deployments upgrading through that version had their legacy zeros backfilled to
+`NULL` on first start; a zero written after that is a real measurement and is
+left alone.
 
 ## 1. Configure
 
@@ -393,7 +401,10 @@ only the account password is accepted.
 | slskd exits immediately / downloads unwritable | `volume-init` must run before slskd; it chowns the shared volumes to UID 1000. Keep it in the stack. |
 | `port is already allocated` | Another stack holds a published port. `APP_HTTP_PORT` covers the HTTP one, but the collision that usually blocks the whole bring-up is postgres: whatever already listens on 5432 (many hosts run a system or containerised postgres) fails the `up` before anything starts. Set `PG_HOST_PORT=15432` in `.env` — the stack itself reaches postgres over the compose network and ignores it, since the publish is for host-side debugging only. `NAVIDROME_PORT` does the same for the optional media server. Setting these beats stopping someone else's stack. |
 | Music plays but nothing rescans in an external server | Set `NAVIDROME_URL` (+ user/pass) so the worker has a library client; `/api/health` then reports a `navidrome` check. |
-| Every import logs `Fingerprinting failed: fpcalc failed: exec: "fpcalc": executable file not found in $PATH` | Expected, not a fault: the image ships no Chromaprint binary (see Prerequisites). The import completes and hash dedup still works; fingerprint dedup and AcoustID enrichment are simply unavailable, so `ACOUSTID_API_KEY` alone changes nothing. Install `fpcalc` in `backend/Dockerfile` if you want them. |
+| Every import logs `Audio fingerprinting failed: fpcalc failed: exec: "fpcalc": executable file not found in $PATH` | Not expected — the image installs Chromaprint and the build fails without it, so this means the container is not running the built image. Check `docker compose … exec ops-worker command -v fpcalc`; an empty answer means the container predates this change and needs `up -d --build`. |
+| `Finished scan` reports `fingerprinted=0 fingerprint_failed=0` | A scan whose files already carried a fingerprint and needed no backfill. Compare against `indexed`: if `fingerprinted + fingerprint_failed` is below `indexed` on a first scan, the files were already fingerprinted. |
+| A scan logs `Fingerprinting did not run for every indexed file` with `fingerprint_failed=N` | fpcalc ran and produced nothing for N files — unreadable, truncated, or not real audio. The per-file line names each path and the underlying error. |
+| An acquisition shows `unscored` where a score was expected | `ACOUSTID_API_KEY` is empty, or the lookup failed. Both are logged: the worker logs `AcoustID lookup failed`, and the job's own log carries the error too. `unscored` is the honest value — it is what stops a failed lookup reading as a confident zero. |
 | yt-dlp fallback fails with a proxy/403 error for a site you trust | The egress boundary's allowlist refused it. Add the host to `ops/squid/allowed-domains.txt` and `docker compose ... up -d egress-proxy` to reload. To run without the boundary entirely (not recommended), set `YTDLP_PROXY=` empty in `.env`. |
 | Every acquisition fails with `ssrf: no public IP found for netrunner-slskd` | `ALLOW_PRIVATE_TARGETS` is missing or `false`. slskd is reached by its compose service name, which resolves to a private IP and trips the SSRF guard. `docker-compose.yml` sets it for both app services; keep it if you write your own compose file. |
 | Every acquisition fails with `401 Unauthorized`, and slskd logs `Unknown API key beginning with: …` | The key is half-wired: `SLSKD_API_KEY` reached the app but not slskd, so the two sides disagree. It must be set on the slskd service as well. Set it once in `.env` and let `docker-compose.yml` pass it to both. (`SLSKD_API_URL`-era guides suggest `web.authentication.api_keys`; that map is awkward to express as an env var, whereas slskd's primary key is a plain `SLSKD_API_KEY`.) |

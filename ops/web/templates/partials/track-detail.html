@@ -85,12 +85,22 @@
                     <span class="detail-value mono small">{{ track.FileHash | escape }}</span>
                 </div>
                 {% endif %}
-                {% if track.Fingerprint %}
+                {# Always rendered once Technical Details shows at all. #}
+                {# The row used to be conditional on the value being non-empty, so an #}
+                {# unfingerprinted track and a fingerprinted one rendered the same page #}
+                {# minus a line, and an omission reads as "nothing to report". #}
+                {# That mattered: for the project's whole history the image shipped no #}
+                {# fpcalc, so every fingerprint was missing globally and this row said #}
+                {# nothing about it. Several one-line comments because pongo2 forbids a #}
+                {# newline inside a single comment. #}
                 <div class="detail-field full-width">
                     <span class="detail-label">AcoustID Fingerprint</span>
+                    {% if track.Fingerprint %}
                     <span class="detail-value mono small">{{ track.Fingerprint | escape }}</span>
+                    {% else %}
+                    <span class="detail-value small">not fingerprinted</span>
+                    {% endif %}
                 </div>
-                {% endif %}
             </div>
         </div>
         {% endif %}

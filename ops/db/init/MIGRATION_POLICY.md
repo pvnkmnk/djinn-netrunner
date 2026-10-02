@@ -30,13 +30,16 @@ For idempotency, use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
 ```sql
 -- Example: add nullable column to existing table
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS fingerprint TEXT;
-ALTER TABLE acquisitions ADD COLUMN IF NOT EXISTS acoustid_score INT DEFAULT 0;
+-- Nullable on purpose: NULL means never scored, 0 means a measured zero.
+-- Do not add a DEFAULT - it would let a bare INSERT invent a measurement.
+ALTER TABLE acquisitions ADD COLUMN IF NOT EXISTS acoustid_score INT;
 ALTER TABLE libraries ADD COLUMN IF NOT EXISTS max_size_bytes BIGINT;
 ALTER TABLE libraries ADD COLUMN IF NOT EXISTS quota_alert_at INT;
 ```
 
 ## Known Fields Added via AutoMigrate (Phase 8)
 - `tracks.fingerprint` — AcoustID audio fingerprint
-- `acquisitions.acoustid_score` — AcoustID confidence score (0-100)
+- `acquisitions.acoustid_score` — AcoustID confidence score (0-100); **nullable**, where
+  `NULL` means no lookup ever produced a measurement and `0` means a measured zero
 - `libraries.max_size_bytes` — Optional per-library disk quota cap
 - `libraries.quota_alert_at` — Alert threshold percentage (default 80)

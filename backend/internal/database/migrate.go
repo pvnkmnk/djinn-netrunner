@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -34,6 +35,22 @@ func Migrate(db *gorm.DB) error {
 		// AutoMigrate is additive and won't drop column defaults.
 		if db.Migrator().HasTable("quality_profiles") && db.Migrator().HasColumn("quality_profiles", "prefer_web_releases") {
 			db.Exec("ALTER TABLE quality_profiles ALTER COLUMN prefer_web_releases DROP DEFAULT")
+		}
+
+		// Remove the DEFAULT 0 on acoustid_score. The model made the column
+		// nullable because "never scored" and "scored zero" are different facts,
+		// and a default of 0 makes every writer that omits the column claim a
+		// measurement nobody took - which is how all 144 legacy rows came to
+		// report a score while no lookup had ever run. AutoMigrate won't drop it,
+		// so a deployed database would otherwise keep inventing zeros forever.
+		if db.Migrator().HasTable("acquisitions") && db.Migrator().HasColumn("acquisitions", "acoustid_score") {
+			// Checked, not discarded: if the ALTER fails the default survives and
+			// every later insert that omits the column records a zero nobody
+			// measured - the exact confusion this slice exists to remove, and one
+			// the backfill below can never repair because it runs only once.
+			if err := db.Exec("ALTER TABLE acquisitions ALTER COLUMN acoustid_score DROP DEFAULT").Error; err != nil {
+				return fmt.Errorf("failed to drop the acoustid_score default: %w", err)
+			}
 		}
 
 		// Convert legacy ENUM columns to text so GORM AutoMigrate can manage them.
@@ -172,6 +189,56 @@ func Migrate(db *gorm.DB) error {
 					WHERE tr.artist_id = monitored_artists.id AND tr.status = 'acquired'
 				)`).Error; err != nil {
 			return fmt.Errorf("failed to backfill artist release counters: %w", err)
+		}
+	}
+
+	// Backfill acoustics: every acquisition claims an AcoustID score of 0 and
+	// not one of them was ever scored. The column was a plain int, so "the
+	// lookup never ran" and "the lookup scored zero" were the same stored
+	// value, and no fpcalc in the image meant nothing was ever fingerprinted -
+	// 144 rows reading as a real, permanently-empty score.
+	//
+	// AcoustIDScore is a nullable pointer now, and every zero predating a
+	// working fpcalc is genuinely unscored. A lookup that returns a result at
+	// all returns one above zero confidence, but the stored integer is
+	// truncated, so a very low confidence can still land on 0 - which is
+	// exactly the value the acceptance criteria want to keep distinct from
+	// "never asked". So this runs once, behind a marker, and a zero written
+	// afterwards by a working lookup is left alone.
+	//
+	// The marker check, the backfill and the marker write are one transaction.
+	// Run as separate statements they leave a window in which the marker is absent
+	// while the UPDATE has already run: a second process booting concurrently (the
+	// worker starts on its own schedule, and `database.Migrate` only runs in the
+	// server) would repeat the backfill, or a real low-confidence zero committed
+	// mid-window would be nulled with nothing left to restore it. Committing them
+	// together means the marker exists exactly when the backfill has been applied,
+	// so "the backfill ran once" is a fact rather than a hopeful pair of writes.
+	if db.Migrator().HasTable("acquisitions") {
+		const marker = "acoustid_unscored_backfill_v1"
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			var done int64
+			if err := tx.Table("settings").Where("key = ?", marker).Count(&done).Error; err != nil {
+				return fmt.Errorf("failed to read %s marker: %w", marker, err)
+			}
+			if done != 0 {
+				return nil
+			}
+			if err := tx.Exec(
+				`UPDATE acquisitions SET acoustid_score = NULL WHERE acoustid_score = 0`,
+			).Error; err != nil {
+				return fmt.Errorf("failed to backfill unscored acoustid scores: %w", err)
+			}
+			if err := tx.Exec(
+				`INSERT INTO settings (key, value, type, updated_at) VALUES (?, ?, ?, ?)
+				 ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+				marker, "1", "string", time.Now(),
+			).Error; err != nil {
+				return fmt.Errorf("failed to record %s marker: %w", marker, err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 
