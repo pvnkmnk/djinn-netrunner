@@ -196,7 +196,7 @@ func TestEachCandidateIsItsOwnConfirmControl(t *testing.T) {
 
 	assert.Contains(t, body, `hx-post="/api/artists"`,
 		"choosing a candidate has to post back to Add")
-	assert.Contains(t, body, `data-mbid="{{ candidate.ID | escape }}"`,
+	assert.Contains(t, body, `data-mbid="{{ candidate.ID }}"`,
 		"the chosen candidate's ID must be sent, or Add falls back to the top result")
 	assert.Regexp(t, `musicbrainz_id: this\.dataset\.mbid`, body,
 		"the ID has to reach the request, not just sit on the element")
@@ -214,7 +214,7 @@ func TestCandidateRetryCarriesTheChosenQualityProfile(t *testing.T) {
 
 	retry := body[strings.Index(body, "Try again")-600:]
 	retry = retry[:strings.Index(retry, "Try again")]
-	assert.Contains(t, retry, `data-profile-id="{{ quality_profile_id | escape }}"`,
+	assert.Contains(t, retry, `data-profile-id="{{ quality_profile_id }}"`,
 		"the retry button must carry the profile forward, or it is silently dropped")
 	assert.Regexp(t, `quality_profile_id: this\.dataset\.profileId`, retry,
 		"the carried profile must actually reach the request")
@@ -225,6 +225,11 @@ func TestCandidateRetryCarriesTheChosenQualityProfile(t *testing.T) {
 // containing one produced invalid JSON and the confirm never fired. Values live
 // in data-* attributes now, where HTML escaping is correct and htmx builds a
 // real object, so there is no JSON text to get wrong.
+//
+// These assertions name the attribute and the value, not the escaping: the
+// engine escapes every value exactly once on its own (escaping_test.go), so
+// spelling a filter here would only pin the second escape DJI-590 removed. The
+// subject of this test is *where* the value lives.
 func TestCandidateControlsDoNotSerialiseValuesAsJSONText(t *testing.T) {
 	body := readTemplate(t, "partials/artist-candidates.html")
 
@@ -232,7 +237,7 @@ func TestCandidateControlsDoNotSerialiseValuesAsJSONText(t *testing.T) {
 		"a JSON object in an attribute cannot be escaped correctly for both contexts at once")
 	assert.Contains(t, body, `hx-vals='js:{name: this.dataset.artistName`,
 		"the candidate name must be read off the element, not serialised into the attribute")
-	assert.Contains(t, body, `data-artist-name="{{ candidate.Name | escape }}"`,
+	assert.Contains(t, body, `data-artist-name="{{ candidate.Name }}"`,
 		"the name must live in an attribute, where HTML escaping is the right one")
 }
 

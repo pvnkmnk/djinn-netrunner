@@ -1,6 +1,6 @@
 <div class="modal-detail" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-detail-header">
-        <h3 id="modal-title">{{ track.Title | escape }}</h3>
+        <h3 id="modal-title">{{ track.Title }}</h3>
         <button class="btn btn-sm" data-close-modal aria-label="Close details">&times;</button>
     </div>
     <div class="modal-detail-body">
@@ -8,9 +8,9 @@
             <div class="np-buttons">
                 <button class="btn np-play-btn"
                         data-track-id="{{ track.ID }}"
-                        data-track-title="{{ track.Title|escape }}"
-                        data-track-artist="{{ track.Artist|escape }}"
-                        aria-label="Play {{ track.Title | escape }}">▶ Play</button>
+                        data-track-title="{{ track.Title }}"
+                        data-track-artist="{{ track.Artist }}"
+                        aria-label="Play {{ track.Title }}">▶ Play</button>
             </div>
             <div class="np-progress">
                 <span class="np-current">0:00</span>
@@ -28,13 +28,13 @@
             {% if track.Artist %}
             <div class="detail-field">
                 <span class="detail-label">Artist</span>
-                <span class="detail-value">{{ track.Artist | escape }}</span>
+                <span class="detail-value">{{ track.Artist }}</span>
             </div>
             {% endif %}
             {% if track.Album %}
             <div class="detail-field">
                 <span class="detail-label">Album</span>
-                <span class="detail-value">{{ track.Album | escape }}</span>
+                <span class="detail-value">{{ track.Album }}</span>
             </div>
             {% endif %}
             <div class="detail-field">
@@ -43,7 +43,7 @@
             </div>
             <div class="detail-field">
                 <span class="detail-label">Format</span>
-                <span class="detail-value">{{ track.Format | escape }}</span>
+                <span class="detail-value">{{ track.Format }}</span>
             </div>
             <div class="detail-field">
                 <span class="detail-label">File Size</span>
@@ -62,13 +62,13 @@
                 {% if track.Genre %}
                 <div class="detail-field">
                     <span class="detail-label">Genre</span>
-                    <span class="detail-value">{{ track.Genre | escape }}</span>
+                    <span class="detail-value">{{ track.Genre }}</span>
                 </div>
                 {% endif %}
                 {% if track.Composer %}
                 <div class="detail-field">
                     <span class="detail-label">Composer</span>
-                    <span class="detail-value">{{ track.Composer | escape }}</span>
+                    <span class="detail-value">{{ track.Composer }}</span>
                 </div>
                 {% endif %}
             </div>
@@ -82,7 +82,7 @@
                 {% if track.FileHash %}
                 <div class="detail-field full-width">
                     <span class="detail-label">File Hash</span>
-                    <span class="detail-value mono small">{{ track.FileHash | escape }}</span>
+                    <span class="detail-value mono small">{{ track.FileHash }}</span>
                 </div>
                 {% endif %}
                 {# Always rendered once Technical Details shows at all. #}
@@ -96,7 +96,7 @@
                 <div class="detail-field full-width">
                     <span class="detail-label">AcoustID Fingerprint</span>
                     {% if track.Fingerprint %}
-                    <span class="detail-value mono small">{{ track.Fingerprint | escape }}</span>
+                    <span class="detail-value mono small">{{ track.Fingerprint }}</span>
                     {% else %}
                     <span class="detail-value small">not fingerprinted</span>
                     {% endif %}
@@ -108,20 +108,20 @@
         {% if track.EnrichmentProvenance %}
         <div class="detail-section">
             <h4>Enrichment Provenance</h4>
-            <div class="detail-value mono small">{{ track.EnrichmentProvenance | escape }}</div>
+            <div class="detail-value mono small">{{ track.EnrichmentProvenance }}</div>
         </div>
         {% endif %}
 
         {% if track.CoverURL %}
         <div class="detail-section">
             <h4>Cover Art</h4>
-            <img src="{{ track.CoverURL | escape }}" alt="Cover art for {{ track.Album | escape }}" class="detail-cover" loading="lazy">
+            <img src="{{ track.CoverURL }}" alt="Cover art for {{ track.Album }}" class="detail-cover" loading="lazy">
         </div>
         {% endif %}
 
         <div class="detail-section">
             <h4>File Location</h4>
-            <div class="detail-value mono small">{{ track.Path | escape }}</div>
+            <div class="detail-value mono small">{{ track.Path }}</div>
         </div>
     </div>
 </div>

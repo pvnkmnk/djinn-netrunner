@@ -16,7 +16,7 @@
                 <select id="quality_profile_id" name="quality_profile_id">
                     <option value="">Use global default</option>
                     {% for profile in profiles %}
-                    <option value="{{ profile.ID }}">{{ profile.Name | escape }}</option>
+                    <option value="{{ profile.ID }}">{{ profile.Name }}</option>
                     {% endfor %}
                 </select>
             </div>

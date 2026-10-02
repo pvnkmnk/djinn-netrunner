@@ -14,9 +14,9 @@
         {% for user in Users %}
         <tr>
             <td>{{ user.ID }}</td>
-            <td>{{ user.Email|escape }}</td>
+            <td>{{ user.Email }}</td>
             <td>
-                <span class="role-badge role-{{ user.Role|escape }}">{{ user.Role|escape }}</span>
+                <span class="role-badge role-{{ user.Role }}">{{ user.Role }}</span>
             </td>
             <td>{{ user.CreatedAt|date:"2006-01-02 15:04" }}</td>
             <td>{% if user.LastLoginAt.IsZero %}never{% else %}{{ user.LastLoginAt|date:"2006-01-02 15:04" }}{% endif %}</td>
@@ -25,13 +25,13 @@
                         hx-patch="/api/admin/users/{{ user.ID }}/role"
                         hx-vals='{"role": "{% if user.Role == "admin" %}user{% else %}admin{% endif %}"}'
                         hx-swap="none"
-                        hx-confirm="Toggle role for {{ user.Email|escape }}?"
-                        aria-label="Toggle role for {{ user.Email|escape }}">Toggle Role</button>
+                        hx-confirm="Toggle role for {{ user.Email }}?"
+                        aria-label="Toggle role for {{ user.Email }}">Toggle Role</button>
                 <button class="btn btn-sm btn-danger"
                         hx-delete="/api/admin/users/{{ user.ID }}"
                         hx-swap="none"
-                        hx-confirm="Delete user {{ user.Email|escape }}?"
-                        aria-label="Delete user {{ user.Email|escape }}">Delete</button>
+                        hx-confirm="Delete user {{ user.Email }}?"
+                        aria-label="Delete user {{ user.Email }}">Delete</button>
             </td>
         </tr>
         {% endfor %}

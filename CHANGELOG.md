@@ -25,6 +25,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **Every value a template renders is escaped exactly once.** pongo2 autoescapes by
+  default and the engine never disables it, and the autoescape path *is* the `escape`
+  filter — so the 130 explicit `| escape` filters across 21 templates ran it a second
+  time and the operator read the entity instead of the character. A monitored artist
+  named `Converge & Chelsea Wolfe` painted as `Converge &amp; Chelsea Wolfe` on the
+  artists card, in that card's two `aria-label`s and in its remove confirmation; `'`
+  became `&#39;`, which real data hits more often than `&`. Deleting the filters is the
+  whole fix: each value is now escaped once, in one place, by the engine. It is only
+  correct while the engine keeps escaping, so three guards hold it — the real partials
+  are rendered through the real engine with a value carrying every character the filter
+  touches and asserted escaped exactly once in text *and* in attributes, no template may
+  apply the filter (or its registered `e` alias) again, and no non-test file may call
+  `SetAutoescape(false)`, which is a package-level global and would disarm escaping for
+  the entire application at once. A fourth guard keeps the mirror defect out: `| safe`
+  is the one filter that can turn a database row back into markup, and no template uses
+  it. Two assertions written for earlier slices had pinned the double escape as the
+  contract — an artist-picker guard spelled the filter out inside the attribute it was
+  checking — and now name the attribute and the value instead, because the engine owns
+  the escaping.
 - **A session can be ended from the app, and the header says whose it is.** The sign-out
   route and its tests predate the first playtest, but no template rendered a control: the
   header held the wordmark and nine links, so the only way to leave was to close the
