@@ -44,7 +44,13 @@ func Migrate(db *gorm.DB) error {
 		// report a score while no lookup had ever run. AutoMigrate won't drop it,
 		// so a deployed database would otherwise keep inventing zeros forever.
 		if db.Migrator().HasTable("acquisitions") && db.Migrator().HasColumn("acquisitions", "acoustid_score") {
-			db.Exec("ALTER TABLE acquisitions ALTER COLUMN acoustid_score DROP DEFAULT")
+			// Checked, not discarded: if the ALTER fails the default survives and
+			// every later insert that omits the column records a zero nobody
+			// measured - the exact confusion this slice exists to remove, and one
+			// the backfill below can never repair because it runs only once.
+			if err := db.Exec("ALTER TABLE acquisitions ALTER COLUMN acoustid_score DROP DEFAULT").Error; err != nil {
+				return fmt.Errorf("failed to drop the acoustid_score default: %w", err)
+			}
 		}
 
 		// Convert legacy ENUM columns to text so GORM AutoMigrate can manage them.
@@ -199,25 +205,40 @@ func Migrate(db *gorm.DB) error {
 	// exactly the value the acceptance criteria want to keep distinct from
 	// "never asked". So this runs once, behind a marker, and a zero written
 	// afterwards by a working lookup is left alone.
+	//
+	// The marker check, the backfill and the marker write are one transaction.
+	// Run as separate statements they leave a window in which the marker is absent
+	// while the UPDATE has already run: a second process booting concurrently (the
+	// worker starts on its own schedule, and `database.Migrate` only runs in the
+	// server) would repeat the backfill, or a real low-confidence zero committed
+	// mid-window would be nulled with nothing left to restore it. Committing them
+	// together means the marker exists exactly when the backfill has been applied,
+	// so "the backfill ran once" is a fact rather than a hopeful pair of writes.
 	if db.Migrator().HasTable("acquisitions") {
 		const marker = "acoustid_unscored_backfill_v1"
-		var done int64
-		if err := db.Table("settings").Where("key = ?", marker).Count(&done).Error; err != nil {
-			return fmt.Errorf("failed to read %s marker: %w", marker, err)
-		}
-		if done == 0 {
-			if err := db.Exec(
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			var done int64
+			if err := tx.Table("settings").Where("key = ?", marker).Count(&done).Error; err != nil {
+				return fmt.Errorf("failed to read %s marker: %w", marker, err)
+			}
+			if done != 0 {
+				return nil
+			}
+			if err := tx.Exec(
 				`UPDATE acquisitions SET acoustid_score = NULL WHERE acoustid_score = 0`,
 			).Error; err != nil {
 				return fmt.Errorf("failed to backfill unscored acoustid scores: %w", err)
 			}
-			if err := db.Exec(
+			if err := tx.Exec(
 				`INSERT INTO settings (key, value, type, updated_at) VALUES (?, ?, ?, ?)
 				 ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
 				marker, "1", "string", time.Now(),
 			).Error; err != nil {
 				return fmt.Errorf("failed to record %s marker: %w", marker, err)
 			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 
