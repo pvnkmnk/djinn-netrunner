@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,132 +16,240 @@ import (
 // This file guards one invariant: every value a template renders is escaped
 // exactly once.
 //
-// Pongo2 autoescapes by default - `var autoescape = true` at package level, and
-// `newExecutionContext` copies it onto every execution context - and this engine
-// never calls SetAutoescape(false). The autoescape path *is* the escape filter:
-// variable.go applies `filters["escape"]` when the value is a string and no
-// `safe` filter was applied. So an explicit `{{ x | escape }}` ran the filter a
-// second time and the operator read the entity.
+// pongo2 autoescapes by default - `var autoescape = true` at package level,
+// copied onto every execution context - and this engine never disarms it. The
+// autoescape path *is* the escape filter, so an explicit `{{ x | escape }}`
+// ran a second pass: an artist named `Converge & Chelsea Wolfe` reached the
+// artists card as `Converge &amp; Chelsea Wolfe`, and 130 filters across 21
+// templates did the same in text, attributes and aria-labels alike. The fix
+// was to delete every one of them (DJI-590).
 //
-// That is what shipped: a monitored artist named `Converge & Chelsea Wolfe`
-// painted as `Converge &amp; Chelsea Wolfe` on the artists card, `'` became
-// `&#39;`, and 130 explicit filters across 21 templates did it in text and in
-// aria-label, data-* and value attributes alike. The filter is byte-for-byte
-// redundant with what the engine already does, so the fix was to delete it.
-//
-// Deleting it is only correct while the engine keeps escaping. Hence three
-// guards rather than one: the escaping is asserted behaviourally against the
-// real partials, the filter cannot come back, and the one call that would
-// disarm the engine cannot appear in a non-test file.
+// Two guards hold that fix in place. Every partial is rendered with hostile
+// data and must carry it escaped exactly once, and the template tree is
+// scanned for every spelling that escapes twice or disarms the engine. The
+// engine's own disarm switch (SetAutoescape(false)) is deliberately not
+// scanned in Go code: with it off the render table fails, which is the same
+// detection without a second walker to maintain.
 
-// escapedOnce is the exact output of pongo2's escape filter for the five
-// characters it touches (filters_builtin.go: &, >, <, " and ' in that order).
+// escapingProbe carries the five characters pongo2's escape filter touches
+// (`&`, `>`, `<`, `"`, `'`) in text and in attribute position.
 const escapingProbe = `Tom & Jerry <script>alert("x")</script> it's`
 
-var escapingProbeEscapedOnce = []string{
-	"Tom &amp; Jerry",
-	"&lt;script&gt;",
-	"&quot;x&quot;",
-	"it&#39;s",
+// escapingProbeWant is the probe after exactly one escape. A row that cannot
+// find it skipped its value rather than escaped it.
+const escapingProbeWant = "Tom &amp; Jerry"
+
+// doubleEscapedMarkers are the second-pass forms of each escaped character:
+// any one of them in a rendered partial means a value was escaped twice.
+var doubleEscapedMarkers = []string{
+	escapeHTML("&amp;"),
+	escapeHTML("&lt;"),
+	escapeHTML("&gt;"),
+	escapeHTML("&quot;"),
+	escapeHTML("&#39;"),
 }
 
-// escapingProbeEscapedTwice is the same characters after a second pass. This is
-// the defect itself, and every assertion below is the difference between the two
-// lists.
-var escapingProbeEscapedTwice = []string{
-	"Tom &amp;amp; Jerry",
-	"&amp;lt;script&amp;gt;",
-	"&amp;quot;x&amp;quot;",
-	"it&amp;#39;s",
+// partialProbes is the hostile-data row for every partial in the tree, keyed
+// by template path. Every string in a context comes from escapingProbe, so a
+// row exercises every value its partial renders. The test fails when a partial
+// exists without a row, so adding a template is adding one entry here.
+var partialProbes = map[string]map[string]any{
+	"partials/acquire-form.html": {
+		"error": escapingProbe, "artist": escapingProbe, "album": escapingProbe, "title": escapingProbe,
+		"profiles": []map[string]any{probeProfile()},
+	},
+	"partials/admin_audit.html": {
+		"Entries": []map[string]any{{
+			"CreatedAt": time.Now(), "Action": escapingProbe, "ActorID": "7",
+			"TargetType": escapingProbe, "TargetID": escapingProbe, "Metadata": escapingProbe,
+		}},
+	},
+	"partials/admin_config.html": {
+		"Settings": []map[string]any{{"Key": escapingProbe, "Value": escapingProbe}},
+	},
+	"partials/admin_users.html": {
+		"Users": []map[string]any{{
+			"ID": "user-1", "Email": escapingProbe, "Role": escapingProbe,
+			"CreatedAt": time.Now(), "LastLoginAt": time.Time{},
+		}},
+	},
+	"partials/artist-candidates.html": {
+		"candidates": []map[string]any{{
+			"ID": "mbid-1", "Name": escapingProbe,
+			"Disambiguation": escapingProbe, "Country": escapingProbe, "Type": escapingProbe,
+		}},
+		"query": escapingProbe, "quality_profile_id": "profile-1", "retryEndpoint": "/api/artists/search",
+	},
+	"partials/artist-card.html": {"Artist": probeArtist()},
+	"partials/artist-form.html": {"profiles": []map[string]any{probeProfile()}},
+	"partials/artists.html":     {"artists": []map[string]any{probeArtist()}},
+	"partials/job-logs.html": {
+		"job_id": "job-1",
+		"logs": []map[string]any{{
+			"CreatedAt": time.Now(), "Level": "info", "Message": escapingProbe,
+		}},
+	},
+	"partials/jobs.html": {
+		"jobs": []map[string]any{
+			{"ID": "job-queued", "Type": escapingProbe, "State": "queued",
+				"RequestedAt": time.Now(), "CreatedBy": escapingProbe, "Summary": escapingProbe},
+			{"ID": "job-failed", "Type": escapingProbe, "State": "failed",
+				"RequestedAt": time.Now(), "CreatedBy": escapingProbe, "Summary": escapingProbe, "ErrorDetail": escapingProbe},
+		},
+		"QueueStatuses": map[string]any{"job-queued": map[string]any{"Position": 2, "Reason": escapingProbe}},
+		"JobTypes":      []map[string]any{{"Value": "acquisition", "Label": escapingProbe}},
+		"JobType":       "",
+		"State":         "",
+	},
+	"partials/libraries.html": {
+		"libraries": []map[string]any{{"ID": "library-1", "Name": escapingProbe, "Path": escapingProbe}},
+	},
+	"partials/library-browse.html": {
+		"library": map[string]any{"ID": "library-1", "Name": escapingProbe},
+		"tracks":  []map[string]any{probeTrack()},
+		"total":   1, "search": escapingProbe, "sort_by": "title", "sort_dir": "asc",
+		"sortToggle": map[string]any{"title": "desc", "artist": "desc", "album": "desc", "track_num": "desc", "format": "desc"},
+		"page":       1, "total_pages": 2, "page_size": 50,
+	},
+	"partials/library-form.html": {"ID": "", "Name": escapingProbe, "Path": escapingProbe},
+	"partials/playlists.html": {
+		"playlists": []map[string]any{{"ID": "playlist-1", "Name": escapingProbe, "Description": escapingProbe, "Public": true}},
+	},
+	"partials/profile-form.html": {
+		"ID": "", "IsNew": true, "Name": escapingProbe, "Description": escapingProbe,
+		"AllowedFormats": escapingProbe, "MinBitrate": 320, "CoverArtSources": escapingProbe,
+	},
+	"partials/profiles.html":      {"profiles": []map[string]any{probeProfile()}},
+	"partials/schedule-card.html": {"schedule": probeSchedule()},
+	"partials/schedule-form.html": {
+		"ID": "", "watchlists": []map[string]any{probeWatchlist()},
+		"WatchlistID": "watchlist-1", "CronExpr": escapingProbe, "Enabled": true,
+	},
+	"partials/schedules.html":      {"schedules": []map[string]any{probeSchedule()}},
+	"partials/stats.html":          {"StatsError": escapingProbe},
+	"partials/track-detail.html":   {"track": probeTrack()},
+	"partials/watchlist-card.html": {"watchlist": probeWatchlist()},
+	"partials/watchlist-form.html": {
+		"ID": "", "Name": escapingProbe, "SourceType": "spotify_playlist", "SourceURI": escapingProbe,
+		"profiles": []map[string]any{probeProfile()}, "QualityProfileID": "profile-1", "Enabled": true,
+	},
+	"partials/watchlist-preview.html": {
+		"Tracks": []map[string]any{probeTrack()}, "TotalCount": 1,
+		"SourceType": "spotify_playlist", "Remaining": 0, "HasMore": false,
+	},
+	"partials/watchlists.html": {
+		"watchlists": []map[string]any{probeWatchlist()}, "spDcLinked": false,
+	},
 }
 
-// TestPartials_RenderEveryValueEscapedExactlyOnce renders the real artists
-// partial, the surface the defect was reported on, through the real engine.
-//
-// It uses the template file rather than an inline string on purpose: the
-// regression this catches is a filter someone adds back to a template, and a
-// test rendering its own copy of the markup would not see it.
+// TestPartials_RenderEveryValueEscapedExactlyOnce renders every partial through
+// the real engine with hostile data: the probe must reach the page escaped
+// once, never raw, and never escaped twice. The completeness check at the end
+// fails when a partial exists without a row, so a new template cannot be added
+// without exercising it here.
 func TestPartials_RenderEveryValueEscapedExactlyOnce(t *testing.T) {
 	templatesDir, _ := webAssetPaths(t)
+	engine := NewPongo2(templatesDir, ".html")
 
-	body := renderTemplateFile(t, templatesDir, "partials/artists.html", map[string]any{
-		"artists": []map[string]any{{
-			"ID":               "11111111-1111-1111-1111-111111111111",
-			"Name":             escapingProbe,
-			"MusicBrainzID":    "esc-probe-mbid",
-			"Monitored":        true,
-			"AcquiredReleases": 1,
-			"TotalReleases":    3,
-			"LastScanLabel":    "never",
-		}},
-	})
+	for name, context := range partialProbes {
+		t.Run(name, func(t *testing.T) {
+			body := renderPartial(t, engine, name, context)
 
-	for _, want := range escapingProbeEscapedOnce {
-		assert.Contains(t, body, want, "a value must reach the browser escaped once")
-	}
-	for _, unwanted := range escapingProbeEscapedTwice {
-		assert.NotContains(t, body, unwanted,
-			"%q means the value was escaped twice: it is on the page as a literal entity", unwanted)
+			assert.Contains(t, body, escapingProbeWant,
+				"%s did not render the probe; the row proves nothing about escaping", name)
+			assert.NotContains(t, body, escapingProbe,
+				"%s rendered the probe as markup: an unescaped value reached the page", name)
+			for _, marker := range doubleEscapedMarkers {
+				assert.NotContains(t, body, marker,
+					"%s contains %q: a value was escaped twice, so the operator reads a literal entity", name, marker)
+			}
+		})
 	}
 
-	// The attribute paths too. The artists card repeats the name in three
-	// aria-labels, which is where a template-level filter and an engine-level
-	// escape are easiest to end up with both of.
-	assert.Contains(t, body, `aria-label="Sync discography for Tom &amp; Jerry`,
-		"an escaped value must survive into an attribute, escaped once")
-	assert.NotContains(t, body, "&amp;amp;",
-		"no double escape anywhere in the rendered partial, text or attribute")
+	entries, err := os.ReadDir(filepath.Join(templatesDir, "partials"))
+	require.NoError(t, err)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".html") {
+			continue
+		}
+		rel := "partials/" + entry.Name()
+		assert.Contains(t, partialProbes, rel,
+			"%s has no hostile-data row; add one to partialProbes so the partial is rendered, not just scanned", rel)
+	}
 }
 
-// TestPartials_MarkupInDataStaysMarkupFree is the other direction of the same
-// invariant: one escape must still be enough to keep a value inert. Deleting the
-// redundant filter is only safe because the surviving escape is unconditional,
-// and this is the assertion that says so.
-func TestPartials_MarkupInDataStaysMarkupFree(t *testing.T) {
-	templatesDir, _ := webAssetPaths(t)
+// bannedEscapeSpellings matches every way a template can escape a value a
+// second time or disarm the engine's escape:
+//
+//	| escape / |escape / | e   pongo2's filter and its `e` alias
+//	| safe                     tells the engine not to escape that value
+//	{% autoescape off %}       disarms the engine for a block
+//	{% filter escape %}        escapes the block's already-escaped output
+//
+// `{% filter %}` is a real pongo2 tag (tags_filter.go), so `{% filter escape
+// %}{{ x }}{% endfilter %}` double-escapes without a pipe the first
+// alternative would see.
+var bannedEscapeSpellings = regexp.MustCompile(
+	`\|\s*(?:escape|e|safe)\b` +
+		`|\{%-?\s*autoescape\s+off\b` +
+		`|\{%-?\s*filter\b[^%}]*\b(?:escape|e)\b`)
 
-	hostile := `<img src=x onerror="alert(1)">`
-	body := renderTemplateFile(t, templatesDir, "partials/artists.html", map[string]any{
-		"artists": []map[string]any{{
-			"ID":               "22222222-2222-2222-2222-222222222222",
-			"Name":             hostile,
-			"MusicBrainzID":    "</span><script>alert(1)</script>",
-			"Monitored":        true,
-			"AcquiredReleases": 0,
-			"TotalReleases":    0,
-			"LastScanLabel":    "never",
-		}},
-	})
-
-	assert.NotContains(t, body, "<img src=x",
-		"data must not become markup: the engine's escape is what keeps it inert")
-	assert.NotContains(t, body, "<script>alert(1)</script>",
-		"data must not become markup")
-	assert.NotContains(t, body, `onerror="alert(1)"`,
-		"an unescaped attribute value would break out of the attribute")
-	assert.Contains(t, body, "&lt;img src=x",
-		"the value must still be readable where it belongs: escaped, not dropped")
-	assert.NotContains(t, body, "&amp;lt;",
-		"escaped once, not twice")
+// stripTemplateNoise removes the three comment forms pongo2 ignores, so a
+// template may discuss a filter without the scan flagging its prose.
+func stripTemplateNoise(source string) string {
+	for _, comment := range []*regexp.Regexp{
+		regexp.MustCompile(`(?s)\{#.*?#\}`),
+		regexp.MustCompile(`(?s)\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}`),
+		regexp.MustCompile(`(?s)<!--.*?-->`),
+	} {
+		source = comment.ReplaceAllString(source, "")
+	}
+	return source
 }
 
-// TestTemplates_ApplyNoRedundantEscapeFilter is the guard that stops the defect
-// returning, one template at a time - which is how it arrived.
-//
-// The ban is absolute rather than per-site because the engine's escape is
-// unconditional: it applies to every string in every template, so an explicit
-// `| escape` is always the second one. The only thing that could make it
-// legitimate is an `{% autoescape off %}` block, and
-// TestPongo2Engine_AutoescapeIsNeverDisabled below asserts there is none.
-//
-// `|e` is pongo2's registered alias for the same filter (filters_builtin.go:45),
-// so it is redundant in exactly the same way and is banned with it.
-func TestTemplates_ApplyNoRedundantEscapeFilter(t *testing.T) {
-	templatesDir, _ := webAssetPaths(t)
+// bannedEscapeFindings lists every banned spelling in a template source,
+// comments excluded.
+func bannedEscapeFindings(source string) []string {
+	return bannedEscapeSpellings.FindAllString(stripTemplateNoise(source), -1)
+}
 
-	// `\|\s*e\b` cannot collide with a filter like `endless` or `even`: the word
-	// boundary requires the name to end at the `e`.
-	filter := regexp.MustCompile(`\|\s*(escape|e)\b`)
+// TestTemplateScan_RejectsEveryBannedEscapeSpelling proves the scan catches
+// each banned spelling and leaves comments and innocent filters alone.
+func TestTemplateScan_RejectsEveryBannedEscapeSpelling(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+		caught bool
+	}{
+		{"pipe escape", `{{ x | escape }}`, true},
+		{"pipe escape without space", `{{ x |escape }}`, true},
+		{"short alias", `{{ x | e }}`, true},
+		{"safe filter", `{{ x | safe }}`, true},
+		{"autoescape off block", `{% autoescape off %}{{ x }}{% endautoescape %}`, true},
+		{"filter block", `{% filter escape %}{{ x }}{% endfilter %}`, true},
+		{"filter chain", `{% filter lower|escape %}{{ x }}{% endfilter %}`, true},
+		{"pongo2 comment", `{# {{ x | escape }} #}`, false},
+		{"html comment", `<!-- {{ x | escape }} -->`, false},
+		{"comment block", `{% comment %}{{ x | escape }}{% endcomment %}`, false},
+		{"urlencode control", `{{ x | urlencode }}`, false},
+		{"upper filter block", `{% filter upper %}{{ x }}{% endfilter %}`, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.caught {
+				assert.NotEmpty(t, bannedEscapeFindings(tc.source), "%q must be rejected", tc.source)
+				return
+			}
+			assert.Empty(t, bannedEscapeFindings(tc.source), "%q must not be flagged", tc.source)
+		})
+	}
+}
+
+// TestTemplates_ApplyNoBannedEscapeSpelling scans the whole template tree -
+// pages and layouts included, not only the partials the render table covers.
+func TestTemplates_ApplyNoBannedEscapeSpelling(t *testing.T) {
+	templatesDir, _ := webAssetPaths(t)
 
 	checked := 0
 	err := filepath.WalkDir(templatesDir, func(path string, d os.DirEntry, err error) error {
@@ -151,162 +260,80 @@ func TestTemplates_ApplyNoRedundantEscapeFilter(t *testing.T) {
 			return nil
 		}
 		checked++
-
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		// Comments are not rendered, so a comment may discuss the filter. Only
-		// markup counts.
-		markup := stripTemplateComments(string(raw))
-
-		for i, line := range strings.Split(markup, "\n") {
-			if !filter.MatchString(line) {
-				continue
-			}
-			rel, _ := filepath.Rel(templatesDir, path)
-			assert.Fail(t, "redundant escape filter in a template",
-				"%s:%d applies an escape filter the engine already applies: %s\n"+
-					"The engine escapes every value exactly once, so this escapes it twice and "+
-					"the operator reads `&amp;amp;` instead of `&`. Delete the filter (DJI-590).",
-				filepath.ToSlash(rel), i+1, strings.TrimSpace(line))
-		}
-		return nil
-	})
-	require.NoError(t, err)
-
-	// A walk that finds nothing passes for the wrong reason.
-	require.Greater(t, checked, 15,
-		"expected to scan the whole template set; found only %d templates", checked)
-}
-
-// rawMarkupSites lists the templates allowed to render a value through pongo2's
-// `safe` filter, which tells the engine *not* to escape that one value. It is
-// empty on purpose.
-//
-// Deleting the redundant filters makes the engine's escape the only thing
-// between a database row and the markup around it, so this is the one filter
-// that can put the defect's mirror image back: an artist named
-// `<img src=x onerror=...>` reaching the page as markup instead of text.
-// Nothing in this app renders server-built markup through a value, so there is
-// no site that needs it - and an entry here is a reviewed decision to accept
-// that XSS surface, with the reason written down.
-//
-// The register is self-cleaning: an entry whose template no longer applies the
-// filter is a failure, so it cannot rot into a blanket exemption.
-var rawMarkupSites = map[string]string{}
-
-// TestTemplates_RenderNoValueUnescaped is the other half of "exactly once":
-// escaping once is only the floor while nothing opts out.
-func TestTemplates_RenderNoValueUnescaped(t *testing.T) {
-	templatesDir, _ := webAssetPaths(t)
-
-	// The filter position only; `\bsafe\b` would also match prose and a
-	// variable that happens to be named safe.
-	safeFilter := regexp.MustCompile(`\|\s*safe\b`)
-
-	applied := map[string]bool{}
-	err := filepath.WalkDir(templatesDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".html") {
-			return nil
-		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
 		rel, _ := filepath.Rel(templatesDir, path)
 		rel = filepath.ToSlash(rel)
-		if !safeFilter.MatchString(stripTemplateComments(string(raw))) {
-			return nil
-		}
-		applied[rel] = true
-
-		reason, registered := rawMarkupSites[rel]
-		if registered {
-			assert.NotEmpty(t, reason, "rawMarkupSites names %s without the reason it is excused", rel)
-			return nil
-		}
-		assert.Fail(t, "value rendered unescaped in a template",
-			"%s applies the `safe` filter, which is the one filter that can turn a database "+
-				"row into markup - the mirror of DJI-590. The engine already escapes every "+
-				"value exactly once, so drop it, or add it to rawMarkupSites with the reason "+
-				"as a reviewed decision.", rel)
-		return nil
-	})
-	require.NoError(t, err)
-
-	// The register may not outlive the filter it excuses.
-	for site := range rawMarkupSites {
-		assert.True(t, applied[site],
-			"rawMarkupSites still names %s, but that template applies no `safe` filter; "+
-			"remove the entry so it cannot keep re-permitting the filter after a later edit", site)
-	}
-}
-
-// TestPongo2Engine_AutoescapeIsNeverDisabled guards the foundation. Every
-// assertion in this file rests on the engine escaping by default, and one call
-// would remove it from the whole application at once - pongo2's autoescape is a
-// package-level global, not a per-set option.
-func TestPongo2Engine_AutoescapeIsNeverDisabled(t *testing.T) {
-	templatesDir, _ := webAssetPaths(t)
-	backend := filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(templatesDir))), "backend")
-
-	// Test files are skipped because this one contains the string it looks for.
-	offenders := []string{}
-	scanned := 0
-	err := filepath.WalkDir(backend, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		scanned++
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if regexp.MustCompile(`SetAutoescape\s*\(\s*false\s*\)`).MatchString(stripGoComments(string(raw))) {
-			rel, _ := filepath.Rel(backend, path)
-			offenders = append(offenders, filepath.ToSlash(rel))
+		for _, finding := range bannedEscapeFindings(string(raw)) {
+			assert.Fail(t, "template applies a banned escape spelling",
+				"%s: %q escapes a value a second time or disarms the engine's escape. The engine "+
+					"escapes every value exactly once, so delete the filter (DJI-590).", rel, finding)
 		}
 		return nil
 	})
 	require.NoError(t, err)
-	require.Greater(t, scanned, 50, "expected to scan the backend tree; found only %d Go files", scanned)
-
-	assert.Empty(t, offenders,
-		"SetAutoescape(false) disarms escaping for every template at once, and the whole "+
-			"template set now relies on it; if a template genuinely needs unescaped output, "+
-			"apply `| safe` at that one site instead")
+	require.Greater(t, checked, 20, "expected to scan the whole template tree; found only %d templates", checked)
 }
 
-// renderTemplateFile renders a template from the real template directory with
-// the real engine, which is the path a page takes.
-func renderTemplateFile(t *testing.T, templatesDir, name string, ctx map[string]any) string {
+// renderPartial renders a partial through the real engine, the path a handler
+// uses.
+func renderPartial(t *testing.T, engine *Pongo2Engine, name string, context map[string]any) string {
 	t.Helper()
 
-	engine := NewPongo2(templatesDir, ".html")
-
 	var buf bytes.Buffer
-	require.NoError(t, engine.Render(&buf, name, ctx),
-		"%s must render; the engine resolves it by the same name a handler uses", name)
+	require.NoError(t, engine.Render(&buf, name, context), "%s must render", name)
 	require.NotEmpty(t, buf.String(), "%s rendered nothing", name)
 	return buf.String()
 }
 
-// stripTemplateComments removes pongo2 `{# #}` and HTML comments, so a guard
-// over markup does not fail on prose about the markup.
-func stripTemplateComments(template string) string {
-	template = regexp.MustCompile(`(?s)\{#.*?#\}`).ReplaceAllString(template, "")
-	return regexp.MustCompile(`(?s)<!--.*?-->`).ReplaceAllString(template, "")
+// escapeHTML applies pongo2's escape filter: &, >, <, " and ' in that order
+// (filters_builtin.go).
+func escapeHTML(value string) string {
+	return strings.NewReplacer(
+		"&", "&amp;",
+		">", "&gt;",
+		"<", "&lt;",
+		`"`, "&quot;",
+		"'", "&#39;",
+	).Replace(value)
 }
 
-// stripGoComments removes `//` and `/* */` comments for the same reason.
-func stripGoComments(src string) string {
-	src = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(src, "")
-	return regexp.MustCompile(`(?m)//.*$`).ReplaceAllString(src, "")
+func probeArtist() map[string]any {
+	return map[string]any{
+		"ID": "artist-1", "Name": escapingProbe, "MusicBrainzID": escapingProbe,
+		"Monitored": true, "AcquiredReleases": 1, "TotalReleases": 3, "LastScanLabel": escapingProbe,
+	}
+}
+
+func probeProfile() map[string]any {
+	return map[string]any{
+		"ID": "profile-1", "Name": escapingProbe, "Description": escapingProbe,
+		"AllowedFormats": escapingProbe, "MinBitrate": 320, "CoverArtSources": escapingProbe,
+		"IsDefault": true, "PreferLossless": true,
+	}
+}
+
+func probeSchedule() map[string]any {
+	return map[string]any{
+		"ID": "schedule-1", "Watchlist": map[string]any{"Name": escapingProbe},
+		"CronExpr": escapingProbe, "NextRunLabel": escapingProbe, "Enabled": true,
+	}
+}
+
+func probeTrack() map[string]any {
+	return map[string]any{
+		"ID": "track-1", "Title": escapingProbe, "Artist": escapingProbe, "Album": escapingProbe,
+		"TrackNum": 1, "DiscNum": 1, "Format": escapingProbe, "FileSize": int64(1048576),
+		"Year": 2024, "Genre": escapingProbe, "Composer": escapingProbe, "FileHash": escapingProbe,
+		"Fingerprint": escapingProbe, "EnrichmentProvenance": escapingProbe, "CoverURL": escapingProbe,
+	}
+}
+
+func probeWatchlist() map[string]any {
+	return map[string]any{
+		"ID": "watchlist-1", "Name": escapingProbe, "SourceType": "spotify_playlist",
+		"SourceURI": escapingProbe, "Enabled": true,
+	}
 }
