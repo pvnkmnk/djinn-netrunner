@@ -294,9 +294,12 @@ Postgres for concurrent production workloads.
   label (`Schedule.NextRunLabel`, `MonitoredArtist.LastScanLabel`).
 - **pongo2's autoescape path *is* the `escape` filter** (`variable.go`), and
   `NewPongo2` never disarms it — so `{{ x | escape }}` is a *second* pass
-  (`&amp;amp;`) and every `| escape`/`|e`/`| safe` is redundant unless the
-  value is a `template.HTML`. `truncatechars_html`/`truncatewords_html` also
-  return `AsSafeValue` — a ban list must name both spellings.
+  (`&amp;amp;`) and `|e` has the same effect. `| safe` is the opposite case: it
+  *suppresses* autoescaping (`FilterApplied("safe")`), so it is never redundant
+  and is the one filter that can turn a database row back into markup — ban it.
+  The exemption is `AsSafeValue`, not a Go `template.HTML`, which pongo2 knows
+  nothing about. `truncatechars_html`/`truncatewords_html` also return
+  `AsSafeValue`, so a ban list must name both spellings.
 - **`encoding/json` silently drops fields without JSON tags** — `source_uri`
   ≠ `SourceURI` (case-insensitive fallback doesn't cover underscores); both
   model AND input struct need tags (DJI-437).

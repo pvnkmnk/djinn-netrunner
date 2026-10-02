@@ -52,6 +52,14 @@ def patch(path, old, new, count=1):
     snapshot(path)
     with io.open(path, "rb") as fh:
         text = fh.read().decode("utf-8")
+    # Anchors are written with CRLF because that is how these assets sit in the
+    # working copy here, but git may check any of them out with LF. Normalising
+    # both sides to the file's own newline keeps an anchor from silently going
+    # stale and aborting the run at the first mutation - which would report no
+    # mutations at all rather than reporting them.
+    newline = "\r\n" if "\r\n" in text else "\n"
+    old = old.replace("\r\n", "\n").replace("\n", newline)
+    new = new.replace("\r\n", "\n").replace("\n", newline)
     if text.count(old) != count:
         raise SystemExit(
             "ANCHOR STALE (%d != %d) in %s:\n%s" % (text.count(old), count, path, old[:200])

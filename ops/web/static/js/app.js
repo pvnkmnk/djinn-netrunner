@@ -163,10 +163,15 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!elt || !elt.classList) return;
         var targets = [elt];
         // htmx resolves hx-indicator by inheritance, so look for it the same
-        // way rather than only on the issuing element.
+        // way rather than only on the issuing element. `hx-indicator="this"`
+        // is not a no-op: htmx marks the element carrying the attribute rather
+        // than the issuer, so that element is the one left dimmed if it is
+        // skipped here.
         var source = elt.closest ? elt.closest('[hx-indicator]') : null;
         var indicator = source ? source.getAttribute('hx-indicator') : null;
-        if (indicator && indicator !== 'this') {
+        if (indicator === 'this') {
+            targets.push(source);
+        } else if (indicator) {
             indicator.split(',').forEach(function (selector) {
                 selector = selector.trim();
                 if (!selector) return;
