@@ -25,6 +25,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **A posting control now returns to idle when its request ends.** Every control that posts
+  with htmx carries `requestClass` (`htmx-request`, which the stylesheet reads as the busy
+  state: `opacity: 0.7` and `cursor: wait !important`) while its request is in flight, and
+  htmx removes it when the request settles. On any control that also carries
+  `hx-disabled-elt` it never came off, so the watchlist and artist Sync buttons, the
+  library Scan and Enrich buttons and the per-artist sync were all left permanently dimmed
+  with a wait cursor, claiming to be busy long after the work had finished (DJI-571). The
+  cause is inside htmx 1.9.10 rather than in this app: it keeps one `requestCount` per
+  element and spends it on two jobs — marking the element in-flight and disabling what
+  `hx-disabled-elt` names — so an element that is both is counted twice and released once,
+  and the indicator half never reaches zero. Measured live: `requestCount` 2 at
+  `afterSwap`, the class still present at `afterRequest`, and `disabled` correctly cleared.
+  htmx fires `htmx:afterRequest` after its own release step, so app.js clears the class
+  there — one handler, every control, and success, 4xx/5xx, abort and timeout alike. It is
+  a correction rather than a hiding of the styling: the `.htmx-request` rule is what tells
+  an operator the control is working, and a guard now fails if either it or the clearing
+  path is removed, or if the `hx-disabled-elt` attributes that trigger the defect are
+  dropped, which would leave the guard asserting a path nothing uses.
 - **Every value a template renders is escaped exactly once.** pongo2 autoescapes by
   default and the engine never disables it, and the autoescape path *is* the `escape`
   filter — so the 130 explicit `| escape` filters across 21 templates ran it a second

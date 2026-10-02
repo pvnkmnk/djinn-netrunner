@@ -1,7 +1,8 @@
 # Agents Guide — NetRunner
 
 > Condensed 2026-09-18 (reference prose compressed; every lesson kept).
-> Refreshed 2026-09-30: deploy/versioning rework (#287-#291), skills, counts.
+> Refreshed 2026-10-02: single-escape invariants, guard/mutation discipline,
+> Linear state kept in step with merges.
 
 ## Orientation
 
@@ -291,6 +292,14 @@ Postgres for concurrent production workloads.
   reached the `date` filter and 500'd the whole list (`filter input
   argument must be of type 'time.Time'`) — such fields need a Go-side
   label (`Schedule.NextRunLabel`, `MonitoredArtist.LastScanLabel`).
+- **pongo2's autoescape path *is* the `escape` filter** (`variable.go`), and
+  `NewPongo2` never disarms it — so `{{ x | escape }}` is a *second* pass
+  (`&amp;amp;`) and `|e` has the same effect. `| safe` is the opposite case: it
+  *suppresses* autoescaping (`FilterApplied("safe")`), so it is never redundant
+  and is the one filter that can turn a database row back into markup — ban it.
+  The exemption is `AsSafeValue`, not a Go `template.HTML`, which pongo2 knows
+  nothing about. `truncatechars_html`/`truncatewords_html` also return
+  `AsSafeValue`, so a ban list must name both spellings.
 - **`encoding/json` silently drops fields without JSON tags** — `source_uri`
   ≠ `SourceURI` (case-insensitive fallback doesn't cover underscores); both
   model AND input struct need tags (DJI-437).
@@ -367,8 +376,9 @@ Postgres for concurrent production workloads.
 - Default branch is `master`, not `main`.
 - Merge PRs with `gh pr merge N --repo pvnkmnk/djinn-netrunner --squash
   --delete-branch`. It often prints **nothing** on success (exit 0, empty
-  stdout) — confirm with `gh pr view N --json state,mergeCommit` instead of
-  inferring failure from silence. `git reset --hard origin/master` after is
+  stdout), and a "Merging…" line can precede a merge that never ran —
+  confirm `gh pr view N --json state,mergeCommit` before assuming a merge
+  landed or re-issuing it. `git reset --hard origin/master` after is
   safe only because master only fast-forwards — check
   `git reflog show master` before assuming that on a shared checkout.
 - The `integration` CI job can fail in ~26s with `connection reset by peer`
@@ -388,6 +398,10 @@ Postgres for concurrent production workloads.
   from `reviewThreads`, then `gh api graphql -f query='mutation {
   resolveReviewThread(input: {threadId: "PRRT_..."}) { thread { isResolved } }
   }'`.
+- CodeRabbit is **manual here** (`@coderabbitai review`) and its OSS allowance
+  is roughly one review per hour. A check reading `pass` can mean "rate
+  limited" rather than reviewed — read the comment body, and don't hold a
+  merge open indefinitely waiting for it.
 
 ### Go toolchain & dependencies
 
@@ -406,19 +420,21 @@ Postgres for concurrent production workloads.
 ### Linear MCP quirks
 
 - **Every array argument arrives as an object** and fails schema validation:
-  `save_issue.labels`, `list_issues.fields`, `save_project.patch`. **Scalars
-  work**, including `save_project.description` as one full string — that is the
-  only way to edit a project description. `priority` arrives as a string and
-  fails; omit it.
+  `save_issue.labels`, `list_issues.fields`. `save_project.patch` is the
+  inverse trap — it wants a **list of ops**. **Scalars work**, including
+  `save_project.description` as one full string — that is the only way to edit
+  a project description. `priority` arrives as a string and fails; omit it.
 - **Booleans are coerced to strings** and fail: `get_issue(includeRelations:
   "true")`. Omit the flag.
 - Linear re-renders a GitHub PR URL as a `<pull-request>` element, and a bare
-  markdown link inside prose sometimes nests duplicated ones. Always read a
-  saved project description back and check for doubled elements.
-- Defect tickets stay **open behind** the slice that fixes them (DJI-521/523/520
-  all outlived their slices). When a slice lands, close the defect ticket in the
-  same pass or record where it went — otherwise the backlog overstates what is
-  broken.
+  markdown link inside prose sometimes nests duplicated ones. Reference a PR
+  as plain `owner/repo#NNN`, never a URL, and always read a saved project
+  description back to check for doubled elements.
+- **Ticket state drifts from merges in both directions**, so reconcile it in the
+  *same pass* as the merge (an operator standing rule): DJI-590 was marked Done
+  before its merge landed, while DJI-524/529/534 stayed open long after their
+  code shipped. Set state from the merged commit — never from the PR's intent —
+  and post the commit hash as the evidence.
 
 ### Ad-hoc mutation harnesses
 
@@ -439,6 +455,13 @@ specific claim carry four traps, all of which inflate the score:
 A guard for "must *not* do X" needs an assertion of **absence**
 (`assert.NotContains`), not just presence. Flipping `renderAdoptionOffer(c,
 library, false)` to `true` passes any test that only asserts the offer is there.
+
+- **A per-binding assertion can mask a mutation.** "the probe value rendered"
+  passes when a second field carries the same string, so assert globally —
+  e.g. *every* rendered `&` begins an entity.
+- **A guard claiming "every template" must fail when a template has no row.**
+  A table that renders one file and never counts the rest is the same blind
+  spot as the five-guard suite DJI-545 replaced.
 
 ### Build, test & integration
 
@@ -793,3 +816,7 @@ Two checks that look like they pass but do not:
 - **The volume `immich_pgdata` is not a NetRunner leak.** It belongs to the
   Immich compose project. A `pgdata`-outside-compose check must exclude it, or
   it reports a phantom leak forever.
+- **Dev-stack probe users are kept on purpose across sessions** — pruning an old
+  owner's rows can manufacture the very defect under test (deleting the job of
+  the user with no successor creates the owner-less job DJI-583 reports). Add
+  fixtures; don't sweep old ones.
