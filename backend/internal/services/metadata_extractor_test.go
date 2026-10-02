@@ -2,10 +2,11 @@ package services
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMetadataExtractor(t *testing.T) {
@@ -57,19 +58,21 @@ func TestEmbedCoverArt_SizeValidation(t *testing.T) {
 	}
 }
 
-func TestFpcalcAvailability(t *testing.T) {
+// Replaces a test that skipped on any error, against an empty file that no
+// fpcalc can read - so it passed whether or not fingerprinting worked at all,
+// which is the same shape as the defect this slice is about. The fpcalc-present
+// branch is pinned deterministically in acoustid_fingerprinting_test.go, by
+// putting a working fpcalc on PATH. What is left here is the one branch that
+// needs no binary at all: a path that does not exist, which must be reported
+// rather than passed to the shell.
+func TestFingerprint_ReportsAMissingFileWithoutShellingOut(t *testing.T) {
 	e := NewMetadataExtractor()
 
-	// Create a temporary audio file for fingerprinting test
-	tmpFile := t.TempDir() + "/test_fpcalc.mp3"
-	if err := os.WriteFile(tmpFile, []byte{}, 0644); err != nil {
-		t.Skipf("could not create temp file: %v", err)
-	}
+	_, _, err := e.Fingerprint(filepath.Join(t.TempDir(), "not-here.mp3"))
 
-	_, _, err := e.Fingerprint(tmpFile)
-	if err != nil {
-		t.Skipf("fpcalc not available or failed: %v", err)
-	}
+	require.Error(t, err, "a missing file must be an error, not an empty fingerprint")
+	require.Contains(t, err.Error(), "file does not exist",
+		"the operator needs to know which file could not be fingerprinted")
 }
 
 // --- AudioMetadata.IsValid tests ---

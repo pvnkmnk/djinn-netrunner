@@ -25,6 +25,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **Acoustic fingerprinting actually runs.** The image shipped without Chromaprint for the
+  project's entire history, so every scan and every import reported success while
+  fingerprinting nothing, every `tracks.fingerprint` was an empty string (so
+  `count(fingerprint)` reported 119 fingerprinted tracks out of 119 with none of them
+  fingerprinted), and every `acoustid_score` was a zero nobody had measured. The runtime
+  stage now installs `chromaprint` and the build **fails** if `command -v fpcalc` does not
+  resolve, so an image that would fingerprint nothing cannot be built.
+  `acoustid_score` is now a nullable pointer: `NULL` means the lookup produced no
+  measurement - no key, no fingerprint, the lookup failed, or AcoustID had no match - and
+  `0` means it ran and returned that confidence, so the CLI prints `unscored` rather than a
+  confident `0%`. Deployments upgrading from before this version have their legacy zeros
+  backfilled to `NULL` once, behind a marker, so a real low-confidence match written
+  afterwards is left alone.
+  Fingerprinting failures were swallowed on both paths: the scanner dropped `fpErr` on
+  the floor at both call sites, and the importer discarded the AcoustID error with
+  `if err == nil && len(results) > 0`, so a missing API key, an upstream outage and a
+  genuine no-match were one indistinguishable silence. Both now log to the worker and
+  to the job, the scan summary counts `fingerprinted` and `fingerprint_failed` separately
+  from `indexed`, and the track modal states `not fingerprinted` instead of omitting the
+  row. The AcoustID cache key no longer slices a fixed 32 characters off the
+  fingerprint, which would have panicked the worker on the first short fingerprint the
+  service had ever been handed - unreachable until now, because the service had never
+  been reached.
+  The Postgres bootstrap schema no longer gives the column a `DEFAULT 0`, which is what
+  let any writer that omitted it invent a measurement nobody took; the default is dropped
+  on existing databases too, because `AutoMigrate` is additive and will not drop one.
+  The smoke gate now fingerprints its own fixtures, and that half is why the gate stayed
+  green for the life of the defect: the fixtures were one-second tones, and `fpcalc`
+  refuses short or uniform audio with `ERROR: Empty fingerprint`, so an empty
+  `tracks.fingerprint` was indistinguishable from the correct result. The gate now
+  generates twelve seconds of varied audio, asserts `fpcalc` is present in both images,
+  and reads a real fingerprint back out of a scanned track's detail view.
 - An image published for a `v*` tag no longer reports `NetRunner vdev` in the page
   footer. The build workflow resolves the version from the tag being published and
   passes it to the Dockerfile's `APP_VERSION` build arg, so a released image is stamped

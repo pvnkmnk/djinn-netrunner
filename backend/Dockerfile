@@ -41,10 +41,22 @@ RUN chmod +x entrypoint.sh
 FROM alpine:3.21
 
 # Install runtime dependencies: wget, Node.js for yt-dlp JS sites, Python/pip for yt-dlp,
-# ffmpeg for transcoding and M4A/OGG tag writes (FFmpegTagger)
+# ffmpeg for transcoding and M4A/OGG tag writes (FFmpegTagger),
+# chromaprint for fpcalc - the audio fingerprinting binary the scanner and the
+# acquisition pipeline both shell out to.
 # --break-system-packages is safe here (disposable Docker container, not shared system)
-RUN apk add --no-cache wget nodejs npm python3 py3-pip ffmpeg && \
+RUN apk add --no-cache wget nodejs npm python3 py3-pip ffmpeg chromaprint && \
     pip3 install --break-system-packages --upgrade yt-dlp
+
+# Prove fpcalc is really here rather than assuming apk resolved it. The image
+# shipped without this package for the project's whole history, and every scan
+# and every import reported success while fingerprinting nothing - so a green
+# build is not evidence the binary exists, and this is the check that makes it
+# one. It fails the build, not the deploy.
+RUN command -v fpcalc >/dev/null || { \
+        echo "fpcalc missing from the image: acoustic fingerprinting would silently do nothing" >&2; \
+        exit 1; \
+    }
 
 # Create app directory
 WORKDIR /app

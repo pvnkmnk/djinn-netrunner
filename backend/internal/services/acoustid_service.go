@@ -41,7 +41,15 @@ func (s *AcoustIDService) Lookup(fingerprint string, duration int) ([]AcoustIDRe
 		return nil, fmt.Errorf("AcoustID API key is not configured")
 	}
 
-	cacheKey := fmt.Sprintf("lookup:%d:%s", duration, fingerprint[:32]) // Use prefix for key length
+	// Bound the prefix rather than slicing blindly. Chromaprint fingerprints run
+	// around 120 characters but are shorter for very short audio, and this
+	// sliced a fixed 32 - so the first short fingerprint the service had ever
+	// actually been handed would have panicked the worker mid-import.
+	prefix := fingerprint
+	if len(prefix) > 32 {
+		prefix = prefix[:32]
+	}
+	cacheKey := fmt.Sprintf("lookup:%d:%s", duration, prefix)
 	if s.cache != nil {
 		var cached []AcoustIDResult
 		if found, _ := s.cache.Get("acoustid", cacheKey, &cached); found {
