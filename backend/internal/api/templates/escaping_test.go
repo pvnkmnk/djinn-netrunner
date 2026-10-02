@@ -49,6 +49,11 @@ var doubleEscapedMarkers = []string{
 	escapeHTML("&#39;"),
 }
 
+// htmlEntity matches a complete HTML character reference (named, decimal or
+// hex). Every `&` in a rendered partial must start one: a bare `&` is data the
+// engine did not escape, whichever filter emitted it.
+var htmlEntity = regexp.MustCompile(`&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);`)
+
 // partialProbes is the hostile-data row for every partial in the tree, keyed
 // by template path. Every string in a context comes from escapingProbe, so a
 // row exercises every value its partial renders. The test fails when a partial
@@ -159,6 +164,10 @@ func TestPartials_RenderEveryValueEscapedExactlyOnce(t *testing.T) {
 				"%s did not render the probe; the row proves nothing about escaping", name)
 			assert.NotContains(t, body, escapingProbe,
 				"%s rendered the probe as markup: an unescaped value reached the page", name)
+			assert.NotContains(t, body, "<script",
+				"%s rendered a raw script tag: data must not become markup", name)
+			assert.Zero(t, strings.Count(body, "&")-len(htmlEntity.FindAllString(body, -1)),
+				"%s has a bare ampersand: every `&` must start an entity", name)
 			for _, marker := range doubleEscapedMarkers {
 				assert.NotContains(t, body, marker,
 					"%s contains %q: a value was escaped twice, so the operator reads a literal entity", name, marker)
@@ -183,14 +192,17 @@ func TestPartials_RenderEveryValueEscapedExactlyOnce(t *testing.T) {
 //
 //	| escape / |escape / | e   pongo2's filter and its `e` alias
 //	| safe                     tells the engine not to escape that value
+//	| truncatechars_html       marks its output safe (filters_builtin.go:244)
+//	| truncatewords_html       marks its output safe (filters_builtin.go:314)
 //	{% autoescape off %}       disarms the engine for a block
 //	{% filter escape %}        escapes the block's already-escaped output
 //
 // `{% filter %}` is a real pongo2 tag (tags_filter.go), so `{% filter escape
 // %}{{ x }}{% endfilter %}` double-escapes without a pipe the first
-// alternative would see.
+// alternative would see. The two `_html` truncators return AsSafeValue, so
+// they are `| safe` under a different name.
 var bannedEscapeSpellings = regexp.MustCompile(
-	`\|\s*(?:escape|e|safe)\b` +
+	`\|\s*(?:escape|e|safe|truncatechars_html|truncatewords_html)\b` +
 		`|\{%-?\s*autoescape\s+off\b` +
 		`|\{%-?\s*filter\b[^%}]*\b(?:escape|e)\b`)
 
@@ -225,6 +237,8 @@ func TestTemplateScan_RejectsEveryBannedEscapeSpelling(t *testing.T) {
 		{"pipe escape without space", `{{ x |escape }}`, true},
 		{"short alias", `{{ x | e }}`, true},
 		{"safe filter", `{{ x | safe }}`, true},
+		{"truncatechars_html filter", `{{ x | truncatechars_html:40 }}`, true},
+		{"truncatewords_html filter", `{{ x | truncatewords_html:5 }}`, true},
 		{"autoescape off block", `{% autoescape off %}{{ x }}{% endautoescape %}`, true},
 		{"filter block", `{% filter escape %}{{ x }}{% endfilter %}`, true},
 		{"filter chain", `{% filter lower|escape %}{{ x }}{% endfilter %}`, true},
@@ -232,6 +246,7 @@ func TestTemplateScan_RejectsEveryBannedEscapeSpelling(t *testing.T) {
 		{"html comment", `<!-- {{ x | escape }} -->`, false},
 		{"comment block", `{% comment %}{{ x | escape }}{% endcomment %}`, false},
 		{"urlencode control", `{{ x | urlencode }}`, false},
+		{"truncatechars control", `{{ x | truncatechars:40 }}`, false},
 		{"upper filter block", `{% filter upper %}{{ x }}{% endfilter %}`, false},
 	}
 
