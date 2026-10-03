@@ -205,10 +205,36 @@ def show_diff(old, new, label):
     return True
 
 
+def emit_body(text):
+    """Write a project body to stdout byte-exactly.
+
+    sys.stdout is a TEXT stream: on Windows it translates every LF to CRLF on
+    the way out, so a `--stdout > body.md` capture carried CR on all 215
+    lines of a real body and did not match the bytes Linear holds. The binary
+    layer does not translate, so write through it.
+
+    Scope, stated honestly: feeding such a capture back to --file did NOT
+    rewrite the body, because that side reads with io.open(encoding="utf-8")
+    and universal newlines repair CRLF on the way in. The capture was still
+    wrong -- anything comparing bytes against it (a diff, a hash, another
+    tool, a commit) saw a different document -- and it becomes destructive
+    the moment --file is hardened the same way.
+    """
+    buf = getattr(sys.stdout, "buffer", None)
+    if buf is None:
+        # Only reachable when stdout is an in-memory text sink. A real process
+        # always has the binary layer, which is where the fix does its work.
+        sys.stdout.write(text)
+        return
+    sys.stdout.flush()
+    buf.write(text.encode("utf-8"))
+    buf.flush()
+
+
 def cmd_project_body(api, args):
     p, current = read_project_body(api, args.project)
     if args.stdout:
-        sys.stdout.write(current)
+        emit_body(current)
         return 0
     if not args.file:
         die("project-body needs --file or --stdout")

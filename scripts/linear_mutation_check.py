@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """Mutation-check scripts/linear.py against scripts/test_linear.py.
 
-A green suite proves nothing until you see it go red for the right reason. Each
+A green suite proves nothing until you see it go red for the right reason.
+
+Platform note: M10 strikes the byte-exactness contract and is therefore
+caught on every platform. A mutant that simply restores the old text-mode
+sys.stdout.write is caught ONLY on Windows, because the newline translation
+it relies on does not exist elsewhere -- so it is deliberately not listed
+here rather than inflating the count with a case that cannot fail on Linux. Each
 mutation below breaks one real defect class this CLI exists to prevent, and the
 harness requires the NAMED test to fail. Restore is from a snapshot, never
 `git checkout --`, so uncommitted work elsewhere in the tree is untouched.
@@ -88,6 +94,12 @@ MUTATIONS = [
         '{ nodes{ id identifier name teams{ nodes{ id key } } } } }""",',
         "test_direct_identifier_lookup_is_one_call",
     ),
+    (
+        "M10 append a newline to the emitted body",
+        '    buf.write(text.encode("utf-8"))',
+        r'    buf.write(text.encode("utf-8") + b"\r\n")',
+        "test_capture_is_byte_identical_to_the_stored_body",
+    ),
 ]
 
 # Controls: semantically neutral rewrites that MUST still pass. A stale anchor
@@ -112,6 +124,12 @@ CONTROLS = [
         "C3 reorder an independent assignment",
         "        conds.append(\"project:{id:{eq:$pid}}\")",
         "        conds = [\"project:{id:{eq:$pid}}\"] + conds",
+        None,
+    ),
+    (
+        "C4 reword a comment in emit_body",
+        "        # Only reachable when stdout is an in-memory text sink. A real process",
+        "        # Only reachable when stdout is an in-memory sink. A real process",
         None,
     ),
 ]
