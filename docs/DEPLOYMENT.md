@@ -211,7 +211,9 @@ promotion is recorded per address, so an unused address is promoted at once.
 
 ### Account password policy
 
-Registration enforces a floor and a ceiling, and they are counted in
+Every route that accepts a password enforces the same floor and the same
+ceiling — `POST /api/auth/register`, `POST /api/admin/users`, and
+`POST /api/admin/users/:id/reset-password` — and they are counted in
 **different units**:
 
 | Bound | Value | Counted in | Why |
@@ -219,15 +221,17 @@ Registration enforces a floor and a ceiling, and they are counted in
 | Floor | `MIN_PASSWORD_LENGTH`, default **12** | characters (runes) | the minimum a passphrase must have to be worth having |
 | Ceiling | **72** | bytes | bcrypt's own limit — it is a hash function, not a string library, and it refuses more |
 
-So a password must be **at least 12 characters and at most 72 bytes**. Both are
-checked on the server, and the form states both; nothing about the ceiling is
+So a password must be **at least 12 characters and at most 72 bytes**. All three
+routes check this on the server and return the identical `400` body, so a
+password an admin sets through the API cannot be one registration would have
+refused. The register form states both bounds; nothing about the ceiling is
 expressible in HTML, because a browser's `minlength` counts characters and has
 no byte notion at all.
 
 The two units diverge outside ASCII, and that is the case worth knowing about:
 40 `é` characters clear the 12-character floor easily and are **80 bytes**, so
 they are refused even though no browser hint has told you anything is wrong.
-Registration answers `400` naming the ceiling and your actual byte count, never
+Each route answers `400` naming the ceiling and your actual byte count, never
 a `500` — bcrypt rejecting a password a person typed is a client error, not a
 server fault. A passphrase with accented or non-Latin characters therefore
 reaches the limit in *fewer* characters; the practical advice is to keep the

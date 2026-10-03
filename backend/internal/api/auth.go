@@ -3,7 +3,6 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"log/slog"
 	"net/mail"
 	"strings"
@@ -42,7 +41,9 @@ type AuthHandler struct {
 }
 
 // DefaultMinPasswordLength is the floor used when nothing is configured.
-const DefaultMinPasswordLength = 12
+// Aliased rather than restated: config.ValidatePassword is the single source of
+// truth for both bounds, and all three password-accepting routes call it.
+const DefaultMinPasswordLength = config.DefaultMinPasswordLength
 
 // NewAuthHandlerWithPolicy returns a handler that enforces minLength at
 // registration. Pass 0 for DefaultMinPasswordLength.
@@ -83,49 +84,22 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
 	}
 
-	// Enforced here, on the server, and the message names the minimum: the
+	// Enforced here, on the server, and the message names the limit: the
 	// playtest registered with a three-character password, got a 201 and a
 	// session, and nothing in the product ever said a floor existed. A browser
 	// hint is not a policy, and this endpoint is reachable by anything.
-	minLength := h.minPasswordLength
-	if minLength < 1 {
-		minLength = DefaultMinPasswordLength
-	}
-	// Count runes, not bytes: a 12-character password in any script must not be
-	// rejected because its encoding is longer than 12 bytes.
-	if length := len([]rune(payload.Password)); length < minLength {
-		return c.Status(400).JSON(fiber.Map{
-			"error":          fmt.Sprintf("password must be at least %d characters", minLength),
-			"minLength":      minLength,
-			"passwordLength": length,
-		})
-	}
-
-	// bcrypt accepts at most 72 BYTES and treats a longer input as an
-	// error, not a truncation. Without this guard the password reaches
-	// bcrypt.GenerateFromPassword and comes back as a 500 -- a server fault
-	// for a request a person made perfectly reasonably, and unreachable from
-	// any UI hint: a browser states no length limit on a password field, and
-	// a passphrase generator will happily produce 80 bytes.
 	//
-	// The floor above counts RUNES and this counts BYTES, deliberately. A
-	// password can clear a 12-character minimum and still exceed 72 bytes in
-	// any script outside ASCII: 40 e-acutes are 40 characters and 80 bytes.
-	// The two limits are different units, so the message has to say which one
-	// was hit -- otherwise a user who satisfied the rule the form states is
-	// refused with no way to tell why.
+	// Both bounds come from config.ValidatePassword -- the same call the two
+	// admin routes make, so the three cannot drift apart. It lives there
+	// because the floor is in runes and the ceiling is in bytes, and a policy
+	// whose two halves are counted in different units is easy to get wrong when
+	// it is copy-pasted between handlers.
 	//
-	// Checked BEFORE the duplicate lookup, like the floor above it, so the
-	// answer depends only on the request and never on whether the account
-	// exists. Registration must stay enumeration-safe.
-	if size := len([]byte(payload.Password)); size > config.BcryptMaxPasswordBytes {
-		return c.Status(400).JSON(fiber.Map{
-			"error": fmt.Sprintf(
-				"password must be at most %d bytes; this one is %d bytes. This limit counts bytes, not characters, so a passphrase using accented or non-Latin characters can reach it in fewer characters",
-				config.BcryptMaxPasswordBytes, size),
-			"maxBytes":      config.BcryptMaxPasswordBytes,
-			"passwordBytes": size,
-		})
+	// Checked BEFORE the duplicate lookup, so the answer depends only on the
+	// request and never on whether the account exists: registration must stay
+	// enumeration-safe.
+	if v := config.ValidatePassword(payload.Password, h.minPasswordLength); v != nil {
+		return c.Status(400).JSON(v.JSON())
 	}
 
 	// Validate and normalize email format using net/mail.ParseAddress (RFC 5322)
