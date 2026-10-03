@@ -510,10 +510,10 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       // Navigate to multiple pages
       await page.goto('/watchlists');
-      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
 
       await page.goto('/libraries');
-      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
 
       await page.goto('/');
       await expect(page.locator('.dashboard')).toBeVisible();
@@ -680,32 +680,32 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
     test('navigates to Watchlists page', async ({ authenticatedPage: page }) => {
       await page.goto('/watchlists');
-      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
     });
 
     test('navigates to Libraries page', async ({ authenticatedPage: page }) => {
       await page.goto('/libraries');
-      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
     });
 
     test('navigates to Profiles page', async ({ authenticatedPage: page }) => {
       await page.goto('/profiles');
-      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
     });
 
     test('navigates to Schedules page', async ({ authenticatedPage: page }) => {
       await page.goto('/schedules');
-      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
     });
 
     test('navigates to Artists page', async ({ authenticatedPage: page }) => {
       await page.goto('/artists');
-      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
     });
 
     test('navigates to Jobs page', async ({ authenticatedPage: page }) => {
       await page.goto('/jobs');
-      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
     });
 
     test('nav links have correct href attributes', async ({ authenticatedPage: page }) => {

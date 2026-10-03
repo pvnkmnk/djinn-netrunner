@@ -85,14 +85,14 @@ test.describe('Libraries Feature (DJI-425)', () => {
     await cleanupLibraries(page);
   });
 
-  test('1. Page loads - navigate to /libraries, verify page-header visible, verify title "Libraries"', async ({ authenticatedPage: page }) => {
+  test('1. Page loads - navigate to /libraries, verify page-heading visible, verify title "Libraries"', async ({ authenticatedPage: page }) => {
     await page.goto('/libraries');
 
     // Verify page header is visible
-    await expect(page.locator('.page-header')).toBeVisible();
+    await expect(page.locator('.page-heading')).toBeVisible();
 
     // Verify title is "Libraries"
-    await expect(page.locator('.page-header h2')).toHaveText('Libraries');
+    await expect(page.locator('.page-heading')).toHaveText('Libraries');
   });
 
   test('2. Libraries region loads - verify libraries-region visible, HTMX loads it', async ({ authenticatedPage: page }) => {
@@ -118,7 +118,7 @@ test.describe('Libraries Feature (DJI-425)', () => {
 
     // Verify we're on libraries page
     await expect(page).toHaveURL(/\/libraries$/);
-    await expect(page.locator('.page-header h2')).toHaveText('Libraries');
+    await expect(page.locator('.page-heading')).toHaveText('Libraries');
   });
 
   test('4. Empty state - navigate /libraries, verify empty state present when no libraries', async ({ authenticatedPage: page }) => {
@@ -431,7 +431,7 @@ test.describe('Libraries Feature (DJI-425)', () => {
 
     // Verify we're on jobs page
     await expect(page).toHaveURL(/\/jobs$/);
-    await expect(page.locator('.page-header h2')).toHaveText('Jobs');
+    await expect(page.locator('.page-heading')).toHaveText('Jobs');
   });
 
   test('22. Scan triggers job - click Scan, verify some response or job creation', async ({ authenticatedPage: page }) => {
@@ -459,7 +459,7 @@ test.describe('Libraries Feature (DJI-425)', () => {
 
     // UI should show some feedback (success message or job listed)
     // Just verify page is still functional
-    await expect(page.locator('.page-header h2')).toHaveText('Libraries');
+    await expect(page.locator('.page-heading')).toHaveText('Libraries');
   });
 
   test('23. Browse tracks (empty) - click Browse on a library, verify browse view loads (even if empty)', async ({ authenticatedPage: page }) => {

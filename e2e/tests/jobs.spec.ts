@@ -49,7 +49,7 @@ test.describe('Jobs Feature (DJI-431)', () => {
   test('1. Page loads - /jobs shows the header, the region and the filters', async ({ authenticatedPage: page }) => {
     await page.goto('/jobs');
 
-    await expect(page.locator('.page-header h2')).toContainText('Jobs');
+    await expect(page.locator('.page-heading')).toContainText('Jobs');
     await expect(page.locator('#jobs-region')).toBeVisible();
   });
 
@@ -200,6 +200,6 @@ test.describe('Jobs Feature (DJI-431)', () => {
     await page.waitForTimeout(1000);
 
     await expect(page).toHaveURL(/\/jobs$/);
-    await expect(page.locator('.page-header h2')).toContainText('Jobs');
+    await expect(page.locator('.page-heading')).toContainText('Jobs');
   });
 });

@@ -54,7 +54,7 @@ test.describe('Playlists Feature (DJI-430)', () => {
   test('1. Page loads - /playlists shows the page header and the HTMX region', async ({ authenticatedPage: page }) => {
     await page.goto('/playlists');
 
-    await expect(page.locator('.page-header h2')).toHaveText('Playlists');
+    await expect(page.locator('.page-heading')).toHaveText('Playlists');
     // Exactly one element owns this id: the partial used to declare it too,
     // which made every id-based selector ambiguous.
     await expect(page.locator('#playlists-region')).toHaveCount(1);
@@ -178,6 +178,6 @@ test.describe('Playlists Feature (DJI-430)', () => {
     await page.waitForTimeout(1000);
 
     await expect(page).toHaveURL(/\/playlists$/);
-    await expect(page.locator('.page-header h2')).toHaveText('Playlists');
+    await expect(page.locator('.page-heading')).toHaveText('Playlists');
   });
 });
