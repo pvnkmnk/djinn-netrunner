@@ -440,11 +440,23 @@ is expected, not a failure.
 `<pull-request>` are the connector's rendering. Flatten `[x](url)` to `x` before
 asserting structure.
 
-**Mentions auto-link from bare identifiers.** Writing `DJI-548` or
-`owner/repo#317` into a body or comment is enough — Linear builds the link, so a
-write needs no hand-authored markup and nothing can land as literal HTML. A
-`<pull-request>` element whose label disagrees with the PR is normalised to the
-PR title; bare text avoids that.
+**Only a full `linear.app` URL becomes a link, and only in a body.** Measured
+by writing the same four forms to a project body and to a comment and reading
+back what Linear stored:
+
+| written | project body | comment |
+| --- | --- | --- |
+| bare `DJI-591` | plain text | plain text |
+| bare inside prose | plain text | plain text |
+| `owner/repo#317` | plain text | plain text |
+| `https://linear.app/.../DJI-593` | **becomes a link** | plain text |
+
+So a resend MUST carry full URLs; bare identifiers and `owner/repo#NNN` render as
+dead text. (An earlier entry here claimed the opposite — it was inferred from a
+probe where a URL was present, and misattributed the linking.) The two surfaces
+differ, so do not assume a form that links in one links in the other. A
+`<pull-request>` element whose label disagrees with the PR is still normalised to
+the PR title; the URL form sidesteps that.
 
 **GraphQL field names and variable types are validated before execution.** Each of
 these cost a 400 before it was pinned down:
@@ -531,12 +543,13 @@ python scripts/linear.py events --url https://<worker>.workers.dev --since 0
   The body is markdown and a mention is an ordinary link
   `[DJI-546](https://linear.app/…)`; the `<issue>`/`<pull-request>` elements are
   the connector's rendering. Flatten `[x](url)` → `x` before asserting structure.
-- **Write bare identifiers, never hand-authored `<issue id=…>` HTML.** Linear
-  auto-links plain `DJI-548` *and* plain `owner/repo#NNN` on write, so a resend
-  needs no element markup and nothing hand-authored can land as literal HTML.
-  A `<pull-request>` element whose label disagrees with the PR is normalised to
-  the PR title; bare text avoids that. Probe the round-trip on a throwaway
-  issue before a full resend — one canceled issue buys certainty.
+- **Write full `linear.app` URLs, never bare identifiers or hand-authored
+  `<issue id=…>` HTML.** Only the URL form links, and only in a body: bare
+  `DJI-548` and plain `owner/repo#NNN` were both measured storing as plain text,
+  in a body *and* in a comment. Hand-authored element HTML is also wrong, since
+  the connector's rendering is not the storage form. Probe the round-trip on a
+  throwaway before a full resend — one canceled issue buys certainty, and this
+  entry was wrong once already.
 - **The user's shell exports never reach the agent's shell** (each command is a
   fresh process from the orchestrator). Hand over a credential via a `0600` file
   outside the checkout; never `.env`, which both app services read via `env_file`
