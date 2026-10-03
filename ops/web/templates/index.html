@@ -43,7 +43,8 @@
                 <input type="password" id="reg-password" name="password" required
                        minlength="{{ MinPasswordLength }}" aria-describedby="reg-password-hint"
                        placeholder="At least {{ MinPasswordLength }} characters">
-                <small id="reg-password-hint" class="text-secondary">At least {{ MinPasswordLength }} characters.</small>
+                {# The floor counts characters and the ceiling counts BYTES, so no HTML attribute can express the ceiling; state both rather than let a person be refused for a rule they were never shown. See AuthHandler.Register. #}
+                <small id="reg-password-hint" class="text-secondary">At least {{ MinPasswordLength }} characters, at most {{ MaxPasswordBytes }} bytes.</small>
             </div>
             <button type="submit" class="btn btn-primary btn-block">Create Account</button>
             <div id="register-error" class="error-message hidden"></div>

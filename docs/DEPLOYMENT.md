@@ -209,9 +209,40 @@ own account, and clear it before pointing anything else at the instance. If the
 address does get claimed first, point the variable at a different one: the
 promotion is recorded per address, so an unused address is promoted at once.
 
+### Account password policy
+
+Registration enforces a floor and a ceiling, and they are counted in
+**different units**:
+
+| Bound | Value | Counted in | Why |
+|---|---|---|---|
+| Floor | `MIN_PASSWORD_LENGTH`, default **12** | characters (runes) | the minimum a passphrase must have to be worth having |
+| Ceiling | **72** | bytes | bcrypt's own limit — it is a hash function, not a string library, and it refuses more |
+
+So a password must be **at least 12 characters and at most 72 bytes**. Both are
+checked on the server, and the form states both; nothing about the ceiling is
+expressible in HTML, because a browser's `minlength` counts characters and has
+no byte notion at all.
+
+The two units diverge outside ASCII, and that is the case worth knowing about:
+40 `é` characters clear the 12-character floor easily and are **80 bytes**, so
+they are refused even though no browser hint has told you anything is wrong.
+Registration answers `400` naming the ceiling and your actual byte count, never
+a `500` — bcrypt rejecting a password a person typed is a client error, not a
+server fault. A passphrase with accented or non-Latin characters therefore
+reaches the limit in *fewer* characters; the practical advice is to keep the
+first one or two words of a passphrase in ASCII and let the rest be whatever.
+
+The floor is configurable, but the ceiling is not: it is bcrypt's. Setting
+`MIN_PASSWORD_LENGTH` above 72 makes the server refuse to start, because no
+password could then satisfy both bounds.
+
 Then create the first account. **Every state-changing request needs the CSRF
 header**: any request (including `GET /`) sets a `csrf_` cookie, whose value must be echoed in
 `X-CSRF-Token`.
+
+The account password has to satisfy both ends of the policy, and the two are
+counted in different units; *Account password policy* above has the exact bounds.
 
 ```bash
 JAR=/tmp/nr.jar; rm -f $JAR
@@ -220,11 +251,11 @@ TOKEN=$(awk '/csrf_/{print $7}' $JAR | tail -1)
 
 curl -s -b $JAR -c $JAR -X POST http://localhost:8080/api/auth/register \
   -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN" \
-  -d '{"email":"you@example.com","password":"change-this"}'
+  -d '{"email":"you@example.com","password":"correct-horse-battery-staple"}'
 
 curl -s -b $JAR -c $JAR -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN" \
-  -d '{"email":"you@example.com","password":"change-this"}'
+  -d '{"email":"you@example.com","password":"correct-horse-battery-staple"}'
 
 Login is HTMX-first: it answers **302 with a `Set-Cookie`, not a JSON body**, so a 302 means
 it worked — a missing session cookie is the failure. (The `+` in an email address is also a
