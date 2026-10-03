@@ -150,6 +150,36 @@ func TestE2ESeededAdminHashMatchesTheFixturePassword(t *testing.T) {
 			"that password and update both in the same change")
 }
 
+// TestE2EAdminSeedReplacesThePasswordOnRerun guards the half of the pair that
+// the hash comparison above cannot see.
+//
+// Comparing the seeded hash to the fixture password proves the script says the
+// right thing. It cannot prove the database ends up that way, because the
+// account may already exist from an earlier run against a carried-over volume.
+// The seed used to guard its insert with WHERE NOT EXISTS, which meant a
+// re-setup silently kept the previous password_hash - and because
+// /api/auth/register answers 201 for an account that already exists,
+// ensureUserExists reported success and every adminPage spec failed later, at
+// the login, with nothing pointing at the cause. The same shape as the original
+// defect: the gate reports health while carrying none.
+//
+// A static check, because the alternative is a test that needs a seeded
+// database: what matters is that the seed overwrites an existing row rather
+// than skipping it.
+func TestE2EAdminSeedReplacesThePasswordOnRerun(t *testing.T) {
+	seed := readRepoFile(t, "e2e/setup-test-db.sh")
+
+	assert.NotContains(t, seed, "WHERE NOT EXISTS (SELECT 1 FROM users",
+		"the e2e seed skips inserting the admin account when the row already "+
+			"exists, so a database carried over from an earlier run keeps the "+
+			"old password_hash and every adminPage spec fails at login while "+
+			"ensureUserExists reports success")
+
+	assert.Contains(t, seed, "ON CONFLICT (email) DO UPDATE SET password_hash",
+		"the e2e seed must overwrite the admin account's password_hash on a "+
+			"repeated setup run, so re-seeding is actually a reset")
+}
+
 // TestOnlyTheFixtureDeclaresTheSharedCredentials is the duplication guard. Both
 // specs that need the test account used to restate it by hand, which is how the
 // suite ended up with three copies of a stale password and one of them behind

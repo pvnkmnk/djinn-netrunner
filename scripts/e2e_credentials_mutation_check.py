@@ -24,6 +24,7 @@ SUBSONIC = os.path.join(REPO, "e2e", "tests", "subsonic.spec.ts")
 GUARD_TESTS = (
     "TestE2EFixtureCredentialsSatisfyTheRegistrationPolicy",
     "TestE2ESeededAdminHashMatchesTheFixturePassword",
+    "TestE2EAdminSeedReplacesThePasswordOnRerun",
     "TestOnlyTheFixtureDeclaresTheSharedCredentials",
 )
 
@@ -112,6 +113,21 @@ def m3_duplicated_credential():
     )
 
 
+def m4_seed_skips_existing_admin():
+    # Back to the shape CodeRabbit caught: the script names the right password,
+    # but a database carried over from an earlier run keeps the old hash. The
+    # hash-comparison guard cannot see this - the script is correct - so this
+    # mutation is the proof that the rerun guard is load-bearing and not
+    # redundant with it.
+    patch(
+        SEED,
+        "VALUES ('e2e-admin@netrunner.dev', '" + NEW_HASH + "', 'admin', NOW(), NOW())\n"
+        "ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, updated_at = NOW();",
+        "SELECT 'e2e-admin@netrunner.dev', '" + NEW_HASH + "', 'admin', NOW(), NOW()\n"
+        "WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'e2e-admin@netrunner.dev');",
+    )
+
+
 # ----------------------------------------------------------------- controls
 
 def c1_benign_spec_title():
@@ -127,16 +143,23 @@ def c3_benign_seed_comment():
     patch(SEED, "echo \"=== Seeding admin user ===\"", "echo \"=== Seeding the e2e admin user ===\"")
 
 
+def c4_benign_seed_wording():
+    patch(SEED, "Re-seeding has to overwrite the row to be a reset.",
+          "Re-seeding has to overwrite the row for the reset to mean anything.")
+
+
 MUTATIONS = [
     ("M1", "fixture password one under the floor", m1_short_password, GUARD_TESTS[0]),
     ("M2", "seeded hash no longer matches the fixture", m2_stale_seed_hash, GUARD_TESTS[1]),
-    ("M3", "a spec restates the shared credential", m3_duplicated_credential, GUARD_TESTS[2]),
+    ("M3", "seed skips an admin row that already exists", m4_seed_skips_existing_admin, GUARD_TESTS[2]),
+    ("M4", "a spec restates the shared credential", m3_duplicated_credential, GUARD_TESTS[3]),
 ]
 
 CONTROLS = [
     ("C1", "benign spec title change", c1_benign_spec_title),
     ("C2", "benign fixture comment added", c2_benign_fixture_comment),
     ("C3", "benign seed echo change", c3_benign_seed_comment),
+    ("C4", "benign seed comment reworded", c4_benign_seed_wording),
 ]
 
 results = []

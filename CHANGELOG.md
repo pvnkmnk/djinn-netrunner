@@ -41,14 +41,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only ever agreed by hand; the hash now matches the fixture. And `ensureUserExists` no
   longer tolerates a 409 as "already exists" — registration returns 201 either way, so that
   branch was dead code sitting between the fixture and the failure it should have reported,
-  and it threw with a status code and nothing else. Three guards hold this, in
+  and it threw with a status code and nothing else. A fourth half turned up on review: the
+  seed guarded its insert with `WHERE NOT EXISTS`, so a database carried over from an earlier
+  run kept the *previous* password hash — and since registration answers 201 for an account
+  that already exists, `ensureUserExists` reported success and every admin spec failed later,
+  at the login, with nothing pointing at the cause. Re-seeding is now an upsert on `email`,
+  so it is actually a reset; verified live by planting the old hash, re-seeding and reading
+  back the new one (`INSERT 0 1`). Four guards hold this, in
   `backend/internal/api/e2e_credentials_test.go`, reading the e2e tree from the Go side
   because that is where the policy lives: every fixture credential is counted in runes
   against the constant, the seeded hash is compared with `bcrypt.CompareHashAndPassword`
-  rather than matched as a string, and no spec may declare a credential of its own.
-  `scripts/e2e_credentials_mutation_check.py` proves the three: a password one under the
-  floor, a hash the fixture no longer matches, and a hand-restated credential are each caught
-  by the test that names that half, against three benign edits that must not fail. The
+  rather than matched as a string, the seed is required to overwrite rather than skip, and
+  no spec may declare a credential of its own. The third is not redundant with the second —
+  the hash comparison proves the script names the right password and is blind to what the
+  database ends up holding, which is exactly the gap the review found.
+  `scripts/e2e_credentials_mutation_check.py` proves the four: a password one under the
+  floor, a hash the fixture no longer matches, a seed that skips an existing row, and a
+  hand-restated credential are each caught
+  by the test that names that half, against four benign edits that must not fail. The
   browser-level specs that were dead now run — the watchlist lifecycle and the DJI-571
   indicator guard included. What the gate had been hiding is filed separately rather than
   fixed here; this restores the instrument, it does not re-baseline the readings.
