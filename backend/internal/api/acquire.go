@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
@@ -76,6 +77,25 @@ func (h *AcquireHandler) Create(c *fiber.Ctx) error {
 	// Build optional params JSON for quality profile
 	var params json.RawMessage
 	if payload.QualityProfileID != "" {
+		profileID, err := uuid.Parse(payload.QualityProfileID)
+		if err != nil {
+			if c.Get("HX-Request") == "true" {
+				return h.renderFormWithError(c, payload.Artist, payload.Album, payload.Title, "Invalid quality profile.")
+			}
+			return c.Status(400).JSON(fiber.Map{"error": "invalid quality_profile_id"})
+		}
+		if user.Role != "admin" {
+			var count int64
+			h.db.Model(&database.QualityProfile{}).
+				Where("id = ? AND (owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?)", profileID, user.ID, true).
+				Count(&count)
+			if count == 0 {
+				if c.Get("HX-Request") == "true" {
+					return h.renderFormWithError(c, payload.Artist, payload.Album, payload.Title, "Unauthorized quality profile.")
+				}
+				return c.Status(403).JSON(fiber.Map{"error": "forbidden: unauthorized quality profile"})
+			}
+		}
 		raw, _ := json.Marshal(map[string]string{"quality_profile_id": payload.QualityProfileID})
 		params = raw
 	}
