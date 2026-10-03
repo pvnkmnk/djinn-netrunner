@@ -374,13 +374,19 @@ Postgres for concurrent production workloads.
   (`PENDING`/`IN_PROGRESS`/`SUCCESS`), so poll for the uppercase set.
 
 - Default branch is `master`, not `main`.
+- **Never `git reset --hard origin/master` to sync after a merge — it silently
+  destroys the user's uncommitted work.** Unstaged edits are never written to the
+  object store, so there is no `git fsck` recovery. `git checkout master && git
+  pull --ff-only` carries them across safely. An earlier note here said
+  `reset --hard` was safe *because* master only fast-forwards; that is exactly
+  the assumption that costs the most when it is wrong.
 - Merge PRs with `gh pr merge N --repo pvnkmnk/djinn-netrunner --squash
   --delete-branch`. It often prints **nothing** on success (exit 0, empty
   stdout), and a "Merging…" line can precede a merge that never ran —
   confirm `gh pr view N --json state,mergeCommit` before assuming a merge
-  landed or re-issuing it. `git reset --hard origin/master` after is
-  safe only because master only fast-forwards — check
-  `git reflog show master` before assuming that on a shared checkout.
+  landed or re-issuing it. To sync afterwards use
+  `git checkout master && git pull --ff-only`, which carries uncommitted work
+  across — NOT `git reset --hard origin/master`, see above.
 - The `integration` CI job can fail in ~26s with `connection reset by peer`
   pulling Navidrome from Docker Hub — a registry flake that hits docs-only
   commits too. Re-run the workflow instead of debugging the diff.
