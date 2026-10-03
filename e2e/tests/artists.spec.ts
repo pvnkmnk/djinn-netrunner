@@ -57,17 +57,25 @@ test.describe('Artists Feature (DJI-428)', () => {
     await expect(page.locator('#modal-container h3')).toHaveText('Add Artist');
   });
 
-  test('5. The add form posts to /api/artists and requires a name', async ({ authenticatedPage: page }) => {
+  test('5. The add form searches for the artist instead of creating one, and requires a name', async ({ authenticatedPage: page }) => {
     await page.goto('/artists');
     await page.waitForTimeout(500);
 
     await page.locator('button:has-text("Add Artist")').click();
     await page.waitForTimeout(500);
 
-    const form = page.locator('#modal-container form[hx-post="/api/artists"]');
+    // DJI-548 moved this form off /api/artists on purpose. Posting a bare name
+    // auto-accepted MusicBrainz's top hit behind a comment claiming a
+    // confidence check, so typing "Death" monitored "Napalm Death". The modal
+    // now searches and creates only once a candidate is picked, so the
+    // endpoint is asserted here to keep it pinned: pointing this back at
+    // /api/artists to satisfy an old test would reinstate that defect.
+    const form = page.locator('#modal-container form[hx-post="/api/artists/search"]');
     await expect(form).toBeVisible();
-    // A name is the only input the endpoint accepts; an empty submit must not reach it.
+    // A name is the only input the search accepts; an empty submit must not reach it.
     await expect(form.locator('#name')).toHaveAttribute('required', '');
+    // And the button reads Search, not Save or Add: this modal creates nothing yet.
+    await expect(form.locator('button[type="submit"]')).toHaveText('Search');
   });
 
   test('6. Cancel closes the modal without creating anything', async ({ authenticatedPage: page }) => {
