@@ -27,7 +27,7 @@ test.describe('Permissions & edge cases (DJI-434)', () => {
     }) => {
       // The admin seat sees the panel; the plain user's seat must not.
       await adminPage.goto('/admin');
-      await expect(adminPage.locator('.page-header, h1, h2').first()).toBeVisible();
+      await expect(adminPage.locator('.page-heading, h1, h2').first()).toBeVisible();
 
       const resp = await authenticatedPage.goto('/admin');
       expect(resp?.status()).toBe(403);

@@ -24,8 +24,8 @@ test.describe('Artists Feature (DJI-428)', () => {
   test('1. Page loads - /artists shows the page header and the HTMX region', async ({ authenticatedPage: page }) => {
     await page.goto('/artists');
 
-    await expect(page.locator('.page-header')).toBeVisible();
-    await expect(page.locator('.page-header h2')).toHaveText('Monitored Artists');
+    await expect(page.locator('.page-heading')).toBeVisible();
+    await expect(page.locator('.page-heading')).toHaveText('Monitored Artists');
     await expect(page.locator('#artists-region')).toBeVisible();
   });
 
@@ -125,7 +125,7 @@ test.describe('Artists Feature (DJI-428)', () => {
     await page.waitForTimeout(1000);
 
     await expect(page).toHaveURL(/\/artists$/);
-    await expect(page.locator('.page-header h2')).toHaveText('Monitored Artists');
+    await expect(page.locator('.page-heading')).toHaveText('Monitored Artists');
   });
 
   test('11. Authorization - an unauthenticated request is refused', async ({ browser }) => {

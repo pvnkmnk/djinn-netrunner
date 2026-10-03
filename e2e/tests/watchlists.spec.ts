@@ -127,8 +127,8 @@ test.describe('Watchlists Feature - DJI-426', () => {
 
   test('1. Page loads - navigate to /watchlists and verify page header with title', async ({ authenticatedPage: page }) => {
     await page.goto('/watchlists');
-    await expect(page.locator('.page-header')).toBeVisible();
-    await expect(page.locator('.page-header h2')).toHaveText('Watchlists');
+    await expect(page.locator('.page-heading')).toBeVisible();
+    await expect(page.locator('.page-heading')).toHaveText('Watchlists');
   });
 
   test('2. Watchlists region loads - verify #watchlists-region HTMX container exists', async ({ authenticatedPage: page }) => {
@@ -142,7 +142,7 @@ test.describe('Watchlists Feature - DJI-426', () => {
     await expect(page.locator('.dashboard')).toBeVisible();
     await page.locator('nav#primary-nav a:has-text("Watchlists")').click();
     await waitForHtmx(page);
-    await expect(page.locator('.page-header h2')).toHaveText('Watchlists');
+    await expect(page.locator('.page-heading')).toHaveText('Watchlists');
   });
 
   test('4. Empty state - verify empty state message when no watchlists exist', async ({ authenticatedPage: page }) => {
@@ -641,7 +641,7 @@ test.describe('Watchlists Feature - DJI-426', () => {
     await page.locator('nav#primary-nav a:has-text("Jobs")').click();
     await waitForHtmx(page);
 
-    await expect(page.locator('.page-header h2')).toHaveText('Jobs');
+    await expect(page.locator('.page-heading')).toHaveText('Jobs');
   });
 
   test('23. Navigation cross-page - navigate from watchlists to libraries page', async ({ authenticatedPage: page }) => {
@@ -652,7 +652,7 @@ test.describe('Watchlists Feature - DJI-426', () => {
     await page.locator('nav#primary-nav a:has-text("Libraries")').click();
     await waitForHtmx(page);
 
-    await expect(page.locator('.page-header h2')).toHaveText('Libraries');
+    await expect(page.locator('.page-heading')).toHaveText('Libraries');
   });
 
   test('24. Navigation cross-page - navigate from watchlists to artists page', async ({ authenticatedPage: page }) => {
@@ -663,7 +663,7 @@ test.describe('Watchlists Feature - DJI-426', () => {
     await page.locator('nav#primary-nav a:has-text("Artists")').click();
     await waitForHtmx(page);
 
-    await expect(page.locator('.page-header h2')).toHaveText('Monitored Artists');
+    await expect(page.locator('.page-heading')).toHaveText('Monitored Artists');
   });
 
   test('25. Navigation cross-page - navigate from watchlists to schedules page', async ({ authenticatedPage: page }) => {
@@ -674,7 +674,7 @@ test.describe('Watchlists Feature - DJI-426', () => {
     await page.locator('nav#primary-nav a:has-text("Schedules")').click();
     await waitForHtmx(page);
 
-    await expect(page.locator('.page-header h2')).toHaveText('Schedules');
+    await expect(page.locator('.page-heading')).toHaveText('Schedules');
   });
 
   // ========== API Endpoint Tests ==========
