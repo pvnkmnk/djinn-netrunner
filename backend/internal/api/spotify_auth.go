@@ -70,6 +70,7 @@ func (h *SpotifyAuthHandler) Login(c *fiber.Ctx) error {
 		Value:    state,
 		MaxAge:   600, // 10 minutes
 		HTTPOnly: true,
+		Secure:   c.Protocol() == "https",
 		SameSite: "Lax",
 		Path:     "/",
 	})
