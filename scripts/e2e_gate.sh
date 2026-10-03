@@ -22,6 +22,67 @@ shard_abandoned_tests() {
     grep -aq 'did not run' "$1"
 }
 
+# ---------------------------------------------------------------------------
+# The skip allowlist
+# ---------------------------------------------------------------------------
+# Every skip the suite is allowed to make, and the precondition each one names.
+# This is an allowlist, not an assertion: a NEW skip fails the run, and so does
+# a DECLARED skip that starts running -- in that case the manifest is stale and
+# real coverage changed without anyone saying so. Both directions are strict on
+# purpose, because "2 skipped" being stable is exactly what makes it readable.
+#
+#   10g lidarr_wanted  -- the provider is not registered in the e2e environment
+#   10i local_file     -- needs a real FILE on disk; /api/test/create-dir only
+#                         makes directories, so there is nothing to point at
+#
+# Keyed on test TITLE, never file:line -- line numbers move whenever the spec
+# is edited, and a manifest keyed on them rots on any touch.
+DECLARED_SKIPS="10g. Create watchlist with source_type lidarr_wanted
+10i. Create watchlist with source_type local_file"
+
+# Titles Playwright reported as skipped, across every shard log.
+#
+# The list reporter marks these `-  258 [chromium] <U+203A> path:line <U+203A>
+# suite <U+203A> title`, so the title is the text after the LAST separator.
+# That separator is a multibyte char, so it is transliterated to \001 with
+# POSIX tr octal escapes and split on with awk -- no locale or GNU-only
+# assumption, and the regex does not have to match UTF-8 bytes.
+skipped_titles() {
+    local f
+    for f in "$@"; do
+        [ -f "$f" ] || continue
+        # The `{ ... || true; }` is load-bearing: a shard containing no skips
+        # makes grep exit 1, and under `set -euo pipefail` that would abort the
+        # whole run mid-listing rather than simply contributing no titles.
+        tr '\342\200\272' '\001' < "$f" \
+            | { grep -aE '^[[:space:]]*-[[:space:]]+[0-9]+[[:space:]]' || true; } \
+            | awk -F'\001' 'NF > 1 { t = $NF; gsub(/^[[:space:]]+|[[:space:]]+$/, "", t); if (t != "") print t }'
+    done
+}
+
+# Verify the skipped set is EXACTLY the declared set. Prints the reason to
+# stderr and returns non-zero otherwise.
+verify_declared_skips() {
+    local observed declared extra missing
+    observed="$(skipped_titles "$@" | sort -u)"
+    declared="$(printf '%s\n' "$DECLARED_SKIPS" | sort -u)"
+
+    extra="$(comm -23 <(printf '%s\n' "$observed" | grep -v '^$') <(printf '%s\n' "$declared" | grep -v '^$'))"
+    missing="$(comm -13 <(printf '%s\n' "$observed" | grep -v '^$') <(printf '%s\n' "$declared" | grep -v '^$'))"
+
+    if [ -n "$extra" ]; then
+        echo "undeclared skip(s) -- add them to DECLARED_SKIPS in scripts/e2e_gate.sh with their precondition:" >&2
+        printf '  + %s\n' "$extra" >&2
+        return 1
+    fi
+    if [ -n "$missing" ]; then
+        echo "declared skip(s) that now RUN -- remove them from DECLARED_SKIPS; coverage changed:" >&2
+        printf '  - %s\n' "$missing" >&2
+        return 1
+    fi
+    return 0
+}
+
 # Totals across every shard log, as "passed failed skipped flaky".
 # A log that does not exist yet contributes zero rather than failing the read.
 sum_shards() {
@@ -65,6 +126,9 @@ verify_suite_complete() {
     fi
     if [ "$failed" -ne 0 ]; then
         echo "${failed} test(s) failed" >&2
+        return 1
+    fi
+    if ! verify_declared_skips "$@"; then
         return 1
     fi
     return 0
