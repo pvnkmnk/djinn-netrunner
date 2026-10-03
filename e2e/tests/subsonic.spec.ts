@@ -1,8 +1,9 @@
 import { expect } from '@playwright/test';
-import { test } from '../fixtures/auth.fixture';
+import { test, TEST_USER } from '../fixtures/auth.fixture';
 
-// Test user credentials (matches auth.fixture.ts)
-const TEST_USER = { email: 'e2e-test@netrunner.dev', password: 'testpass123' };
+// Test user credentials come from the fixture rather than being restated here.
+// Subsonic's `p=` parameter compares the *account* password, so a copy that
+// drifts from auth.fixture.ts authenticates against nothing.
 
 /**
  * Helper to make Subsonic API GET requests with Subsonic auth params.

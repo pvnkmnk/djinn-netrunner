@@ -7,9 +7,22 @@ type AuthFixtures = {
   adminPage: Page;
 };
 
-// Shared credentials
-const TEST_USER = { email: 'e2e-test@netrunner.dev', password: 'testpass123' };
-const ADMIN_USER = { email: 'e2e-admin@netrunner.dev', password: 'admin123' };
+// Shared credentials.
+//
+// Exported, and the only place they are written down. They used to be declared
+// here and re-declared by hand in two specs, which is how the suite went dead
+// without anybody noticing: /api/auth/register enforces a 12-character floor
+// (DefaultMinPasswordLength) and these were 11 and 8, so `ensureUserExists`
+// answered 400 and *every* authenticatedPage and adminPage test failed during
+// fixture setup. Nothing else failed, so the suite still read as "mostly
+// passing" - a gate that cannot reach the code it covers.
+//
+// ADMIN_USER's password is not free text either: e2e/setup-test-db.sh seeds
+// that account from a bcrypt hash, and the two must agree or the admin seat
+// cannot log in. e2e_credentials_test.go in backend/internal/api checks both
+// halves, so neither can drift again on its own.
+export const TEST_USER = { email: 'e2e-test@netrunner.dev', password: 'e2eTestPass1234' };
+export const ADMIN_USER = { email: 'e2e-admin@netrunner.dev', password: 'e2eAdminPass1234' };
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 async function loginViaAPI(page: Page, user: { email: string; password: string }) {
@@ -45,9 +58,15 @@ async function ensureUserExists(page: Page, user: { email: string; password: str
     headers: { 'X-CSRF-Token': csrfToken }
   });
   
-  // 201 = created, 409 = already exists (both fine)
-  if (!registerResponse.ok() && registerResponse.status() !== 409) {
-    throw new Error(`Registration failed: ${registerResponse.status()}`);
+  // 201 = created, or an identical 201 for an account that already exists
+  // (the endpoint deliberately returns the same answer either way, to stop it
+  // being used to enumerate accounts). Anything else is a real failure.
+  if (!registerResponse.ok()) {
+    const body = await registerResponse.text().catch(() => '');
+    throw new Error(
+      `Registration failed: ${registerResponse.status()} ${body.slice(0, 200)}` +
+        ' - check the password in this file against DefaultMinPasswordLength'
+    );
   }
 }
 

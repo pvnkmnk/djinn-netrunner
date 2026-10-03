@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { test } from '../fixtures/auth.fixture';
+import { test, TEST_USER } from '../fixtures/auth.fixture';
 
 // Helper to extract CSRF token from page context
 async function getCsrfToken(page: Page): Promise<string> {
@@ -10,7 +10,10 @@ async function getCsrfToken(page: Page): Promise<string> {
 
 test.describe('Auth & Navigation (DJI-423)', () => {
   const timestamp = Date.now();
-  const testPassword = 'testpass123';
+  // Imported, not re-declared. A copy of this password was 11 characters while
+  // /api/auth/register requires 12, so every test below that registered or
+  // logged in was asserting against a request the server had already refused.
+  const testPassword = TEST_USER.password;
 
   // ==========================================================================
   // Login Form Tests

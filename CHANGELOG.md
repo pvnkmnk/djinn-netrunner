@@ -25,6 +25,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **The Playwright suite was dead, and the cause was a password one character too short.**
+  `e2e/fixtures/auth.fixture.ts` declared its shared account with an 11-character password
+  and its admin account with an 8-character one, while `POST /api/auth/register` enforces a
+  12-character floor (`DefaultMinPasswordLength`, added with DJI-544). `ensureUserExists`
+  therefore got a 400 instead of a 201 and threw, so every spec built on `authenticatedPage`
+  or `adminPage` failed during fixture setup — while the specs that only drive the raw login
+  page still passed. A suite with a broken fixture still reports a plausible number of
+  passes, which is what kept this invisible: the gate could not reach the code it covers and
+  nothing about its output said so. Three things had to change together, which is why it
+  survived. The credentials are now declared once and exported, and the specs that used to
+  restate them by hand import them, so there is no second copy to fall behind. The e2e seed
+  writes the admin's bcrypt hash straight into the `users` table and bypasses the register
+  endpoint entirely, so it can carry a password that endpoint would refuse and the two halves
+  only ever agreed by hand; the hash now matches the fixture. And `ensureUserExists` no
+  longer tolerates a 409 as "already exists" — registration returns 201 either way, so that
+  branch was dead code sitting between the fixture and the failure it should have reported,
+  and it threw with a status code and nothing else. Three guards hold this, in
+  `backend/internal/api/e2e_credentials_test.go`, reading the e2e tree from the Go side
+  because that is where the policy lives: every fixture credential is counted in runes
+  against the constant, the seeded hash is compared with `bcrypt.CompareHashAndPassword`
+  rather than matched as a string, and no spec may declare a credential of its own.
+  `scripts/e2e_credentials_mutation_check.py` proves the three: a password one under the
+  floor, a hash the fixture no longer matches, and a hand-restated credential are each caught
+  by the test that names that half, against three benign edits that must not fail. The
+  browser-level specs that were dead now run — the watchlist lifecycle and the DJI-571
+  indicator guard included. What the gate had been hiding is filed separately rather than
+  fixed here; this restores the instrument, it does not re-baseline the readings.
 - **A posting control now returns to idle when its request ends.** Every control that posts
   with htmx carries `requestClass` (`htmx-request`, which the stylesheet reads as the busy
   state: `opacity: 0.7` and `cursor: wait !important`) while its request is in flight, and
