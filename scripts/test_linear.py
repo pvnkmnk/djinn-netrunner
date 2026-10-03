@@ -426,5 +426,45 @@ class TestDrainTokenResolution(unittest.TestCase):
             _restore("LINEAR_DRAIN_TOKEN", old_env)
 
 
+class TestWebhookResourceTypes(unittest.TestCase):
+    """Linear declares resourceTypes as [String!]!, not the enum type that
+    introspection suggests, so a query naming [WebhookResourceType!] is a
+    validation error before it ever reaches the API."""
+
+    def test_registration_declares_string_list(self):
+        api = FakeApi([
+            {"webhookCreate": {"success": True, "webhook": {
+                "id": "wh1", "label": None, "url": "https://w.example",
+                "enabled": True}}},
+            {"webhook": {"id": "wh1", "label": None,
+                         "url": "https://w.example", "secret": "lin_wh_x",
+                         "enabled": True}},
+        ])
+        args = types.SimpleNamespace(
+            url="https://w.example/hook", types=None, print_secret=False,
+            verbose=False)
+        cli.cmd_webhook_register(api, args)
+        query, variables = api.calls[0]
+        self.assertIn("$types:[String!]!", query)
+        self.assertNotIn("WebhookResourceType", query)
+        self.assertEqual(sorted(variables["types"]), ["Comment", "Issue", "Project"])
+        self.assertTrue(variables["all"], "public teams must be included")
+
+    def test_explicit_types_are_passed_through(self):
+        api = FakeApi([
+            {"webhookCreate": {"success": True, "webhook": {
+                "id": "wh1", "label": None, "url": "https://w.example",
+                "enabled": True}}},
+            {"webhook": {"id": "wh1", "label": None,
+                         "url": "https://w.example", "secret": "lin_wh_x",
+                         "enabled": True}},
+        ])
+        args = types.SimpleNamespace(
+            url="https://w.example/hook", types=["Issue"], print_secret=False,
+            verbose=False)
+        cli.cmd_webhook_register(api, args)
+        self.assertEqual(api.calls[0][1]["types"], ["Issue"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
