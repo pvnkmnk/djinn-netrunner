@@ -521,8 +521,12 @@ test.describe('Libraries Feature (DJI-425)', () => {
     const pathInput = page.locator('input[name="path"], #library-path');
     await expect(pathInput).toBeVisible();
 
-    // Verify submit button exists
-    await expect(page.locator('button[type="submit"], input[type="submit"], button:has-text("Save"), button:has-text("Create")')).toBeVisible();
+    // Scoped to the modal. DJI-524 added a header Sign out button that is also
+    // type="submit", so this locator used to resolve to two elements and
+    // Playwright refused to act under strict mode. The alternative already
+    // used further down this file (#modal-container ...) was the right shape all
+    // along.
+    await expect(page.locator('#modal-container button[type="submit"]')).toBeVisible();
   });
 
   test('26. Library card shows action buttons', async ({ authenticatedPage: page }) => {

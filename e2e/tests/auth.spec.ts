@@ -650,6 +650,18 @@ test.describe('Auth & Navigation (DJI-423)', () => {
   // Navigation Tests
   // ==========================================================================
   test.describe('Navigation', () => {
+    // DJI-524 put a Sign out button in the nav, and it is a submit control like
+    // any other. Nothing asserted it existed, which is exactly why two modal
+    // specs drifted into unscoped button[type="submit"] locators and began
+    // resolving to two elements (DJI-594). Pinning it makes that class of
+    // failure legible the next time a submit control appears.
+    test('header carries exactly one sign-out control', async ({ authenticatedPage: page }) => {
+      await page.goto('/');
+      const signOut = page.locator('nav#primary-nav button.signout-button');
+      await expect(signOut).toHaveCount(1);
+      await expect(signOut).toBeVisible();
+    });
+
     test('all nav links are present in header (admin)', async ({ adminPage: page }) => {
       await page.goto('/');
 

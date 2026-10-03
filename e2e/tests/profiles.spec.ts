@@ -569,9 +569,11 @@ test.describe('Quality Profiles (DJI-427)', () => {
       await expect(page.locator('input[name="prefer_web_releases"]')).toBeVisible();
       await expect(page.locator('input[name="cover_art_sources"]')).toBeVisible();
 
-      // Verify submit and cancel buttons
-      await expect(page.locator('button[type="submit"]')).toBeVisible();
-      await expect(page.locator('button:has-text("Cancel")')).toBeVisible();
+      // Verify submit and cancel buttons, both scoped to the modal for the same
+      // reason as libraries.spec.ts: the header Sign out control is also a
+      // submit button (DJI-524), so an unscoped locator matched two elements.
+      await expect(page.locator('#modal-container button[type="submit"]')).toBeVisible();
+      await expect(page.locator('#modal-container button:has-text("Cancel")')).toBeVisible();
     });
 
     test('modal can be closed', async ({ authenticatedPage: page }) => {
