@@ -417,6 +417,95 @@ Postgres for concurrent production workloads.
   not match go tool version Y` in stdlib internals unrelated to your diff) —
   re-run before debugging.
 
+### Linear: use `scripts/linear.py`, not the MCP connector
+
+`scripts/linear.py` is how this repo reads and writes Linear. The MCP connector
+still works for one-off lookups, but three of its behaviours make it the wrong
+tool for anything load-bearing.
+
+**`ProjectUpdateInput.content` is a separate field from `description`.**
+`description` is the ~127-char one-line summary; the body is `content`, also
+readable as `project.documentContent.content` (58KB for P-DJI-28). Editing a
+project body is a read-modify-write of ONE field — `linear.py project-body`
+prints a diff, writes, then re-reads. Never resend a whole description: it is a
+blind write that no test can inspect.
+
+**Linear normalises markdown on write.** A table separator sent as `| --- |`
+stores as `| -- |`, and a trailing newline is stripped. Compare against what came
+BACK, not what you sent — `project-body` warns when they differ, and that warning
+is expected, not a failure.
+
+**A body read back from the API is markdown, not elements.** A mention is
+`[DJI-546](https://linear.app/djinnet/issue/DJI-546/...)`; `<issue>` /
+`<pull-request>` are the connector's rendering. Flatten `[x](url)` to `x` before
+asserting structure.
+
+**Mentions auto-link from bare identifiers.** Writing `DJI-548` or
+`owner/repo#317` into a body or comment is enough — Linear builds the link, so a
+write needs no hand-authored markup and nothing can land as literal HTML. A
+`<pull-request>` element whose label disagrees with the PR is normalised to the
+PR title; bare text avoids that.
+
+**GraphQL field names and variable types are validated before execution.** Each of
+these cost a 400 before it was pinned down:
+  * `ProjectFilter` has NO `identifier` field (only `id`, `name`, `slugId`, ...).
+    `project(id: "P-DJI-28")` takes a human identifier directly, so prefer it.
+  * `project.id` is `ID`-typed: declaring `$pid: String` is a validation error.
+  * `Query.issues` has no `project`/`state` argument — they belong in `filter:`.
+  * `IssueCreateInput`/`ProjectCreateInput` need `teamIds` (an ARRAY); singular
+    `teamId` is rejected by name.
+  * `WorkflowState` has no `category`, but `type` is enough to move a ticket by
+    name without hardcoding UUIDs.
+
+**HTTP 200 can carry a populated `errors` array.** Every helper in the CLI
+refuses to treat that as success — treating it as success is how a probe reads a
+failed field as "empty" and reports data loss that never happened.
+
+Rate limits are 2,500 requests/hour per user (shared across keys) and
+3,000,000 complexity/hour, exposed as `X-RateLimit-*` headers, which the CLI reads
+to throttle itself instead of discovering the ceiling by failing.
+
+Credentials live in `~/.linear_token` (0600) or `LINEAR_API_KEY`; the drain token
+in `~/.linear_drain_token` or `LINEAR_DRAIN_TOKEN`. **Never in the repo's `.env`**
+— both app services declare `env_file: .env`, so a key there is injected into the
+web and worker containers. The user's interactive shell exports never reach the
+agent's shell either; a `0600` file outside the checkout is the only handover
+that works.
+
+Tests: `python scripts/test_linear.py` (offline, no key). Mutation proof:
+`python scripts/linear_mutation_check.py` (9/9 caught, 3/3 controls green).
+
+### Linear webhooks (`ops/linear-webhook`)
+
+Linear requires a **public, non-localhost HTTPS** endpoint, expects 200 within
+**5 seconds**, retries only **3 times** (1 min / 1 hr / 6 hr), and may then
+**disable the webhook until a human re-enables it**. That is why the receiver is
+a Cloudflare Worker rather than a laptop listener: a machine that is asleep misses
+events exactly when there is no retry budget left, and `cloudflared` here has no
+`cert.pem`, so a quick tunnel would hand Linear a new random hostname on every
+restart. Push to an always-on endpoint; the laptop drains the queue on demand.
+
+The Worker verifies HMAC-SHA256 over the **raw** body against the
+`linear-signature` header (constant-time compare), refuses a delivery whose
+`webhookTimestamp` is more than 60s old, and dedupes on `Linear-Delivery` so
+Linear's retries are acknowledged but not stored twice. `GET /events` exposes the
+whole queue, so it is gated by `DRAIN_TOKEN` and fails closed when unset.
+`updatedFrom` is retained — it is what makes a state change legible with no
+follow-up query.
+
+Tests: `cd ops/linear-webhook && node --test "test/*.test.mjs"` (14, offline).
+Writing tests against it: Cloudflare's `KV.get(key, "json")` parses the stored
+string, so a fake KV that ignores the type hint returns a raw string where the
+Worker expects an object and fails as a phantom Worker bug.
+
+Registration is scripted rather than a UI step — the signing secret is readable
+via the API, so nothing sensitive is copy-pasted:
+
+```bash
+python scripts/linear.py webhook-register --url https://<worker>.workers.dev --print-secret
+python scripts/linear.py events --url https://<worker>.workers.dev --since 0
+```
+
 ### Linear MCP quirks
 
 - **Every array argument arrives as an object** and fails schema validation:

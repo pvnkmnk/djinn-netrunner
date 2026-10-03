@@ -1,0 +1,39 @@
+# Cloudflare Worker that receives Linear webhooks and queues them in KV.
+#
+# Deploy (a human runs this once — `wrangler login` is interactive, and no
+# credential is ever handed to the agent):
+#
+#   cd ops/linear-webhook
+#   npx wrangler login
+#   npx wrangler kv namespace create LINEAR_EVENTS   # paste the id below
+#   npx wrangler secret put LINEAR_WEBHOOK_SECRET    # the lin_wh_... from Linear
+#   npx wrangler secret put DRAIN_TOKEN              # a random string you choose
+#   npx wrangler deploy
+#
+# Then register the webhook (the CLI does this for you and reads the secret back):
+#
+#   python scripts/linear.py webhook-register --url https://<worker>.workers.dev
+#
+# Two secrets, both `wrangler secret`, never in this file:
+#   LINEAR_WEBHOOK_SECRET — the signing secret Linear generates per webhook.
+#                          Read it back with `linear.py webhook-list`; the API
+#                          exposes it, so no UI copy-paste is needed.
+#   DRAIN_TOKEN           — gates GET /events, which exposes the whole queue.
+#                          Generate with: python -c "import secrets;print(secrets.token_urlsafe(32))"
+#
+# The `compatibility_date` pins the runtime; without it wrangler picks today's
+# date and a future release can change behaviour under you.
+
+name = "netrunner-linear-webhook"
+main = "src/index.js"
+compatibility_date = "2026-01-15"
+
+# KV namespace id — filled in by `wrangler kv namespace create LINEAR_EVENTS`.
+# Left commented deliberately: a placeholder id that looks real is worse than an
+# obvious gap, because the deploy fails late instead of immediately.
+# [[kv_namespaces]]
+# binding = "LINEAR_EVENTS"
+# id = "<paste-the-namespace-id-here>"
+
+[observability]
+enabled = true

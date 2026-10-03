@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scripts/linear.py` — the way this repo reads and writes Linear.** Linear's
+  API has no `patch` argument on any mutation, and the MCP connector's is
+  rejected in every shape, so editing a project body used to mean resending
+  ~44KB blind. `ProjectUpdateInput.content` turns out to be a field SEPARATE
+  from `description` (which is only the ~127-char one-line summary), which makes
+  a body edit a read-modify-write of one field: `project-body` prints a diff,
+  writes, then re-reads and reports what Linear normalised. Also `comment`,
+  `state`, `issue`, `issue-list`, `webhook-register`, `webhook-list` and
+  `events`. It reads the token from `~/.linear_token` rather than the repo's
+  `.env`, because both app services declare `env_file: .env` and would inject a
+  key there straight into the web and worker containers; it refuses to treat an
+  HTTP 200 carrying a populated GraphQL `errors` array as success; and it
+  throttles from the `X-RateLimit-*` headers rather than discovering the ceiling
+  by failing. Guarded by 23 offline tests plus a mutation harness at 9/9 caught
+  with 3/3 controls green.
+- **`ops/linear-webhook` — a Cloudflare Worker that receives Linear webhooks.**
+  Linear demands a public non-localhost HTTPS endpoint, a 200 within 5 seconds,
+  and offers only three retries (1 min / 1 hr / 6 hr) before it may disable the
+  webhook for a human to re-enable — so a listener on a laptop misses events
+  precisely when there is no retry budget left. This endpoint is always on and
+  queues events in KV for the machine to drain on its own schedule. It verifies
+  HMAC-SHA256 over the raw body with a constant-time compare, refuses a delivery
+  whose `webhookTimestamp` is more than 60 seconds old, dedupes on
+  `Linear-Delivery` so Linear's retries are acknowledged but not stored twice,
+  and gates the queue-draining endpoint behind a token that fails closed when
+  unset. 14 offline tests cover the security paths.
+
 ### Changed
 - **The beta deployment path is retired; dev and release are the only two.** Nothing
   ever shipped as a beta, so the assets carrying the phase name were renamed rather
