@@ -30,6 +30,16 @@ jobs:
         env:
           CGO_ENABLED: 0
 
+      # The e2e suite's completeness gate decides whether a run counts as
+      # having covered everything, so the gate itself needs a test that runs on
+      # every PR -- otherwise a change to count_category() could break it
+      # silently and the suite would start reporting fewer tests than it runs.
+      # Pure bash + sed/awk, no dependencies, ~0.03s. Five of its eight cases
+      # are rejections, including a dead worker's "did not run" and a silent
+      # truncation with no crash banner.
+      - name: E2E completeness gate tests
+        run: bash scripts/test_e2e_gate.sh
+
       - name: Vulnerability scan
         working-directory: backend
         run: |
