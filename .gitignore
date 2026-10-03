@@ -83,5 +83,9 @@ Thumbs.db
 # Playwright artifacts
 e2e/playwright-report/
 e2e/test-results/
+# Per-shard suite logs from the sharded runner. Kept out of the two dirs above
+# on purpose: Playwright clears its own output directory at the start of every
+# run, which unlinks a log the shell still holds open.
+e2e/shard-logs/
 # Graphify knowledge-graph output (local tooling)
 graphify-out/
