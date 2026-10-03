@@ -420,16 +420,38 @@ Postgres for concurrent production workloads.
 ### Linear MCP quirks
 
 - **Every array argument arrives as an object** and fails schema validation:
-  `save_issue.labels`, `list_issues.fields`. `save_project.patch` is the
-  inverse trap — it wants a **list of ops**. **Scalars work**, including
-  `save_project.description` as one full string — that is the only way to edit
-  a project description. `priority` arrives as a string and fails; omit it.
+  `save_issue.labels`, `list_issues.fields`. `priority` arrives as a string and
+  fails; omit it. **Scalars work**, including `save_project.description` as one
+  full string.
+- **`patch` is unusable — do not spend calls rediscovering that.** It rejects a
+  multi-op array, a bare op object, a *single-element array*, and a JSON string
+  (all `expected array, received object`), on both `save_project` and
+  `save_issue`. Linear's own API has no `patch` on `Mutation.projectUpdate`
+  either (`Unknown argument "patch"`), so **a project description can only be
+  changed by resending `description` in full** — not a connector limitation to
+  work around, the only capability available.
 - **Booleans are coerced to strings** and fail: `get_issue(includeRelations:
   "true")`. Omit the flag.
 - Linear re-renders a GitHub PR URL as a `<pull-request>` element, and a bare
   markdown link inside prose sometimes nests duplicated ones. Reference a PR
   as plain `owner/repo#NNN`, never a URL, and always read a saved project
   description back to check for doubled elements.
+- **A project body lives in `project.documentContent.content`, not
+  `Project.description`** — the latter is the ~127-char one-line summary, so
+  reading it to check a large body looks like catastrophic data loss and is not.
+  The body is markdown and a mention is an ordinary link
+  `[DJI-546](https://linear.app/…)`; the `<issue>`/`<pull-request>` elements are
+  the connector's rendering. Flatten `[x](url)` → `x` before asserting structure.
+- **Write bare identifiers, never hand-authored `<issue id=…>` HTML.** Linear
+  auto-links plain `DJI-548` *and* plain `owner/repo#NNN` on write, so a resend
+  needs no element markup and nothing hand-authored can land as literal HTML.
+  A `<pull-request>` element whose label disagrees with the PR is normalised to
+  the PR title; bare text avoids that. Probe the round-trip on a throwaway
+  issue before a full resend — one canceled issue buys certainty.
+- **The user's shell exports never reach the agent's shell** (each command is a
+  fresh process from the orchestrator). Hand over a credential via a `0600` file
+  outside the checkout; never `.env`, which both app services read via `env_file`
+  and would inject into the web and worker containers.
 - **Ticket state drifts from merges in both directions**, so reconcile it in the
   *same pass* as the merge (an operator standing rule): DJI-590 was marked Done
   before its merge landed, while DJI-524/529/534 stayed open long after their
@@ -451,6 +473,16 @@ specific claim carry four traps, all of which inflate the score:
   Omitting it makes every case fail via `[setup failed]`, i.e. all VOID.
 - **Carry a benign CONTROL that must pass**, and re-anchor after any refactor —
   a stale anchor silently matches zero times and reads as a caught mutation.
+- **Take the test name from `split()[2]`, not `split()[1]`.**
+  `--- FAIL: TestName (0.00s)` splits to `['---', 'FAIL:', 'TestName', …]`, so
+  `split()[1]` is the literal `FAIL:` — no mutation can then be classified
+  caught and the run scores 0/3 with the intended test in fact failing.
+- **A MISSED proves nothing until you confirm the mutant broke the invariant.**
+  Substituting a 12-character password for a 12-rune floor still passes: that
+  mutation measured nothing, it did not find a gap in the guard.
+- **A guard over a script's *text* cannot see what the script produced at
+  runtime.** Comparing a seeded bcrypt hash to the expected password is green
+  while the seed skips an existing row and the database keeps the old value.
 
 A guard for "must *not* do X" needs an assertion of **absence**
 (`assert.NotContains`), not just presence. Flipping `renderAdoptionOffer(c,
