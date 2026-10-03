@@ -665,16 +665,25 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     test('all nav links are present in header (admin)', async ({ adminPage: page }) => {
       await page.goto('/');
 
+      // base.html renders eight shared links and gates the ninth behind
+      // {% if IsAdmin %}, so an admin sees nine.
       const navLinks = page.locator('nav#primary-nav a');
       await expect(navLinks).toHaveCount(9);
+      await expect(navLinks.filter({ hasText: 'Admin' })).toHaveCount(1);
     });
 
     test('all nav links are present in header (regular user)', async ({ authenticatedPage: page }) => {
       await page.goto('/');
 
       const navLinks = page.locator('nav#primary-nav a');
-      // Regular users should also see 9 links (including Admin if they have access)
-      await expect(navLinks).toHaveCount(9);
+      // Eight, not nine. The assertion that used to sit here was 9 with the
+      // comment "Regular users should also see 9 links (including Admin if they
+      // have access)", which is backwards: it would have passed if the Admin
+      // link leaked to a non-admin, and it failed on a correct build. Counted
+      // the eight and asserted Admin's absence separately, so what is actually
+      // under test is the boundary between the two accounts.
+      await expect(navLinks).toHaveCount(8);
+      await expect(navLinks.filter({ hasText: 'Admin' })).toHaveCount(0);
     });
 
     test('active nav link is highlighted', async ({ authenticatedPage: page }) => {
