@@ -395,7 +395,7 @@ def cmd_webhook_register(api, args):
         die("Linear will not deliver to a localhost URL")
     types = args.types or ["Issue", "Comment", "Project"]
     data = api.gql(
-        """mutation($url:String!,$types:[WebhookResourceType!],$all:Boolean){
+        """mutation($url:String!,$types:[String!]!,$all:Boolean){
              webhookCreate(input:{url:$url, resourceTypes:$types, allPublicTeams:$all}){
                success webhook{ id label url enabled } } }""",
         {"url": args.url, "types": types, "all": True},
@@ -425,7 +425,13 @@ def cmd_events(api, args):
     token = _drain_token()
     req = urllib.request.Request(
         args.url.rstrip("/") + "/events?since=%d" % max(0, args.since),
-        headers={"Authorization": "Bearer " + token},
+        headers={
+            "Authorization": "Bearer " + token,
+            # Cloudflare answers Python's default urllib agent with
+            # "error code: 1010" on a workers.dev route, which reads as an auth
+            # failure but is a bot-fingerprint block. Any explicit UA passes.
+            "User-Agent": "netrunner-linear-cli/1.0",
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
