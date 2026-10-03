@@ -48,7 +48,6 @@ Usage
 
 import argparse
 import difflib
-import hashlib
 import io
 import json
 import os
@@ -60,7 +59,6 @@ import urllib.request
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ENDPOINT = "https://api.linear.app/graphql"
-MAX_COMPLEXITY_PER_QUERY = 10000  # Linear rejects anything above this outright.
 
 
 def die(msg, code=1):
