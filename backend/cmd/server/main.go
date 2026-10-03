@@ -165,7 +165,7 @@ func main() {
 	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
 	schedulesHandler := api.NewSchedulesHandler(db)
 	acquireHandler := api.NewAcquireHandler(db)
-	adminHandler := api.NewAdminHandler(db)
+	adminHandler := api.NewAdminHandlerWithPolicy(db, cfg.MinPasswordLength)
 	playlistHandler := api.NewPlaylistHandler(db)
 	jobHandler := api.NewJobHandler(db)
 

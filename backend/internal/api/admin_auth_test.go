@@ -154,10 +154,16 @@ func TestAdminAuth_CreateUser_Admin(t *testing.T) {
 	// Create app with admin user
 	app := setupAdminTestApp(t, db, adminUser)
 
-	// Test creating a new user with admin privileges
+	// Test creating a new user with admin privileges.
+	//
+	// The password was "password123" -- ELEVEN characters, under the 12 floor --
+	// and it passed only because CreateUser enforced nothing at all. These two
+	// cases are about the admin ROLE gate, not about what an admin may set as a
+	// password, so the fixture now satisfies the policy that DJI-600 applied to
+	// this route.
 	payload := map[string]string{
 		"email":    "newuser@example.com",
-		"password": "password123",
+		"password": "newuser-pass-1234",
 		"role":     "user",
 	}
 	body, _ := json.Marshal(payload)
@@ -189,10 +195,13 @@ func TestAdminAuth_CreateUser_NonAdmin(t *testing.T) {
 	// Create app with non-admin user
 	app := setupAdminTestApp(t, db, nonAdminUser)
 
-	// Test creating a new user with non-admin privileges - should be forbidden
+	// Test creating a new user with non-admin privileges - should be forbidden.
+	// The role gate answers 403 before any password is inspected, so this value
+	// is unreachable either way; it satisfies the policy anyway so the fixture
+	// cannot start meaning something else if the gate ever moves.
 	payload := map[string]string{
 		"email":    "newuser@example.com",
-		"password": "password123",
+		"password": "newuser-pass-1234",
 		"role":     "user",
 	}
 	body, _ := json.Marshal(payload)
