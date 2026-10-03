@@ -185,6 +185,12 @@ run_tests() {
         die "suite is not provably complete: ${reason}. See e2e/shard-logs/shard-*.log"
     fi
     echo -e "${GREEN}All ${executed} declared tests reported a result; suite is complete.${NC}"
+    # Name the skips rather than just counting them, so a green run states
+    # which coverage it is NOT providing and why.
+    echo -e "${YELLOW}=== Accounted skips (${total_skipped}) ===${NC}"
+    skipped_titles "${logs[@]}" | sort -u | while read -r t; do
+        echo "  - ${t}"
+    done
 }
 
 start_stack() {

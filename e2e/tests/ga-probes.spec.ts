@@ -71,6 +71,71 @@ async function cleanProbeResidue(page: Page, csrf: string): Promise<void> {
   expect(res.status(), 'probe cleanup must fully succeed before seeding').toBe(200);
 }
 
+// ---------------------------------------------------------------------------
+// The library precondition (DJI-516)
+// ---------------------------------------------------------------------------
+// `tracks.library_id` is NOT NULL with an FK to libraries(id), so an imported
+// file has nowhere to land unless a library is registered. Nothing seeded one:
+// e2e/setup-test-db.sh creates the admin user and a quality profile, and this
+// suite's seed endpoint creates jobs. Run alone, the success probe therefore
+// CANNOT pass — and it died on its last assertion, "the imported track must be
+// visible in a library", which points the next reader at the scan rather than
+// at the missing precondition. In a full-suite run it passed only by accident:
+// a library left behind by an earlier spec was enough.
+//
+// This is not a workaround for the probe. A library at the documented
+// MUSIC_LIBRARY path is what a working appliance looks like, so register it
+// explicitly and idempotently from the probe's own surface.
+const MUSIC_LIBRARY_PATH = '/app/music'; // compose pins MUSIC_LIBRARY to this
+
+async function ensureLibrary(page: Page, csrf: string): Promise<void> {
+  const existing = await listLibraries(page, csrf);
+  if (existing.some(l => String(l['path'] ?? l['Path'] ?? '') === MUSIC_LIBRARY_PATH)) {
+    return;
+  }
+  // Mirror libraries.spec.ts: the directory has to exist in the container
+  // before the row is accepted. A failure here is not fatal on its own —
+  // /app/music is mounted, so this normally succeeds.
+  await page.request
+    .post('/api/test/create-dir', {
+      data: { path: MUSIC_LIBRARY_PATH },
+      headers: { 'X-CSRF-Token': csrf },
+    })
+    .catch(() => {});
+  const created = await page.request.post('/api/libraries', {
+    data: { name: 'GA Probe Library', path: MUSIC_LIBRARY_PATH },
+    headers: { 'X-CSRF-Token': csrf },
+  });
+  expect(
+    created.status(),
+    `could not register a library at ${MUSIC_LIBRARY_PATH} (status ${created.status()})`,
+  ).toBe(201);
+}
+
+async function listLibraries(
+  page: Page,
+  csrf: string,
+): Promise<Array<Record<string, unknown>>> {
+  return page.request
+    .get('/api/libraries/', { headers: { 'X-CSRF-Token': csrf } })
+    .then(r => (r.status() === 200 ? (r.json() as Array<Record<string, unknown>>) : []));
+}
+
+// Loud precondition. Without it the refusal probe's loop below iterates an
+// empty list and its `toHaveLength(0)` passes vacuously — the assertion looks
+// like coverage and proves nothing. A missing library must name itself.
+async function requireLibrary(
+  page: Page,
+  csrf: string,
+): Promise<Array<Record<string, unknown>>> {
+  const libs = await listLibraries(page, csrf);
+  expect(
+    libs.length,
+    'the probe needs at least one library: tracks.library_id is NOT NULL, so an import has nowhere to land without one',
+  ).toBeGreaterThan(0);
+  return libs;
+}
+
 // The Job model has no json tags, so Go marshals fields as "ID"/"State" —
 // read both casings.
 async function jobState(page: Page, csrf: string, jobId: number): Promise<string> {
@@ -147,9 +212,7 @@ test.describe('GA gap closers', () => {
     // own discard plus the cleanup endpoint's RemoveAll (in the next run's
     // setup) are the only writers of those folders, so the DB assertion below
     // plus the failed job are the proof of "never imported".
-    const libTracks = await page.request
-      .get(`/api/libraries/`, { headers: { 'X-CSRF-Token': csrf } })
-      .then(r => (r.status() === 200 ? (r.json() as Array<Record<string, unknown>>) : []));
+    const libTracks = await requireLibrary(page, csrf);
     for (const lib of libTracks) {
       const libId = String(lib['id'] ?? lib['ID']);
       const items = await page.request
@@ -169,6 +232,7 @@ test.describe('GA gap closers', () => {
     const page = adminPage;
     const csrf = await getCsrfToken(page);
     await cleanProbeResidue(page, csrf);
+    await ensureLibrary(page, csrf);
     const { jobId } = await seedProbe(page, csrf, {
       ...SUCCESS,
       no_fallback: true, // Soulseek entrance via the fake slskd's clean peer
@@ -204,9 +268,7 @@ test.describe('GA gap closers', () => {
     let found = false;
     while (Date.now() < scanDeadline && !found) {
       await page.waitForTimeout(3000);
-      const libs = await page.request
-        .get('/api/libraries/', { headers: { 'X-CSRF-Token': csrf } })
-        .then(r => (r.status() === 200 ? (r.json() as Array<Record<string, unknown>>) : []));
+      const libs = await requireLibrary(page, csrf);
       for (const lib of libs) {
         const libId = String(lib['id'] ?? lib['ID']);
         const items = await page.request

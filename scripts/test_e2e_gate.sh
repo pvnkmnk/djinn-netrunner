@@ -12,6 +12,12 @@ GATE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/e2e_gate.sh"
 # shellcheck source=scripts/e2e_gate.sh
 . "$GATE"
 
+# Playwright's list reporter separator (U+203A). Built with POSIX octal escapes
+# rather than embedded as a literal, so this file stays pure ASCII. NOT \u203a:
+# this shell's printf does not implement \u and emits the six literal characters
+# backslash-u-2-0-3-a, which silently makes every split below fail.
+SEP="$(printf '\342\200\272')"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -33,23 +39,46 @@ check() {  # check <description> <expect-fail:0|1> <expected> <shard logs...>
 
 # --- a realistic shard log: Playwright's list reporter summary -------------
 good_a="$TMP/a.log"
-cat > "$good_a" <<'EOF'
+cat > "$good_a" <<EOF
 Running 73 tests using 1 worker
 
-  ok  1 [chromium] > tests/jobs.spec.ts:49:7 > Jobs Feature (DJI-431) > 1. Page loads (1.5s)
+  ok  1 [chromium] ${SEP} tests\\jobs.spec.ts:49:7 ${SEP} Jobs Feature (DJI-431) ${SEP} 1. Page loads (1.5s)
 
   1 skipped
   72 passed (1.2m)
 EOF
 
 good_b="$TMP/b.log"
-cat > "$good_b" <<'EOF'
+cat > "$good_b" <<EOF
 Running 73 tests using 1 worker
 
-  ok  1 [chromium] > tests/auth.spec.ts:22:9 > Auth & Navigation > Login Form (486ms)
+  ok  1 [chromium] ${SEP} tests\\watchlists.spec.ts:296:7 ${SEP} Watchlists Feature - DJI-426 ${SEP} 10g. Create watchlist with source_type lidarr_wanted
+
+  -  258 [chromium] ${SEP} tests\\watchlists.spec.ts:296:7 ${SEP} Watchlists Feature - DJI-426 ${SEP} 10g. Create watchlist with source_type lidarr_wanted
 
   1 skipped
   72 passed (1.1m)
+EOF
+
+# The other declared skip, plus an UNDECLARED one that must be refused.
+good_c="$TMP/c.log"
+cat > "$good_c" <<EOF
+Running 73 tests using 1 worker
+
+  -  260 [chromium] ${SEP} tests\\watchlists.spec.ts:318:7 ${SEP} Watchlists Feature - DJI-426 ${SEP} 10i. Create watchlist with source_type local_file
+
+  1 skipped
+  72 passed (1.0m)
+EOF
+
+undeclared="$TMP/undeclared.log"
+cat > "$undeclared" <<EOF
+Running 73 tests using 1 worker
+
+  -  999 [chromium] ${SEP} tests\\somewhere.spec.ts:1:1 ${SEP} Suite ${SEP} nobody declared this one
+
+  1 skipped
+  72 passed (1.0m)
 EOF
 
 # --- the DJI-595 shape: a worker dies, the rest are abandoned --------------
@@ -77,7 +106,7 @@ Running 73 tests using 1 worker
 EOF
 
 echo "gate acceptance"
-check "two complete shards summing to the declared total pass" 0 146 "$good_a" "$good_b"
+check "three complete shards, both declared skips present" 0 219 "$good_a" "$good_b" "$good_c"
 
 echo
 echo "gate rejection (these must NOT pass)"
@@ -85,6 +114,8 @@ check "a dead worker's 'did not run' is refused"          1 146 "$dead"
 check "silently fewer tests than declared is refused"     1 146 "$truncated"
 check "an incomplete pair is refused"                    1 146 "$good_a" "$truncated"
 check "a missing shard log is refused"                   1 146 "$good_a" "$TMP/does-not-exist.log"
+check "an UNDECLARED skip is refused"                    1 73  "$undeclared"
+check "a declared skip that stopped running is refused"  1 146 "$good_a" "$good_b"
 
 failing="$TMP/failing.log"
 cat > "$failing" <<'EOF'
