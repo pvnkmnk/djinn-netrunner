@@ -247,8 +247,8 @@ class TestWorkflowStateLookup(unittest.TestCase):
         self.assertEqual(len(api.calls), 1, "must not issue a mutation")
 
 
-class TestIssueCreateTeamIds(unittest.TestCase):
-    def test_uses_team_ids_array_not_team_id(self):
+class TestIssueCreateTeamId(unittest.TestCase):
+    def test_uses_scalar_team_id_not_team_ids_array(self):
         api = FakeApi([
             {"project": {"id": "proj-uuid", "identifier": "P-DJI-28", "name": "n",
                          "teams": {"nodes": [{"id": "team-uuid", "key": "DJI"}]}}},
@@ -260,9 +260,13 @@ class TestIssueCreateTeamIds(unittest.TestCase):
                                      verbose=False)
         cli.cmd_issue(api, args)
         query, variables = api.calls[1]
-        self.assertIn("teamIds: $teams", query)
-        self.assertNotIn("teamId: $team", query)
-        self.assertEqual(variables["teams"], ["team-uuid"])
+        self.assertIn("teamId: $team", query)
+        self.assertIn("$team:String!", query)
+        self.assertNotIn("teamIds", query)
+        self.assertEqual(variables["team"], "team-uuid")
+        # The flag also has to attach the project, not just derive a team.
+        self.assertIn("projectId: $projectId", query)
+        self.assertEqual(variables["projectId"], "proj-uuid")
 
 
 class TestResolveProject(unittest.TestCase):
