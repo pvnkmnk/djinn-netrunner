@@ -145,12 +145,34 @@ def failing_tests(output):
     return names
 
 
+def dominant_eol(text):
+    """CRLF wins only if it actually dominates; otherwise LF."""
+    crlf = text.count("\r\n")
+    lf = text.count("\n") - crlf
+    return "\r\n" if crlf > lf else "\n"
+
+
+def normalise(text):
+    """Compare on LF only, so an anchor matches in either ending."""
+    return text.replace("\r\n", "\n")
+
+
+def write_cli(content, template):
+    """Write content using the template file own dominant ending."""
+    io.open(CLI, "w", encoding="utf-8", newline="").write(
+        content.replace("\n", dominant_eol(template))
+    )
+
+
 def apply_mutation(text, old, new, label):
-    if old not in text:
+    haystack = normalise(text)
+    needle = normalise(old)
+    if needle not in haystack:
         return None, "ANCHOR STALE"
-    if text.count(old) != 1:
-        return None, "anchor matched %d times" % text.count(old)
-    return text.replace(old, new), None
+    if haystack.count(needle) != 1:
+        return None, "anchor matched %d times" % haystack.count(needle)
+    mutated = haystack.replace(needle, normalise(new))
+    return mutated, None
 
 
 def main():
@@ -176,14 +198,14 @@ def main():
                 print("  %-42s STALE ANCHOR (%s) -- harness is broken" % (label, err))
                 failures.append(label + " stale anchor")
                 continue
-            io.open(CLI, "w", encoding="utf-8", newline="").write(mutated)
+            write_cli(mutated, original)
             rc, out = run_tests()
             ok = rc == 0
             print("  %-42s %s" % (label, "PASS" if ok else "UNEXPECTEDLY FAILED"))
             if not ok:
                 failures.append(label)
                 print(out[-1500:])
-        io.open(CLI, "w", encoding="utf-8", newline="").write(original)
+        write_cli(original, original)
 
         print("\n--- mutations (must be CAUGHT) ---")
         for label, old, new, test_name in MUTATIONS:
@@ -192,7 +214,7 @@ def main():
                 print("  %-42s STALE ANCHOR (%s) -- VOID" % (label, err))
                 failures.append(label + " stale anchor")
                 continue
-            io.open(CLI, "w", encoding="utf-8", newline="").write(mutated)
+            write_cli(mutated, original)
 
             # A mutation that will not compile is VOID, not caught.
             chk = subprocess.run([sys.executable, "-m", "py_compile", CLI],
@@ -215,7 +237,7 @@ def main():
             else:
                 print("  %-42s MISSED (suite stayed green)" % label)
                 failures.append(label + " missed")
-        io.open(CLI, "w", encoding="utf-8", newline="").write(original)
+        write_cli(original, original)
     finally:
         shutil.copyfile(snap.name, CLI)
         os.unlink(snap.name)
@@ -226,7 +248,7 @@ def main():
     if rc != 0:
         print(out[-2000:])
         failures.append("restore left the tree broken")
-    if io.open(CLI, encoding="utf-8", newline="").read() != original:
+    if normalise(io.open(CLI, encoding="utf-8", newline="").read()) != normalise(original):
         print("RESTORE MISMATCH -- file differs from snapshot")
         failures.append("restore mismatch")
 
