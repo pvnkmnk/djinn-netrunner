@@ -57,11 +57,23 @@ done
 
 # Seed admin user (users table exists after AutoMigrate)
 echo "=== Seeding admin user ==="
+# The hash below is bcrypt('e2eAdminPass1234'), the ADMIN_USER password in
+# e2e/fixtures/auth.fixture.ts. The two must agree or the admin seat cannot
+# log in - and a seed is inserted straight into the table, so it does not pass
+# through the 12-character floor the register endpoint enforces, which is
+# exactly how this account came to carry an 8-character password while the
+# fixture insisted on that same 8 characters.
+# e2e_credentials_test.go in backend/internal/api bcrypt-verifies this pair.
+# The upsert is load-bearing, not tidiness: a WHERE NOT EXISTS guard means a
+# database carried over from an earlier run keeps its OLD password_hash, and
+# since /api/auth/register answers 201 for an account that already exists,
+# ensureUserExists raises nothing at all - every adminPage spec then fails at
+# login with no clue why. Re-seeding has to overwrite the row to be a reset.
 # Best-effort: table may not exist yet if ops-web hasn't finished migrations
 if ! $COMPOSE exec -T postgres psql -U musicops -d musicops_test -c "
 INSERT INTO users (email, password_hash, role, created_at, updated_at)
-SELECT 'e2e-admin@netrunner.dev', '\$2a\$10\$DAbZ8zqRgGGkdgDfkV0FduOIxRBfrrqjV7q4GYC/gf1z/Wtkg672m', 'admin', NOW(), NOW()
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'e2e-admin@netrunner.dev');
+VALUES ('e2e-admin@netrunner.dev', '\$2a\$10\$8af93pHkmaF6skl8bWzE2euXTc.njLm4YCHtrEZqNs55Qyi7BMyJ2', 'admin', NOW(), NOW())
+ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, updated_at = NOW();
 " 2>&1; then
   echo "Warning: Could not seed admin user (will be created by fixture)"
 fi
