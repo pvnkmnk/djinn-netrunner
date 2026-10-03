@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"golang.org/x/crypto/bcrypt"
@@ -97,6 +98,33 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 			"error":          fmt.Sprintf("password must be at least %d characters", minLength),
 			"minLength":      minLength,
 			"passwordLength": length,
+		})
+	}
+
+	// bcrypt accepts at most 72 BYTES and treats a longer input as an
+	// error, not a truncation. Without this guard the password reaches
+	// bcrypt.GenerateFromPassword and comes back as a 500 -- a server fault
+	// for a request a person made perfectly reasonably, and unreachable from
+	// any UI hint: a browser states no length limit on a password field, and
+	// a passphrase generator will happily produce 80 bytes.
+	//
+	// The floor above counts RUNES and this counts BYTES, deliberately. A
+	// password can clear a 12-character minimum and still exceed 72 bytes in
+	// any script outside ASCII: 40 e-acutes are 40 characters and 80 bytes.
+	// The two limits are different units, so the message has to say which one
+	// was hit -- otherwise a user who satisfied the rule the form states is
+	// refused with no way to tell why.
+	//
+	// Checked BEFORE the duplicate lookup, like the floor above it, so the
+	// answer depends only on the request and never on whether the account
+	// exists. Registration must stay enumeration-safe.
+	if size := len([]byte(payload.Password)); size > config.BcryptMaxPasswordBytes {
+		return c.Status(400).JSON(fiber.Map{
+			"error": fmt.Sprintf(
+				"password must be at most %d bytes; this one is %d bytes. This limit counts bytes, not characters, so a passphrase using accented or non-Latin characters can reach it in fewer characters",
+				config.BcryptMaxPasswordBytes, size),
+			"maxBytes":      config.BcryptMaxPasswordBytes,
+			"passwordBytes": size,
 		})
 	}
 
