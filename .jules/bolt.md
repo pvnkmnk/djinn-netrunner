@@ -53,3 +53,7 @@
 ## 2026-08-15 - Consolidate N+1 queries in Subsonic GetPlaylists
 **Learning:** `SubsonicHandler.GetPlaylists` executed two queries inside a loop for every playlist: one `COUNT(*)` for playlist tracks and one `SELECT` for owner user email. For 50 playlists, this caused 101 database queries per request.
 **Action:** Replaced loop queries with batching: a single `GROUP BY playlist_id` query to fetch track counts for all playlists, and a single `id IN (?)` query to fetch owner user emails. This reduced database roundtrips from 2N+1 down to at most 3.
+
+## 2026-09-17 - N+1 query consolidation in Subsonic Search3
+**Learning:** `SubsonicHandler.Search3` was performing loop-based database queries for every matching artist (`COUNT(DISTINCT album)`) and album (`Count`, `First`) returned by search queries.
+**Action:** Consolidated artist album count queries into a batch `GROUP BY artist` lookup map, and aggregated album metadata (song count, year, genre, cover_url) into a single grouped query. This eliminates up to 2N database roundtrips per search request while preserving album duration handling.
