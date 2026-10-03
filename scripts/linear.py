@@ -289,20 +289,28 @@ def cmd_issue(api, args):
             desc = fh.read()
     variables = {"title": args.title, "description": desc}
     inp = "title: $title, description: $description"
+    decls = ""
     if args.project:
-        # teamIds is required and is an ARRAY -- the singular teamId is rejected
-        # outright with a validation error naming teamIds as the fix.
+        # IssueCreateInput takes a scalar `teamId: String!`, NOT a `teamIds`
+        # array. Confirmed by introspecting the live schema: 36 input fields,
+        # exactly one team field (`teamId`, NON_NULL<String>), and no
+        # `teamIds` at all. Sending the array is an HTTP 400 naming both.
         proj = resolve_project(api, args.project)
         teams = (proj.get("teams") or {}).get("nodes") or []
         if not teams:
             die("project %r has no team" % args.project)
-        variables["teams"] = [teams[0]["id"]]
-        inp += ", teamIds: $teams"
+        variables["team"] = teams[0]["id"]
+        # --project used to resolve the team and then silently drop the
+        # project: issueCreate returned success and the issue landed with
+        # project == null. `projectId` is what actually attaches it.
+        variables["projectId"] = proj["id"]
+        inp += ", teamId: $team, projectId: $projectId"
+        decls = "$team:String!,$projectId:String"
     api.throttle()
     data = api.gql(
         "mutation($title:String!,$description:String,%s){ issueCreate(input:{%s}){ success issue{ identifier url } } }"
         % (
-            "$teams:[String!]" if args.project else "",
+            decls,
             inp,
         ),
         variables,
