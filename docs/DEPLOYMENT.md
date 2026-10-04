@@ -335,7 +335,7 @@ A path is unique across libraries, and re-running this is harmless: you get the
 existing library back (`200`) when you own it, and `409` naming the existing row
 when someone else does — never a bare `500`.
 
-### Monitor an artist, then sync it
+### Monitor an artist (its first scan is queued for you)
 
 The `name` is resolved against MusicBrainz, which needs no API key:
 
@@ -344,9 +344,19 @@ ARTIST_ID=$(curl -sS --fail-with-body -b $JAR -c $JAR -X POST http://localhost:8
 echo "artist: ${ARTIST_ID:?no artist id — see /tmp/artist.json}"
 ```
 
-Adding an artist does not start acquiring — syncing does. This queues an
-`artist_scan` job (which pulls the discography and works out what is missing)
-that then queues the `acquisition` job; both are visible under `/jobs`:
+**Adding an artist queues its scan.** The row and the `artist_scan` job are
+written in one transaction, so an artist that exists is an artist the worker has
+been asked to look at — there is no state where a monitored artist is never
+scanned. That scan pulls the discography, works out what is missing, and then
+queues the `acquisition` job. Both are visible under `/jobs`.
+
+The **Sync** button on each artist card is the same call, for when you want a
+fresh look instead of the one Add already queued. Ask while a scan for that
+artist is still queued or running and it hands that job straight back
+(`sync_already_active`, with `HX-Trigger: sync-already-active`) rather than
+queueing a second one — the worker takes an advisory lock keyed on
+`scope_type:scope_id`, so two live scans of one artist would only serialise
+behind each other:
 
 ```bash
 curl -s -b $JAR -c $JAR -X POST "http://localhost:8080/api/artists/$ARTIST_ID/sync" -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN"

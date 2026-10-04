@@ -6,7 +6,6 @@ import (
 	"html"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -317,40 +316,25 @@ func (h *ArtistsHandler) Sync(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
-	var existingJob database.Job
-	if err := h.db.Where(
-		"job_type = ? AND scope_type = ? AND scope_id = ? AND state IN ?",
-		"artist_scan",
-		"artist",
-		artist.ID.String(),
-		[]string{"queued", "running"},
-	).First(&existingJob).Error; err == nil {
-		c.Set("HX-Trigger", "sync-already-active")
-		if isHTMXRequest(c) {
-			return c.Type("html").SendString("<div class=\"scan-status\">Sync already active for artist " + html.EscapeString(artist.Name) + " (job #" + fmt.Sprintf("%d", existingJob.ID) + ")</div>")
-		}
-		return c.JSON(fiber.Map{
-			"status": "sync_already_active",
-			"job_id": existingJob.ID,
-			"artist": artist.Name,
-		})
-	} else if err != gorm.ErrRecordNotFound {
-		slog.Error("Failed to check existing artist sync job", "artist_id", artist.ID, "error", err)
+	// The enqueue lives in the service, not here: AddMonitoredArtist queues the
+	// same scan through the same call, so an artist's first scan and an
+	// operator's on-demand Sync cannot drift apart (DJI-588).
+	job, alreadyActive, err := h.atService.QueueArtistScan(&artist, "user_api")
+	if err != nil {
+		slog.Error("Failed to queue artist sync", "artist_id", artist.ID, "error", err)
 		return internalServerError(c, err)
 	}
 
-	job := database.Job{
-		Type:        "artist_scan",
-		State:       "queued",
-		ScopeType:   "artist",
-		ScopeID:     artist.ID.String(),
-		RequestedAt: time.Now(),
-		OwnerUserID: artist.OwnerUserID,
-		CreatedBy:   "user_api",
-	}
-	if err := h.db.Create(&job).Error; err != nil {
-		slog.Error("Failed to queue artist sync", "artist_id", artist.ID, "error", err)
-		return internalServerError(c, err)
+	if alreadyActive {
+		c.Set("HX-Trigger", "sync-already-active")
+		if isHTMXRequest(c) {
+			return c.Type("html").SendString("<div class=\"scan-status\">Sync already active for artist " + html.EscapeString(artist.Name) + " (job #" + fmt.Sprintf("%d", job.ID) + ")</div>")
+		}
+		return c.JSON(fiber.Map{
+			"status": "sync_already_active",
+			"job_id": job.ID,
+			"artist": artist.Name,
+		})
 	}
 
 	c.Set("HX-Trigger", "sync-queued")
