@@ -1,0 +1,139 @@
+import { expect } from '@playwright/test';
+import { test } from '../fixtures/auth.fixture';
+
+/**
+ * The Add Artist picker, driven the way an operator drives it.
+ *
+ * This flow used to be dead in the browser and no spec noticed. The candidate
+ * row built its request in an htmx values expression beginning with "js:",
+ * which htmx compiles with eval. The app serves `script-src 'self'` -- no
+ * 'unsafe-eval' -- so clicking a candidate threw
+ *
+ *   Evaluating a string as JavaScript violates the following Content Security
+ *   Policy directive because 'unsafe-eval' is not an allowed source of script
+ *
+ * issued NO request, and /artists ended with no artist. Measured before the
+ * fix: 5 candidates rendered, the click produced zero requests, one page error,
+ * 0 artist cards.
+ *
+ * artists.spec.ts cannot catch that: it asserts the form searches and that the
+ * modal wiring is right, then stops. artist-scan.spec.ts cannot either: it
+ * seeds through the test API and never renders the picker. So the picker had no
+ * coverage at all, which is how a shipped flow sat inert for this long.
+ *
+ * This spec depends on MusicBrainz being reachable, and says so rather than
+ * hiding it. An earlier version SKIPPED itself when the search came back
+ * failed, which cannot work here: scripts/e2e_gate.sh treats DECLARED_SKIPS as
+ * exact in BOTH directions, so a conditional skip either fails the gate as an
+ * undeclared one or fails it as a declared one that stopped running. Making the
+ * search deterministic would mean a seeding seam into the MusicBrainz client,
+ * which is more machinery than one broken attribute is worth. So the dependency
+ * is explicit and the failure names it: if this goes red on an unrelated
+ * commit, check whether musicbrainz.org answered.
+ */
+
+// A real artist with more than one plausible match, so the spec exercises the
+// ambiguous case -- the picker renders a list of one for a unique name, and a
+// list of one is not the thing that was broken.
+const ARTIST = 'Boards of Canada';
+
+test.describe('Add Artist picker (CSP-safe selection)', () => {
+  // The e2e database is recreated per CI run, but a local run reuses the stack,
+  // so whatever this spec adds is removed again. Leaving the card behind would
+  // break the "a fresh install says nothing is monitored" assertion in
+  // artists.spec.ts.
+  let artistId = '';
+  let jobId = 0;
+
+  async function getCsrfToken(page: any): Promise<string> {
+    const cookies = await page.context().cookies();
+    return cookies.find((c: any) => c.name === 'csrf_')?.value || '';
+  }
+
+  test.afterEach(async ({ authenticatedPage: page }) => {
+    if (!artistId) return;
+    // CSRF on every deliberate mutating request: without it the delete answers
+    // 403 and this cleanup silently does nothing (DJI-434).
+    const csrf = await getCsrfToken(page);
+    if (jobId) {
+      // Stop the worker claiming a scan for an artist that is about to go, or
+      // the job fails and the Jobs page keeps a Failed row nobody asked for.
+      // That failure mode is DJI-601: a delete does not take its own queued
+      // jobs with it, so the job outlives the artist and fails forever. This
+      // spec has the job id, so it cancels.
+      await page.request
+        .post(`/api/jobs/${jobId}/cancel`, { headers: { 'X-CSRF-Token': csrf } })
+        .catch(() => {});
+    }
+    const res = await page.request.delete(`/api/artists/${artistId}`, {
+      headers: { 'X-CSRF-Token': csrf },
+    });
+    expect([200, 404]).toContain(res.status());
+    artistId = '';
+    jobId = 0;
+  });
+
+  test('searching, choosing a candidate and adding it all work under script-src self', async ({
+    authenticatedPage: page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    const posts: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('/api/artists') && r.method() === 'POST') posts.push(r.url().replace(/^.*8080/, ''));
+    });
+
+    await page.goto('/artists');
+    await page.locator('button:has-text("Add Artist")').click();
+    await page.locator('#name').fill(ARTIST);
+    await page.locator('#modal-container button[type=submit]').click();
+    await page.waitForTimeout(3000);
+
+    // The modal's own words for "MusicBrainz did not answer". Asserted as a
+    // named failure rather than skipped, so a red run says which third party is
+    // the reason instead of looking like a broken picker.
+    await expect(
+      page.locator('#modal-container [role=alert]'),
+      'MusicBrainz did not answer from the e2e stack, so the picker could not be exercised'
+    ).toHaveCount(0);
+
+    expect(posts, 'the modal must search before it creates').toContain('/api/artists/search');
+
+    const rows = page.locator('#modal-container .candidate-row');
+    expect(await rows.count(), 'the search must render the candidates it returned').toBeGreaterThan(0);
+
+    // Choose the row for exactly this artist, so an ambiguous match cannot make
+    // this pass by picking the wrong entity.
+    const chosen = rows.filter({ has: page.locator('.name', { hasText: new RegExp(`^${ARTIST}$`) }) }).first();
+    await chosen.click();
+    await page.waitForTimeout(3000);
+
+    // The request the old markup never made.
+    expect(posts, 'the pick must POST to /api/artists').toContain('/api/artists');
+
+    // And nothing threw on the way: an eval attempt is exactly what the CSP
+    // used to block, and it fails SILENTLY apart from this error.
+    expect(errors, `page errors during the pick: ${errors.join(' | ')}`).toHaveLength(0);
+
+    // The artist is really there, through the UI.
+    const cards = page.locator('.artist-card').filter({ hasText: ARTIST });
+    await expect(cards).toHaveCount(1);
+    artistId = (await cards.first().getAttribute('id'))!.replace('artist-', '');
+
+    // DJI-588: adding it queued its scan. This is the promise the picker was
+    // blocking, so the picker spec asserts it rather than leaving it to a spec
+    // that seeds around the UI.
+    const jobs = await page.request.get('/api/jobs/?job_type=artist_scan');
+    expect(jobs.status()).toBe(200);
+    const all = await jobs.json();
+    // Scope alone is not enough: an acquisition job is scoped to the artist
+    // too, so a scan that already found a release contributes two rows here.
+    // Filtering on the type is what makes "the scan is on the queue" the claim.
+    const mine = (Array.isArray(all) ? all : []).filter(
+      (j: any) => j.Type === 'artist_scan' && j.ScopeType === 'artist' && j.ScopeID === artistId
+    );
+    expect(mine).toHaveLength(1);
+    jobId = mine[0].ID;
+  });
+});

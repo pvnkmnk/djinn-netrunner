@@ -344,6 +344,22 @@ ARTIST_ID=$(curl -sS --fail-with-body -b $JAR -c $JAR -X POST http://localhost:8
 echo "artist: ${ARTIST_ID:?no artist id — see /tmp/artist.json}"
 ```
 
+In the web UI the same call is the **Add Artist** modal on `/artists`. A name
+MusicBrainz resolves to exactly one artist is created outright; an ambiguous one
+comes back as a list of candidates, and clicking the row you meant is the step
+that actually adds it — that click is what carries the MusicBrainz ID.
+
+Nothing on that path needs script evaluation, which matters because the app
+serves `script-src 'self'` with no `unsafe-eval`. The row used to build its
+values in an htmx `js:` expression, which htmx compiles with `eval`: the click
+threw a Content Security Policy error, issued no request at all, and left the
+operator looking at a list that did nothing. Carry the values as ordinary
+inputs collected by `hx-include` instead — do not loosen the header for it.
+`e2e/tests/artist-picker.spec.ts` drives the whole path in a browser (search,
+pick, artist created, scan queued), and `TestNoTemplateDependsOnEval` plus
+`TestShippedCSPDoesNotOfferUnsafeEval` keep both halves of that true: no
+template may need `eval`, and neither the server nor the proxy may offer it.
+
 **Adding an artist queues its scan.** The row and the `artist_scan` job are
 written in one transaction, so an artist that exists is an artist the worker has
 been asked to look at — there is no state where a monitored artist is never
