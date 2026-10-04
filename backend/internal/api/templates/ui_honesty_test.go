@@ -204,10 +204,11 @@ func TestEachCandidateIsItsOwnConfirmControl(t *testing.T) {
 
 	assert.Contains(t, body, `hx-post="/api/artists"`,
 		"choosing a candidate has to post back to Add")
-	assert.Contains(t, body, `data-mbid="{{ candidate.ID }}"`,
+	assert.Contains(t, body, `name="musicbrainz_id" value="{{ candidate.ID }}"`,
 		"the chosen candidate's ID must be sent, or Add falls back to the top result")
-	assert.Regexp(t, `musicbrainz_id: this\.dataset\.mbid`, body,
-		"the ID has to reach the request, not just sit on the element")
+	assert.Contains(t, body, `hx-include="closest [role='listitem']"`,
+		"the ID has to reach the request, and hx-include is what collects it "+
+			"from the row's own inputs")
 	assert.Contains(t, body, `class="candidate-row"`,
 		"the row itself is the target")
 	assert.NotContains(t, body, ">Select<",
@@ -220,33 +221,40 @@ func TestEachCandidateIsItsOwnConfirmControl(t *testing.T) {
 func TestCandidateRetryCarriesTheChosenQualityProfile(t *testing.T) {
 	body := readTemplate(t, "partials/artist-candidates.html")
 
-	retry := body[strings.Index(body, "Try again")-600:]
+	retry := body[strings.Index(body, "Try again")-900:]
 	retry = retry[:strings.Index(retry, "Try again")]
-	assert.Contains(t, retry, `data-profile-id="{{ quality_profile_id }}"`,
+	assert.Contains(t, retry, `name="quality_profile_id" value="{{ quality_profile_id }}"`,
 		"the retry button must carry the profile forward, or it is silently dropped")
-	assert.Regexp(t, `quality_profile_id: this\.dataset\.profileId`, retry,
-		"the carried profile must actually reach the request")
+	assert.Contains(t, retry, `hx-include="closest .form-actions"`,
+		"the carried values have to be collected from this block, or they sit there unused")
 }
 
-// hx-vals used to hold a JSON object built with HTML escaping. That is the wrong
-// escaping context: the browser decodes &quot; back to a bare quote, so a name
-// containing one produced invalid JSON and the confirm never fired. Values live
-// in data-* attributes now, where HTML escaping is correct and htmx builds a
-// real object, so there is no JSON text to get wrong.
+// The candidate's values used to travel in hx-vals. First as a JSON object
+// built with HTML escaping, which is the wrong escaping context -- the browser
+// decoded &quot; back to a bare quote, so a name containing one produced invalid
+// JSON and the confirm never fired. Then as a "js:" expression, which htmx
+// compiles with eval: the app serves script-src 'self', so the click threw and
+// issued no request at all.
+//
+// They are ordinary form inputs now, collected by hx-include. The browser
+// encodes them, so there is nothing left to serialise and nothing to evaluate.
 //
 // These assertions name the attribute and the value, not the escaping: the
 // engine escapes every value exactly once on its own (escaping_test.go), so
 // spelling a filter here would only pin the second escape DJI-590 removed. The
-// subject of this test is *where* the value lives.
+// subject of this test is *where* the value lives, and that nothing on the path
+// needs eval.
 func TestCandidateControlsDoNotSerialiseValuesAsJSONText(t *testing.T) {
 	body := readTemplate(t, "partials/artist-candidates.html")
 
-	assert.NotContains(t, body, `hx-vals='{"`,
-		"a JSON object in an attribute cannot be escaped correctly for both contexts at once")
-	assert.Contains(t, body, `hx-vals='js:{name: this.dataset.artistName`,
-		"the candidate name must be read off the element, not serialised into the attribute")
-	assert.Contains(t, body, `data-artist-name="{{ candidate.Name }}"`,
-		"the name must live in an attribute, where HTML escaping is the right one")
+	assert.NotContains(t, body, "hx-vals",
+		"htmx compiles a js: values expression with eval and script-src 'self' forbids "+
+			"that: the click throws and no request is made. "+
+			"TestNoTemplateDependsOnEval holds this repo-wide")
+	assert.Contains(t, body, `<input type="hidden" name="name" value="{{ candidate.Name }}">`,
+		"the name must live in a form value, where the browser's own encoding is the right one")
+	assert.Contains(t, body, `hx-include="closest [role='listitem']"`,
+		"the values must be collected off the row, not evaluated out of an attribute")
 }
 
 // role="listitem" on the <button> overrides its native role, so assistive tech
@@ -260,8 +268,13 @@ func TestCandidateRowKeepsItsNativeButtonRole(t *testing.T) {
 	end := start + strings.Index(body[start:], ">")
 	openTag := body[strings.LastIndex(body[:start], "<button"):end]
 
-	assert.NotContains(t, openTag, `role=`,
-		"a role on the button overrides the native button role")
+	// Matched as an ATTRIBUTE, not as a substring. The bare `role=` this
+	// replaced could not tell a role attribute from the role SELECTOR inside
+	// hx-include="closest [role='listitem']" -- which is a value, and is exactly
+	// where the list semantics belong. So the pattern anchors on whitespace
+	// before role and on the double-quoted form a real attribute takes.
+	assert.NotRegexp(t, `(?:^|\s)role="`, openTag,
+		"a role attribute on the button overrides the native button role")
 	assert.Contains(t, body, `<div role="listitem">`,
 		"the list still needs its items marked, on a wrapper around the button")
 }

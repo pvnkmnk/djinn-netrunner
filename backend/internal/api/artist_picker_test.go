@@ -359,6 +359,12 @@ func TestSearch_CandidatesCarryCountryAndType(t *testing.T) {
 // used to hold a JSON object escaped for HTML, so &quot; decoded back to a
 // bare quote on the way in, the JSON never parsed, and the pick was silently
 // lost. Backslashes broke it the same way.
+//
+// The value now travels as an ordinary <input value>, which the browser
+// submits and encodes for us -- and which htmx collects with hx-include rather
+// than evaluating. That second part matters as much as the escaping: the
+// expression this replaced compiled with eval, which the app's CSP forbids, so
+// the click threw and issued no request at all.
 func TestCandidateNameWithQuotesAndBackslashesStillReachesTheConfirm(t *testing.T) {
 	h := newPickerTestApp(t)
 	name := `Death "The" Band \ Reign`
@@ -369,14 +375,14 @@ func TestCandidateNameWithQuotesAndBackslashesStillReachesTheConfirm(t *testing.
 	body := bodyOf(t, postForm(t, h.app, "/api/artists/search",
 		map[string]string{"name": "Death"}, true))
 
-	assert.Contains(t, body, `data-artist-name=`,
-		"the name must be carried on the element, not serialised into the attribute")
-	assert.Contains(t, body, `name: this.dataset.artistName`,
-		"the request must be built from the element's own value")
-	assert.NotContains(t, body, `hx-vals='{"`,
-		"a JSON object in an attribute cannot be escaped for both contexts at once")
-	assert.NotContains(t, body, `hx-vals='js:{name: "Death`,
-		"no value may be interpolated back into the expression")
+	assert.Contains(t, body, `<input type="hidden" name="name" value="Death &quot;The&quot; Band \ Reign">`,
+		"the name must reach a real form value, escaped once by the template")
+	assert.Contains(t, body, `hx-include="closest [role='listitem']"`,
+		"the request must collect that value rather than evaluate anything")
+	assert.NotContains(t, body, `hx-vals`,
+		"no attribute here may need eval: the app serves script-src 'self', so it would throw")
+	assert.Equal(t, 1, strings.Count(body, "q\""),
+		"one confirm control per candidate, so each carries its own id exactly once")
 }
 
 // stubMusicBrainz replaces the network client so the suite is deterministic and

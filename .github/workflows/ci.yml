@@ -53,13 +53,18 @@ jobs:
       - name: Password policy mutation proof (Go-level)
         run: python scripts/password_policy_mutation_check.py
 
-      # Same four rules, one promise over: a monitored artist is scanned.
-      # M1 removes the enqueue from AddMonitoredArtist -- the DJI-588 defect
-      # itself -- and the other seven break one clause each: the job's type and
-      # scope, the one-scan-per-artist rule, the rollback that stops an
-      # unscanned artist surviving, the tracked-release delete that keeps a
-      # scanned artist removable, and the template button that was throwing
-      # the server's answer away. ~40s. Exits non-zero on any MISSED or any
+      # Same four rules, two promises. M1 removes the enqueue from
+      # AddMonitoredArtist -- the DJI-588 defect itself -- and M2..M8 break one
+      # clause each: the job's type and scope, the one-scan-per-artist rule, the
+      # rollback that stops an unscanned artist surviving, the tracked-release
+      # delete that keeps a scanned artist removable, and the template button
+      # that was throwing the server's answer away. M9 and M10 hold the second
+      # promise, which is that the CSP we serve still admits what the templates
+      # need: M9 puts an eval-dependent values expression back on the candidate
+      # row (the shipped defect -- htmx compiles it with eval, script-src
+      # 'self' forbids that, and the click silently made no request), M10 is the
+      # wrong fix applied to the header instead. ~50s: ten mutations plus two
+      # controls, each a scoped `go test`. Exits non-zero on any MISSED or any
       # failed control; the per-mutation table is in this step's log.
       - name: Artist scan mutation proof (Go-level)
         run: python scripts/artist_scan_mutation_check.py
