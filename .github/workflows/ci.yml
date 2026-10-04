@@ -40,6 +40,19 @@ jobs:
       - name: E2E completeness gate tests
         run: bash scripts/test_e2e_gate.sh
 
+      # The password policy is one function called from three routes, and a
+      # suite that only tests the function cannot see a route that stops asking
+      # it -- the failure mode a shared helper invites. Four of the eight
+      # mutations remove a CALL SITE for exactly that reason.
+      #
+      # Runs from the repo root so the script can locate backend/ from its own
+      # path. ~40s: eight mutations plus two controls, each a scoped `go test`.
+      # Exits non-zero if any mutant is MISSED or if either control fails, so a
+      # green tick here means the mutants were caught, not merely that the
+      # script exited zero -- the per-mutation table is in the step log.
+      - name: Password policy mutation proof (Go-level)
+        run: python scripts/password_policy_mutation_check.py
+
       - name: Vulnerability scan
         working-directory: backend
         run: |
