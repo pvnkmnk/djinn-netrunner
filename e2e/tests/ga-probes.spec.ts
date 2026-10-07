@@ -161,6 +161,12 @@ test.describe('GA gap closers', () => {
     const page = adminPage;
     const csrf = await getCsrfToken(page);
     await cleanProbeResidue(page, csrf);
+    // requireLibrary below asserts a library EXISTS before iterating it, so this
+    // probe has to register one like the success probe does. Run alone against a
+    // fresh DB (which is how scripts/mutation-check.sh runs it) nothing else has
+    // created one, and the probe died on its own precondition — taking the
+    // control run with it and failing the whole weekly mutation gate.
+    await ensureLibrary(page, csrf);
     const { jobId } = await seedProbe(page, csrf, {
       ...SOULSEEK_DECOY,
       // No source_url: this item runs the SOULSEEK entrance only. The fake
