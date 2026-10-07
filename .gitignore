@@ -89,3 +89,30 @@ e2e/test-results/
 e2e/shard-logs/
 # Graphify knowledge-graph output (local tooling)
 graphify-out/
+
+# Agent-harness skill packs installed per-project. These are generic
+# design/frontend skills plus per-harness mirrors (they are symlinks into
+# .agents/skills/), none of them netrunner-specific. Untracked before this
+# entry; see the allowlist below for the ones that are tracked.
+.pi/
+.goose/
+.grok/
+.hermes/
+.junie/
+.claude/
+skills-lock.json
+
+# .agents/skills/ is an ALLOWLIST rather than a blanket ignore, so "only
+# netrunner files live here" is enforced and not merely aspirational. The cost
+# is one line per new skill -- deliberate, so a generic skill pack cannot drift
+# back in unnoticed.
+.agents/skills/*
+!.agents/skills/release-readiness-review/
+!.agents/skills/testing-watchlist-ui/
+
+# Design-tool surface snapshots. One file here is already tracked; ignoring the
+# directory leaves that tracked, and hides the generated ones.
+.impeccable/
+
+# Wrangler's local state/cache for the Linear webhook Worker.
+ops/linear-webhook/.wrangler/
