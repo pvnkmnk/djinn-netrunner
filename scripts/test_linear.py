@@ -14,6 +14,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import types
@@ -469,6 +470,137 @@ class TestWebhookResourceTypes(unittest.TestCase):
         cli.cmd_webhook_register(api, args)
         self.assertEqual(api.calls[0][1]["types"], ["Issue"])
 
+
+# A body with several lines, an em dash and a non-ASCII char, so the capture is
+# exercised on multi-byte output as well as on line endings.
+BODY_FIXTURE = (
+    "# heading" + chr(10)
+    + chr(10)
+    + "a paragraph with an em dash " + chr(8212) + " and e-acute " + chr(233)
+    + chr(10)
+    + "| a | b |" + chr(10)
+    + "| -- | -- |" + chr(10)
+    + "final line" + chr(10)
+)
+
+# Runs the real --stdout path in a child process. The body arrives on stdin as
+# BYTES because sys.stdin in text mode would apply universal-newline translation
+# and quietly repair the very corruption under test.
+_STDOUT_RUNNER = """\
+import importlib.util, sys, types
+
+spec = importlib.util.spec_from_file_location("linear_cli", sys.argv[1])
+cli = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cli)
+
+body = sys.stdin.buffer.read().decode("utf-8")
+
+
+class FakeApi:
+    def __init__(self):
+        self.calls = []
+
+    def throttle(self):
+        pass
+
+    def gql(self, query, variables=None, retries=4):
+        self.calls.append(query)
+        return {"project": {"id": "u", "identifier": "P-TEST", "name": "T",
+                            "description": "d", "content": body,
+                            "documentContent": {"content": body}}}
+
+
+args = types.SimpleNamespace(project="P-TEST", file=None, stdout=True,
+                             dry_run=False, verbose=False)
+cli.cmd_project_body(FakeApi(), args)
+"""
+
+
+class TestStdoutIsByteExact(unittest.TestCase):
+    """`--stdout` must emit the stored body byte for byte.
+
+    Deliberately a SUBPROCESS. The defect is a text-stream newline translation,
+    which only happens when stdout is a real stream; a redirect_stdout(StringIO)
+    sink cannot observe it, so an in-process test here would be a guard nothing
+    can violate. These run against a real OS pipe.
+
+    Which test catches which defect, stated plainly:
+
+    * The two byte-level tests are the regression guard, but only on Windows --
+      that is the only platform where the translation happens at all.
+    * The round-trip test below does NOT catch it. It passes against the
+      unfixed code, because --file reads with io.open(..., encoding="utf-8")
+      and universal newlines repairs CRLF on the way in. It is kept because it
+      pins the round-trip contract: the day --file is hardened to newline=""
+      (the same class of fix applied to the read side), a capture that is not
+      byte-exact starts rewriting the whole body, and this test is what would
+      notice. It guards a future change, not the present bug.
+    """
+
+    def _capture(self, body):
+        tmpdir = tempfile.mkdtemp()
+        runner = os.path.join(tmpdir, "runner.py")
+        with io.open(runner, "w", encoding="utf-8", newline="") as fh:
+            fh.write(_STDOUT_RUNNER)
+        return subprocess.run(
+            [sys.executable, runner, os.path.join(HERE, "linear.py")],
+            input=body.encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def test_capture_carries_no_carriage_return(self):
+        proc = self._capture(BODY_FIXTURE)
+        self.assertEqual(
+            proc.returncode, 0, proc.stderr.decode("utf-8", "replace")
+        )
+        self.assertNotIn(
+            b"\r",
+            proc.stdout,
+            "a CR in the capture means the body would be rewritten in CRLF "
+            "the next time it is fed back to --file",
+        )
+
+    def test_capture_is_byte_identical_to_the_stored_body(self):
+        proc = self._capture(BODY_FIXTURE)
+        self.assertEqual(proc.stdout, BODY_FIXTURE.encode("utf-8"))
+
+    def test_capture_fed_back_to_file_is_a_no_op(self):
+        """Capture, land the bytes as a redirect would, feed them to --file.
+
+        Proven to pass against the UNFIXED code too -- see the class docstring.
+        Asserting only "it is a no-op" would be a guard that cannot fail, so
+        this one also checks the captured file is the size the bytes imply.
+        """
+        proc = self._capture(BODY_FIXTURE)
+        self.assertEqual(
+            proc.returncode, 0, proc.stderr.decode("utf-8", "replace")
+        )
+        # Land the captured bytes exactly as a shell redirect would.
+        path = os.path.join(tempfile.mkdtemp(), "captured.md")
+        with open(path, "wb") as fh:
+            fh.write(proc.stdout)
+
+        api = FakeApi([{
+            "project": {"id": "uuid-1", "identifier": "P-TEST", "name": "T",
+                        "description": "d", "content": BODY_FIXTURE,
+                        "documentContent": {"content": BODY_FIXTURE}},
+        }])
+        args = types.SimpleNamespace(
+            project="P-TEST", file=path, stdout=False, dry_run=False, verbose=False,
+        )
+        self.assertEqual(
+            os.path.getsize(path), len(proc.stdout),
+            "the landed file must hold exactly the captured bytes",
+        )
+        rc = cli.cmd_project_body(api, args)
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            len(api.calls), 1,
+            "capturing --stdout and feeding it back must not write; a second "
+            "call means the capture differed from what Linear stores",
+        )
+        self.assertNotIn("projectUpdate", api.calls[0][0])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
