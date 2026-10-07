@@ -10,14 +10,14 @@
     <tbody>
         {% for setting in Settings %}
         <tr>
-            <td><code>{{ setting.Key }}</code></td>
-            <td>{{ setting.Value }}</td>
+            <td><code>{{ setting.Key|escape }}</code></td>
+            <td>{{ setting.Value|escape }}</td>
             <td>
                 <button class="btn btn-sm btn-outline"
-                        hx-get="/partials/admin/config-edit?key={{ setting.Key }}"
+                        hx-get="/partials/admin/config-edit?key={{ setting.Key|escape }}"
                         hx-target="closest tr"
                         hx-swap="outerHTML"
-                        aria-label="Edit configuration for {{ setting.Key }}">Edit</button>
+                        aria-label="Edit configuration for {{ setting.Key|escape }}">Edit</button>
             </td>
         </tr>
         {% endfor %}

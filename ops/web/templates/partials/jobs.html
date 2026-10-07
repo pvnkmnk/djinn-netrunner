@@ -42,14 +42,14 @@
         </div>
         <div class="job-meta">
             <span>{{ job.RequestedAt | date:"Jan 02 15:04" }}</span>
-            <span>By: {{ job.CreatedBy }}</span>
+            <span>By: {{ job.CreatedBy | escape }}</span>
         </div>
         {% if job.Summary %}
-        <div class="job-summary">{{ job.Summary }}</div>
+        <div class="job-summary">{{ job.Summary | escape }}</div>
         {% endif %}
         {% if job.State == "failed" and job.ErrorDetail %}
-        <div class="job-error-detail" title="{{ job.ErrorDetail }}">
-            {{ job.ErrorDetail }}
+        <div class="job-error-detail" title="{{ job.ErrorDetail | escape }}">
+            {{ job.ErrorDetail | escape }}
         </div>
         {% endif %}
         <!-- Queued used to be the entire story. A queued job is either waiting
@@ -68,12 +68,12 @@
             <button class="btn btn-sm" hx-get="/partials/job-logs?job_id={{ job.ID }}" hx-target="#job-logs-container" hx-swap="innerHTML" aria-label="View logs for job #{{ job.ID }}">
                 View Logs
             </button>
-            <!-- The filter values are echoed back into these URLs. `urlencode` is
-                 the right filter for a query-string value: a filter carrying a
-                 quote or an ampersand is percent-encoded, so it can neither
-                 corrupt the query string nor break out of the attribute. An HTML
-                 escape on top would double-encode the percent signs, so the
-                 engine's own single escape is the only one wanted here. -->
+            <!-- The filter values are echoed back into these URLs, and this
+                 engine does not autoescape, so they are URL-encoded on the way
+                 out: a filter carrying a quote or an ampersand cannot break out
+                 of the attribute or corrupt the query string. urlencode also
+                 settles the HTML-safety question, so no second escape filter is
+                 wanted here - that would double-encode the percent signs. -->
             <!-- Cancel covers running jobs, not just queued ones. A running job
                  whose worker died is exactly the job an operator needs to clear,
                  and it was the one state with no way to clear it from the page.

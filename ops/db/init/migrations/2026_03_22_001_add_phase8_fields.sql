@@ -14,10 +14,6 @@ ALTER TABLE tracks ADD COLUMN IF NOT EXISTS fingerprint TEXT;
 COMMENT ON COLUMN tracks.fingerprint IS 'AcoustID audio fingerprint for track identification';
 
 -- Add acoustid_score column to acquisitions
--- NOTE: the DEFAULT 0 this script originally carried is removed by
--- 2026_10_02_001_acoustid_score_is_nullable.sql. The application never ran a
--- fingerprint lookup (the image shipped no fpcalc), so the default let every
--- row claim a score nobody measured. NULL now means unscored.
 ALTER TABLE acquisitions ADD COLUMN IF NOT EXISTS acoustid_score INT DEFAULT 0;
 
 COMMENT ON COLUMN acquisitions.acoustid_score IS 'AcoustID confidence score (0-100) from fingerprint lookup';

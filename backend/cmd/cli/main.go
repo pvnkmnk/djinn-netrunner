@@ -595,8 +595,8 @@ func libraryCmd() *cobra.Command {
 				for _, g := range groups {
 					fmt.Printf("Recording ID: %s (%d copies)\n", g.MBRecordingID, len(g.Acquisitions))
 					for _, a := range g.Acquisitions {
-						fmt.Printf("  #%d  %s - %s  |  %s  |  %s  (score: %s)\n",
-							a.ID, a.Artist, a.TrackTitle, a.FinalPath, formatFileSize(a.FileSize), formatAcoustIDScore(a.AcoustIDScore))
+						fmt.Printf("  #%d  %s - %s  |  %s  |  %s  (score: %d%%)\n",
+							a.ID, a.Artist, a.TrackTitle, a.FinalPath, formatFileSize(a.FileSize), a.AcoustIDScore)
 					}
 					fmt.Println()
 				}
@@ -605,20 +605,6 @@ func libraryCmd() *cobra.Command {
 	})
 
 	return cmd
-}
-
-// formatAcoustIDScore renders the confidence for a human reader.
-//
-// The column is nullable on purpose: nil means the track was never scored, and
-// a genuine zero still has to be visible as a zero rather than as the absence of
-// a score. Printing the pointer directly gave %!d(*int=<nil>); printing the
-// int it used to be gave a confident "0%" for every track in the database, for
-// the whole history of a deployment where no lookup had ever run.
-func formatAcoustIDScore(score *int) string {
-	if score == nil {
-		return "unscored"
-	}
-	return fmt.Sprintf("%d%%", *score)
 }
 
 func formatFileSize(bytes int64) string {

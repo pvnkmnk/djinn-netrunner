@@ -3,13 +3,13 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"golang.org/x/crypto/bcrypt"
@@ -41,9 +41,7 @@ type AuthHandler struct {
 }
 
 // DefaultMinPasswordLength is the floor used when nothing is configured.
-// Aliased rather than restated: config.ValidatePassword is the single source of
-// truth for both bounds, and all three password-accepting routes call it.
-const DefaultMinPasswordLength = config.DefaultMinPasswordLength
+const DefaultMinPasswordLength = 12
 
 // NewAuthHandlerWithPolicy returns a handler that enforces minLength at
 // registration. Pass 0 for DefaultMinPasswordLength.
@@ -84,22 +82,22 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password are required"})
 	}
 
-	// Enforced here, on the server, and the message names the limit: the
+	// Enforced here, on the server, and the message names the minimum: the
 	// playtest registered with a three-character password, got a 201 and a
 	// session, and nothing in the product ever said a floor existed. A browser
 	// hint is not a policy, and this endpoint is reachable by anything.
-	//
-	// Both bounds come from config.ValidatePassword -- the same call the two
-	// admin routes make, so the three cannot drift apart. It lives there
-	// because the floor is in runes and the ceiling is in bytes, and a policy
-	// whose two halves are counted in different units is easy to get wrong when
-	// it is copy-pasted between handlers.
-	//
-	// Checked BEFORE the duplicate lookup, so the answer depends only on the
-	// request and never on whether the account exists: registration must stay
-	// enumeration-safe.
-	if v := config.ValidatePassword(payload.Password, h.minPasswordLength); v != nil {
-		return c.Status(400).JSON(v.JSON())
+	minLength := h.minPasswordLength
+	if minLength < 1 {
+		minLength = DefaultMinPasswordLength
+	}
+	// Count runes, not bytes: a 12-character password in any script must not be
+	// rejected because its encoding is longer than 12 bytes.
+	if length := len([]rune(payload.Password)); length < minLength {
+		return c.Status(400).JSON(fiber.Map{
+			"error":          fmt.Sprintf("password must be at least %d characters", minLength),
+			"minLength":      minLength,
+			"passwordLength": length,
+		})
 	}
 
 	// Validate and normalize email format using net/mail.ParseAddress (RFC 5322)

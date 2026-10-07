@@ -320,28 +320,16 @@ func (e *MetadataExtractor) Fingerprint(path string) (string, int, error) {
 		return "", 0, fmt.Errorf("fpcalc failed: %w", err)
 	}
 
-	// Duration is a float, and must be declared as one: real fpcalc reports
-	// `"duration": 200.83`. Declaring it int made every real fingerprint
-	// fail to parse - and with no fpcalc in the image that could never have
-	// been observed, because the only test skipped when the binary was absent.
 	var result struct {
-		Duration    float64 `json:"duration"`
-		Fingerprint string  `json:"fingerprint"`
+		Duration    int    `json:"duration"`
+		Fingerprint string `json:"fingerprint"`
 	}
 
 	if err := json.Unmarshal(out, &result); err != nil {
 		return "", 0, fmt.Errorf("failed to parse fpcalc output: %w", err)
 	}
 
-	// fpcalc exits non-zero for audio it cannot fingerprint, but a zero exit
-	// with an empty fingerprint is still no fingerprint. Reporting that as
-	// success would store an empty string and read as a track nobody tried.
-	if result.Fingerprint == "" {
-		return "", 0, fmt.Errorf("fpcalc reported no fingerprint for %s", cleanPath)
-	}
-
-	// The AcoustID API takes whole seconds; fpcalc's fraction is dropped.
-	return result.Fingerprint, int(result.Duration), nil
+	return result.Fingerprint, result.Duration, nil
 }
 
 func (e *MetadataExtractor) getExt(format string) string {

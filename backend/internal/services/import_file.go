@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,15 +88,8 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 	}
 
 	// 2.5 Generate Fingerprint
-	//
-	// Fingerprinting is best-effort - the import still succeeds without it - but
-	// the failure has to be visible on both surfaces it can reach. It used to
-	// reach only the job log, and the most common cause by far is a deployment
-	// fault (no fpcalc in the image) rather than a bad file, so nothing reached
-	// the worker log at all.
 	fingerprint, duration, err := h.ext.Fingerprint(downloadPath)
 	if err != nil {
-		slog.Warn("Audio fingerprinting failed", "path", downloadPath, "error", err)
 		h.Log(jobID, "WARN", fmt.Sprintf("Fingerprinting failed: %v", err), &itemID)
 	}
 
@@ -107,31 +99,14 @@ func (h *AcquisitionHandler) importFile(ctx context.Context, jobID uint64, itemI
 		ReleaseID   string
 		ArtistID    string
 	}
-	//
-	// Stays nil until a lookup actually returns a result, and nil means
-	// unscored. Storing 0 for "we never asked" is what made every acquisition in
-	// the table look scored when none of them had been.
-	var acoustidScore *int
+	var acoustidScore int
 
 	if h.aid != nil && fingerprint != "" {
 		h.Log(jobID, "INFO", "Looking up AcoustID...", &itemID)
 		results, err := h.aid.Lookup(fingerprint, duration)
-		switch {
-		case err != nil:
-			// Swallowed outright: `if err == nil && len(results) > 0` discarded
-			// the error with nothing logged on either side, so a missing API
-			// key and an upstream outage were indistinguishable from "no match",
-			// and neither was recorded anywhere.
-			slog.Warn("AcoustID lookup failed", "path", downloadPath, "error", err)
-			h.Log(jobID, "WARN", fmt.Sprintf("AcoustID lookup failed: %v", err), &itemID)
-		case len(results) == 0:
-			slog.Info("AcoustID returned no match", "path", downloadPath)
-			h.Log(jobID, "INFO", "AcoustID: no match - recording as unscored", &itemID)
-		default:
-			score := int(results[0].Score * 100) // Convert 0-1 float to 0-100 int
-			acoustidScore = &score
-			slog.Info("AcoustID match found", "path", downloadPath, "score", score)
-			h.Log(jobID, "OK", fmt.Sprintf("AcoustID match found (score: %d%%)", score), &itemID)
+		if err == nil && len(results) > 0 {
+			acoustidScore = int(results[0].Score * 100) // Convert 0-1 float to 0-100 int
+			h.Log(jobID, "OK", fmt.Sprintf("AcoustID match found (score: %d%%)", acoustidScore), &itemID)
 			if len(results[0].Recordings) > 0 {
 				mbIDs.RecordingID = results[0].Recordings[0].ID
 				// Try to get artist/release IDs if available in future AcoustID meta enhancements

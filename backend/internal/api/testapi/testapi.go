@@ -19,10 +19,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
-	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"gorm.io/gorm"
 )
 
@@ -34,7 +32,6 @@ func Mount(router fiber.Router, cfg *config.Config, db *gorm.DB) {
 	router.Post("/test/create-dir", createDir(cfg))
 	router.Post("/test/seed-fallback-refusal", seedFallbackRefusal(cfg, db))
 	router.Post("/test/seed-fallback-refusal/cleanup", cleanupProbeResidue(cfg, db))
-	router.Post("/test/seed-monitored-artist", seedMonitoredArtist(cfg, db))
 }
 
 // scopeSeq disambiguates two seeds sharing a clock tick (Windows ~15ms
@@ -368,90 +365,5 @@ func cleanupProbeResidue(cfg *config.Config, db *gorm.DB) fiber.Handler {
 			return c.Status(500).JSON(fiber.Map{"error": "cleanup incomplete", "details": problems})
 		}
 		return c.JSON(fiber.Map{"status": "ok"})
-	}
-}
-
-
-// seedMonitoredArtist creates a monitored artist through the REAL
-// ArtistTrackingService, so a browser spec can assert the promise DJI-588 made:
-// adding an artist puts its scan on the queue.
-//
-// It exists because the product route cannot be driven deterministically.
-// POST /api/artists resolves the artist against MusicBrainz, a third party
-// whose availability, rate limit and DNS the e2e gate must not depend on --
-// which is why artists.spec.ts asserts the create path's validation and the
-// form's wiring, and not a live lookup. Going through the service instead of
-// hand-writing the row keeps the assertion honest: if AddMonitoredArtist ever
-// stops queueing, this endpoint stops queueing too, and the spec goes red.
-// The route-level wiring (that POST /api/artists calls the service at all) is
-// pinned by backend/internal/api/artist_scan_queue_test.go and proved by
-// scripts/artist_scan_mutation_check.py.
-func seedMonitoredArtist(cfg *config.Config, db *gorm.DB) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		if !gateEnabled(cfg) {
-			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
-		}
-
-		user, ok := currentUser(c)
-		if !ok {
-			return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
-		}
-
-		var payload struct {
-			Name             string `json:"name"`
-			MusicBrainzID    string `json:"musicbrainz_id"`
-			QualityProfileID string `json:"quality_profile_id"`
-		}
-		if err := c.BodyParser(&payload); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
-		}
-		if payload.MusicBrainzID == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "musicbrainz_id required"})
-		}
-		name := payload.Name
-		if name == "" {
-			name = payload.MusicBrainzID
-		}
-
-		var profileID uuid.UUID
-		if payload.QualityProfileID != "" {
-			parsed, err := uuid.Parse(payload.QualityProfileID)
-			if err != nil {
-				return c.Status(400).JSON(fiber.Map{"error": "invalid quality_profile_id"})
-			}
-			profileID = parsed
-		} else {
-			var profile database.QualityProfile
-			if err := db.Where("is_default = ?", true).First(&profile).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
-					return c.Status(400).JSON(fiber.Map{"error": "no default quality profile is configured"})
-				}
-				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-			}
-			profileID = profile.ID
-		}
-
-		// Declared for cleanup on the same terms as the acquisition probe: the
-		// name is the folder an imported track could land under.
-		declareSeedArtists(name)
-
-		svc := services.NewArtistTrackingService(db, nil)
-		artist, err := svc.AddMonitoredArtist(payload.MusicBrainzID, profileID, name, name, &user.ID)
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		var job database.Job
-		if err := db.Where("job_type = ? AND scope_type = ? AND scope_id = ?",
-			"artist_scan", "artist", artist.ID.String()).First(&job).Error; err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "no artist_scan job was queued for this artist"})
-		}
-
-		return c.Status(201).JSON(fiber.Map{
-			"artist":    artist,
-			"job_id":    job.ID,
-			"job_type":  job.Type,
-			"job_state": job.State,
-		})
 	}
 }

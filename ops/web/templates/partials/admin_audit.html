@@ -13,10 +13,10 @@
         {% for entry in Entries %}
         <tr>
             <td>{{ entry.CreatedAt|date:"2006-01-02 15:04:05" }}</td>
-            <td><code>{{ entry.Action }}</code></td>
+            <td><code>{{ entry.Action|escape }}</code></td>
             <td>{{ entry.ActorID }}</td>
-            <td>{{ entry.TargetType }}: {{ entry.TargetID }}</td>
-            <td>{% if entry.Metadata %}<code>{{ entry.Metadata }}</code>{% endif %}</td>
+            <td>{{ entry.TargetType|escape }}: {{ entry.TargetID|escape }}</td>
+            <td>{% if entry.Metadata %}<code>{{ entry.Metadata|escape }}</code>{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

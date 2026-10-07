@@ -50,10 +50,10 @@ test.describe('Quality Profiles (DJI-427)', () => {
   }
 
   test.describe('Page Load & Structure', () => {
-    test('1. page loads - navigate to /profiles, verify page-heading visible, verify title "Quality Profiles"', async ({ authenticatedPage: page }) => {
+    test('1. page loads - navigate to /profiles, verify page-header visible, verify title "Quality Profiles"', async ({ authenticatedPage: page }) => {
       await page.goto('/profiles');
-      await expect(page.locator('.page-heading')).toBeVisible();
-      await expect(page.locator('.page-heading')).toHaveText('Quality Profiles');
+      await expect(page.locator('.page-header')).toBeVisible();
+      await expect(page.locator('.page-header h2')).toHaveText('Quality Profiles');
     });
 
     test('2. profiles region loads - verify #profiles-region visible', async ({ authenticatedPage: page }) => {
@@ -67,7 +67,7 @@ test.describe('Quality Profiles (DJI-427)', () => {
       await expect(page.locator('.dashboard')).toBeVisible();
       await page.locator('nav#primary-nav a:has-text("Profiles")').click();
       await waitForHtmxSwap(page);
-      await expect(page.locator('.page-heading')).toHaveText('Quality Profiles');
+      await expect(page.locator('.page-header h2')).toHaveText('Quality Profiles');
     });
   });
 
@@ -478,17 +478,17 @@ test.describe('Quality Profiles (DJI-427)', () => {
       // Navigate to Jobs
       await page.locator('nav#primary-nav a:has-text("Jobs")').click();
       await waitForHtmxSwap(page);
-      await expect(page.locator('.page-heading')).toHaveText('Jobs');
+      await expect(page.locator('.page-header h2')).toHaveText('Jobs');
 
       // Navigate to Libraries
       await page.locator('nav#primary-nav a:has-text("Libraries")').click();
       await waitForHtmxSwap(page);
-      await expect(page.locator('.page-heading')).toHaveText('Libraries');
+      await expect(page.locator('.page-header h2')).toHaveText('Libraries');
 
       // Navigate back to Profiles
       await page.locator('nav#primary-nav a:has-text("Profiles")').click();
       await waitForHtmxSwap(page);
-      await expect(page.locator('.page-heading')).toHaveText('Quality Profiles');
+      await expect(page.locator('.page-header h2')).toHaveText('Quality Profiles');
     });
   });
 
@@ -569,11 +569,9 @@ test.describe('Quality Profiles (DJI-427)', () => {
       await expect(page.locator('input[name="prefer_web_releases"]')).toBeVisible();
       await expect(page.locator('input[name="cover_art_sources"]')).toBeVisible();
 
-      // Verify submit and cancel buttons, both scoped to the modal for the same
-      // reason as libraries.spec.ts: the header Sign out control is also a
-      // submit button (DJI-524), so an unscoped locator matched two elements.
-      await expect(page.locator('#modal-container button[type="submit"]')).toBeVisible();
-      await expect(page.locator('#modal-container button:has-text("Cancel")')).toBeVisible();
+      // Verify submit and cancel buttons
+      await expect(page.locator('button[type="submit"]')).toBeVisible();
+      await expect(page.locator('button:has-text("Cancel")')).toBeVisible();
     });
 
     test('modal can be closed', async ({ authenticatedPage: page }) => {

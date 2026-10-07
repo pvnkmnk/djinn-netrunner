@@ -1,6 +1,6 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}{% if authUserID == "" %}Sign In{% else %}Dashboard{% endif %} - NETRUNNER{% endblock %}
+{% block title %}Dashboard - NETRUNNER{% endblock %}
 
 {% block content %}
 {% if authUserID == "" %}
@@ -43,8 +43,7 @@
                 <input type="password" id="reg-password" name="password" required
                        minlength="{{ MinPasswordLength }}" aria-describedby="reg-password-hint"
                        placeholder="At least {{ MinPasswordLength }} characters">
-                {# The floor counts characters and the ceiling counts BYTES, so no HTML attribute can express the ceiling; state both rather than let a person be refused for a rule they were never shown. See AuthHandler.Register. #}
-                <small id="reg-password-hint" class="text-secondary">At least {{ MinPasswordLength }} characters, at most {{ MaxPasswordBytes }} bytes.</small>
+                <small id="reg-password-hint" class="text-secondary">At least {{ MinPasswordLength }} characters.</small>
             </div>
             <button type="submit" class="btn btn-primary btn-block">Create Account</button>
             <div id="register-error" class="error-message hidden"></div>
@@ -81,7 +80,7 @@
     <section class="console-region" aria-labelledby="console-heading">
         <h2 id="console-heading" class="sr-only">Live Console</h2>
         <div class="console-controls">
-            <button class="btn" id="btn-attach" hx-post="/console/attach" hx-target="#console-socket" hx-swap="innerHTML" aria-label="Attach to job console">Attach</button>
+            <button class="btn" id="btn-attach" hx-post="/console/attach" aria-label="Attach to job console">Attach</button>
             <button class="btn" id="btn-detach" aria-label="Detach from job console">Detach</button>
             <span class="filter-group" role="group" aria-label="Filter logs by level">
                 <button class="filter-btn active" data-filter="all" aria-label="Show all logs">ALL</button>
@@ -95,7 +94,7 @@
             <button class="btn" id="btn-resume" aria-label="Resume live log scrolling">Resume Live</button>
         </div>
         
-        <div id="console-socket" class="console-socket" role="status" aria-live="polite">
+        <div id="console-socket" class="console-socket">
             <div class="console-placeholder">Select a job to attach</div>
         </div>
         

@@ -124,17 +124,17 @@ async function disableWatchlist(page: any, watchlistId: number): Promise<void> {
 
 test.describe('Schedules Feature (DJI-429)', () => {
   test.describe('Page Load & Structure', () => {
-    test('1. Page loads - navigate to /schedules, verify .page-heading visible, verify title "Schedules"', async ({ authenticatedPage: page }) => {
+    test('1. Page loads - navigate to /schedules, verify .page-header visible, verify title "Schedules"', async ({ authenticatedPage: page }) => {
       await page.goto('/schedules');
 
       // Wait for HTMX to load
       await page.waitForTimeout(1000);
 
       // Verify page header is visible
-      await expect(page.locator('.page-heading')).toBeVisible();
+      await expect(page.locator('.page-header')).toBeVisible();
 
       // Verify title is "Schedules"
-      await expect(page.locator('.page-heading')).toHaveText('Schedules');
+      await expect(page.locator('.page-header h2')).toHaveText('Schedules');
     });
 
     test('2. Schedules region loads - verify #schedules-region is visible', async ({ authenticatedPage: page }) => {
@@ -165,7 +165,7 @@ test.describe('Schedules Feature (DJI-429)', () => {
       await page.waitForTimeout(1000);
 
       // Verify we're on schedules page with correct title
-      await expect(page.locator('.page-heading')).toHaveText('Schedules');
+      await expect(page.locator('.page-header h2')).toHaveText('Schedules');
 
       // Verify URL is /schedules
       expect(page.url()).toContain('/schedules');
@@ -408,22 +408,22 @@ test.describe('Schedules Feature (DJI-429)', () => {
       // Navigate to Jobs page
       await page.locator('nav#primary-nav a:has-text("Jobs")').click();
       await page.waitForTimeout(1000);
-      await expect(page.locator('.page-heading')).toHaveText('Jobs');
+      await expect(page.locator('.page-header h2')).toHaveText('Jobs');
 
       // Navigate to Libraries page
       await page.locator('nav#primary-nav a:has-text("Libraries")').click();
       await page.waitForTimeout(1000);
-      await expect(page.locator('.page-heading')).toHaveText('Libraries');
+      await expect(page.locator('.page-header h2')).toHaveText('Libraries');
 
       // Navigate to Watchlists page
       await page.locator('nav#primary-nav a:has-text("Watchlists")').click();
       await page.waitForTimeout(1000);
-      await expect(page.locator('.page-heading')).toHaveText('Watchlists');
+      await expect(page.locator('.page-header h2')).toHaveText('Watchlists');
 
       // Navigate back to Schedules
       await page.locator('nav#primary-nav a:has-text("Schedules")').click();
       await page.waitForTimeout(1000);
-      await expect(page.locator('.page-heading')).toHaveText('Schedules');
+      await expect(page.locator('.page-header h2')).toHaveText('Schedules');
     });
   });
 

@@ -2,7 +2,6 @@ package services
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -19,14 +18,6 @@ type MusicBrainzService struct {
 	httpClient  *http.Client
 	rateLimiter *time.Ticker
 	cache       *CacheService
-
-	// TestSearch and TestGetArtist replace the two network calls this
-	// service makes. Both are nil in production, where the real methods run;
-	// a test sets them so the suite never touches MusicBrainz and can make
-	// the search fail on demand. A search that can only succeed is a search
-	// whose failure path is never exercised.
-	TestSearch    func(query string) ([]MusicBrainzArtist, error)
-	TestGetArtist func(id string) (*MusicBrainzArtist, error)
 }
 
 // NewMusicBrainzService creates a new MusicBrainz service
@@ -43,18 +34,12 @@ func (s *MusicBrainzService) SetCache(cache *CacheService) {
 	s.cache = cache
 }
 
-// MusicBrainzArtist represents an artist from MusicBrainz.
-//
-// Country and Type are the fields that disambiguate two artists sharing a
-// name. The search endpoint sends both and this struct used to drop them, so
-// a candidate list could only ever show a name and a parenthetical.
+// MusicBrainzArtist represents an artist from MusicBrainz
 type MusicBrainzArtist struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
 	SortName       string `json:"sort-name"`
 	Disambiguation string `json:"disambiguation"`
-	Country        string `json:"country"`
-	Type           string `json:"type"`
 }
 
 // MusicBrainzRecording represents a recording from MusicBrainz
@@ -66,17 +51,8 @@ type MusicBrainzRecording struct {
 	ReleaseID string `json:"release,omitempty"`
 }
 
-// ErrArtistNotFound reports that MusicBrainz has no artist with the given
-// ID. It is distinct from a transport or API failure so the UI can tell
-// "that is not an artist" apart from "we could not ask".
-var ErrArtistNotFound = errors.New("artist not found in MusicBrainz")
-
 // SearchArtist searches MusicBrainz for an artist by name
 func (s *MusicBrainzService) SearchArtist(query string) ([]MusicBrainzArtist, error) {
-
-	if s.TestSearch != nil {
-		return s.TestSearch(query)
-	}
 	cacheKey := fmt.Sprintf("artist:%s", query)
 	if s.cache != nil {
 		var cached []MusicBrainzArtist
@@ -117,8 +93,6 @@ func (s *MusicBrainzService) SearchArtist(query string) ([]MusicBrainzArtist, er
 			Name           string `json:"name"`
 			SortName       string `json:"sort-name"`
 			Disambiguation string `json:"disambiguation"`
-			Country        string `json:"country"`
-			Type           string `json:"type"`
 		} `json:"artists"`
 	}
 
@@ -133,8 +107,6 @@ func (s *MusicBrainzService) SearchArtist(query string) ([]MusicBrainzArtist, er
 			Name:           a.Name,
 			SortName:       a.SortName,
 			Disambiguation: a.Disambiguation,
-			Country:        a.Country,
-			Type:           a.Type,
 		}
 	}
 
@@ -423,86 +395,4 @@ func (s *MusicBrainzService) GetReleaseByArtistTitle(artist, title string) (*Mus
 
 	// Get full release details
 	return s.GetRelease(mbid)
-}
-
-// GetArtist fetches one artist by MusicBrainz ID.
-//
-// The candidate picker confirms a choice by ID rather than re-posting the name
-// it displayed, so the row that gets stored is the row MusicBrainz holds for
-// that ID and not whatever the form claimed. Re-running the search instead
-// would work until MusicBrainz re-ranked its results or the cache expired,
-// which is exactly the silent-wrong-answer failure this feature exists to end.
-func (s *MusicBrainzService) GetArtist(id string) (*MusicBrainzArtist, error) {
-
-	if s.TestGetArtist != nil {
-		return s.TestGetArtist(id)
-	}
-	if id == "" {
-		return nil, fmt.Errorf("musicbrainz id is required")
-	}
-
-	cacheKey := fmt.Sprintf("artist-by-id:%s", id)
-	if s.cache != nil {
-		var cached MusicBrainzArtist
-		if found, _ := s.cache.Get("musicbrainz", cacheKey, &cached); found {
-			return &cached, nil
-		}
-	}
-
-	<-s.rateLimiter.C
-
-	url := fmt.Sprintf("%s/ws/2/artist/%s?fmt=json", s.baseURL, url.PathEscape(id))
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create musicbrainz request: %w", err)
-	}
-	userAgent := "netrunner/1.0 (contact@example.com)"
-	if s.cfg != nil && s.cfg.MusicBrainzUserAgent != "" {
-		userAgent = s.cfg.MusicBrainzUserAgent
-	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	// 404 means the ID is not a MusicBrainz artist. That is the caller's
-	// mistake, not an outage, and the picker says so rather than offering a
-	// retry that would fail the same way.
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrArtistNotFound
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("musicbrainz api error: %s", resp.Status)
-	}
-
-	var a struct {
-		ID             string `json:"id"`
-		Name           string `json:"name"`
-		SortName       string `json:"sort-name"`
-		Disambiguation string `json:"disambiguation"`
-		Country        string `json:"country"`
-		Type           string `json:"type"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&a); err != nil {
-		return nil, err
-	}
-
-	artist := MusicBrainzArtist{
-		ID:             a.ID,
-		Name:           a.Name,
-		SortName:       a.SortName,
-		Disambiguation: a.Disambiguation,
-		Country:        a.Country,
-		Type:           a.Type,
-	}
-	if s.cache != nil {
-		s.cache.Set("musicbrainz", cacheKey, artist, 24*time.Hour)
-	}
-
-	return &artist, nil
 }

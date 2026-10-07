@@ -57,17 +57,6 @@ jobs:
           path: e2e/test-results/
           retention-days: 7
 
-      # The per-shard logs are what the completeness gate reasons about. If a
-      # worker dies mid-run this is the artifact that says so, and it must not
-      # live under test-results/ -- Playwright clears that directory itself.
-      - name: Upload shard logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-shard-logs
-          path: e2e/shard-logs/
-          retention-days: 14
-
       # A failed spec and a wedged stack look identical from the report alone.
       - name: Dump stack logs on failure
         if: failure()

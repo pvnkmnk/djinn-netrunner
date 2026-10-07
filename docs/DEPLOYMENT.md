@@ -30,21 +30,13 @@ default).
 - A Soulseek account for slskd (acquisition is inert without one)
 - ~5 GB free for images plus room for the music library and downloads
 
-Acoustic fingerprinting shells out to `fpcalc` (Chromaprint), which the image
-installs and the build asserts is present — an image without it cannot be
-built at all. Fingerprinting runs on every scanned and imported file, and each
-scan reports how many files it fingerprinted. AcoustID enrichment is the one
-optional step left: it needs `ACOUSTID_API_KEY`, and without a key the lookup is
-not attempted and the track is recorded as **unscored** rather than as a zero.
-
-`acoustid_score` is deliberately nullable. `NULL` means the lookup never produced
-a measurement — no key, no fingerprint, the lookup failed, or AcoustID had no
-match — and `0` means the lookup ran and returned that confidence. The two are
-different facts, and before this was fixed the column was a plain `int`, so every
-track in every deployment reported a score of zero that had never been measured.
-Deployments upgrading through that version had their legacy zeros backfilled to
-`NULL` on first start; a zero written after that is a real measurement and is
-left alone.
+Acoustic fingerprinting is the one optional capability with a missing
+ingredient: it shells out to `fpcalc` (Chromaprint), which **the image
+does not install**. Imports are unaffected — each one logs
+`Fingerprinting failed: fpcalc failed: …` as a WARN and carries on, and
+hash-based dedup still works — but AcoustID enrichment never runs, because
+the lookup only fires when a fingerprint exists. Setting `ACOUSTID_API_KEY`
+on its own therefore changes nothing.
 
 ## 1. Configure
 
@@ -209,44 +201,9 @@ own account, and clear it before pointing anything else at the instance. If the
 address does get claimed first, point the variable at a different one: the
 promotion is recorded per address, so an unused address is promoted at once.
 
-### Account password policy
-
-Every route that accepts a password enforces the same floor and the same
-ceiling — `POST /api/auth/register`, `POST /api/admin/users`, and
-`POST /api/admin/users/:id/reset-password` — and they are counted in
-**different units**:
-
-| Bound | Value | Counted in | Why |
-|---|---|---|---|
-| Floor | `MIN_PASSWORD_LENGTH`, default **12** | characters (runes) | the minimum a passphrase must have to be worth having |
-| Ceiling | **72** | bytes | bcrypt's own limit — it is a hash function, not a string library, and it refuses more |
-
-So a password must be **at least 12 characters and at most 72 bytes**. All three
-routes check this on the server and return the identical `400` body, so a
-password an admin sets through the API cannot be one registration would have
-refused. The register form states both bounds; nothing about the ceiling is
-expressible in HTML, because a browser's `minlength` counts characters and has
-no byte notion at all.
-
-The two units diverge outside ASCII, and that is the case worth knowing about:
-40 `é` characters clear the 12-character floor easily and are **80 bytes**, so
-they are refused even though no browser hint has told you anything is wrong.
-Each route answers `400` naming the ceiling and your actual byte count, never
-a `500` — bcrypt rejecting a password a person typed is a client error, not a
-server fault. A passphrase with accented or non-Latin characters therefore
-reaches the limit in *fewer* characters; the practical advice is to keep the
-first one or two words of a passphrase in ASCII and let the rest be whatever.
-
-The floor is configurable, but the ceiling is not: it is bcrypt's. Setting
-`MIN_PASSWORD_LENGTH` above 72 makes the server refuse to start, because no
-password could then satisfy both bounds.
-
 Then create the first account. **Every state-changing request needs the CSRF
 header**: any request (including `GET /`) sets a `csrf_` cookie, whose value must be echoed in
 `X-CSRF-Token`.
-
-The account password has to satisfy both ends of the policy, and the two are
-counted in different units; *Account password policy* above has the exact bounds.
 
 ```bash
 JAR=/tmp/nr.jar; rm -f $JAR
@@ -255,11 +212,11 @@ TOKEN=$(awk '/csrf_/{print $7}' $JAR | tail -1)
 
 curl -s -b $JAR -c $JAR -X POST http://localhost:8080/api/auth/register \
   -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN" \
-  -d '{"email":"you@example.com","password":"correct-horse-battery-staple"}'
+  -d '{"email":"you@example.com","password":"change-this"}'
 
 curl -s -b $JAR -c $JAR -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN" \
-  -d '{"email":"you@example.com","password":"correct-horse-battery-staple"}'
+  -d '{"email":"you@example.com","password":"change-this"}'
 
 Login is HTMX-first: it answers **302 with a `Set-Cookie`, not a JSON body**, so a 302 means
 it worked — a missing session cookie is the failure. (The `+` in an email address is also a
@@ -335,7 +292,7 @@ A path is unique across libraries, and re-running this is harmless: you get the
 existing library back (`200`) when you own it, and `409` naming the existing row
 when someone else does — never a bare `500`.
 
-### Monitor an artist (its first scan is queued for you)
+### Monitor an artist, then sync it
 
 The `name` is resolved against MusicBrainz, which needs no API key:
 
@@ -344,35 +301,9 @@ ARTIST_ID=$(curl -sS --fail-with-body -b $JAR -c $JAR -X POST http://localhost:8
 echo "artist: ${ARTIST_ID:?no artist id — see /tmp/artist.json}"
 ```
 
-In the web UI the same call is the **Add Artist** modal on `/artists`. A name
-MusicBrainz resolves to exactly one artist is created outright; an ambiguous one
-comes back as a list of candidates, and clicking the row you meant is the step
-that actually adds it — that click is what carries the MusicBrainz ID.
-
-Nothing on that path needs script evaluation, which matters because the app
-serves `script-src 'self'` with no `unsafe-eval`. The row used to build its
-values in an htmx `js:` expression, which htmx compiles with `eval`: the click
-threw a Content Security Policy error, issued no request at all, and left the
-operator looking at a list that did nothing. Carry the values as ordinary
-inputs collected by `hx-include` instead — do not loosen the header for it.
-`e2e/tests/artist-picker.spec.ts` drives the whole path in a browser (search,
-pick, artist created, scan queued), and `TestNoTemplateDependsOnEval` plus
-`TestShippedCSPDoesNotOfferUnsafeEval` keep both halves of that true: no
-template may need `eval`, and neither the server nor the proxy may offer it.
-
-**Adding an artist queues its scan.** The row and the `artist_scan` job are
-written in one transaction, so an artist that exists is an artist the worker has
-been asked to look at — there is no state where a monitored artist is never
-scanned. That scan pulls the discography, works out what is missing, and then
-queues the `acquisition` job. Both are visible under `/jobs`.
-
-The **Sync** button on each artist card is the same call, for when you want a
-fresh look instead of the one Add already queued. Ask while a scan for that
-artist is still queued or running and it hands that job straight back
-(`sync_already_active`, with `HX-Trigger: sync-already-active`) rather than
-queueing a second one — the worker takes an advisory lock keyed on
-`scope_type:scope_id`, so two live scans of one artist would only serialise
-behind each other:
+Adding an artist does not start acquiring — syncing does. This queues an
+`artist_scan` job (which pulls the discography and works out what is missing)
+that then queues the `acquisition` job; both are visible under `/jobs`:
 
 ```bash
 curl -s -b $JAR -c $JAR -X POST "http://localhost:8080/api/artists/$ARTIST_ID/sync" -H 'Content-Type: application/json' -H "X-CSRF-Token: $TOKEN"
@@ -462,10 +393,7 @@ only the account password is accepted.
 | slskd exits immediately / downloads unwritable | `volume-init` must run before slskd; it chowns the shared volumes to UID 1000. Keep it in the stack. |
 | `port is already allocated` | Another stack holds a published port. `APP_HTTP_PORT` covers the HTTP one, but the collision that usually blocks the whole bring-up is postgres: whatever already listens on 5432 (many hosts run a system or containerised postgres) fails the `up` before anything starts. Set `PG_HOST_PORT=15432` in `.env` — the stack itself reaches postgres over the compose network and ignores it, since the publish is for host-side debugging only. `NAVIDROME_PORT` does the same for the optional media server. Setting these beats stopping someone else's stack. |
 | Music plays but nothing rescans in an external server | Set `NAVIDROME_URL` (+ user/pass) so the worker has a library client; `/api/health` then reports a `navidrome` check. |
-| Every import logs `Audio fingerprinting failed: fpcalc failed: exec: "fpcalc": executable file not found in $PATH` | Not expected — the image installs Chromaprint and the build fails without it, so this means the container is not running the built image. Check `docker compose … exec ops-worker command -v fpcalc`; an empty answer means the container predates this change and needs `up -d --build`. |
-| `Finished scan` reports `fingerprinted=0 fingerprint_failed=0` | A scan whose files already carried a fingerprint and needed no backfill. Compare against `indexed`: if `fingerprinted + fingerprint_failed` is below `indexed` on a first scan, the files were already fingerprinted. |
-| A scan logs `Fingerprinting did not run for every indexed file` with `fingerprint_failed=N` | fpcalc ran and produced nothing for N files — unreadable, truncated, or not real audio. The per-file line names each path and the underlying error. |
-| An acquisition shows `unscored` where a score was expected | `ACOUSTID_API_KEY` is empty, or the lookup failed. Both are logged: the worker logs `AcoustID lookup failed`, and the job's own log carries the error too. `unscored` is the honest value — it is what stops a failed lookup reading as a confident zero. |
+| Every import logs `Fingerprinting failed: fpcalc failed: exec: "fpcalc": executable file not found in $PATH` | Expected, not a fault: the image ships no Chromaprint binary (see Prerequisites). The import completes and hash dedup still works; fingerprint dedup and AcoustID enrichment are simply unavailable, so `ACOUSTID_API_KEY` alone changes nothing. Install `fpcalc` in `backend/Dockerfile` if you want them. |
 | yt-dlp fallback fails with a proxy/403 error for a site you trust | The egress boundary's allowlist refused it. Add the host to `ops/squid/allowed-domains.txt` and `docker compose ... up -d egress-proxy` to reload. To run without the boundary entirely (not recommended), set `YTDLP_PROXY=` empty in `.env`. |
 | Every acquisition fails with `ssrf: no public IP found for netrunner-slskd` | `ALLOW_PRIVATE_TARGETS` is missing or `false`. slskd is reached by its compose service name, which resolves to a private IP and trips the SSRF guard. `docker-compose.yml` sets it for both app services; keep it if you write your own compose file. |
 | Every acquisition fails with `401 Unauthorized`, and slskd logs `Unknown API key beginning with: …` | The key is half-wired: `SLSKD_API_KEY` reached the app but not slskd, so the two sides disagree. It must be set on the slskd service as well. Set it once in `.env` and let `docker-compose.yml` pass it to both. (`SLSKD_API_URL`-era guides suggest `web.authentication.api_keys`; that map is awkward to express as an env var, whereas slskd's primary key is a plain `SLSKD_API_KEY`.) |

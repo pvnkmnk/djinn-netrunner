@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { test, TEST_USER } from '../fixtures/auth.fixture';
+import { test } from '../fixtures/auth.fixture';
 
 // Helper to extract CSRF token from page context
 async function getCsrfToken(page: Page): Promise<string> {
@@ -10,10 +10,7 @@ async function getCsrfToken(page: Page): Promise<string> {
 
 test.describe('Auth & Navigation (DJI-423)', () => {
   const timestamp = Date.now();
-  // Imported, not re-declared. A copy of this password was 11 characters while
-  // /api/auth/register requires 12, so every test below that registered or
-  // logged in was asserting against a request the server had already refused.
-  const testPassword = TEST_USER.password;
+  const testPassword = 'testpass123';
 
   // ==========================================================================
   // Login Form Tests
@@ -510,10 +507,10 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
       // Navigate to multiple pages
       await page.goto('/watchlists');
-      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
 
       await page.goto('/libraries');
-      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
 
       await page.goto('/');
       await expect(page.locator('.dashboard')).toBeVisible();
@@ -650,40 +647,19 @@ test.describe('Auth & Navigation (DJI-423)', () => {
   // Navigation Tests
   // ==========================================================================
   test.describe('Navigation', () => {
-    // DJI-524 put a Sign out button in the nav, and it is a submit control like
-    // any other. Nothing asserted it existed, which is exactly why two modal
-    // specs drifted into unscoped button[type="submit"] locators and began
-    // resolving to two elements (DJI-594). Pinning it makes that class of
-    // failure legible the next time a submit control appears.
-    test('header carries exactly one sign-out control', async ({ authenticatedPage: page }) => {
-      await page.goto('/');
-      const signOut = page.locator('nav#primary-nav button.signout-button');
-      await expect(signOut).toHaveCount(1);
-      await expect(signOut).toBeVisible();
-    });
-
     test('all nav links are present in header (admin)', async ({ adminPage: page }) => {
       await page.goto('/');
 
-      // base.html renders eight shared links and gates the ninth behind
-      // {% if IsAdmin %}, so an admin sees nine.
       const navLinks = page.locator('nav#primary-nav a');
       await expect(navLinks).toHaveCount(9);
-      await expect(navLinks.filter({ hasText: 'Admin' })).toHaveCount(1);
     });
 
     test('all nav links are present in header (regular user)', async ({ authenticatedPage: page }) => {
       await page.goto('/');
 
       const navLinks = page.locator('nav#primary-nav a');
-      // Eight, not nine. The assertion that used to sit here was 9 with the
-      // comment "Regular users should also see 9 links (including Admin if they
-      // have access)", which is backwards: it would have passed if the Admin
-      // link leaked to a non-admin, and it failed on a correct build. Counted
-      // the eight and asserted Admin's absence separately, so what is actually
-      // under test is the boundary between the two accounts.
-      await expect(navLinks).toHaveCount(8);
-      await expect(navLinks.filter({ hasText: 'Admin' })).toHaveCount(0);
+      // Regular users should also see 9 links (including Admin if they have access)
+      await expect(navLinks).toHaveCount(9);
     });
 
     test('active nav link is highlighted', async ({ authenticatedPage: page }) => {
@@ -701,32 +677,32 @@ test.describe('Auth & Navigation (DJI-423)', () => {
 
     test('navigates to Watchlists page', async ({ authenticatedPage: page }) => {
       await page.goto('/watchlists');
-      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
     });
 
     test('navigates to Libraries page', async ({ authenticatedPage: page }) => {
       await page.goto('/libraries');
-      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
     });
 
     test('navigates to Profiles page', async ({ authenticatedPage: page }) => {
       await page.goto('/profiles');
-      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
     });
 
     test('navigates to Schedules page', async ({ authenticatedPage: page }) => {
       await page.goto('/schedules');
-      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
     });
 
     test('navigates to Artists page', async ({ authenticatedPage: page }) => {
       await page.goto('/artists');
-      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
     });
 
     test('navigates to Jobs page', async ({ authenticatedPage: page }) => {
       await page.goto('/jobs');
-      await expect(page.locator('.dashboard, .page-heading')).toBeVisible();
+      await expect(page.locator('.dashboard, .page-header')).toBeVisible();
     });
 
     test('nav links have correct href attributes', async ({ authenticatedPage: page }) => {

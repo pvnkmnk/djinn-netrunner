@@ -10,13 +10,13 @@
                 <label for="watchlist_id">Watchlist</label>
                 <select id="watchlist_id" name="watchlist_id" required>
                     {% for watchlist in watchlists %}
-                    <option value="{{ watchlist.ID }}" {% if watchlist.ID == WatchlistID %}selected{% endif %}>{{ watchlist.Name }}</option>
+                    <option value="{{ watchlist.ID }}" {% if watchlist.ID == WatchlistID %}selected{% endif %}>{{ watchlist.Name | escape }}</option>
                     {% endfor %}
                 </select>
             </div>
             <div class="form-group">
                 <label for="cron_expr">Cron Expression</label>
-                <input type="text" id="cron_expr" name="cron_expr" value="{{ CronExpr }}" required placeholder="0 6 * * *">
+                <input type="text" id="cron_expr" name="cron_expr" value="{{ CronExpr | escape }}" required placeholder="0 6 * * *">
                 <small class="text-secondary">Format: minute hour day month weekday</small>
             </div>
             <div class="form-group">

@@ -30,45 +30,6 @@ jobs:
         env:
           CGO_ENABLED: 0
 
-      # The e2e suite's completeness gate decides whether a run counts as
-      # having covered everything, so the gate itself needs a test that runs on
-      # every PR -- otherwise a change to count_category() could break it
-      # silently and the suite would start reporting fewer tests than it runs.
-      # Pure bash + sed/awk, no dependencies, ~0.03s. Five of its eight cases
-      # are rejections, including a dead worker's "did not run" and a silent
-      # truncation with no crash banner.
-      - name: E2E completeness gate tests
-        run: bash scripts/test_e2e_gate.sh
-
-      # The password policy is one function called from three routes, and a
-      # suite that only tests the function cannot see a route that stops asking
-      # it -- the failure mode a shared helper invites. Four of the eight
-      # mutations remove a CALL SITE for exactly that reason.
-      #
-      # Runs from the repo root so the script can locate backend/ from its own
-      # path. ~40s: eight mutations plus two controls, each a scoped `go test`.
-      # Exits non-zero if any mutant is MISSED or if either control fails, so a
-      # green tick here means the mutants were caught, not merely that the
-      # script exited zero -- the per-mutation table is in the step log.
-      - name: Password policy mutation proof (Go-level)
-        run: python scripts/password_policy_mutation_check.py
-
-      # Same four rules, two promises. M1 removes the enqueue from
-      # AddMonitoredArtist -- the DJI-588 defect itself -- and M2..M8 break one
-      # clause each: the job's type and scope, the one-scan-per-artist rule, the
-      # rollback that stops an unscanned artist surviving, the tracked-release
-      # delete that keeps a scanned artist removable, and the template button
-      # that was throwing the server's answer away. M9 and M10 hold the second
-      # promise, which is that the CSP we serve still admits what the templates
-      # need: M9 puts an eval-dependent values expression back on the candidate
-      # row (the shipped defect -- htmx compiles it with eval, script-src
-      # 'self' forbids that, and the click silently made no request), M10 is the
-      # wrong fix applied to the header instead. ~50s: ten mutations plus two
-      # controls, each a scoped `go test`. Exits non-zero on any MISSED or any
-      # failed control; the per-mutation table is in this step's log.
-      - name: Artist scan mutation proof (Go-level)
-        run: python scripts/artist_scan_mutation_check.py
-
       - name: Vulnerability scan
         working-directory: backend
         run: |

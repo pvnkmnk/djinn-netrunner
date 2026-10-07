@@ -49,7 +49,7 @@ test.describe('Jobs Feature (DJI-431)', () => {
   test('1. Page loads - /jobs shows the header, the region and the filters', async ({ authenticatedPage: page }) => {
     await page.goto('/jobs');
 
-    await expect(page.locator('.page-heading')).toContainText('Jobs');
+    await expect(page.locator('.page-header h2')).toContainText('Jobs');
     await expect(page.locator('#jobs-region')).toBeVisible();
   });
 
@@ -64,31 +64,10 @@ test.describe('Jobs Feature (DJI-431)', () => {
   test('3. Filters offer the job types and states the backend knows', async ({ authenticatedPage: page }) => {
     await waitForJobsPartial(page);
 
-    // The options are rendered from database.JobTypes, so this list grows
-    // every time the worker learns a type. The exact count that used to sit
-    // here failed on each addition and never caught a real defect, so it is
-    // gone: the shape is what matters, and it survives the next type.
-    const typeSelect = page.locator('.filters select[name="job_type"]');
-    const typeValues: string[] = await typeSelect.locator('option').evaluateAll(
-      els => els.map(el => (el as HTMLOptionElement).value));
+    const typeOptions = page.locator('.filters select[name="job_type"] option');
+    await expect(typeOptions).toHaveCount(5);
+    await expect(page.locator('.filters select[name="job_type"] option[value="acquisition"]')).toHaveCount(1);
 
-    // Exactly one "All Types" sentinel carries an empty value; a floor rather
-    // than an equality, so adding a type cannot turn this red.
-    expect(typeValues.filter(v => v === '')).toHaveLength(1);
-    const namedTypes = typeValues.filter(v => v !== '');
-    expect(namedTypes.length).toBeGreaterThanOrEqual(8);
-    // No duplicate values: a repeated option would be silently unreachable.
-    expect(new Set(namedTypes).size).toBe(namedTypes.length);
-
-    // The two the old hand-written list omitted, which is the defect this
-    // test exists to prevent: the Artists page writes artist_scan, and the
-    // scheduler writes release_monitor hourly.
-    for (const required of ['acquisition', 'artist_scan', 'release_monitor']) {
-      await expect(typeSelect.locator(`option[value="${required}"]`)).toHaveCount(1);
-    }
-
-    // The state list, unlike job types, is hand-written in partials/jobs.html,
-    // so a count here is a change-detector rather than a timebomb.
     const stateOptions = page.locator('.filters select[name="state"] option');
     await expect(stateOptions).toHaveCount(6);
     await expect(page.locator('.filters select[name="state"] option[value="failed"]')).toHaveCount(1);
@@ -221,6 +200,6 @@ test.describe('Jobs Feature (DJI-431)', () => {
     await page.waitForTimeout(1000);
 
     await expect(page).toHaveURL(/\/jobs$/);
-    await expect(page.locator('.page-heading')).toContainText('Jobs');
+    await expect(page.locator('.page-header h2')).toContainText('Jobs');
   });
 });

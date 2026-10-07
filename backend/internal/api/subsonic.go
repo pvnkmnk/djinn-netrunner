@@ -768,39 +768,42 @@ func albumArtistID(name string) string {
 // artistAlbums lists an artist's albums with the counts and year a client needs
 // to render them, scoped to the libraries the caller owns.
 func (h *SubsonicHandler) artistAlbums(user database.User, artistName string) ([]subsonicAlbum, error) {
-	// Bolt Optimization: Consolidate per-album loop queries into a single aggregated query.
-	// Aggregating song_count, year, genre, and cover_art with GROUP BY album reduces database roundtrips from 2N + 1 to 1.
-	type albumRow struct {
-		Album     string `gorm:"column:album"`
-		SongCount int    `gorm:"column:song_count"`
-		Year      *int   `gorm:"column:year"`
-		Genre     string `gorm:"column:genre"`
-		CoverArt  string `gorm:"column:cover_art"`
-	}
-
-	var rows []albumRow
+	var names []string
 	if err := h.db.Table("tracks").
 		Joins("JOIN libraries ON libraries.id = tracks.library_id").
-		Where("libraries.owner_user_id = ? AND artist = ? AND album <> ''", user.ID, artistName).
-		Select("album, COUNT(*) as song_count, MAX(year) as year, MAX(genre) as genre, MAX(cover_url) as cover_art").
-		Group("album").
+		Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
+		Where("album <> ''").
+		Distinct("album").
 		Order("album").
-		Find(&rows).Error; err != nil {
+		Pluck("album", &names).Error; err != nil {
 		return nil, err
 	}
 
-	albums := make([]subsonicAlbum, 0, len(rows))
-	for _, row := range rows {
+	albums := make([]subsonicAlbum, 0, len(names))
+	for _, name := range names {
+		var songCount int64
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND artist = ? AND album = ?", user.ID, artistName, name).
+			Count(&songCount)
+
+		var first database.Track
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND artist = ? AND album = ?", user.ID, artistName, name).
+			Order("COALESCE(track_num, 0)").
+			First(&first)
+
 		albums = append(albums, subsonicAlbum{
-			ID:        albumID(row.Album, artistName),
-			Name:      row.Album,
+			ID:        albumID(name, artistName),
+			Name:      name,
 			Artist:    artistName,
 			ArtistID:  artistID(artistName),
-			SongCount: row.SongCount,
-			Year:      safeDeref(row.Year),
-			Genre:     row.Genre,
-			CoverArt:  row.CoverArt,
-			Duration:  h.getAlbumDuration(user, row.Album, artistName),
+			SongCount: int(songCount),
+			Year:      safeDeref(first.Year),
+			Genre:     first.Genre,
+			CoverArt:  first.CoverURL,
+			Duration:  h.getAlbumDuration(user, name, artistName),
 		})
 	}
 
@@ -1204,94 +1207,55 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 	// Build search result
 	searchResult := &searchResult3{}
 
-	// Bolt Optimization: Batch artist album counts into a single GROUP BY query instead of querying in a loop.
-	validArtistNames := make([]string, 0, len(artistNames))
-	for _, name := range artistNames {
-		if strings.TrimSpace(name) != "" {
-			validArtistNames = append(validArtistNames, name)
-		}
-	}
-
-	artistAlbumCountMap := make(map[string]int)
-	if len(validArtistNames) > 0 {
-		type artistCountRow struct {
-			Artist     string `gorm:"column:artist"`
-			AlbumCount int    `gorm:"column:album_count"`
-		}
-		var artistCountRows []artistCountRow
-		if err := h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ? AND artist IN ? AND album <> ''", user.ID, validArtistNames).
-			Select("artist, COUNT(DISTINCT album) as album_count").
-			Group("artist").
-			Find(&artistCountRows).Error; err != nil {
-			return h.respondError(c, 50, "Internal server error")
-		}
-		for _, r := range artistCountRows {
-			artistAlbumCountMap[r.Artist] = r.AlbumCount
-		}
-	}
-
 	// Fill artists. An untagged track would otherwise surface as an artist with
 	// an empty name that no client can resolve, so skip those defensively.
-	for _, artistName := range validArtistNames {
+	for _, artistName := range artistNames {
+		if strings.TrimSpace(artistName) == "" {
+			continue
+		}
+
+		var albumCount int64
+		if err := h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND artist = ?", user.ID, artistName).
+			Where("album <> ''").
+			Select("COUNT(DISTINCT album)").
+			Scan(&albumCount).Error; err != nil {
+			return h.respondError(c, 50, "Internal server error")
+		}
+
 		searchResult.Artist = append(searchResult.Artist, subsonicArtist{
 			ID:         artistID(artistName),
 			Name:       artistName,
-			AlbumCount: artistAlbumCountMap[artistName],
+			AlbumCount: int(albumCount),
 		})
-	}
-
-	// Bolt Optimization: Batch album metadata aggregation (song count, year, genre, cover art) into a single GROUP BY query.
-	type albumMetaRow struct {
-		Album     string `gorm:"column:album"`
-		Artist    string `gorm:"column:artist"`
-		SongCount int    `gorm:"column:song_count"`
-		Year      *int   `gorm:"column:year"`
-		Genre     string `gorm:"column:genre"`
-		CoverArt  string `gorm:"column:cover_art"`
-	}
-
-	albumMetaMap := make(map[string]albumMetaRow)
-	if len(albums) > 0 {
-		var metaRows []albumMetaRow
-		// Create pairs or conditions for matched albums
-		albumTx := h.db.Table("tracks").
-			Joins("JOIN libraries ON libraries.id = tracks.library_id").
-			Where("libraries.owner_user_id = ?", user.ID)
-
-		var conditions []string
-		var args []interface{}
-		for _, a := range albums {
-			conditions = append(conditions, "(album = ? AND artist = ?)")
-			args = append(args, a.Album, a.Artist)
-		}
-		albumTx = albumTx.Where(strings.Join(conditions, " OR "), args...)
-
-		if err := albumTx.
-			Select("album, artist, COUNT(*) as song_count, MAX(year) as year, MAX(genre) as genre, MAX(cover_url) as cover_art").
-			Group("album, artist").
-			Find(&metaRows).Error; err != nil {
-			return h.respondError(c, 50, "Internal server error")
-		}
-
-		for _, r := range metaRows {
-			albumMetaMap[r.Album+"\x00"+r.Artist] = r
-		}
 	}
 
 	// Fill albums
 	for _, album := range albums {
-		meta := albumMetaMap[album.Album+"\x00"+album.Artist]
+		// Count songs for this album
+		var songCount int64
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, album.Album, album.Artist).
+			Count(&songCount)
+
+		// Get year from first track
+		var firstTrack database.Track
+		h.db.Table("tracks").
+			Joins("JOIN libraries ON libraries.id = tracks.library_id").
+			Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, album.Album, album.Artist).
+			First(&firstTrack)
+
 		searchResult.Album = append(searchResult.Album, subsonicAlbum{
 			ID:        albumID(album.Album, album.Artist),
 			Name:      album.Album,
 			Artist:    album.Artist,
 			ArtistID:  albumArtistID(album.Artist),
-			SongCount: meta.SongCount,
-			Year:      safeDeref(meta.Year),
-			Genre:     meta.Genre,
-			CoverArt:  meta.CoverArt,
+			SongCount: int(songCount),
+			Year:      safeDeref(firstTrack.Year),
+			Genre:     firstTrack.Genre,
+			CoverArt:  firstTrack.CoverURL,
 			Duration:  h.getAlbumDuration(user, album.Album, album.Artist),
 		})
 	}

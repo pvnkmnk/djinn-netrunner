@@ -9,18 +9,7 @@
     /* Text colors */
     --text-primary: #e6edf3;
     --text-secondary: #8b949e;
-    /* The tertiary text token. It was #484f58, which measures 2.3:1 on
-       --bg-primary and fails the WCAG 2.1 AA floor PRODUCT.md calls
-       confirmed rather than aspirational; the footer and the track-detail
-       labels rendered in it were unreadable, not merely quiet. #7a8290
-       clears 4.5:1 on the three surfaces it is used or could land on
-       (--bg-primary 5.0:1, --bg-card 4.9:1, --bg-secondary 4.6:1) and still
-       sits a visible step below --text-secondary (6.1:1), so the hierarchy
-       survives. It does NOT clear 4.5:1 on --bg-tertiary (4.1:1) - check
-       before using it on a hover/active surface. Guarded by
-       TestStylesheet_TextTokensClearWCAAContrast, which recomputes these
-       ratios from this file. */
-    --text-muted: #7a8290;
+    --text-muted: #484f58;
     
     /* Neon accent colors */
     --accent-cyan: #00fff5;
@@ -86,9 +75,6 @@ body {
     font-size: 0.75rem;
     padding: 0.5rem 0;
     border-bottom: 2px solid transparent;
-    /* A nav label is one word or two and neither half is useful alone: a
-       squeezed row must push a label to a new line, never break it in half. */
-    white-space: nowrap;
 }
 .app-header nav a:focus-visible,
 .btn:focus-visible,
@@ -163,30 +149,6 @@ textarea:focus-visible,
 .primary-nav {
     display: flex;
     gap: 0.75rem;
-    /* Above 980px this is one row of eight links plus the account cluster, and
-       the row is at capacity: before the address was added it filled the header
-       with about 17px to spare at 1280px. The first cut of the address let the
-       row overflow instead, and because "Sign out" was the only label with a
-       space in it, that one wrapped to two lines and stretched every nav item
-       to match (header 69px -> 85px, and 7px of horizontal overflow on the
-       document). Wrapping is the graceful answer: when the row is full the
-       account cluster drops to its own right-aligned line and no label is
-       broken or squeezed. Below 980px the media query turns all of this into a
-       hamburger and these two properties are inert. */
-    flex-wrap: wrap;
-    justify-content: flex-end;
-}
-
-/* The account cluster - who is signed in, and the way out - is one item of the
-   nav row rather than two, so the two halves never separate. With the row at
-   capacity the cluster as a whole moves to its own right-aligned line; split
-   into two items, the sign-out control wrapped on its own and the address
-   stayed behind on the row above. */
-.primary-nav .account-cluster {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-left: 2rem;
 }
 
 /* The sign-out control is a form so it works without JavaScript, but it sits
@@ -208,10 +170,6 @@ textarea:focus-visible,
     font-size: 0.75rem;
     padding: 0.5rem 0;
     transition: color 0.2s;
-    /* Two words, so it is the label that breaks first when the row is tight.
-       It is also the control that leaves the account, and "Sign / out" on two
-       lines reads as two controls. */
-    white-space: nowrap;
 }
 
 .primary-nav .signout-button:hover {
@@ -221,30 +179,6 @@ textarea:focus-visible,
 .primary-nav .signout-button:focus-visible {
     outline: 2px solid var(--accent-cyan);
     outline-offset: 2px;
-}
-
-/* The signed-in operator, sat with the sign-out control because the two
-   answer the same question: which account is this, and how do I leave it.
-   It keeps sentence case rather than the nav links' uppercase so identity
-   reads as a label rather than as a tenth destination.
-   `--text-secondary`, never `--text-muted`: who you are signed in as is not
-   tertiary metadata, and the muted token would say that leaving the account
-   unnamed is a detail. */
-.primary-nav .signed-in-as {
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    padding: 0.5rem 0;
-    /* A long address must not push the nav apart; the full value stays in
-       the DOM and in the title attribute, so truncation costs nothing. The cap
-       is where the address starts truncating, `min-width: 0` is what lets it
-       be the item that gives way: without it a flex item will not shrink below
-       its own text, so the squeeze would land on whichever neighbour has a
-       space in its label instead. */
-    max-width: 12rem;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .app-main { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
@@ -342,14 +276,6 @@ textarea:focus-visible,
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.5rem;
-}
-
-/* The element that names a page. Exactly one per page: either the page
-   template renders it or the partial it loads does, never both (DJI-551). */
-.page-heading {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
 }
 
 .section-header h2 {
@@ -893,16 +819,12 @@ textarea:focus-visible,
 
 /* HTMX loading state
 
-   The .htmx-indicator pair is not decoration, and these four rules are the only
-   copy that applies. htmx 1.9.10 used to inject them itself as an inline
-   <style> block at DOMContentLoaded; `style-src 'self'` refused that block, so
-   the rules never applied and a .htmx-indicator stayed visible forever, and
-   every page load logged a CSP violation for the attempt.
-
-   The injection is now switched off (see the htmx-config meta in base.html),
-   which means these rules are load-bearing rather than a copy: delete them and
-   every loading indicator in the product stays on screen for good. A test
-   asserts that coupling - see TestTheStylesheetCarriesTheIndicatorRules. */
+   The .htmx-indicator pair is not decoration. htmx 1.9.10 injects exactly
+   these rules itself, as an inline <style> block at DOMContentLoaded. The app
+   sends `style-src 'self'`, which refuses inline style elements, so htmx's
+   copy never applies and a .htmx-indicator stays visible forever. The same
+   rules in a stylesheet served from 'self' are allowed, so they are declared
+   here instead. */
 .htmx-indicator { opacity: 0; }
 
 .htmx-request .htmx-indicator,
@@ -1412,54 +1334,4 @@ textarea:focus-visible,
 .status-ok { color: var(--accent-success); }
 .status-err { color: var(--accent-danger, #f85149); }
 .form-hint { color: var(--text-secondary); font-size: 0.8rem; display: block; margin-top: 0.25rem; }
-
-/* Add Artist candidate picker.
-
-   The row is the button: the whole thing is the target, so an operator is never
-   hunting for a "Select" link at the end of it, and the accessible name is the
-   artist's name plus the detail rather than the word "Select".
-
-   Elevation is declared once, as the 1px border the other cards use. The hover
-   treatment is the incumbent card language — border colour, a 4px shift, a soft
-   cyan shadow — so a candidate reads as the same object as everything else in
-   the console rather than as a new kind of thing. Detail text is
-   --text-secondary (6.1:1 on --bg-card); --text-muted is the tertiary token
-   (4.9:1 on --bg-card) and is deliberately not used for the detail text a
-   person reads to tell one candidate from another. */
-.candidate-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin: 0 0 1rem;
-}
-
-.candidate-row {
-    display: block;
-    width: 100%;
-    text-align: left;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 0;
-    padding: 0.9rem 1.25rem;
-    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
-}
-
-.candidate-row:hover,
-.candidate-row:focus-visible {
-    border-color: var(--accent-cyan);
-    transform: translateX(4px);
-    box-shadow: 0 0 20px rgba(0, 255, 245, 0.15);
-}
-
-.candidate-row:focus-visible {
-    outline: 2px solid var(--accent-cyan);
-    outline-offset: 2px;
-}
-
-.candidate-prompt {
-    margin-bottom: 0.75rem;
-}
 

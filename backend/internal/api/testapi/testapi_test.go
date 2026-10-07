@@ -77,7 +77,6 @@ func TestTestAPI_RouteContract(t *testing.T) {
 		"POST /api/test/create-dir",
 		"POST /api/test/seed-fallback-refusal",
 		"POST /api/test/seed-fallback-refusal/cleanup",
-		"POST /api/test/seed-monitored-artist",
 	}, routes)
 }
 

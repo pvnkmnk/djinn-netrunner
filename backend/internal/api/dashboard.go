@@ -4,7 +4,6 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
@@ -57,10 +56,6 @@ func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
 		// discover it by being rejected. The server is what enforces it; see
 		// AuthHandler.Register.
 		"MinPasswordLength": minPasswordLength,
-		// The ceiling is stated too, even though no HTML attribute can enforce
-		// it: minlength counts characters and this ceiling is in BYTES. See
-		// AuthHandler.Register for the guard that refuses over it.
-		"MaxPasswordBytes": config.BcryptMaxPasswordBytes,
 		// Where to send the user once they sign in. Validated here rather
 		// than in the browser, so a hostile ?next= cannot turn the sign-in
 		// page into an open redirect.

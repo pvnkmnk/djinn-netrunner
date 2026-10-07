@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -20,29 +19,10 @@ import (
 
 type AdminHandler struct {
 	db *gorm.DB
-
-	// minPasswordLength is the floor the password-accepting admin routes
-	// enforce, matching registration. Zero means
-	// config.DefaultMinPasswordLength.
-	minPasswordLength int
 }
 
 func NewAdminHandler(db *gorm.DB) *AdminHandler {
 	return &AdminHandler{db: db}
-}
-
-// NewAdminHandlerWithPolicy builds the handler with an explicit password floor,
-// mirroring NewAuthHandlerWithPolicy. Pass 0 for the default.
-//
-// An administrator setting a password is not a different class of person: the
-// floor and the byte ceiling that registration enforces apply here too, which
-// is why both routes call config.ValidatePassword rather than hashing whatever
-// they are given.
-func NewAdminHandlerWithPolicy(db *gorm.DB, minLength int) *AdminHandler {
-	if minLength < 1 {
-		minLength = config.DefaultMinPasswordLength
-	}
-	return &AdminHandler{db: db, minPasswordLength: minLength}
 }
 
 // AdminOnly middleware checks the authenticated user has admin role.
@@ -165,13 +145,6 @@ func (h *AdminHandler) CreateUser(c *fiber.Ctx) error {
 	if payload.Email == "" || payload.Password == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "email and password required"})
 	}
-	// Same policy, same message, same fields as registration -- see
-	// config.ValidatePassword. Checked BEFORE the existence check below so the
-	// answer depends only on the request: an existing address must not answer
-	// 409 while a new one answers 400, or the pair enumerates the user table.
-	if v := config.ValidatePassword(payload.Password, h.minPasswordLength); v != nil {
-		return c.Status(400).JSON(v.JSON())
-	}
 	addr, err := mail.ParseAddress(payload.Email)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid email address"})
@@ -278,13 +251,8 @@ func (h *AdminHandler) ResetPassword(c *fiber.Ctx) error {
 	if err := c.BodyParser(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-	// This used to accept any non-empty password, which is how an admin could
-	// set a one-character password on the same server where registration
-	// demanded twelve, and how an over-72-byte password reached bcrypt and came
-	// back as a 500. The empty case now falls out of the floor with a message
-	// that names the rule, so there is no separate short-circuit to drift.
-	if v := config.ValidatePassword(payload.Password, h.minPasswordLength); v != nil {
-		return c.Status(400).JSON(v.JSON())
+	if payload.Password == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "password required"})
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(payload.Password), BcryptCost)
@@ -313,7 +281,7 @@ func (h *AdminHandler) ListAudit(c *fiber.Ctx) error {
 	if limit < 1 || limit > 100 {
 		limit = 50
 	}
-	offset := (page - 1) * limit
+offset := (page - 1) * limit
 
 	var entries []database.AuditLog
 	var total int64

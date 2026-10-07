@@ -1,14 +1,14 @@
 <div class="preview-header">
     <span class="preview-count">{{ Tracks|length }} of {{ TotalCount }} tracks</span>
-    <span class="badge badge-source badge-{{ SourceType }}">{{ SourceType }}</span>
+    <span class="badge badge-source badge-{{ SourceType | escape }}">{{ SourceType | escape }}</span>
 </div>
 {% for track in Tracks %}
 <div class="track">
-    {% if track.CoverURL %}<span class="track-cover" data-cover="{{ track.CoverURL }}"></span>{% endif %}
+    {% if track.CoverURL %}<span class="track-cover" data-cover="{{ track.CoverURL | escape }}"></span>{% endif %}
     <span class="track-info">
-        <span class="track-title">{{ track.Title }}</span>
-        <span class="track-artist">{{ track.Artist }}</span>
-        {% if track.Album %}<span class="track-album">{{ track.Album }}</span>{% endif %}
+        <span class="track-title">{{ track.Title | escape }}</span>
+        <span class="track-artist">{{ track.Artist | escape }}</span>
+        {% if track.Album %}<span class="track-album">{{ track.Album | escape }}</span>{% endif %}
     </span>
 </div>
 {% endfor %}

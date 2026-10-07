@@ -4,9 +4,7 @@
             <h3 id="modal-title">Add Artist</h3>
             <button class="modal-close" data-close-modal aria-label="Close modal">&times;</button>
         </div>
-        <!-- State one of two. This posts to the search rather than to Add: the modal creates nothing until a candidate has been chosen, and the search answers 200 with the picker in place of this body. -->
-        <div id="artist-form-body">
-        <form hx-post="/api/artists/search" hx-target="#artist-form-body" hx-swap="innerHTML">
+        <form hx-post="/api/artists" hx-target="#artists-region" hx-swap="innerHTML">
             <div class="form-group">
                 <label for="name">Artist Name</label>
                 <input type="text" id="name" name="name" required placeholder="Enter artist name">
@@ -16,16 +14,15 @@
                 <select id="quality_profile_id" name="quality_profile_id">
                     <option value="">Use global default</option>
                     {% for profile in profiles %}
-                    <option value="{{ profile.ID }}">{{ profile.Name }}</option>
+                    <option value="{{ profile.ID }}">{{ profile.Name | escape }}</option>
                     {% endfor %}
                 </select>
             </div>
             <div class="form-actions">
                 <button type="button" class="btn" data-close-modal>Cancel</button>
-                <button type="submit" class="btn btn-primary">Search</button>
+                <button type="submit" class="btn btn-primary">Add</button>
             </div>
         </form>
-        </div>
     </div>
 </div>
 

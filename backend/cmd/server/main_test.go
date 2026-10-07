@@ -84,7 +84,6 @@ func TestSetupRoutes_RegistersCriticalRoutes(t *testing.T) {
 		"POST /api/acquire",
 		"POST /api/watchlists/:id/sync",
 		"POST /api/libraries/:id/scan",
-		"POST /api/libraries/:id/adopt",
 		"GET /api/libraries/:id/tracks",
 		"POST /api/artists/:id/sync",
 		"POST /api/jobs/:id/retry",

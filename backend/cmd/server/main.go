@@ -165,7 +165,7 @@ func main() {
 	artistsHandler := api.NewArtistsHandler(db, atService, mbService)
 	schedulesHandler := api.NewSchedulesHandler(db)
 	acquireHandler := api.NewAcquireHandler(db)
-	adminHandler := api.NewAdminHandlerWithPolicy(db, cfg.MinPasswordLength)
+	adminHandler := api.NewAdminHandler(db)
 	playlistHandler := api.NewPlaylistHandler(db)
 	jobHandler := api.NewJobHandler(db)
 
@@ -293,14 +293,9 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/admin", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.AdminPage)
 	app.Get("/playlists", auth.AuthMiddleware, playlistHandler.PlaylistsPage)
 
-	// Console attach. Nothing selects a job yet (DJI-562: the console
-	// streams /ws/jobs/:job_id and the page never names one), so this
-	// reports the state honestly instead of replying with a constant
-	// that reads like an instruction. The button targets #console-socket,
-	// so the region that shows the console is the one that explains
-	// itself, and the Attach label survives the swap.
+	// Console attach (minimal implementation)
 	app.Post("/console/attach", auth.AuthMiddleware, func(c *fiber.Ctx) error {
-		return c.Type("html").SendString(`<div class="console-entry">Not attached: no job is selected. The console shows the output of one running job at a time.</div>`)
+		return c.Type("html").SendString(`<div class="console-entry">Select a running job to attach to its console output.</div>`)
 	})
 
 	// Partial routes (all protected)
@@ -358,7 +353,6 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	artistsRoutes := apiProtected.Group("/artists")
 	artistsRoutes.Get("/", artistsHandler.List)
 	artistsRoutes.Get("/form", artistsHandler.GetForm)
-	artistsRoutes.Post("/search", artistsHandler.Search)
 	artistsRoutes.Post("/", artistsHandler.Add)
 	artistsRoutes.Delete("/:id", artistsHandler.Delete)
 	artistsRoutes.Patch("/:id", artistsHandler.Update)
@@ -383,7 +377,6 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	libraryRoutes.Delete("/:id", library.DeleteLibrary)
 	libraryRoutes.Post("/:id/scan", library.TriggerScan)
 	libraryRoutes.Post("/:id/enrich", library.TriggerEnrich)
-	libraryRoutes.Post("/:id/adopt", library.AdoptLibrary)
 	libraryRoutes.Post("/:id/prune", library.TriggerPrune)
 	libraryRoutes.Get("/:id/tracks", library.ListTracks)
 

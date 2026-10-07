@@ -415,19 +415,8 @@ type Acquisition struct {
 	MBReleaseID   string `gorm:"column:mb_release_id"`
 	MBArtistID    string `gorm:"column:mb_artist_id"`
 
-	// AcoustID.
-	//
-	// A pointer, not an int, because "never scored" and "scored zero" are
-	// different facts and a plain int cannot tell them apart - both are 0. The
-	// fingerprint binary was missing from the image for the project's entire
-	// history, so no lookup ever ran and every row in the table nonetheless
-	// reported a score: the field looked populated and was permanently empty.
-	//
-	// nil means unscored - no fingerprint, no API key, the lookup failed, or
-	// AcoustID had no match. A non-nil value is the 0-100 confidence AcoustID
-	// actually returned, so a genuine zero is still representable and still
-	// distinguishable from having never asked.
-	AcoustIDScore *int `gorm:"column:acoustid_score"`
+	// AcoustID
+	AcoustIDScore int `gorm:"column:acoustid_score"` // 0-100 confidence score from AcoustID lookup
 }
 
 func (m *Acquisition) BeforeCreate(tx *gorm.DB) error {

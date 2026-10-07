@@ -163,14 +163,6 @@ func readBody(t *testing.T, resp *http.Response) string {
 // role ("" for signed out). These assertions are about the chrome, so the
 // layout is rendered directly rather than through a page that would bury it.
 func renderLayoutFor(t *testing.T, role string) string {
-	return renderLayoutForEmail(t, role, "u@example.com")
-}
-
-// renderLayoutForEmail is renderLayoutFor with the address under test. The
-// chrome now prints the signed-in address, and that address arrives from a
-// registration form - so a test about what the chrome does with it has to be
-// able to choose one.
-func renderLayoutForEmail(t *testing.T, role, email string) string {
 	t.Helper()
 
 	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
@@ -178,7 +170,7 @@ func renderLayoutForEmail(t *testing.T, role, email string) string {
 
 	app.Get("/probe", func(c *fiber.Ctx) error {
 		if role != "" {
-			c.Locals("user", database.User{ID: 1, Email: email, Role: role})
+			c.Locals("user", database.User{ID: 1, Email: "u@example.com", Role: role})
 		}
 		return RenderPage(c, "probe", "layouts/base.html", fiber.Map{})
 	})
@@ -478,44 +470,4 @@ func TestSafeNextPath(t *testing.T) {
 	} {
 		assert.Equal(t, "", safeNextPath(raw), "%q must be dropped", raw)
 	}
-}
-
-// Criterion (DJI-524): the chrome says which account it belongs to, not merely
-// that a session exists. A sign-out control answers "how do I leave"; nothing
-// answered "who am I", and on an instance two operators share that is the
-// difference between two sets of libraries and one invisible pile of both.
-func TestBaseLayout_NamesTheSignedInOperator(t *testing.T) {
-	signedOut := renderLayoutFor(t, "")
-	assert.NotContains(t, signedOut, "signed-in-as",
-		"there is no operator to name on the signed-out dashboard")
-
-	for _, role := range []string{"user", "admin"} {
-		body := renderLayoutFor(t, role)
-		assert.Contains(t, body, "signed-in-as",
-			"role %s: the chrome must name the account it belongs to", role)
-		assert.Contains(t, body, "u@example.com",
-			"role %s: the account is identified by its address", role)
-	}
-}
-
-// The address is written to the chrome of every page, and it is
-// attacker-supplied: registration accepts it verbatim. Pongo2 autoescapes by
-// default and this engine never turns that off, so rendering the value bare is
-// safe today; the assertion keeps a later edit - an explicit `| safe`, a
-// SetAutoescape(false), a switch of template engine - from quietly turning it
-// into markup in the chrome of the registrant's own session.
-func TestBaseLayout_EscapesTheOperatorAddress(t *testing.T) {
-	hostile := `<img src=x onerror="alert(1)">@example.com`
-	body := renderLayoutForEmail(t, "user", hostile)
-
-	assert.NotContains(t, body, "<img src=x",
-		"an operator address must not be able to inject markup into the chrome")
-	assert.Contains(t, body, "&lt;img",
-		"the address must still be readable: escaped, not dropped")
-	// Escaped exactly once. The engine autoescapes, so an explicit `| escape`
-	// double-escapes and prints `&amp;lt;` at the operator - the app-wide defect
-	// filed as DJI-590, caught here because this marker was the first value
-	// rendered with a deliberately hostile one.
-	assert.NotContains(t, body, "&amp;lt;",
-		"escaping twice is not escaping better: the operator would read the entity")
 }

@@ -3,14 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- htmx would otherwise inject its .htmx-indicator rules as an inline
-         <style> block at DOMContentLoaded. The app sends `style-src 'self'`,
-         which refuses inline style elements, so every page load logged a CSP
-         violation and the rules never applied. The same rules are declared in
-         styles.css instead, which 'self' allows - so the injection is turned
-         off rather than permitted. Do not add 'unsafe-inline' to make it work:
-         that re-opens the hole the policy closes. -->
-    <meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
     <title>{% block title %}NETRUNNER{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/styles.css">
     <script src="/static/js/htmx.min.js"></script>
@@ -35,20 +27,10 @@
             <a href="/jobs" {% if Page == "jobs" %}class="active" aria-current="page"{% endif %}>Jobs</a>
             {% if IsAdmin %}<a href="/admin" {% if Page == "admin" %}class="active" aria-current="page"{% endif %}>Admin</a>{% endif %}
             {% if CurrentUserEmail %}
-            {# Who you are, next to the way out: a sign-out control answers "how do I #}
-            {# leave" and nothing answered "who am I", which on a shared instance is the #}
-            {# difference between two operators' libraries and one pile of both. #}
-            {# The address is attacker-supplied at registration and the engine escapes #}
-            {# every value exactly once; escaping_test.go is the guard that keeps it that #}
-            {# way, and the second escape is the app-wide defect DJI-590. #}
-            {# One wrapper, so the pair moves together when the nav row is full. #}
-            <div class="account-cluster">
-                <span class="signed-in-as" title="{{ CurrentUserEmail }}">{{ CurrentUserEmail }}</span>
-                <form class="signout-form" method="post" action="/api/auth/logout">
-                    <input type="hidden" name="csrf_token" value="{{ CSRFToken }}">
-                    <button type="submit" class="signout-button">Sign out</button>
-                </form>
-            </div>
+            <form class="signout-form" method="post" action="/api/auth/logout">
+                <input type="hidden" name="csrf_token" value="{{ CSRFToken }}">
+                <button type="submit" class="signout-button">Sign out</button>
+            </form>
             {% endif %}
         </nav>
     </header>
