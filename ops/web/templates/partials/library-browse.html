@@ -93,14 +93,16 @@
         <button class="btn btn-sm"
                 hx-get="/partials/libraries/{{ library.ID }}/browse?page={{ page - 1 }}&amp;sort_by={{ sort_by }}&amp;sort_dir={{ sort_dir }}&amp;page_size={{ page_size }}"
                 hx-include="[name='search']"
-                hx-target="#browse-content">&larr; Prev</button>
+                hx-target="#browse-content"
+                aria-label="Previous page">&larr; Prev</button>
         {% endif %}
         <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
         {% if page < total_pages %}
         <button class="btn btn-sm"
                 hx-get="/partials/libraries/{{ library.ID }}/browse?page={{ page + 1 }}&amp;sort_by={{ sort_by }}&amp;sort_dir={{ sort_dir }}&amp;page_size={{ page_size }}"
                 hx-include="[name='search']"
-                hx-target="#browse-content">Next &rarr;</button>
+                hx-target="#browse-content"
+                aria-label="Next page">Next &rarr;</button>
         {% endif %}
     </div>
     {% endif %}
