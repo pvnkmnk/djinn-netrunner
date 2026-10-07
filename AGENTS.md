@@ -188,6 +188,17 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   stale binary. Mutation phases need `compose build --no-cache` +
   `up -d --force-recreate` (proven by run 35470657152's false pass).
 
+- **`DECLARED_SKIPS` in `scripts/e2e_gate.sh` is exact in BOTH directions** —
+  a new skip fails the run, and a declared skip that stops running fails it too
+  ("remove them from DECLARED_SKIPS; coverage changed"). A CONDITIONAL
+  `test.skip` therefore cannot be expressed at all: assert the failure with a
+  message naming the third party instead of skipping on its outage.
+- **A local run reuses the stack AND its database**, so rows written through the
+  real API survive into the next run — and CI recreates the DB per run, so it
+  never sees this class of failure. Owner scoping hides it: a fixture left by
+  another session's user reads as *missing* data, not extra, which is the harder
+  direction to diagnose. Duplicate rows for one MBID are not rejected per-MBID.
+
 ## API & data contracts (non-obvious)
 
 - HTTP API is HTMX-first: `POST /api/auth/login` answers **302 + Set-Cookie
@@ -196,6 +207,14 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   cookie gets wiped. `csrf_` must NOT be `httpOnly` (the double-submit
   pattern reads `document.cookie` and echoes it as `X-CSRF-Token`); the
   *session* cookie is the httpOnly one.
+- **`api` may import `config`; `config` never imports `api`.** There is no
+  import cycle, so `config.BcryptMaxPasswordBytes` and
+  `config.MinPasswordLength` are the single source of truth for the password
+  bounds and any handler may read them directly instead of re-deriving a
+  constant.
+- **Playwright's `page.request` follows redirects**, so a handler that answers
+  `302 + Set-Cookie` reports `200` and an assertion on the 302 fails against
+  correct code. Pass `maxRedirects: 0` to see the real status.
 - **JSON responses use PascalCase fields** (`ID`, `Name`, `SourceType`) —
   E2E must check `response.ID`, not `response.id`.
 - Public: `/api/health` (no auth), `/api/auth/{register,login,logout}`
@@ -259,6 +278,13 @@ Postgres for concurrent production workloads.
 5. **Deploy/full stack:** set env, `docker compose up -d --build`, check
    `curl localhost:8080/api/health`, follow logs.
 
+**Do not add production machinery to make one test deterministic.** When making a
+browser spec hermetic starts needing a cache service, new wiring and new
+endpoints, that is scope the task did not ask for: say plainly which assertion
+depends on a third party, ship the honest version, and file the seam as its own
+ticket. Reviewers unpick the detour first — and unrequested extras inside an
+otherwise-good change are the thing to flag before anything else.
+
 ## Pitfalls & Gotchas
 
 - **Python's `open(path, "w")` defaults to the Windows locale encoding
@@ -270,6 +296,11 @@ Postgres for concurrent production workloads.
   `py -c "d=open(f,'rb').read(); print([b for b in d if b>127])"` when a
   patch script rewrites a Go source file containing prose.
 
+- **A `write_file`/heredoc round-trip mangles `"\n"` inside a Python patch
+  script**, so the patcher ships with a real newline where an escape was meant
+  (or vice versa). Build such literals from `chr(92) + "n"` / `chr(9)`, or
+  mutate by LINE INDEX instead of by string anchor — that removes the whole
+  class of quoting trap without depending on the writer's escaping.
 - Prior-guide corrections: auth is session-cookie (not JWT+RBAC); rate
   limiting uses Fiber limiter defaults (no Redis); reverse proxy is Caddy
   (`ops/caddy/Caddyfile`), not Nginx; explicit `"admin"` role checks exist —
@@ -361,6 +392,15 @@ Postgres for concurrent production workloads.
   and `/jobs` already did). Targeting the region's inner `#X-list` with
   `outerHTML` nests a second region inside the first — a duplicate Add
   button and section title on every save.
+
+- **`assert.Regexp(t, rx, str)` takes the string to match as the THIRD
+  argument.** Passing the message there makes the guard compare your message
+  against its own pattern and fail for a reason unrelated to the code under
+  test. When an exact substring will do, use `assert.Contains` instead.
+- **A template guard asserting "no attribute X" by substring false-positives on
+  attribute VALUES.** `hx-include="closest [role='listitem']"` contains `role=`,
+  so `assert.NotContains(openTag, "role=")` fails on correct markup. Match an
+  attribute as `(?:^|\s)role="` — whitespace before it, and the quoting it takes.
 
 ## Consolidated workspace learnings (merged from DevWorks base, 2026-09-18)
 
@@ -474,6 +514,10 @@ these cost a 400 before it was pinned down:
     `teamId` is rejected by name.
   * `WorkflowState` has no `category`, but `type` is enough to move a ticket by
     name without hardcoding UUIDs.
+  * `Issue.projectId` is NOT selectable — Linear answers `Cannot query field
+    "projectId" on type "Issue". Did you mean "project"?`. Select
+    `project { id }`. Print the HTTPError BODY when a raw request 400s: a bare
+    "HTTP 400" names none of the four fields above and cost three blind retries.
 
 **HTTP 200 can carry a populated `errors` array.** Every helper in the CLI
 refuses to treat that as success — treating it as success is how a probe reads a
@@ -489,6 +533,12 @@ in `~/.linear_drain_token` or `LINEAR_DRAIN_TOKEN`. **Never in the repo's `.env`
 web and worker containers. The user's interactive shell exports never reach the
 agent's shell either; a `0600` file outside the checkout is the only handover
 that works.
+
+**A filed description does not come back from `issue-list --json`** — the field is
+omitted, so it reads as 0 chars and looks like data loss when nothing was lost.
+Read a body back through the API (`{issue(id: "DJI-601"){description}}`) or MCP
+`get_issue` before claiming a write landed. A create that returned a URL is not
+proof the evidence survived Linear's markdown normalisation.
 
 Tests: `python scripts/test_linear.py` (offline, no key). Mutation proof:
 `python scripts/linear_mutation_check.py` (9/9 caught, 3/3 controls green).
@@ -592,6 +642,14 @@ specific claim carry four traps, all of which inflate the score:
   runtime.** Comparing a seeded bcrypt hash to the expected password is green
   while the seed skips an existing row and the database keeps the old value.
 
+- **A hand-written package list is the weakest link in a harness.**
+  `PKGS = ["./internal/services", "./internal/api"]` omits
+  `backend/internal/api/templates`, which reads the same templates off disk — so
+  the harness reported `10/10 mutations caught; both controls green` while that
+  package failed four tests on the very file M8 mutates. A green tick means
+  "those packages"; CI reads it as "the promise". Derive the list or declare
+  the exclusion in the docstring.
+
 A guard for "must *not* do X" needs an assertion of **absence**
 (`assert.NotContains`), not just presence. Flipping `renderAdoptionOffer(c,
 library, false)` to `true` passes any test that only asserts the offer is there.
@@ -602,6 +660,32 @@ library, false)` to `true` passes any test that only asserts the offer is there.
 - **A guard claiming "every template" must fail when a template has no row.**
   A table that renders one file and never counts the rest is the same blind
   spot as the five-guard suite DJI-545 replaced.
+- **`go test` runs a vet subset, so a mutation that merely fails the COMPILER or
+  vet is VOID, not caught.** Replacing a `fmt.Sprintf(msg, a, b)` with a
+  constant string leaves unused args, vet rejects it, every case "fails", and
+  the harness scores it as a catch. Mutate the whole `Sprintf(...)` expression,
+  or the whole `if` block plus the import it needed, so the mutant still builds.
+- **A boundary fixture must assert its own size before it is used as one.** A
+  ten-word "passphrase" landed on 71 bytes and the test passed because the
+  server accepted it — a green assertion measuring the wrong side of the line.
+- **Prove the restore byte-identical BEFORE the control run.** A harness that
+  mutates, rebuilds, and restores in a `finally` will happily run the control
+  against a still-mutant tree, and the control passes for the wrong reason.
+
+### Shell tooling: `rg` and `sd`, not `grep` and `sed`
+
+- The user's standing preference: **`rg` over `grep`, `sd` over `sed`**. Both
+  are installed (`rg` 15.2.0, `sd` 1.0.0).
+- **`sd` rewrites files IN PLACE by default — there is no `-i` flag, and `-p` /
+  `--preview` is the dry run.** It prints nothing and exits 0 whether it
+  matched or not, so a bare `sd foo bar file.go` is an unverifiable write. That
+  is the opposite of `sed`, where a bare `s///` only prints to stdout.
+- `sd` preserves CRLF when it does rewrite a file, and with no file argument it
+  reads stdin (`sed` stays usable for scripted, piped, non-interactive work —
+  the CRLF patchers in `scripts/` rely on that).
+- `rg` is the search tool here: `rg -n` for line numbers, `-g '*.go'` to glob,
+  `-c` to count per file, `-l` filenames only. It honours `.gitignore`, so the
+  large untracked `.agents/skills/` tree costs nothing.
 
 ### Build, test & integration
 
@@ -615,6 +699,14 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   golangci-lint+go1.25); `go vet ./...` is the gate, and `gofmt -w` would
   flip this repo's CRLF Go files to LF — format-check an LF copy instead.
 
+- **`backend/internal/api/templates` is a separate package whose tests read
+  `ops/web/templates/**` off disk.** `go test ./internal/api`, and any `-run`
+  filter that names a package, will not run it — that gap shipped a red `test`
+  job while local filtered runs were green. Name the package, or run `./...`.
+- **`internal/services` can exceed go test's default 10m0s.** One ffprobe-backed
+  download-probe test ran 9m46s on a loaded box while the package totals 177s
+  unloaded and CI's whole `test` job 5m24s, so `panic: test timed out` there is
+  a wall-clock hazard, not a failure: use `go test ./internal/services -timeout 30m`.
 - **Line endings are mixed per-file in this repo**: most files are CRLF but
   `acquisition_pipeline.go` (among others) is LF. Detect the dominant ending
   before patch-scripting and preserve it — forcing CRLF onto an LF file
@@ -633,6 +725,24 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   `go test ./internal/config` fail (`TestLoad_Defaults: cfg.Port = "0", want
   "8080"`). Run Go tests as `PORT= go test ...` — environmental, not a repo
   bug; don't "fix" config.go.
+- **`ENVIRONMENT=production` and `CONFIG_ENV=production` are exported too**, and
+  they fail the same package for a different reason, so clearing only `PORT`
+  leaves three tests red and reads as a code bug. Measured 2026-10-07:
+  `TestLoad_Defaults: cfg.Environment = "production", want "development"`,
+  `TestLoad_ConfigEnvDefaultsToEnvironment`, and `TestLoad_JWTSecretAutoGenerated`
+  (production without `JWT_SECRET` refuses to load). The whole set clears with
+  `env -u ENVIRONMENT -u CONFIG_ENV -u PORT go test ./internal/config` -> `ok`.
+  Check what the shell actually exports before believing a config failure:
+  `env | grep -E '^(ENVIRONMENT|CONFIG_ENV|PORT|NETRUNNER)'`.
+- **A probe must establish every precondition it asserts.** The ga-probes
+  refusal probe asserted a library existed (correctly — its `toHaveLength(0)`
+  over an empty list passes vacuously) but registered none, so it died on its
+  own guard when `scripts/mutation-check.sh` ran it alone on a fresh DB. The full
+  e2e suite passed on a library an earlier spec left behind: **an ordered suite
+  hides a missing precondition, and only the isolated run finds it.** This was
+  the third weekly `Mutation checks` failure in a row, each cycle's *control*
+  run red. Run any probe standalone (`--grep <title>`, `env -u CI`) before
+  believing it.
 - The scanner indexes with a 4-goroutine pool, so a `:memory:` SQLite test
   DB gives each pooled connection its own database ("no such table"). Use a
   file-backed DSN under `t.TempDir()` closed via `t.Cleanup` — Windows
