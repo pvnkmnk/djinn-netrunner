@@ -71,8 +71,17 @@ jobs:
 
       - name: Vulnerability scan
         working-directory: backend
+        env:
+          # Pinned, not @latest, and this is what it cost to learn: x/vuln
+          # v1.8.0 requires go >= 1.26.0, so the runner's Go 1.25.13 tried to
+          # fetch the go1.26.9 toolchain, and that toolchain module is not
+          # published -- a 404 from sum.golang.org, reported as a failed
+          # vulnerability scan. Nothing was vulnerable; the scan never ran.
+          # v1.7.0 is the newest release whose go directive (1.25.0) the
+          # go-version pin above satisfies. Bump the two together.
+          GOTOOLCHAIN: local
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           govulncheck ./...
 
       - name: Upload coverage
