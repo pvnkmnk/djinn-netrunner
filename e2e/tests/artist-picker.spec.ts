@@ -85,7 +85,11 @@ test.describe('Add Artist picker (CSP-safe selection)', () => {
 
     const posts: string[] = [];
     page.on('request', (r) => {
-      if (r.url().includes('/api/artists') && r.method() === 'POST') posts.push(r.url().replace(/^.*8080/, ''));
+      if (r.url().includes('/api/artists') && r.method() === 'POST') // Strip scheme+host so the assertion reads a path. Matching the port as
+      // well (^.*8080) couples the spec to one port: on any other APP_HTTP_PORT
+      // the prefix survives and every path assertion fails for a reason that has
+      // nothing to do with the picker.
+      posts.push(r.url().replace(/^https?:\/\/[^/]+/, ''));
     });
 
     await page.goto('/artists');

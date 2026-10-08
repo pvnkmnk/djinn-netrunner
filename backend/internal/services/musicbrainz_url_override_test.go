@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
@@ -51,6 +52,32 @@ func TestMusicBrainzService_HonoursTheURLOverride(t *testing.T) {
 		_, err := svc.SearchArtist("death")
 		require.NoError(t, err)
 		assert.Equal(t, "/ws/2/artist", gotPath)
+	})
+
+	// doRequest is a SEPARATE http path from SearchArtist and GetArtist, and it
+	// carried its own hardcoded base URL. Routing only the first two left the
+	// discography lookup going to the real musicbrainz.org while the stand-in
+	// answered everything else -- which answered 400 on the stand-in's own MBIDs
+	// and failed every artist_scan job in the e2e stack. Found by running the
+	// stack, not by reading the code.
+	t.Run("the discography path is routed too", func(t *testing.T) {
+		var seen string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.URL.Path + "?" + r.URL.RawQuery
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"release-groups": []any{}})
+		}))
+		defer srv.Close()
+
+		svc := NewMusicBrainzService(&config.Config{
+			MusicBrainzURL: srv.URL, AllowPrivateTargets: true,
+		})
+
+		_, err := svc.GetArtistDiscography("some-mbid")
+		require.NoError(t, err)
+		assert.True(t, strings.HasPrefix(seen, "/ws/2/artist/some-mbid?"),
+			"the discography lookup must reach the same host as search and by-id")
+		assert.Contains(t, seen, "inc=release-groups")
 	})
 
 	t.Run("empty override keeps the public service", func(t *testing.T) {

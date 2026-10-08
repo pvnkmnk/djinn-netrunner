@@ -283,7 +283,11 @@ func (s *MusicBrainzService) doRequest(endpoint string, params url.Values) (map[
 
 	start := time.Now()
 
-	baseURL := "https://musicbrainz.org/ws/2/"
+	// Routed through s.baseURL like every other call, NOT a second hardcoded
+	// literal. Leaving musicbrainz.org here sent the discography lookup to the
+	// REAL service while search and by-id went to the e2e stand-in -- which
+	// answered 400 on the stand-in's own MBIDs and failed every scan job.
+	baseURL := s.baseURL + "/ws/2/"
 	fullURL := fmt.Sprintf("%s%s?%s", baseURL, endpoint, params.Encode())
 
 	req, err := http.NewRequest("GET", fullURL, nil)

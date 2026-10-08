@@ -159,7 +159,22 @@ class Handler(BaseHTTPRequestHandler):
                 # re-point handler relies on.
                 self._send(404, {"error": "Not Found"})
                 return
-            self._send(200, artist)
+            # inc=release-groups asks for the artist's releases. The key has to
+            # be present even when the list is empty: GetArtistDiscography reads
+            # it, and a response without it decodes to nothing and the scan
+            # reports no releases rather than an error. Empty is deterministic.
+            body = dict(artist)
+            body["release-groups"] = []
+            self._send(200, body)
+            return
+
+        if path == "/ws/2/recording":
+            # MusicBrainz recording search. The service calls this for
+            # fingerprinting, and returning a shape it cannot decode answers a
+            # 400, which the worker records as a FAILED scan job. An empty list
+            # is a legitimate answer -- "no recording matched" -- and leaves the
+            # pipeline in a clean state instead of an error one.
+            self._send(200, {"recordings": [], "count": 0})
             return
 
         if path == "/ws/2/artist":
