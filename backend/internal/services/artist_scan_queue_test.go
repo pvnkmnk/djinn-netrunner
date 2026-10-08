@@ -21,7 +21,7 @@ func TestAddMonitoredArtist_QueuesTheScanItPromises(t *testing.T) {
 	require.NoError(t, db.Create(&profile).Error)
 
 	svc := NewArtistTrackingService(db, nil)
-	artist, err := svc.AddMonitoredArtist("dji588-queued-mbid", profile.ID, "Queued On Add", "Queued On Add", nil)
+	artist, err := svc.AddMonitoredArtist("dji588-queued-mbid", profile.ID, "Queued On Add", "Queued On Add", "", "", "", nil)
 	require.NoError(t, err)
 	require.NotNil(t, artist)
 
@@ -52,7 +52,7 @@ func TestAddMonitoredArtist_RollsBackTheArtistWhenTheScanCannotBeQueued(t *testi
 	require.NoError(t, db.Migrator().DropTable(&database.Job{}))
 
 	svc := NewArtistTrackingService(db, nil)
-	_, err := svc.AddMonitoredArtist("dji588-rollback-mbid", profile.ID, "Never Lands", "Never Lands", nil)
+	_, err := svc.AddMonitoredArtist("dji588-rollback-mbid", profile.ID, "Never Lands", "Never Lands", "", "", "", nil)
 	require.Error(t, err, "an enqueue that cannot be written must fail the add")
 
 	var artists int64
@@ -70,7 +70,7 @@ func TestQueueArtistScan_AnswersTheActiveScanInsteadOfQueueingASecond(t *testing
 	require.NoError(t, db.Create(&profile).Error)
 
 	svc := NewArtistTrackingService(db, nil)
-	artist, err := svc.AddMonitoredArtist("dji588-idempotent-mbid", profile.ID, "Pressed Twice", "Pressed Twice", nil)
+	artist, err := svc.AddMonitoredArtist("dji588-idempotent-mbid", profile.ID, "Pressed Twice", "Pressed Twice", "", "", "", nil)
 	require.NoError(t, err)
 
 	// Add already queued one. The operator pressing Sync is asking for a scan
@@ -113,7 +113,7 @@ func TestDeleteMonitoredArtist_RemovesTheReleasesTheScanLeftBehind(t *testing.T)
 	require.NoError(t, db.Create(&profile).Error)
 
 	svc := NewArtistTrackingService(db, nil)
-	artist, err := svc.AddMonitoredArtist("dji588-delete-mbid", profile.ID, "Scanned Then Removed", "Scanned Then Removed", nil)
+	artist, err := svc.AddMonitoredArtist("dji588-delete-mbid", profile.ID, "Scanned Then Removed", "Scanned Then Removed", "", "", "", nil)
 	require.NoError(t, err)
 
 	// What the worker's scan leaves behind.
@@ -153,9 +153,9 @@ func TestDeleteMonitoredArtist_LeavesAnotherOwnersReleasesAlone(t *testing.T) {
 	require.NoError(t, db.Create(&other).Error)
 
 	svc := NewArtistTrackingService(db, nil)
-	mine, err := svc.AddMonitoredArtist("dji588-mine", profile.ID, "Mine", "Mine", &owner.ID)
+	mine, err := svc.AddMonitoredArtist("dji588-mine", profile.ID, "Mine", "Mine", "", "", "", &owner.ID)
 	require.NoError(t, err)
-	theirs, err := svc.AddMonitoredArtist("dji588-theirs", profile.ID, "Theirs", "Theirs", &other.ID)
+	theirs, err := svc.AddMonitoredArtist("dji588-theirs", profile.ID, "Theirs", "Theirs", "", "", "", &other.ID)
 	require.NoError(t, err)
 
 	require.NoError(t, db.Create(&database.TrackedRelease{ArtistID: mine.ID, ReleaseGroupID: "g-mine"}).Error)

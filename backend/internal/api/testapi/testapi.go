@@ -436,7 +436,7 @@ func seedMonitoredArtist(cfg *config.Config, db *gorm.DB) fiber.Handler {
 		declareSeedArtists(name)
 
 		svc := services.NewArtistTrackingService(db, nil)
-		artist, err := svc.AddMonitoredArtist(payload.MusicBrainzID, profileID, name, name, &user.ID)
+		artist, err := svc.AddMonitoredArtist(payload.MusicBrainzID, profileID, name, name, "", "", "", &user.ID)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}

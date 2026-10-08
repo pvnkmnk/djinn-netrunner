@@ -130,7 +130,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	}
 
 	// Create monitored artist with name and sort name
-	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName, &user.ID)
+	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName, artist.Disambiguation, artist.Country, artist.Type, &user.ID)
 	if err != nil {
 		slog.Error("Failed to add monitored artist", "error", err)
 		return c.Status(400).JSON(fiber.Map{"error": "failed to add artist"})
