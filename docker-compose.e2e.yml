@@ -69,6 +69,33 @@ services:
   caddy:
     container_name: e2e-caddy
 
+# E2E-only MusicBrainz stand-in (DJI-603). artist-picker.spec.ts was the only
+  # spec driving the Add Artist picker and it searched the REAL
+  # musicbrainz.org, so a third-party outage became a red CI run on an unrelated
+  # commit -- and the gate could not express a skip, because
+  # scripts/e2e_gate.sh holds DECLARED_SKIPS exact in BOTH directions.
+  #
+  # The seam is MUSICBRAINZ_URL below, read by MusicBrainzService's
+  # constructor. One config field, no cache seeding, no production behaviour
+  # change: the default is still the public service and nothing else reads the
+  # override. Mirrors ops/fake-slskd -- fixed answers, no network, no clock.
+  fake-musicbrainz:
+    container_name: e2e-fake-musicbrainz
+    build:
+      context: ./ops/fake-musicbrainz
+    image: netrunner/fake-musicbrainz:e2e
+    environment:
+      PORT: "8082"
+    healthcheck:
+      # The healthcheck must exercise the real served path, not just the
+      # container's liveness. /health is a stdlib route on the same server.
+      test: ["CMD", "python3", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8082/health',timeout=3).status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   ops-web:
     container_name: e2e-ops-web
     # Port comes from the base file's loopback publish; declaring it here as
@@ -91,6 +118,9 @@ services:
       # depend on one.
       ENVIRONMENT: development
       CONFIG_ENV: development
+      # MusicBrainz comes from the stand-in above, not the public service:
+      # artist-picker.spec.ts was a canary for musicbrainz.org's uptime.
+      MUSICBRAINZ_URL: http://fake-musicbrainz:8082
 
   # The same validating egress boundary as the release overlay, under the e2e
   # naming rules. This overlay merges with the BASE compose, not the release one,
@@ -138,6 +168,10 @@ services:
       # downloader is routed, so the app's own traffic to postgres/slskd is
       # unaffected.
       YTDLP_PROXY: http://egress-proxy:3128
+      # Same stand-in as ops-web: the worker resolves the chosen artist
+      # through MusicBrainzService, and ga-probes asserts the provenance
+      # that comes back. One URL, so the two cannot disagree.
+      MUSICBRAINZ_URL: http://fake-musicbrainz:8082
     depends_on:
       egress-proxy:
         condition: service_healthy
