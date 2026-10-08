@@ -83,7 +83,7 @@
         <input type="hidden" name="quality_profile_id" value="{{ quality_profile_id }}">
         <button type="button"
                 class="candidate-row"
-                {% if repoint_for %}hx-post="/api/artists/{{ repoint_for }}/repoint"{% else %}hx-post="/api/artists"{% endif %}
+                {% if repoint_for %}hx-patch="/api/artists/{{ repoint_for }}/repoint"{% else %}hx-post="/api/artists"{% endif %}
                 hx-include="closest [role='listitem']"
                 hx-target="#artists-region"
                 hx-swap="innerHTML"

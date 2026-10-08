@@ -20,7 +20,7 @@
             Sync
         </button>
         <button class="btn btn-sm"
-                hx-post="/api/artists/search"
+                hx-get="/partials/artist-form"
                 hx-vals='{"repoint_for": "{{ Artist.ID }}"}'
                 hx-target="#modal-container"
                 hx-swap="innerHTML"

@@ -66,7 +66,7 @@ func TestArtistCard_EveryButtonRendersALabel(t *testing.T) {
 				}
 			}
 			verb := ""
-			for _, m := range []string{"POST", "PATCH", "DELETE"} {
+			for _, m := range []string{"GET", "POST", "PATCH", "DELETE"} {
 				if v := attr(n, "hx-"+strings.ToLower(m)); v != "" {
 					verb = m + " " + v
 					break
@@ -106,7 +106,7 @@ func TestArtistCard_EveryButtonRendersALabel(t *testing.T) {
 		target string
 	}{
 		{"Sync", "POST /api/artists/a1/sync", "#notice"},
-		{"Re-point", "POST /api/artists/search", "#modal-container"},
+		{"Re-point", "GET /partials/artist-form", "#modal-container"},
 		{"Pause", "PATCH /api/artists/a1", "#artist-a1"},
 		{"Remove", "DELETE /api/artists/a1", "#artist-a1"},
 	}

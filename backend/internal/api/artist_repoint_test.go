@@ -30,9 +30,9 @@ func repointFixture(t *testing.T, db *gorm.DB, owner database.User, get func(str
 	at := services.NewArtistTrackingService(db, mb)
 	handler := NewArtistsHandler(db, at, mb)
 
-	// Repoint answers with the card partial, because the control that triggers
-	// it swaps that partial. Without a views engine the render 500s, so this
-	// exercises the real response path rather than a JSON stand-in.
+	// Repoint answers with the artists region, which is what the picker's row
+	// swaps. Without a views engine the render 500s, so this exercises the real
+	// response path rather than a JSON stand-in.
 	dir := filepath.Join("..", "..", "..", "ops", "web", "templates")
 
 	app := fiber.New(fiber.Config{Views: templates.NewPongo2(dir, ".html")})
@@ -253,10 +253,11 @@ func TestArtistsHandler_RepointUnresolvableMBIDLeavesTheRowIntact(t *testing.T) 
 	require.NotNil(t, after.LastScanDate)
 }
 
-// The response must be the updated card, because the button that triggers this
-// swaps the card. Returning JSON would leave the operator looking at stale
-// provenance.
-func TestArtistsHandler_RepointReturnsTheUpdatedCard(t *testing.T) {
+// The response must be the artists REGION, because that is what the picker's
+// row swaps (#artists-region, innerHTML). A lone card replaces the region's
+// entire contents -- its .section-header Add button and every other card go with
+// it -- and JSON leaves the operator looking at stale provenance.
+func TestArtistsHandler_RepointReturnsTheArtistsRegion(t *testing.T) {
 	db := setupAPITestDB(t)
 	owner := repointUser(t, db, "repoint-card@test.local", "user")
 	profile := repointProfile(t, db, &owner)
@@ -280,11 +281,66 @@ func TestArtistsHandler_RepointReturnsTheUpdatedCard(t *testing.T) {
 	require.NoError(t, err)
 	body := string(raw)
 
-	// The card, not JSON: the control swaps this partial with outerHTML, so a
-	// JSON body would leave the operator looking at the provenance of the
-	// entity they just replaced.
-	assert.Contains(t, body, "Napalm Death", "the response must be the updated card")
-	assert.Contains(t, body, "United Kingdom", "the card must carry the NEW entity's provenance")
+	// The region, not a lone card and not JSON: this is the partial the picker
+	// row swaps, and it is the only shape that leaves the list's header and the
+	// other cards standing.
+	assert.Contains(t, body, `class="artists-region"`,
+		"the response must be the artists region, not a lone card: the row swaps #artists-region's innerHTML")
+	assert.Contains(t, body, `id="artists-list"`,
+		"the region partial must carry the list the cards live in")
+	assert.Contains(t, body, "Napalm Death", "the response must carry the updated card")
+	assert.Contains(t, body, "United Kingdom",
+		"the card must carry the NEW entity's provenance; the field has to be SELECTED, not merely stored")
+	assert.Contains(t, body, "Group", "the card must carry the new entity's type")
 	assert.Contains(t, body, "new-card-mbid", "the card must carry the new MBID")
 	assert.NotContains(t, body, "old-card-mbid", "the card must not still name the old entity")
+}
+
+// The picker row's swap target and this handler's response have to agree.
+// Nothing else compares them, and when they disagreed the region was replaced by
+// one card -- the Add button and every other artist disappeared, with no error
+// anywhere. Asserted as a pair, so a change to either side fails HERE.
+func TestArtistsHandler_RepointResponseMatchesThePickerSwapTarget(t *testing.T) {
+	// What the row declares.
+	p := newRepointPickerTestApp(t)
+	p.stub.artists = []services.MusicBrainzArtist{
+		{ID: "mbid-a", Name: "Napalm Death", Country: "United Kingdom", Type: "Group"},
+	}
+	p.stub.byID["mbid-a"] = p.stub.artists[0]
+
+	row := bodyOf(t, postForm(t, p.app, "/api/artists/search", map[string]string{
+		"name": "death", "repoint_for": "artist-uuid-123",
+	}, false))
+	assert.Contains(t, row, `hx-target="#artists-region"`,
+		"the picker row must address the region")
+	assert.Contains(t, row, `hx-swap="innerHTML"`,
+		"and replace its contents")
+
+	// What the handler answers.
+	db := setupAPITestDB(t)
+	owner := repointUser(t, db, "repoint-agree@test.local", "user")
+	profile := repointProfile(t, db, &owner)
+
+	artist := database.MonitoredArtist{
+		MusicBrainzID: "agree-mbid", Name: "Agree",
+		QualityProfileID: profile.ID, OwnerUserID: &owner.ID, Monitored: true,
+	}
+	require.NoError(t, db.Create(&artist).Error)
+
+	app, _ := repointFixture(t, db, owner, repointGet("agree-mbid-2"))
+
+	req := httptest.NewRequest("PATCH", "/api/artists/"+artist.ID.String()+"/repoint",
+		strings.NewReader(`{"musicbrainz_id":"agree-mbid-2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(raw), `class="artists-region"`,
+		"#artists-region's innerHTML must BE the region partial; a lone card would delete the section header and every other card")
+	assert.Equal(t, "closeModal", resp.Header.Get("HX-Trigger"),
+		"the picker is open over the list it just changed, so the pick must close it")
 }
