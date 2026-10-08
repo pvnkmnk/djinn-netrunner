@@ -3,6 +3,10 @@
 > Condensed 2026-09-18 (reference prose compressed; every lesson kept).
 > Refreshed 2026-10-02: single-escape invariants, guard/mutation discipline,
 > Linear state kept in step with merges.
+> Refreshed 2026-10-08: Orca's `linear` CLI is the ticket surface (it reads
+> comments, which `scripts/linear.py` cannot); secret-scan findings recorded and
+> triaged; no gofmt gate means committed violations are possible; the P-DJI-29
+> wave order now runs NR01-NR28.
 
 ## Orientation
 
@@ -471,14 +475,56 @@ otherwise-good change are the thing to flag before anything else.
   Downgrading transitive deps to appease the directive reintroduces CVEs —
   keep master's dep versions and add new libs at go-1.25-compatible
   releases.
+- **Secret scanning is a habit here, not a gate.** No workflow runs `gitleaks`
+  or `trufflehog`; the only reference is `gitleaks git --staged --redact` in
+  `docs/superpowers/plans/2026-10-07-artist-provenance-and-repoint.md`, and a
+  staged scan never sees history. A full-history scan finds **15 items across 8
+  commits**, all pre-dating 2026-10-08 and all harmless once read: 9 are false
+  positives (agent index files mapping a source path to a 32-hex content hash —
+  the rule's `auth` keyword matches the *filename*, e.g.
+  `"backend/internal/api/auth.go": "fc7beb7b…"`), 3 are the literal placeholder
+  `admin:PASS` in a curl example, 2 are the checked-in `e2e-` test key, and 1 is
+  spotDL's publicly-published OAuth client secret in `spotify_spdc.go` (real,
+  third-party, not rotatable by us). Detail and the allowlist decision:
+  `docs/SECRET_SCAN_FINDINGS.md`.
 - Runner Go installs can be transiently corrupted (`compile: version X does
   not match go tool version Y` in stdlib internals unrelated to your diff) —
   re-run before debugging.
 
-### Linear: use `scripts/linear.py`, not the MCP connector
+### Linear: `orca linear` for one ticket, `scripts/linear.py` for a project body
 
-`scripts/linear.py` is how this repo reads and writes Linear. The MCP connector
-still works for one-off lookups, but three of its behaviours make it the wrong
+`orca linear` is the Orca app's Linear integration and the fastest surface for a
+single ticket: `orca linear issue <id> --full --json` returns the description,
+**comments**, children, attachments, relations and activity in one call. That is
+the thing `scripts/linear.py` cannot do at all — it has **no comment-read
+command**, so DJI-560's three-comment thread was unreadable from this repo until
+the Orca CLI existed.
+
+Verbs: `issue`, `search`, `list`, `list-issues`, `save-issue`, `status set`,
+`assignee set|clear`, `priority set|clear`, `estimate set|clear`,
+`due-date set|clear`, `label add|remove|set`, `comment add`, `attach`, `create`,
+`relation add|remove`, `project list`, `team list|states|labels|members`.
+
+- `--current` resolves the worktree's **linked** issue and fails with
+  `linear_no_linked_issue` when the worktree was never linked (this one is not),
+  so pass an explicit id.
+- `orca linear project` is list-only; a **project body** still needs
+  `linear.py project-body`.
+- `comment add` and `save-issue` take `--body-file <path|->`; as with a body,
+  compare against the read-back rather than what you sent.
+- Writes are single-attempt. `linear_write_unconfirmed` carries either a
+  replayable `writeId` (retry once, same body and the explicit ids it carries —
+  never swap them for `--current`) or a read-back instruction; never reuse a
+  `writeId` from another command's error.
+- Status moves: start-of-work is allowed only from `triage`/`backlog`/
+  `unstarted`, and only when the target state was named by the user or a trusted
+  non-Linear instruction. Otherwise leave the state and say so.
+- Version-matched guide: `orca skills get orca-linear` — the bundled skill names
+  are `orca-linear` and the legacy `linear-tickets`, but the CLI namespace is
+  `linear`.
+
+`scripts/linear.py` is still how a project body is edited, and the MCP connector
+still works for one-off lookups — but three of its behaviours make it the wrong
 tool for anything load-bearing.
 
 **`ProjectUpdateInput.content` is a separate field from `description`.**
@@ -565,6 +611,22 @@ proof the evidence survived Linear's markdown normalisation.
 
 Tests: `python scripts/test_linear.py` (offline, no key). Mutation proof:
 `python scripts/linear_mutation_check.py` (9/9 caught, 3/3 controls green).
+
+**Project state (2026-10-08).** `P-DJI-29` now runs **NR01-NR28**: NR26
+(DJI-620, podcast), NR27 (DJI-621, chat) and NR28 (DJI-622, jukebox) were added
+after NR01's audit found eleven spec endpoints no ticket owned. `P-DJI-28` is the
+v0.0.2 streaming project; `P-DJI-51` holds six issues. NR17 (DJI-578) is the gate
+and is `blockedBy` NR05-NR16 **and NR22-NR28**: the relations already carried
+NR22-NR25, and NR26-NR28 were added to match, because a gate that closes over
+only its original blockers can go green while the later catalogue groups are
+absent.
+
+**Linear's GitHub integration links on merge, keyed by identifier.** A merged PR
+whose title or body names `DJI-nnn` is attached to that issue automatically
+(DJI-600 carries PR #332 this way), and the ticket then moves per the team's
+automation. Two consequences: an **open** PR legitimately shows no attachment
+yet, and a manual `orca linear attach` would leave a *second* one once the merge
+lands. Check that the PR body names the identifier, and do not attach by hand.
 
 ### Linear webhooks (`ops/linear-webhook`)
 
@@ -720,7 +782,19 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   `up -d --build`, and the running container's copy is what the browser gets.
 - CI has no `gofmt` gate (the lint job is disabled pending
   golangci-lint+go1.25); `go vet ./...` is the gate, and `gofmt -w` would
-  flip this repo's CRLF Go files to LF — format-check an LF copy instead.
+  flip this repo's CRLF Go files to LF — format-check an LF copy instead
+  (`cp f .art/f.go`, then `gofmt -l` / `gofmt -d` on the copy).
+- **Because there is no gofmt gate, a committed file can carry a violation.**
+  `main.go` held two (an unaligned `KeyLookup:` and a tab before a trailing
+  comment) and `artist_card_actions_test.go` was missing its final newline until
+  2026-10-08. When `git status` shows whitespace-only noise, run `gofmt -d` on
+  **both** the HEAD blob (`git show :path`) and the working copy: the working
+  copy is not necessarily the damaged one.
+- **A `git status` entry whose blob is identical is a stale stat cache, not an
+  edit.** `git hash-object f` equals `git rev-parse :f` while `git status` still
+  lists `f` as modified — usually after a patch script rewrote the file with the
+  same bytes. `git update-index --refresh` may not clear it; `git add -- f`
+  does, and stages nothing because the content matches.
 
 - **`backend/internal/api/templates` is a separate package whose tests read
   `ops/web/templates/**` off disk.** `go test ./internal/api`, and any `-run`
@@ -1079,7 +1153,10 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   live under `.slim/clonedeps/repos/` for inspection (do not edit): `gofiber__fiber` v2.52.13 (middleware chain,
   context, routing), `go-gorm__gorm` v1.31.1 (query building, preloading,
   transactions, migrations), `mark3labs__mcp-go` v0.45.0 (MCP SDK, tool
-  definitions, transports).
+  definitions, transports). `.gitignore` covers only `.slim/clonedeps/`, so the
+  generated index files beside it — `.slim/codemap.json`,
+  `.slim/cartography.json`, `.slim/clonedeps.json` — are **tracked** and
+  rewritten in place.
 
 ## Product facts that cost time to rediscover
 
