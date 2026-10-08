@@ -23,7 +23,7 @@ is the script's data table so it can be reviewed as a diff.
 | Extension-provided endpoints | 5 | — |
 | Implemented but spec-tagged as an extension | 1 | — |
 | Extensions implemented | 0 of 11 | 0% |
-| Gaps with no owning ticket | 11 | — |
+| Gaps with no owning ticket | 0 | — |
 
 ## Findings
 
@@ -70,13 +70,23 @@ invisible rather than absent. `tokenInfo` is extension-gated
 (`apiKeyAuthentication`), so it is correctly counted as an NR05 gap rather
 than a base-API one.
 
-### 4. Eleven endpoints have no ticket behind them
+### 4. Eleven endpoints had no ticket behind them (resolved 2026-10-08)
 
 Podcast (8), chat (2) and `jukeboxControl` (1) appear in the spec but in
-none of NR01-NR25. P-DJI-29's wave order cannot reach them, and until a
-ticket exists they cannot be 'cleared' by any wave. Either they are out of
-scope for a library appliance and should be declared so, or they need a
-ticket. This is a scope decision, not an implementation gap.
+none of NR01-NR25, so the wave order could not reach them and no wave
+could clear them. That was a scope decision rather than an
+implementation gap, and it has been made: every one now has an owner.
+
+| feature | endpoints | owner |
+|---|---|---|
+| podcast | 8 | NR26 (DJI-620) |
+| chat | 2 | NR27 (DJI-621) |
+| jukebox | 1 | NR28 (DJI-622) |
+
+The `getPodcastEpisode` extension in the ledger is owned by NR26 as well.
+Ownership is not a claim that any of these is implemented: every one is
+still a gap row, and a ticket may legitimately close by recording its
+endpoints as deliberately unsupported, with the reason.
 
 ## Endpoint matrix
 
@@ -89,23 +99,23 @@ endpoint out of base API when its text names no extension at all.
 
 | endpoint | verbs | tags | gated by | spec tag | status | evidence / owner |
 |---|---|---|---|---|---|---|
-| `addChatMessage` | get+post | Chat | — | — | unowned | **no ticket** |
+| `addChatMessage` | get+post | Chat | — | — | gap | not in the route table · **NR27** |
 | `changePassword` | get+post | User Management | — | — | gap | not in the route table · **NR04** |
 | `createBookmark` | get+post | Bookmarks | — | — | gap | not in the route table · **NR10** |
 | `createInternetRadioStation` | get+post | Internet Radio | — | — | gap | not in the route table · **NR23** |
 | `createPlaylist` | get+post | Playlists | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_CreatePlaylist_{MissingName,New,WithComment,Public,UpdateExisting} |
-| `createPodcastChannel` | get+post | Podcast | — | — | unowned | **no ticket** |
+| `createPodcastChannel` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
 | `createShare` | get+post | Sharing | — | — | gap | not in the route table · **NR24** |
 | `createUser` | get+post | User Management | — | — | gap | not in the route table · **NR04** |
 | `deleteBookmark` | get+post | Bookmarks | — | — | gap | not in the route table · **NR10** |
 | `deleteInternetRadioStation` | get+post | Internet Radio | — | — | gap | not in the route table · **NR23** |
 | `deletePlaylist` | get+post | Playlists | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_DeletePlaylist_{MissingID,InvalidUUID,NotFound,Success,AccessDenied} |
-| `deletePodcastChannel` | get+post | Podcast | — | — | unowned | **no ticket** |
-| `deletePodcastEpisode` | get+post | Podcast | — | — | unowned | **no ticket** |
+| `deletePodcastChannel` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
+| `deletePodcastEpisode` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
 | `deleteShare` | get+post | Sharing | — | — | gap | not in the route table · **NR24** |
 | `deleteUser` | get+post | User Management | — | — | gap | not in the route table · **NR04** |
 | `download` | get+post | Media Retrieval | — | — | gap | not in the route table · **NR07** |
-| `downloadPodcastEpisode` | get+post | Podcast | — | — | unowned | **no ticket** |
+| `downloadPodcastEpisode` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
 | `findSonicPath` | get+post | Addition, Browsing | — | — | gap | not in the route table · **NR06** |
 | `getAlbum` | get+post | Browsing | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetAlbum_{Found,MalformedID,NotFound} |
 | `getAlbumInfo` | get+post | Browsing | — | — | gap | not in the route table · **NR06** |
@@ -119,7 +129,7 @@ endpoint out of base API when its text names no extension at all.
 | `getAvatar` | get+post | Media Retrieval | — | — | gap | not in the route table · **NR07** |
 | `getBookmarks` | get+post | Bookmarks | — | — | gap | not in the route table · **NR10** |
 | `getCaptions` | get+post | Media Retrieval | — | — | gap | not in the route table · **NR08** |
-| `getChatMessages` | get+post | Chat | — | — | unowned | **no ticket** |
+| `getChatMessages` | get+post | Chat | — | — | gap | not in the route table · **NR27** |
 | `getCoverArt` | get+post | Clarification, Media Retrieval | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetCoverArt_{SSRBlocked,MissingID,InvalidID,NotFound} |
 | `getGenres` | get+post | Browsing | — | — | gap | not in the route table · **NR06** |
 | `getIndexes` | get+post | Browsing | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetIndexes_{Empty,WithArtists,ArtistsAZ,JSON} |
@@ -129,15 +139,15 @@ endpoint out of base API when its text names no extension at all.
 | `getLyricsBySongId` | get+post | Extension, Media Retrieval | songLyrics | Extension | gap | not in the route table · **NR22** |
 | `getMusicDirectory` | get+post | Browsing | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetMusicDirectory_{MissingID,ArtistDirectory,AlbumDirectory,TrackDirectory,NotFound} |
 | `getMusicFolders` | get+post | Browsing | — | — | gap | not in the route table · **NR06** |
-| `getNewestPodcasts` | get+post | Podcast | — | — | unowned | **no ticket** |
+| `getNewestPodcasts` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
 | `getNowPlaying` | get+post | Lists | — | — | gap | not in the route table · **NR06** |
 | `getOpenSubsonicExtensions` | get+post | Addition, System | — | — | gap | not in the route table · **NR05** |
 | `getPlayQueue` | get+post | Bookmarks | — | — | gap | not in the route table · **NR10** |
 | `getPlayQueueByIndex` | get+post | Bookmarks | — | — | gap | not in the route table · **NR10** |
 | `getPlaylist` | get+post | Playlists | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetPlaylist_{MissingID,NotFound,InvalidUUID,Found,AccessDenied} |
 | `getPlaylists` | get+post | Playlists | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetPlaylists_{Empty,WithPlaylists,Public} |
-| `getPodcastEpisode` | get+post | Extension, Podcast | getPodcastEpisode | Extension | unowned | **no ticket** |
-| `getPodcasts` | get+post | Podcast | — | — | unowned | **no ticket** |
+| `getPodcastEpisode` | get+post | Extension, Podcast | getPodcastEpisode | Extension | gap | not in the route table · **NR26** |
+| `getPodcasts` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
 | `getRandomSongs` | get+post | Lists | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetRandomSongs_{Normal,Empty,WithSize} |
 | `getScanStatus` | get+post | Media Library Scanning | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetScanStatus |
 | `getShares` | get+post | Sharing | — | — | gap | not in the route table · **NR24** |
@@ -156,9 +166,9 @@ endpoint out of base API when its text names no extension at all.
 | `getVideoInfo` | get+post | Browsing | — | — | gap | not in the route table · **NR06** |
 | `getVideos` | get+post | Browsing | — | — | gap | not in the route table · **NR06** |
 | `hls.m3u8` | get+post | Media Retrieval | — | — | gap | not in the route table · **NR07** |
-| `jukeboxControl` | get+post | Jukebox | — | — | unowned | **no ticket** |
+| `jukeboxControl` | get+post | Jukebox | — | — | gap | not in the route table · **NR28** |
 | `ping` | get+post | System | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_Ping, TestSubsonic_Ping_JSON, e2e subsonic.spec.ts 'Ping succeeds with valid auth' |
-| `refreshPodcasts` | get+post | Podcast | — | — | unowned | **no ticket** |
+| `refreshPodcasts` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
 | `reportPlayback` | get+post | Extension, Media Annotation | playbackReport | Extension | gap | not in the route table · **NR10** |
 | `savePlayQueue` | get+post | Bookmarks, Change | — | — | gap | not in the route table · **NR10** |
 | `savePlayQueueByIndex` | get+post | Bookmarks, Change | — | — | gap | not in the route table · **NR10** |
@@ -193,7 +203,7 @@ coverage.
 |---|---|---|
 | `apiKeyAuthentication` | tokenInfo | NR05 |
 | `formPost` | POST on 83 paths | NR24 |
-| `getPodcastEpisode` | getPodcastEpisode | unowned |
+| `getPodcastEpisode` | getPodcastEpisode | NR26 |
 | `indexBasedQueue` | getPlayQueueByIndex / savePlayQueueByIndex | NR10 |
 | `playbackReport` | reportPlayback | NR10 |
 | `songLyrics` | getLyricsBySongId | NR22 |

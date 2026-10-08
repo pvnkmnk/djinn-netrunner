@@ -39,7 +39,7 @@ SPEC_DOCS_REPO = "https://github.com/opensubsonic/open-subsonic-api"
 EXTENSIONS = [
     ("apiKeyAuthentication", "NR05", "tokenInfo"),
     ("formPost", "NR24", "POST on 83 paths"),
-    ("getPodcastEpisode", "unowned", "getPodcastEpisode"),
+    ("getPodcastEpisode", "NR26", "getPodcastEpisode"),
     ("indexBasedQueue", "NR10", "getPlayQueueByIndex / savePlayQueueByIndex"),
     ("playbackReport", "NR10", "reportPlayback"),
     ("songLyrics", "NR22", "getLyricsBySongId"),
@@ -89,9 +89,10 @@ ALIASES = {
     ),
 }
 
-# Endpoint name -> owning ticket for every gap. "unowned" is a finding, not a
-# placeholder: those endpoints have no NR ticket behind them and P-DJI-29's
-# wave order cannot reach them until one does.
+# Endpoint name -> owning ticket for every gap. Every gap names a ticket
+# as of 2026-10-08: the eleven podcast/chat/jukebox endpoints NR01 found
+# ownerless now belong to NR26-NR28 (DJI-620/621/622), so no row is left
+# without one and P-DJI-29's wave order can reach all of them.
 GAPS = {
     # NR05 — truthful identity, extension and management discovery (DJI-565)
     "getOpenSubsonicExtensions": "NR05",
@@ -129,13 +130,15 @@ GAPS = {
     # NR24 — media sharing (DJI-586)
     "createShare": "NR24", "updateShare": "NR24",
     "deleteShare": "NR24", "getShares": "NR24",
-    # Podcast and chat: no NR ticket exists (Finding 4)
-    "getPodcasts": "unowned", "getNewestPodcasts": "unowned",
-    "createPodcastChannel": "unowned", "refreshPodcasts": "unowned",
-    "deletePodcastChannel": "unowned", "deletePodcastEpisode": "unowned",
-    "downloadPodcastEpisode": "unowned", "getPodcastEpisode": "unowned",
-    "getChatMessages": "unowned", "addChatMessage": "unowned",
-    "jukeboxControl": "unowned",
+    # NR26 — podcast catalogue, episode listing and delivery (DJI-620)
+    "getPodcasts": "NR26", "getNewestPodcasts": "NR26",
+    "createPodcastChannel": "NR26", "refreshPodcasts": "NR26",
+    "deletePodcastChannel": "NR26", "deletePodcastEpisode": "NR26",
+    "downloadPodcastEpisode": "NR26", "getPodcastEpisode": "NR26",
+    # NR27 — chat message history and posting (DJI-621)
+    "getChatMessages": "NR27", "addChatMessage": "NR27",
+    # NR28 — jukebox control (DJI-622)
+    "jukeboxControl": "NR28",
 }
 
 EXT_RE = re.compile(r"[Oo]pen[Ss]ubsonic extension name `(?P<e>[a-zA-Z]+)`")
@@ -321,13 +324,23 @@ def main() -> int:
     w("(`apiKeyAuthentication`), so it is correctly counted as an NR05 gap rather")
     w("than a base-API one.")
     w("")
-    w("### 4. Eleven endpoints have no ticket behind them")
+    w("### 4. Eleven endpoints had no ticket behind them (resolved 2026-10-08)")
     w("")
     w("Podcast (8), chat (2) and `jukeboxControl` (1) appear in the spec but in")
-    w("none of NR01-NR25. P-DJI-29's wave order cannot reach them, and until a")
-    w("ticket exists they cannot be 'cleared' by any wave. Either they are out of")
-    w("scope for a library appliance and should be declared so, or they need a")
-    w("ticket. This is a scope decision, not an implementation gap.")
+    w("none of NR01-NR25, so the wave order could not reach them and no wave")
+    w("could clear them. That was a scope decision rather than an")
+    w("implementation gap, and it has been made: every one now has an owner.")
+    w("")
+    w("| feature | endpoints | owner |")
+    w("|---|---|---|")
+    w("| podcast | 8 | NR26 (DJI-620) |")
+    w("| chat | 2 | NR27 (DJI-621) |")
+    w("| jukebox | 1 | NR28 (DJI-622) |")
+    w("")
+    w("The `getPodcastEpisode` extension in the ledger is owned by NR26 as well.")
+    w("Ownership is not a claim that any of these is implemented: every one is")
+    w("still a gap row, and a ticket may legitimately close by recording its")
+    w("endpoints as deliberately unsupported, with the reason.")
     w("")
     w("## Endpoint matrix")
     w("")
