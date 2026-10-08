@@ -130,7 +130,7 @@ func (h *ArtistsHandler) Add(c *fiber.Ctx) error {
 	}
 
 	// Create monitored artist with name and sort name
-	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName, &user.ID)
+	monitored, err := h.atService.AddMonitoredArtist(artist.ID, profileID, artist.Name, artist.SortName, artist.Disambiguation, artist.Country, artist.Type, &user.ID)
 	if err != nil {
 		slog.Error("Failed to add monitored artist", "error", err)
 		return c.Status(400).JSON(fiber.Map{"error": "failed to add artist"})
@@ -167,9 +167,12 @@ func (h *ArtistsHandler) Search(c *fiber.Ctx) error {
 	var payload struct {
 		Name             string `json:"name" form:"name"`
 		QualityProfileID string `json:"quality_profile_id" form:"quality_profile_id"`
+		// RepointFor names the monitored row a confirmed pick should be APPLIED
+		// to, rather than create a second row beside it. Empty for Add.
+		RepointFor       string `json:"repoint_for" form:"repoint_for"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return h.renderCandidates(c, "", "", nil, errNoSearchName)
+		return h.renderCandidates(c, "", "", "", nil, errNoSearchName)
 	}
 
 	name := strings.TrimSpace(payload.Name)
@@ -179,16 +182,20 @@ func (h *ArtistsHandler) Search(c *fiber.Ctx) error {
 	// the time they click.
 	profileID := strings.TrimSpace(payload.QualityProfileID)
 
+	// Carried into the picker so a confirmed pick lands on the row the
+	// operator asked to change, not on a newly created one.
+	repointFor := strings.TrimSpace(payload.RepointFor)
+
 	if name == "" {
-		return h.renderCandidates(c, "", profileID, nil, errNoSearchName)
+		return h.renderCandidates(c, "", profileID, repointFor, nil, errNoSearchName)
 	}
 
 	candidates, err := h.mbService.SearchArtist(name)
 	if err != nil {
 		slog.Error("Artist candidate search failed", "query", name, "error", err)
-		return h.renderCandidates(c, name, profileID, nil, err)
+		return h.renderCandidates(c, name, profileID, repointFor, nil, err)
 	}
-	return h.renderCandidates(c, name, profileID, candidates, nil)
+	return h.renderCandidates(c, name, profileID, repointFor, candidates, nil)
 }
 
 // errNoSearchName marks the "you sent no name" case, which is a caller error
@@ -199,19 +206,21 @@ var errNoSearchName = errors.New("a name is required")
 // renderCandidates renders the picker. A single result is rendered as a list of
 // one, never accepted on the operator's behalf: the choice is the whole point,
 // and "there was only one" is not the same as "I chose that one".
-func (h *ArtistsHandler) renderCandidates(c *fiber.Ctx, name, profileID string, candidates []services.MusicBrainzArtist, searchErr error) error {
+func (h *ArtistsHandler) renderCandidates(c *fiber.Ctx, name, profileID, repointFor string, candidates []services.MusicBrainzArtist, searchErr error) error {
 	switch {
 	case errors.Is(searchErr, errNoSearchName):
 		// No search ran, so this must not read as an outage.
 		return c.Render("partials/artist-candidates", fiber.Map{
 			"query":              name,
 			"quality_profile_id": profileID,
+			"repoint_for":        repointFor,
 			"noName":             true,
 		})
 	case searchErr != nil:
 		return c.Render("partials/artist-candidates", fiber.Map{
 			"query":              name,
 			"quality_profile_id": profileID,
+			"repoint_for":        repointFor,
 			"searchFailed":       true,
 			"retryEndpoint":      "/api/artists/search",
 		})
@@ -219,12 +228,14 @@ func (h *ArtistsHandler) renderCandidates(c *fiber.Ctx, name, profileID string, 
 		return c.Render("partials/artist-candidates", fiber.Map{
 			"query":              name,
 			"quality_profile_id": profileID,
+			"repoint_for":        repointFor,
 			"noMatch":            true,
 		})
 	default:
 		return c.Render("partials/artist-candidates", fiber.Map{
 			"query":              name,
 			"quality_profile_id": profileID,
+			"repoint_for":        repointFor,
 			"candidates":         candidates,
 		})
 	}

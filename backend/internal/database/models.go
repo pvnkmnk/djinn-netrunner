@@ -115,6 +115,17 @@ type MonitoredArtist struct {
 	SortName       string
 	Disambiguation string
 
+	// Country and Type are the two fields MusicBrainz itself uses to tell
+	// same-named artists apart. The search service decoded them all along and
+	// every writer discarded them, which left the picker's disambiguation
+	// available at the moment of choosing and unavailable at the moment of
+	// checking -- the only moment it is actually needed.
+	//
+	// The column is artist_type, not type: `type` is a loaded word in SQL
+	// dialects and buys nothing here.
+	Country    string `gorm:"column:country" json:"country"`
+	ArtistType string `gorm:"column:artist_type" json:"artist_type"`
+
 	QualityProfileID uuid.UUID `gorm:"type:uuid;not null;index"`
 	Monitored        bool      `gorm:"default:true"`
 	MonitorNew       bool      `gorm:"column:monitor_new_releases;default:true"`

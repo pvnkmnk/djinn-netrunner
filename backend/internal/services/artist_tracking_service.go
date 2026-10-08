@@ -34,7 +34,7 @@ func NewArtistTrackingService(db *gorm.DB, mb *MusicBrainzService) *ArtistTracki
 // QueueArtistScan -- the single owner of "an artist scan reaches the queue".
 // A failed enqueue therefore leaves no unscanned artist behind for the
 // operator to discover later, and a retry is not met with a duplicate.
-func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID, name, sortName string, ownerUserID *uint64) (*database.MonitoredArtist, error) {
+func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID uuid.UUID, name, sortName, disambiguation, country, artistType string, ownerUserID *uint64) (*database.MonitoredArtist, error) {
 	var created *database.MonitoredArtist
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -69,6 +69,9 @@ func (s *ArtistTrackingService) AddMonitoredArtist(mbid string, qualityProfileID
 			MusicBrainzID:    mbid,
 			Name:             artistName,
 			SortName:         sortName,
+			Disambiguation:   disambiguation,
+			Country:          country,
+			ArtistType:       artistType,
 			QualityProfileID: qualityProfileID,
 			Monitored:        true,
 			MonitorNew:       true,

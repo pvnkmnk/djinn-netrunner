@@ -34,6 +34,7 @@
          (script-src 'self') that throws, and the retry silently did nothing. -->
     <input type="hidden" name="name" value="{{ query }}">
     <input type="hidden" name="quality_profile_id" value="{{ quality_profile_id }}">
+    <input type="hidden" name="repoint_for" value="{{ repoint_for }}">
     <button type="button" class="btn" data-close-modal>Cancel</button>
     <button class="btn btn-primary"
             hx-post="{{ retryEndpoint }}"
@@ -82,7 +83,7 @@
         <input type="hidden" name="quality_profile_id" value="{{ quality_profile_id }}">
         <button type="button"
                 class="candidate-row"
-                hx-post="/api/artists"
+                {% if repoint_for %}hx-post="/api/artists/{{ repoint_for }}/repoint"{% else %}hx-post="/api/artists"{% endif %}
                 hx-include="closest [role='listitem']"
                 hx-target="#artists-region"
                 hx-swap="innerHTML"

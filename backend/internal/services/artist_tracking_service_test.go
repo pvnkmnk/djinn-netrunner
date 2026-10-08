@@ -38,13 +38,7 @@ func TestAddMonitoredArtist(t *testing.T) {
 	profile := database.QualityProfile{Name: "Test Profile"}
 	require.NoError(t, db.Create(&profile).Error)
 
-	artist, err := svc.AddMonitoredArtist(
-		"mbid-123",
-		profile.ID,
-		"Test Artist",
-		"Artist, Test",
-		nil,
-	)
+	artist, err := svc.AddMonitoredArtist("mbid-123", profile.ID, "Test Artist", "Artist, Test", "", "", "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "mbid-123", artist.MusicBrainzID)
 	assert.Equal(t, "Test Artist", artist.Name)
@@ -56,6 +50,29 @@ func TestAddMonitoredArtist(t *testing.T) {
 	assert.NotEqual(t, uuid.Nil, artist.ID)
 }
 
+func TestAddMonitoredArtist_PersistsProvenance(t *testing.T) {
+	db, cleanup := setupArtistTrackingDB(t)
+	defer cleanup()
+	svc := NewArtistTrackingService(db, nil)
+
+	profile := database.QualityProfile{Name: "Provenance Profile"}
+	require.NoError(t, db.Create(&profile).Error)
+
+	artist, err := svc.AddMonitoredArtist(
+		"mbid-provenance",
+		profile.ID,
+		"Napalm Death",
+		"Napalm Death",
+		"",
+		"United Kingdom",
+		"Group",
+		nil,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "United Kingdom", artist.Country)
+	assert.Equal(t, "Group", artist.ArtistType)
+}
+
 func TestAddMonitoredArtist_DuplicateMBID_ReturnsError(t *testing.T) {
 	db, cleanup := setupArtistTrackingDB(t)
 	defer cleanup()
@@ -65,10 +82,10 @@ func TestAddMonitoredArtist_DuplicateMBID_ReturnsError(t *testing.T) {
 	require.NoError(t, db.Create(&profile).Error)
 
 	mbid := "duplicate-mbid"
-	_, err := svc.AddMonitoredArtist(mbid, profile.ID, "Artist 1", "", nil)
+	_, err := svc.AddMonitoredArtist(mbid, profile.ID, "Artist 1", "", "", "", "", nil)
 	require.NoError(t, err)
 
-	_, err = svc.AddMonitoredArtist(mbid, profile.ID, "Artist 2", "", nil)
+	_, err = svc.AddMonitoredArtist(mbid, profile.ID, "Artist 2", "", "", "", "", nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already monitored")
 }
@@ -91,13 +108,13 @@ func TestAddMonitoredArtist_MultiOwnerSameMBID(t *testing.T) {
 	sharedMBID := "shared-artist-mbid"
 
 	// Owner1 adds artist with shared MBID
-	artist1, err := svc.AddMonitoredArtist(sharedMBID, profile1.ID, "Artist from Owner 1", "", &user1.ID)
+	artist1, err := svc.AddMonitoredArtist(sharedMBID, profile1.ID, "Artist from Owner 1", "", "", "", "", &user1.ID)
 	require.NoError(t, err)
 	assert.Equal(t, &user1.ID, artist1.OwnerUserID)
 	assert.Equal(t, "shared-artist-mbid", artist1.MusicBrainzID)
 
 	// Owner2 adds artist with same MBID - should succeed (different owner)
-	artist2, err := svc.AddMonitoredArtist(sharedMBID, profile2.ID, "Artist from Owner 2", "", &user2.ID)
+	artist2, err := svc.AddMonitoredArtist(sharedMBID, profile2.ID, "Artist from Owner 2", "", "", "", "", &user2.ID)
 	require.NoError(t, err)
 	assert.Equal(t, &user2.ID, artist2.OwnerUserID)
 	assert.Equal(t, "shared-artist-mbid", artist2.MusicBrainzID)
@@ -120,13 +137,7 @@ func TestAddMonitoredArtist_WithOwnerUserID(t *testing.T) {
 	profile := database.QualityProfile{Name: "Test Profile", OwnerUserID: &user.ID}
 	require.NoError(t, db.Create(&profile).Error)
 
-	artist, err := svc.AddMonitoredArtist(
-		"mbid-owner",
-		profile.ID,
-		"Owned Artist",
-		"",
-		&user.ID,
-	)
+	artist, err := svc.AddMonitoredArtist("mbid-owner", profile.ID, "Owned Artist", "", "", "", "", &user.ID)
 	require.NoError(t, err)
 	assert.Equal(t, &user.ID, artist.OwnerUserID)
 }
@@ -139,7 +150,7 @@ func TestAddMonitoredArtist_EmptyName_FallsBackToMBID(t *testing.T) {
 	profile := database.QualityProfile{Name: "Test Profile"}
 	require.NoError(t, db.Create(&profile).Error)
 
-	artist, err := svc.AddMonitoredArtist("mbid-no-name", profile.ID, "", "", nil)
+	artist, err := svc.AddMonitoredArtist("mbid-no-name", profile.ID, "", "", "", "", "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "mbid-no-name", artist.Name)
 }
@@ -154,13 +165,7 @@ func TestGetMonitoredArtists(t *testing.T) {
 
 	// Add multiple artists
 	for i := 1; i <= 3; i++ {
-		_, err := svc.AddMonitoredArtist(
-			uuid.New().String(),
-			profile.ID,
-			"Artist",
-			"",
-			nil,
-		)
+		_, err := svc.AddMonitoredArtist(uuid.New().String(), profile.ID, "Artist", "", "", "", "", nil)
 		require.NoError(t, err)
 	}
 
@@ -185,12 +190,12 @@ func TestGetMonitoredArtists_FiltersByUserID(t *testing.T) {
 
 	// User 1 adds 2 artists
 	for i := 0; i < 2; i++ {
-		_, err := svc.AddMonitoredArtist(uuid.New().String(), profile.ID, "User1Artist", "", &user1.ID)
+		_, err := svc.AddMonitoredArtist(uuid.New().String(), profile.ID, "User1Artist", "", "", "", "", &user1.ID)
 		require.NoError(t, err)
 	}
 
 	// User 2 adds 1 artist
-	_, err := svc.AddMonitoredArtist(uuid.New().String(), profile.ID, "User2Artist", "", &user2.ID)
+	_, err := svc.AddMonitoredArtist(uuid.New().String(), profile.ID, "User2Artist", "", "", "", "", &user2.ID)
 	require.NoError(t, err)
 
 	// User 1 only sees their artists
@@ -220,7 +225,7 @@ func TestUpdateArtistStatus(t *testing.T) {
 	profile := database.QualityProfile{Name: "Test Profile"}
 	require.NoError(t, db.Create(&profile).Error)
 
-	artist, err := svc.AddMonitoredArtist("mbid-update", profile.ID, "Update Test", "", nil)
+	artist, err := svc.AddMonitoredArtist("mbid-update", profile.ID, "Update Test", "", "", "", "", nil)
 	require.NoError(t, err)
 	assert.True(t, artist.Monitored)
 
@@ -246,7 +251,7 @@ func TestUpdateArtistStatus_NonAdmin_CannotUpdateOthersArtist(t *testing.T) {
 	profile := database.QualityProfile{Name: "Test Profile", OwnerUserID: &user1.ID}
 	require.NoError(t, db.Create(&profile).Error)
 
-	artist, err := svc.AddMonitoredArtist("mbid-protected", profile.ID, "Protected", "", &user1.ID)
+	artist, err := svc.AddMonitoredArtist("mbid-protected", profile.ID, "Protected", "", "", "", "", &user1.ID)
 	require.NoError(t, err)
 
 	// User 2 tries to update user1's artist - should not error but update 0 rows
@@ -277,7 +282,7 @@ func TestDeleteMonitoredArtist(t *testing.T) {
 	profile := database.QualityProfile{Name: "Test Profile"}
 	require.NoError(t, db.Create(&profile).Error)
 
-	artist, err := svc.AddMonitoredArtist("mbid-delete", profile.ID, "Delete Me", "", nil)
+	artist, err := svc.AddMonitoredArtist("mbid-delete", profile.ID, "Delete Me", "", "", "", "", nil)
 	require.NoError(t, err)
 
 	// Delete the artist
@@ -303,7 +308,7 @@ func TestDeleteMonitoredArtist_NonAdmin_CannotDeleteOthersArtist(t *testing.T) {
 	profile := database.QualityProfile{Name: "Test Profile", OwnerUserID: &user1.ID}
 	require.NoError(t, db.Create(&profile).Error)
 
-	artist, err := svc.AddMonitoredArtist("mbid-protected-delete", profile.ID, "Protected Delete", "", &user1.ID)
+	artist, err := svc.AddMonitoredArtist("mbid-protected-delete", profile.ID, "Protected Delete", "", "", "", "", &user1.ID)
 	require.NoError(t, err)
 
 	// User 2 tries to delete user1's artist

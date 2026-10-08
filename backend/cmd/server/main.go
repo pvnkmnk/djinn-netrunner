@@ -362,6 +362,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	artistsRoutes.Post("/", artistsHandler.Add)
 	artistsRoutes.Delete("/:id", artistsHandler.Delete)
 	artistsRoutes.Patch("/:id", artistsHandler.Update)
+	artistsRoutes.Patch("/:id/repoint", artistsHandler.Repoint)
 	artistsRoutes.Post("/:id/sync", artistsHandler.Sync)
 
 	// Schedules
