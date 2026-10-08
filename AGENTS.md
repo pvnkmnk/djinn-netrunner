@@ -510,8 +510,19 @@ these cost a 400 before it was pinned down:
     `project(id: "P-DJI-28")` takes a human identifier directly, so prefer it.
   * `project.id` is `ID`-typed: declaring `$pid: String` is a validation error.
   * `Query.issues` has no `project`/`state` argument — they belong in `filter:`.
-  * `IssueCreateInput`/`ProjectCreateInput` need `teamIds` (an ARRAY); singular
-    `teamId` is rejected by name.
+  * **`IssueCreateInput` and `ProjectCreateInput` want OPPOSITE team fields.**
+    The project needs `teamIds` (an ARRAY); the issue needs `teamId` (singular
+    `String!`). Measured 2026-10-07 — a create using the project's array shape
+    against an issue is refused naming `IssueCreateInput.teamId`, and the two
+    complaints appear together, which reads like one input with two problems
+    rather than "wrong shape for this mutation". Singular `teamId` on a
+    *project* is rejected by name, so the error genuinely points both ways.
+  * **`projectCreate.description` caps at 256 characters** (measured by
+    bisection, not assumed). The long body goes in **`content`**, a separate
+    field — the same `description` vs `documentContent.content` distinction
+    below, and it bites on create as well as update. A body of any real length
+    fails with `Argument Validation Error` and no field named, so bisect the
+    length before suspecting the content.
   * `WorkflowState` has no `category`, but `type` is enough to move a ticket by
     name without hardcoding UUIDs.
   * `Issue.projectId` is NOT selectable — Linear answers `Cannot query field
