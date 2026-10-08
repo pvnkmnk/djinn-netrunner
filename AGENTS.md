@@ -51,7 +51,7 @@ docker compose up -d                # full stack; logs: docker compose logs -f n
 ./scripts/smoke.sh                  # smoke gate vs a running stack (--dev | --release; release is the default, 28 checks)
 ./scripts/smoke-test.sh             # self-contained: up netrunner-smoke (:18081/:18443/:18444), health/auth/CRUD checks, down
 ./scripts/validate.sh            # (Windows PowerShell: ./scripts/validate.ps1)
-govulncheck ./...                   # CI fails on reachable CVEs
+govulncheck ./...                   # CI fails on reachable CVEs; install the pinned version, not @latest
 ```
 
 Key env vars (full list in `.env.example`): `DATABASE_URL` (postgres:// or
@@ -224,6 +224,18 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
 - Public: `/api/health` (no auth), `/api/auth/{register,login,logout}`
   (rate-limited). Pages under `/`, protected pages and `/partials/*` (HTMX)
   and `/api/*` CRUD groups require a session; profile writes are admin-only.
+- **`BOOTSTRAP_ADMIN_EMAIL` proves an address, not a person (DJI-641).** The
+  role is granted at registration only when the registrant also presents
+  `BOOTSTRAP_ADMIN_SECRET` (>= `config.MinBootstrapSecretLength`, 16), and
+  that proof is recorded durably as `users.bootstrap_enrolled_at`. A boot has
+  no code to compare, so without the column a restart promotes whoever holds
+  the address -- **gating only the registration trigger defers the hole by one
+  restart**, measured live before the fix. The secret is compared
+  constant-time (`services.VerifyBootstrapSecret`); an empty configured secret
+  disables the bootstrap rather than meaning "any code"; production refuses to
+  load with the address set and the secret missing. The two triggers are
+  different code paths, so a change to one needs a test for the other -- and
+  `bootstrap_enrolled_at` is nullable with no default on purpose.
   `GET /api/health` reports `database` unconditionally; `slskd` needs an API
   key, `disk` needs the library path, `gonic`/`navidrome` need their URL —
   assert the contract (every reported key carries a `status`), not a fixed
@@ -247,7 +259,13 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   `MonitoredArtist`(1:N `TrackedRelease`), `MetadataCache`, `SpotifyToken`,
   `Lock`, `Setting`, `PeerReputation`. Schema sources:
   `ops/db/init/01-schema.sql` + `02-functions.sql` + `migrations/*.sql`;
-  runtime `database.Migrate(db)` + AutoMigrate.
+  runtime `database.Migrate(db)` + AutoMigrate. **Measured 2026-10-08: no
+  compose file mounts `ops/db/init/`** (`rg "db/init"` finds only docs and one
+  Go test comment) and `01-schema.sql` defines just five tables -- `jobs`,
+  `jobitems`, `joblogs`, `acquisitions`, `sources`, with no `users` and no
+  `monitored_artists`. Read those files as the documented bootstrap path, not
+  as a live mirror of the schema; a migration that has to land gets proved
+  against a real database (see Common tasks 3).
 - `interfaces.WatchlistProvider`:
   `FetchTracks(ctx, watchlist) ([]map[string]string, string, error)`,
   `ValidateConfig(config string) error`;
@@ -277,6 +295,19 @@ Postgres for concurrent production workloads.
 3. **Migration/schema change:** update `models.go`; SQL-specific
    transformations go in `ops/db/init/migrations/`; ensure `database.Migrate`
    handles the transition; validate both driver paths when available.
+   - **The migration file needs a Postgres test that duplicates its DDL** --
+     precedent `backend/internal/database/artist_provenance_migration_test.go`,
+     followed by `bootstrap_enrolled_at_migration_test.go`. Reading the file
+     proves it parses, not that its statements do what the comment claims.
+     `setupPostgresForMigration` must `t.Skip` when `DATABASE_URL` is empty,
+     unreachable or non-postgres: four such tests skip cleanly (exit 0) with
+     no database, and a skip is not a pass -- run them against
+     `docker compose -f docker-compose.integration.yml up -d integration-db`
+     (publishes `15432`, db `netrunner_integration`, user/pass
+     `testuser`/`testpass`) before trusting them.
+   - Adding `DEFAULT now()` to such a column is the mutation that proves the
+     guard: it must fail (`a default would let a bare INSERT invent an
+     enrollment proof`).
 4. **Dependency update:** `go get`, `go mod tidy`, then vet/test/build +
    `govulncheck`.
 5. **Deploy/full stack:** set env, `docker compose up -d --build`, check
@@ -475,6 +506,19 @@ otherwise-good change are the thing to flag before anything else.
   Downgrading transitive deps to appease the directive reintroduces CVEs —
   keep master's dep versions and add new libs at go-1.25-compatible
   releases.
+- **A `@latest` install inside a pinned-Go workflow is a time bomb, and it
+  fails as a *phantom* scan.** `.github/workflows/ci.yml` pinned `go-version:
+  1.25.13` and then ran `go install
+  golang.org/x/vuln/cmd/govulncheck@latest`; v1.8.0 declares `go 1.26.0`, so
+  the runner fetched the `go1.26.9` toolchain and died verifying it --
+  `reading https://sum.golang.org/lookup/...: 404 Not Found`, exit 1, in the
+  *Vulnerability scan* step. Nothing was scanned and nothing in the diff was
+  involved (E2E and Integration were green on the same commit). Fixed by
+  pinning `@v1.7.0` -- the last release declaring `go 1.25.0` -- plus
+  `env: GOTOOLCHAIN: local`. The pin and `go-version` move together: read a
+  release's `go` directive before bumping it
+  (`curl -s https://proxy.golang.org/golang.org/x/vuln/@v/v1.8.0.mod`). Every
+  workflow step that installs a tool with `@latest` carries the same hazard.
 - **Secret scanning is a habit here, not a gate.** No workflow runs `gitleaks`
   or `trufflehog`; the only reference is `gitleaks git --staged --redact` in
   `docs/superpowers/plans/2026-10-07-artist-provenance-and-repoint.md`, and a
@@ -753,6 +797,13 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   constant string leaves unused args, vet rejects it, every case "fails", and
   the harness scores it as a catch. Mutate the whole `Sprintf(...)` expression,
   or the whole `if` block plus the import it needed, so the mutant still builds.
+- **A mutation that removes only *part* of an `if` -- its body, or its guard --
+  can leave an orphan brace and score `VOID (does not compile)`.** Replacing
+  `if user.BootstrapEnrolledAt == nil { ... }` with the body's statements left
+  a dangling `}` and the harness reported VOID on the mutation that mattered.
+  Delete the whole block including both braces, or mutate the condition alone
+  (`if user.BootstrapEnrolledAt == nil {` -> `if false {`); then re-check the
+  mutated line with `rg -n` before trusting the verdict.
 - **A boundary fixture must assert its own size before it is used as one.** A
   ten-word "passphrase" landed on 71 bytes and the test passed because the
   server accepted it — a green assertion measuring the wrong side of the line.
@@ -774,6 +825,30 @@ library, false)` to `true` passes any test that only asserts the offer is there.
 - `rg` is the search tool here: `rg -n` for line numbers, `-g '*.go'` to glob,
   `-c` to count per file, `-l` filenames only. It honours `.gitignore`, so the
   large untracked `.agents/skills/` tree costs nothing.
+
+### Orca CLI (`orca`)
+
+- Two surfaces, one stack: `orca tab` drives your **already-running** app for
+  exploring; `agent-browser` opens its own CDP session with the widest
+  instrumentation (har, video, trace, axe-core, `vitals`). The shipping
+  artifact is still a Playwright spec -- explore with Orca, pin it with
+  Playwright, and reach for `agent-browser` only when a spec fails and you
+  need the *why*.
+- **Orca refs (`eN`) go stale the moment the DOM changes, so a `click` that
+  reveals a form cannot be followed by a `fill` in the same invocation** --
+  the fill silently misses. Re-run `snapshot` after each click, then fill.
+- `orca linear issue <ID> --full --json` puts comments at **`result.comments`,
+  not `issue.comments`**; the issue is `result.issue`, children
+  `result.children`, relations `result.relations`, and there is no `parent`
+  key. `orca linear create` has answered a transient `linear_network_error`
+  GraphQL 503 -- `sleep 20` and retry, don't redesign around it.
+- The Windows tool guide lives **outside the checkout** at
+  `C:\Users\idols\DevWorks\agent-tool-guide-windows.md`, so searching the repo
+  for it finds nothing. It carries the command-ownership table (which install
+  owns `gh`/`go`/`docker`/`orca`/`agent-browser`), the
+  two-installs-of-one-tool traps (`agent-browser` is npm-owned while mise
+  ships a skills-less copy that wins PATH), and the browser-surface split
+  above. Read it before improvising a tool.
 
 ### Build, test & integration
 
