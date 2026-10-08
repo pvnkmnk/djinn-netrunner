@@ -954,12 +954,20 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   initialised earlier from `.env.e2e`'s -- `FATAL: password authentication
   failed for user "musicops" (SQLSTATE 28P01)`, which I attributed to a
   password template defect for hours. `--env-file` is not broken: it loses.
-  Before diagnosing compose, run `env | grep -E '^(POSTGRES_PASSWORD|
-  SLSKD_API_KEY|JWT_SECRET|SUBSONIC_)'`; to bring the e2e stack up from such
-  a shell, unset the nine keys `.env.e2e` defines (`env -u POSTGRES_PASSWORD
-  -u SLSKD_API_KEY -u SLSKD_USERNAME -u SLSKD_PASSWORD -u ENVIRONMENT
-  -u CONFIG_ENV -u JWT_SECRET -u SUBSONIC_ENABLED -u SUBSONIC_PASSWORD`) or
-  align `.env.e2e` to `.env`'s values. A `psql -h 127.0.0.1` password probe
+  Before diagnosing compose, check whether those names are exported
+  WITHOUT printing their values -- `env | cut -d= -f1 | grep -E
+  '^(POSTGRES_PASSWORD|SLSKD_API_KEY|JWT_SECRET|SUBSONIC_)'`. A bare
+  `env | grep` puts live secrets into terminal scrollback and into any
+  captured agent log. To bring the e2e stack up from such a shell, either
+  `unset` the nine keys `.env.e2e` defines in that shell, or prefix the
+  compose invocation itself: `env -u POSTGRES_PASSWORD -u SLSKD_API_KEY
+  -u SLSKD_USERNAME -u SLSKD_PASSWORD -u ENVIRONMENT -u CONFIG_ENV
+  -u JWT_SECRET -u SUBSONIC_ENABLED -u SUBSONIC_PASSWORD docker compose ...`.
+  A bare `env -u ...` typed at a prompt changes nothing -- with no command it
+  prints a modified environment and leaves the parent shell exported, so
+  compose still reads the overrides and the stack stays misconfigured, which
+  reads as "the fix did nothing". Aligning `.env.e2e` to `.env`'s values also
+  works, but arms the trap for the next person. A `psql -h 127.0.0.1` password probe
   is worthless here: `pg_hba.conf` carries `trust` for loopback, so *any*
   password "succeeds" -- probe over the container's compose-network IP.
 - One secret, one source: `docker-compose.e2e.yml` once hardcoded
