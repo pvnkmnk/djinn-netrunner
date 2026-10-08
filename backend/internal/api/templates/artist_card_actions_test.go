@@ -28,7 +28,7 @@ func TestArtistCard_EveryButtonRendersALabel(t *testing.T) {
 
 	body := renderPartial(t, engine, "partials/artist-card.html", map[string]any{
 		"Artist": map[string]any{
-			"ID": "artist-1", "Name": "Napalm Death", "MusicBrainzID": "mbid-1",
+			"ID": "a1", "Name": "Napalm Death", "MusicBrainzID": "mbid-1",
 			"Monitored": true, "AcquiredReleases": 12, "TotalReleases": 48,
 			"LastScanLabel": "3 Oct 2026",
 		},
@@ -40,6 +40,7 @@ func TestArtistCard_EveryButtonRendersALabel(t *testing.T) {
 	type action struct {
 		label    string
 		verb     string
+		target   string
 		nestedIn bool
 	}
 	var found []action
@@ -64,16 +65,17 @@ func TestArtistCard_EveryButtonRendersALabel(t *testing.T) {
 					label.WriteString(c.Data)
 				}
 			}
-			verb := attr(n, "hx-post")
-			if verb == "" {
-				verb = attr(n, "hx-patch")
-			}
-			if verb == "" {
-				verb = attr(n, "hx-delete")
+			verb := ""
+			for _, m := range []string{"POST", "PATCH", "DELETE"} {
+				if v := attr(n, "hx-"+strings.ToLower(m)); v != "" {
+					verb = m + " " + v
+					break
+				}
 			}
 			found = append(found, action{
 				label:    strings.TrimSpace(label.String()),
 				verb:     verb,
+				target:   attr(n, "hx-target"),
 				nestedIn: inButton,
 			})
 			inButton = true
@@ -88,19 +90,37 @@ func TestArtistCard_EveryButtonRendersALabel(t *testing.T) {
 
 	for _, b := range found {
 		assert.False(t, b.nestedIn,
-			"a button nested inside another button (hx-%s) is auto-closed by the parser, "+
+			"a button nested inside another button (%s) is auto-closed by the parser, "+
 				"which empties the outer one", b.verb)
 		assert.NotEmpty(t, b.label,
-			"button with hx-%s renders no visible label; an aria-label alone leaves an empty box", b.verb)
+			"the %s button renders no visible label; an aria-label alone leaves an empty box", b.verb)
 	}
 
-	// The four actions the card is supposed to offer, each with its own verb.
-	verbs := make([]string, 0, len(found))
-	for _, b := range found {
-		verbs = append(verbs, b.verb)
+	// Each label must be bound to the endpoint it names. Asserting only that
+	// the first button posts *somewhere* lets a control labelled "Sync" that
+	// queues a different action pass: the operator reads "Sync" and gets
+	// something else, with nothing in the tree to catch the mismatch.
+	want := []struct {
+		label  string
+		verb   string
+		target string
+	}{
+		{"Sync", "POST /api/artists/a1/sync", "#notice"},
+		{"Re-point", "POST /api/artists/search", "#modal-container"},
+		{"Pause", "PATCH /api/artists/a1", "#artist-a1"},
+		{"Remove", "DELETE /api/artists/a1", "#artist-a1"},
 	}
-	assert.Len(t, verbs, 4,
-		"expected exactly four actions (sync, re-point, pause/resume, remove), got %v", verbs)
-	assert.NotEqual(t, "", verbs[0],
-		"the first action on the card must post to the sync endpoint")
+
+	got := make([]string, 0, len(found))
+	for _, b := range found {
+		got = append(got, b.label)
+	}
+	require.Len(t, found, len(want),
+		"expected exactly four actions (sync, re-point, pause/resume, remove), got %v", got)
+
+	for i, w := range want {
+		assert.Equal(t, w.label, found[i].label, "action %d label", i)
+		assert.Equal(t, w.verb, found[i].verb, "the %q button must reach %s", w.label, w.verb)
+		assert.Equal(t, w.target, found[i].target, "the %q button must swap into %s", w.label, w.target)
+	}
 }
