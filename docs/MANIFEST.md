@@ -13,6 +13,7 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - AGENTS.md — agentic IDE guidelines, constraints, and "do not break" rules.
 - docs/ARCHITECTURE.md — worker model, locks, tables, and correctness contracts.
 - docs/UIIMPLEMENTATION.md — HTMX patterns, console streaming, attach modes, minimal JS contract.
+- docs/OPENSUBSONIC_COVERAGE.md — generated Subsonic/OpenSubsonic endpoint matrix, the pinned spec revision, and which gaps belong to which ticket.
 - docs/RUNBOOK.md — day-to-day operations and troubleshooting.
 
 ### Operators
@@ -29,6 +30,7 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - Install: README.md, docs/RUNBOOK.md
 - Understand architecture: docs/WHITEPAPER.md, docs/ARCHITECTURE.md
 - Modify UI: docs/UIIMPLEMENTATION.md
+- Change the Subsonic/OpenSubsonic surface: docs/OPENSUBSONIC_COVERAGE.md (regenerate it with `py scripts/opensubsonic_coverage.py`, never hand-edit)
 - Add features/job types: AGENTS.md, docs/ARCHITECTURE.md
 - Debug prod issues: docs/RUNBOOK.md, then docs/ARCHITECTURE.md
 

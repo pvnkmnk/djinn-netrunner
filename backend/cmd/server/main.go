@@ -403,7 +403,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	if cfg.E2EEnableTestAPI {
 		testapi.Mount(apiProtected, cfg, db)
 	}
-	// Stats
+	// Stats
 	statsRoutes := apiProtected.Group("/stats")
 	statsRoutes.Get("/jobs", stats.GetJobStats)
 	statsRoutes.Get("/jobs/breakdown", stats.GetJobTypeBreakdown)
@@ -477,6 +477,9 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		subsonicHandler := api.NewSubsonicHandler(db, cfg)
 		subsonic := app.Group("/rest")
 		subsonic.Get("/ping.view", subsonicHandler.AuthMiddleware, subsonicHandler.Ping)
+		// getLicense is the spec's name; license.view was the name this server
+		// shipped under and is kept as an alias so existing clients keep working.
+		subsonic.Get("/getLicense.view", subsonicHandler.AuthMiddleware, subsonicHandler.License)
 		subsonic.Get("/license.view", subsonicHandler.AuthMiddleware, subsonicHandler.License)
 		subsonic.Get("/getIndexes.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetIndexes)
 		subsonic.Get("/getMusicDirectory.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetMusicDirectory)
