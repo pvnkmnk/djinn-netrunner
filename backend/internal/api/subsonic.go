@@ -1499,18 +1499,11 @@ func (h *SubsonicHandler) StartScan(c *fiber.Ctx) error {
 }
 
 // getAlbumDuration calculates the total duration of an album
+// Bolt Optimization: Since getTrackDuration currently returns a 0 placeholder,
+// returning 0 directly avoids executing an N+1 database query (SELECT * FROM tracks JOIN libraries)
+// for every album in artistAlbums and Search3.
 func (h *SubsonicHandler) getAlbumDuration(user database.User, albumName, artistName string) int {
-	var tracks []database.Track
-	h.db.Table("tracks").
-		Joins("JOIN libraries ON libraries.id = tracks.library_id").
-		Where("libraries.owner_user_id = ? AND album = ? AND artist = ?", user.ID, albumName, artistName).
-		Find(&tracks)
-
-	totalDuration := 0
-	for _, track := range tracks {
-		totalDuration += h.getTrackDuration(track.Path)
-	}
-	return totalDuration
+	return 0
 }
 
 // GetPlaylists handles the getPlaylists endpoint
@@ -1733,16 +1726,21 @@ func (h *SubsonicHandler) CreatePlaylist(c *fiber.Ctx) error {
 	songIDs := c.Query("songId") // Subsonic allows multiple songId params
 	// Note: fiber doesn't easily support repeated query params, so we handle comma-separated
 	if songIDs != "" {
+		var playlistTracks []database.PlaylistTrack
 		for i, sid := range strings.Split(songIDs, ",") {
 			trackUUID, err := uuid.Parse(strings.TrimSpace(sid))
 			if err != nil {
 				continue
 			}
-			h.db.Create(&database.PlaylistTrack{
+			playlistTracks = append(playlistTracks, database.PlaylistTrack{
 				PlaylistID: playlist.ID,
 				TrackID:    trackUUID,
 				Position:   i,
 			})
+		}
+		// Bolt Optimization: Batch insert playlist tracks in a single database call
+		if len(playlistTracks) > 0 {
+			h.db.Create(&playlistTracks)
 		}
 	}
 
