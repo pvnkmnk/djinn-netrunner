@@ -120,6 +120,26 @@ Expected: PASS, including the two pre-existing scan-enqueue and rollback tests.
 Run: `cd backend && env -u ENVIRONMENT -u CONFIG_ENV -u PORT go test -count=1 ./internal/api/...`
 Expected: all `ok`.
 
+- [ ] **Step 9: Prove the migration on both drivers**
+
+The Definition of Done claims both drivers are validated. This is the step that
+makes that true, and it follows the precedent already in
+`backend/internal/database/locks_postgres_test.go` — connect from `DATABASE_URL`
+and `t.Skip` when it is absent or is not Postgres:
+
+```go
+// TestArtistProvenanceMigration_Postgres proves ADD COLUMN IF NOT EXISTS lands
+// on Postgres, the driver that runs in production. Skipped, not passed, when
+// DATABASE_URL is absent — a silent green here is the failure mode.
+```
+
+Cover two shapes: a **fresh** database (columns absent beforehand) and an
+**existing** one where `monitored_artists` already holds rows and the columns do
+not exist. Run it once against `docker-compose.integration.yml`'s Postgres so it
+actually executes rather than skips.
+
+- [ ] **Step 10: Commit**
+
 ```bash
 git add ops/db/init/migrations/2026_10_07_001_artist_provenance.sql ops/db/init/migrations/codemap.md backend/internal/database/models.go backend/internal/services/artist_tracking_service.go backend/internal/api/artists.go backend/internal/api/testapi/testapi.go backend/internal/services/artist_tracking_service_test.go
 gitleaks git --staged --redact
@@ -248,6 +268,12 @@ func TestArtistsHandler_RepointToSameEntityPreservesCounters(t *testing.T)
 
 // 4. Review Focus #2 — no second scan is queued when one is already active.
 func TestArtistsHandler_RepointAnswersAnAlreadyQueuedScan(t *testing.T)
+
+// 5. Review Focus #5 — an MBID that no longer resolves must NOT blank the row.
+func TestArtistsHandler_RepointUnresolvableMBIDLeavesTheRowIntact(t *testing.T)
+//    re-point to an MBID GetArtist cannot resolve
+//    assert: non-2xx, and MusicBrainzID, Name, Country, ArtistType and every
+//            counter are EXACTLY what they were before the call
 ```
 
 For test 4, seed a `running` job with `scope_type`/`scope_id` for that artist before re-pointing, then assert the job count for that scope is unchanged.
@@ -413,7 +439,13 @@ git commit -m "feat(artists): let the candidate picker target a re-point"
 
 - [ ] **Step 1: Write the failing test**
 
-Using the existing `setupTestDB` helper in that package (note: `cmd/cli` tests swap package globals `db`, `cfg`, `jsonOutput`, `osExit` — **stub `osExit` before any test that can reach `handleError`**, or the real `os.Exit` kills the test binary mid-run):
+Follow the shape of the existing `library` subcommands (`list|add|scan|prune|rm`)
+but **do not** reuse `setupTestDB`. It connects with `":memory:"`
+(`cmd/cli/main_test.go:360`), and this command loops rows through a pooled
+connection — a `:memory:` SQLite database is per-connection, so the second pooled
+connection sees an empty database and the query dies with "no such table". Use a
+file-backed DSN under `t.TempDir()` closed via `t.Cleanup`, or pin the pool to one
+connection. This is the same trap that forced the scanner tests off `:memory:`.
 
 ```go
 // --dry-run reports the rows it would fix and writes nothing.
@@ -454,6 +486,60 @@ git commit -m "feat(cli): backfill artist provenance from MusicBrainz"
 - `cd backend && env -u ENVIRONMENT -u CONFIG_ENV -u PORT go vet ./...` clean, and `go vet -tags integration ./...` clean (the integration-tagged files never compile under a plain `go test ./...`).
 - `go build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent` succeeds.
 - `go test -timeout 30m ./...` green on SQLite.
-- Both driver paths validated for the migration — SQLite and PostgreSQL, not one assumed from the other.
-- `scripts/e2e_gate.sh` still passes: `bash scripts/test_e2e_gate.sh`.
-- The card shows provenance, one partial renders it, and re-point works end to end against a live stack.
+- Both driver paths validated for the migration — delivered by **Task 1 Step 9**, the only place that claim is earned.
+- `bash scripts/test_e2e_gate.sh` passes (the gate's own tests, 10/10).
+- `env -u CI bash scripts/e2e.sh test` green, **including the new re-point spec from Task 6**. The card rendering and the re-point flow are browser-level claims, and Stage 1's whole lesson is that an unproven flow is an assumed one.
+- The card shows provenance, one partial renders it, and re-point works end to end.
+
+---
+
+### Task 6: Browser coverage for provenance and re-point
+
+**Files:**
+- Modify: `e2e/tests/artists.spec.ts` (provenance on the card)
+- Modify: `e2e/tests/artist-picker.spec.ts` (re-point through the picker)
+
+**Interfaces:**
+- Consumes: Tasks 1–4. This task proves them in a real browser.
+- Produces: nothing later depends on it.
+
+Sequenced after Tasks 1–4 deliberately: a browser spec written before the flow
+exists gets written against the plan's imagination of it.
+
+- [ ] **Step 1: Write the provenance spec**
+
+In `artists.spec.ts`, seed a monitored artist through the existing
+`/api/test/seed-*` surface **carrying country and type**, load `/artists`, and assert
+the card shows `Artist · Country · Type`.
+
+Seed the provenance explicitly rather than relying on a live MusicBrainz lookup.
+`artist-picker.spec.ts` already depends on `musicbrainz.org` being reachable —
+that is DJI-603, open precisely because the dependency cannot be made hermetic.
+Do not add a second one.
+
+- [ ] **Step 2: Write the re-point spec**
+
+In `artist-picker.spec.ts`: open the card's Re-point control, assert the modal header
+reads "Re-point artist", choose a candidate, then assert the card swaps and now shows
+the **new** entity's provenance — and does **not** still show the old one.
+
+- [ ] **Step 3: Rebuild the stack, then run**
+
+Templates and JS are baked into the image, so a source edit is invisible until the
+stack is rebuilt:
+
+```bash
+cd e2e && docker compose --env-file ../.env.e2e -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --build ops-web ops-worker
+cd .. && env -u CI bash scripts/e2e.sh test
+```
+
+`env -u CI` is required: Actions sets `CI=true` ambiently, and with it Playwright's
+`reuseExistingServer` flips to false and refuses the already-running stack.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add e2e/tests/artists.spec.ts e2e/tests/artist-picker.spec.ts
+gitleaks git --staged --redact
+git commit -m "test(e2e): cover artist provenance and the re-point flow"
+```
