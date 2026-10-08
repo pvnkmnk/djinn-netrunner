@@ -282,6 +282,56 @@ func libraryCmd() *cobra.Command {
 		},
 	})
 
+	backfillCmd := &cobra.Command{
+		Use:   "backfill-artist-provenance",
+		Short: "Fill in MusicBrainz country and type on monitored artists",
+		Long: "Look up every monitored artist that has no provenance and write what " +
+			"MusicBrainz holds for it.\n\n" +
+			"Exits non-zero when any row could not be resolved, so a cron or script " +
+			"notices. An unresolvable row is left blank rather than guessed at: " +
+			"there is no provenance to record for an entity that does not exist.\n\n" +
+			"This reaches MusicBrainz once per incomplete row and pauses between " +
+			"lookups, so a large library takes a while by design.",
+		Run: func(cmd *cobra.Command, args []string) {
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+
+			mb := services.NewMusicBrainzService(cfg)
+			filled, unresolved, complete, err := agent.BackfillArtistProvenance(
+				cmd.Context(), db, mb.GetArtist, dryRun)
+			if err != nil {
+				handleError(err)
+				return
+			}
+
+			if jsonOutput {
+				printJSON(map[string]any{
+					"filled": filled, "unresolved": unresolved,
+					"complete": complete, "dry_run": dryRun,
+				})
+			} else {
+				verb := "backfilled"
+				if dryRun {
+					verb = "would backfill"
+				}
+				fmt.Printf("Artist provenance: %s %d, %d already complete, %d unresolved\n",
+					verb, filled, complete, unresolved)
+			}
+
+			// Non-zero so a scheduled run notices. Silently exiting zero over
+			// rows it could not fill is how a backfill quietly stops working.
+			if unresolved > 0 {
+				if !jsonOutput {
+					fmt.Fprintf(os.Stderr,
+						"%d artist(s) could not be resolved and were left blank; "+
+							"their MBIDs are in the log above\n", unresolved)
+				}
+				osExit(1)
+			}
+		},
+	}
+	backfillCmd.Flags().Bool("dry-run", false, "report what would change, without writing")
+	cmd.AddCommand(backfillCmd)
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "scan [id]",
 		Short: "Trigger a scan for a library",
