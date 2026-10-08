@@ -5,14 +5,59 @@ name: E2E Tests
 # watch [master, main] — so it never ran once. "All checks green" said nothing
 # at all about the browser flows.
 #
-# It is deliberately NOT a pull_request gate: the suite builds every image and
-# drives a real Chromium, which is too slow to sit on every PR. It runs on
-# master to catch regressions and on demand (workflow_dispatch) as the manual
-# pre-release check. See docs/BETA_ACCEPTANCE.md.
+# It now gates pull_request, path-filtered. It did not, and the cost of that
+# was concrete rather than theoretical: PR #346 merged green on seven checks
+# and its Playwright spec failed on master the moment e2e.yml finally fired,
+# because nothing had ever run a browser against that code before the merge.
+# "All checks green" said nothing about the browser flows, which is the one
+# thing a green PR is supposed to mean.
+#
+# The filter is not a speed trick. `backend/**` means this fires on nearly
+# every PR in a repo that is mostly backend, and that is the honest price of a
+# real gate: a few minutes of runner time against a 13-minute local suite.
+# `ops/**` MUST be in the list -- the templates live in ops/web/templates, and
+# dropping it to save minutes is precisely what let #346 through. The single
+# `!` negation earns its keep: ops/ and e2e/ both carry markdown (codemap.md,
+# runbooks) that cannot change a rendered page.
+#
+# Known limits of a path-filtered gate, both from GitHub rather than from us:
+#
+#   * GitHub evaluates at most the first 300 changed files against a path
+#     filter. A PR larger than that whose matching paths sort late starts no
+#     run at all. The remedy is to drop the filter and gate inside the job.
+#   * A PR touching only excluded paths starts no workflow, so a *required*
+#     check of this name would sit pending forever. The remedy is a second,
+#     always-running workflow that reports success when this one is skipped --
+#     deliberately NOT added yet, because no branch protection requires the
+#     check today, so nothing can hang. Add it in the same change that makes
+#     the check required.
 on:
   workflow_dispatch:
   push:
     branches: [master]
+  pull_request:
+    paths:
+      - "backend/**"
+      - "e2e/**"
+      - "ops/**"
+      - "scripts/**"
+      - "docker-compose.yml"
+      - "docker-compose.e2e.yml"
+      - ".env.e2e.example"
+      - ".github/workflows/e2e.yml"
+      - "!**/*.md"
+
+# Five pushes to one branch used to queue five full suites, and the last one
+# landed an hour after anyone cared about it.
+#
+# Note what this workflow does NOT do: it cannot make itself required. As of
+# this commit master has no branch protection and the repo has no rulesets, so
+# a failing E2E run is visible but does not block a merge. Making the check
+# required is a repository setting, not a workflow change, and it affects how
+# humans merge too -- so it is raised rather than assumed.
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   e2e:
