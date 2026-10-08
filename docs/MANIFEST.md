@@ -30,7 +30,7 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - Install: README.md, docs/RUNBOOK.md
 - Understand architecture: docs/WHITEPAPER.md, docs/ARCHITECTURE.md
 - Modify UI: docs/UIIMPLEMENTATION.md
-- Change the Subsonic/OpenSubsonic surface: docs/OPENSUBSONIC_COVERAGE.md (regenerate it with `py scripts/opensubsonic_coverage.py`, never hand-edit)
+- Change the Subsonic/OpenSubsonic surface: docs/OPENSUBSONIC_COVERAGE.md (regenerate it with `py scripts/opensubsonic_coverage.py <openapi.json> docs/OPENSUBSONIC_COVERAGE.md`, never hand-edit)
 - Add features/job types: AGENTS.md, docs/ARCHITECTURE.md
 - Debug prod issues: docs/RUNBOOK.md, then docs/ARCHITECTURE.md
 

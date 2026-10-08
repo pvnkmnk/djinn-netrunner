@@ -10,7 +10,10 @@ as reviewable data rather than as prose.
 Re-run when the pin moves:
 
     curl -sSL -o .osp.json https://opensubsonic.netlify.app/docs/openapi/openapi.json
-    py scripts/opensubsonic_coverage.py .osp.json ops/web/docs/OPENSUBSONIC_COVERAGE.md
+    py scripts/opensubsonic_coverage.py .osp.json docs/OPENSUBSONIC_COVERAGE.md
+
+The script verifies the sha256 of the file it is given before reading it, so a
+silently-rewritten upstream document is refused rather than absorbed.
 
 Route coverage is measured off the registration sites in backend/cmd/server/main.go
 and is cross-checked by backend/cmd/server/opensubsonic_coverage_test.go, which
@@ -62,7 +65,9 @@ IMPLEMENTED = {
     "getAlbumList2": ("backend/internal/api/subsonic.go", "TestSubsonic_GetAlbumList2_{Random,Newest,AlphabeticalByName,AlphabeticalByArtist,Empty,WithPagination,JSON}"),
     "getRandomSongs": ("backend/internal/api/subsonic.go", "TestSubsonic_GetRandomSongs_{Normal,Empty,WithSize}"),
     "getCoverArt": ("backend/internal/api/subsonic.go", "TestSubsonic_GetCoverArt_{SSRBlocked,MissingID,InvalidID,NotFound}"),
-    "stream": ("backend/internal/api/subsonic.go:871", "NONE — see Finding 2"),
+    "stream": ("backend/internal/api/subsonic.go:871",
+                "smoke only: `scripts/smoke.sh:486-492` asserts >1000 bytes, "
+                "manual, not in CI; no handler test — see Finding 2"),
     "getScanStatus": ("backend/internal/api/subsonic.go", "TestSubsonic_GetScanStatus"),
     "startScan": ("backend/internal/api/subsonic.go", "TestSubsonic_StartScan"),
     "getPlaylists": ("backend/internal/api/subsonic.go", "TestSubsonic_GetPlaylists_{Empty,WithPlaylists,Public}"),
@@ -73,8 +78,15 @@ IMPLEMENTED = {
 
 # Routes registered under a name the spec does not define. Each is an
 # intentional alias kept for clients written against the older name.
+# Alias route stem -> (spec endpoint it serves, why it stays). The served name
+# is spelled out because the matrix is keyed by spec endpoint: an alias table
+# that said "license" pointed a reader at a row that does not exist.
 ALIASES = {
-    "license": "alias for getLicense — registered at backend/cmd/server/main.go so pre-rename clients keep working",
+    "license": (
+        "getLicense",
+        "alias for getLicense — registered at backend/cmd/server/main.go so "
+        "pre-rename clients keep working",
+    ),
 }
 
 # Endpoint name -> owning ticket for every gap. "unowned" is a finding, not a
@@ -130,19 +142,53 @@ EXT_RE = re.compile(r"[Oo]pen[Ss]ubsonic extension name `(?P<e>[a-zA-Z]+)`")
 
 
 def spec_rows(spec: dict) -> list[dict]:
+    """One row per documented endpoint, with its extension gate.
+
+    The gate is read from every operation, not from GET alone. Three shapes in
+    the pinned spec make GET-only reading wrong:
+
+      * `getPodcastEpisode` names its extension only on the POST operation, so
+        a GET-only read marks a genuinely extension-provided endpoint as base;
+      * `getTranscodeDecision` is POST-only, so there is no GET description to
+        read at all and it silently came out ungated;
+      * the spec's own `Extension` tag marks five endpoints as
+        extension-provided, and `stream` is one of them while naming no
+        extension anywhere. Text alone therefore both over-reports and
+        under-reports, so both signals are kept.
+
+    `formPost` is excluded from the gate throughout: it describes how the POST
+    form-encoding extension works, and says nothing about whether the GET is
+    base API.
+    """
     rows = []
     for path, ops in spec["paths"].items():
-        get = ops.get("get", {})
-        m = EXT_RE.search(get.get("description", "") or "")
+        verbs = sorted(v for v in ops if v != "parameters")
+        if not verbs:
+            continue
+
+        text = " ".join((ops[v].get("description") or "") for v in verbs)
+        tags = sorted({t for v in verbs for t in (ops[v].get("tags") or [])})
+
+        # The gate is read across every operation, not just GET. `getPodcastEpisode`
+        # names its extension only on the POST operation, so a GET-only read marks a
+        # genuinely extension-provided endpoint as base API.
+        named = sorted({e for e in EXT_RE.findall(text) if e != "formPost"})
+
         rows.append({
             "name": path.removeprefix("/rest/"),
-            "verbs": "+".join(sorted(ops)),
-            "tags": ", ".join(sorted(set(get.get("tags", [])))),
-            "extension": m.group("e") if m else "",
-            "deprecated": any(o.get("deprecated") for o in ops.values()),
+            "verbs": "+".join(verbs),
+            "tags": ", ".join(tags),
+            "extension": named[0] if named else "",
+            "ext_tag": "Extension" in tags,
+            "deprecated": any(ops[v].get("deprecated") for v in verbs),
         })
     rows.sort(key=lambda r: r["name"])
     return rows
+
+
+def is_base(r: dict) -> bool:
+    """True when a plain GET reaches this endpoint with no extension."""
+    return not r["extension"] and not r["ext_tag"]
 
 
 def main() -> int:
@@ -182,8 +228,11 @@ def main() -> int:
     total = len(rows)
     have = [r for r in rows if r["name"] in IMPLEMENTED]
     gaps = [r for r in rows if r["name"] in GAPS]
-    base = [r for r in rows if not r["extension"]]
+    base = [r for r in rows if is_base(r)]
+    base_have = [r for r in base if r["name"] in IMPLEMENTED]
     base_gaps = [r for r in base if r["name"] in GAPS]
+    # Implemented endpoints the spec nonetheless classifies as extension-provided.
+    ext_have = [r for r in rows if r["name"] in IMPLEMENTED and not is_base(r)]
     unowned = [r for r in rows if GAPS.get(r["name"]) == "unowned"]
 
     unknown = [
@@ -211,8 +260,8 @@ def main() -> int:
     w(f"| Source | `{SPEC_URL}` |")
     w(f"| sha256 | `{SPEC_SHA256}` |")
     w(f"| Docs | {SPEC_DOCS_REPO} |")
-    w(f"| Endpoints | {total} paths ({len(base)} base-API GET, "
-      f"{len(rows) - len(base)} extension-gated GET) |")
+    w(f"| Endpoints | {total} paths — {len(base)} reachable by plain GET, "
+      f"{len(rows) - len(base)} provided by an extension |")
     w("| Re-point the pin | change `SPEC_VERSION` and `SPEC_SHA256` together |")
     w("")
     w("## Where this stands")
@@ -220,9 +269,10 @@ def main() -> int:
     w("| | count | share |")
     w("|---|---|---|")
     w(f"| Base-API endpoints | {len(base)} | 100% |")
-    w(f"| Base-API implemented | {len(have)} | {len(have) * 100 // len(base)}% |")
+    w(f"| Base-API implemented | {len(base_have)} | {len(base_have) * 100 // len(base)}% |")
     w(f"| Base-API gaps | {len(base_gaps)} | {len(base_gaps) * 100 // len(base)}% |")
-    w(f"| Extension-gated endpoints | {len(rows) - len(base)} | — |")
+    w(f"| Extension-provided endpoints | {len(rows) - len(base)} | — |")
+    w(f"| Implemented but spec-tagged as an extension | {len(ext_have)} | — |")
     w(f"| Extensions implemented | 0 of {len(EXTENSIONS)} | 0% |")
     w(f"| Gaps with no owning ticket | {len(unowned)} | — |")
     w("")
@@ -242,10 +292,17 @@ def main() -> int:
     w("kept as an alias, so nothing breaks for a client that learned the old one.")
     w("The guard below fails if either half of that pair disappears.")
     w("")
-    w("### 2. `/rest/stream.view` has no test at all")
+    w("### 2. `/rest/stream.view` has no automated test")
     w("")
     w("`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the")
-    w("endpoint every client actually uses to listen to music, and nothing drives it.")
+    w("endpoint every client actually uses to listen to music. One check drives it —")
+    w("`scripts/smoke.sh:486-492`, which fetches a track and fails unless more than")
+    w("1,000 bytes come back. That is a happy path with no assertion about ranges,")
+    w("content type, authorization or error shape, it needs a running stack, and")
+    w("**no workflow invokes `smoke.sh`**, so nothing runs it on a change. An earlier")
+    w("draft of this document called the endpoint untested; it is not, and the")
+    w("distinction is the point: the check exists somewhere a CI failure cannot")
+    w("reach it.")
     w("")
     w("There are nine passing tests named `TestStreamTrack_*` in")
     w("`backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,")
@@ -277,11 +334,15 @@ def main() -> int:
     w("`impl` = route registered and behaviourally tested · `gap` = not registered,")
     w("owner named · `unowned` = not registered and no ticket owns it.")
     w("")
-    w("| endpoint | verbs | tags | gated by | status | evidence / owner |")
-    w("|---|---|---|---|---|---|")
+    w("`gated by` reads the GET operation\'s extension requirement. `spec tag`")
+    w("records the spec\'s own `Extension` classification, which is what moves an")
+    w("endpoint out of base API when its text names no extension at all.")
+    w("")
+    w("| endpoint | verbs | tags | gated by | spec tag | status | evidence / owner |")
+    w("|---|---|---|---|---|---|---|")
     for r in rows:
         name = r["name"]
-        gated = r["extension"] or "—"
+        gated = r["extension"] or ("`Extension`" if r["ext_tag"] else "—")
         if name in IMPLEMENTED:
             handler, test = IMPLEMENTED[name]
             status = "impl"
@@ -290,9 +351,11 @@ def main() -> int:
             owner = GAPS.get(name, "")
             status = "unowned" if owner == "unowned" else "gap"
             ev = f"not in the route table · **{owner}**" if status == "gap" else "**no ticket**"
+        tag = "Extension" if r["ext_tag"] else "—"
         if r["deprecated"]:
             name = f"`{name}` (deprecated)"
-        w(f"| `{name}` | {r['verbs']} | {r['tags']} | {gated} | {status} | {ev} |")
+        w(f"| `{name}` | {r['verbs']} | {r['tags']} | {gated} | {tag} | "
+          f"{status} | {ev} |")
     w("")
     w("## Compatibility aliases")
     w("")
@@ -302,8 +365,8 @@ def main() -> int:
     w("")
     w("| alias route | serves | why it stays |")
     w("|---|---|---|")
-    for name, why in ALIASES.items():
-        w(f"| `/rest/{name}.view` | `{name}` in the matrix above | {why} |")
+    for name, (serves, why) in ALIASES.items():
+        w(f"| `/rest/{name}.view` | `{serves}` | {why} |")
     w("")
     w("## Extension ledger")
     w("")
@@ -321,10 +384,14 @@ def main() -> int:
     w("cannot rot into a claim. It also asserts both `getLicense.view` and the")
     w("`license.view` alias are registered.")
     w("")
+    w("The guard reads the first column of the status position, so it is unaffected")
+    w("by the extra `spec tag` column; the row regexp pins the column count.")
+    w("")
 
     dst.write_text("\n".join(out), encoding="utf-8", newline="\n")
     sys.stdout.write(
-        f"{dst}: {total} endpoints, {len(have)} implemented, "
+        f"{dst}: {total} endpoints, {len(have)} implemented "
+        f"({len(base_have)} of {len(base)} base), "
         f"{len(gaps)} gaps, {len(unowned)} unowned\n"
     )
     return 0

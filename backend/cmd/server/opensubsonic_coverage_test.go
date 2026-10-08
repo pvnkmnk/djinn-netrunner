@@ -13,10 +13,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// coverageRow matches one endpoint row of docs/OPENSUBSONIC_COVERAGE.md and
-// captures the endpoint name plus the status column, so the document and the
-// route table are compared by parsing rather than by trusting either side.
-var coverageRow = regexp.MustCompile("^\\|\\s*`([^`]+)`[^|]*\\|[^|]*\\|[^|]*\\|[^|]*\\|\\s*(impl|gap|unowned)\\s*\\|")
+// coverageRow matches one endpoint row and captures the endpoint name.
+//
+// The status is then found by VALUE rather than by column position. A
+// positional regexp counted the matrix's columns, and when a column was added
+// it kept compiling while matching nothing -- a guard that quietly stops
+// reading the document is worse than no guard, because it goes green.
+var coverageRow = regexp.MustCompile("^\\|\\s*`([^`]+)`[^|]*\\|")
+
+// statusCell matches a cell whose entire content is one of the three statuses.
+var statusCell = regexp.MustCompile(`^\s*(impl|gap|unowned)\s*$`)
+
+// rowStatus returns the status recorded for an endpoint row, or "".
+func rowStatus(line string) string {
+	for _, cell := range strings.Split(line, "|") {
+		if m := statusCell.FindStringSubmatch(cell); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
 
 // documentedCoverage reads docs/OPENSUBSONIC_COVERAGE.md and returns every
 // endpoint marked `impl`. It walks up to the repo root the way the templates
@@ -48,9 +64,12 @@ func documentedCoverage(t *testing.T) []string {
 
 	var names []string
 	for _, line := range strings.Split(string(raw), "\n") {
-		if m := coverageRow.FindStringSubmatch(line); m != nil && m[2] == "impl" {
-			names = append(names, m[1])
+		m := coverageRow.FindStringSubmatch(line)
+		if m == nil || rowStatus(line) != "impl" {
+			continue
 		}
+		name := strings.TrimSuffix(m[1], " (deprecated)")
+		names = append(names, name)
 	}
 	require.NotEmpty(t, names, "the coverage document lists no implemented endpoints")
 	return names
