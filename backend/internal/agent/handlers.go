@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -213,6 +215,97 @@ func PruneLibrary(db *gorm.DB, libraryID uuid.UUID) (*database.Job, error) {
 
 	return &job, nil
 }
+
+// BackfillArtistProvenance fills in Country and ArtistType on monitored artists
+// that predate them.
+//
+// A CLI operation rather than a migration for one reason: a migration must not
+// make network calls. One that reached MusicBrainz would take a deploy's success
+// hostage to a third party's uptime, and a failure halfway through would leave
+// no way to resume.
+//
+// Four numbers come back, and the caller is expected to fail on a non-zero
+// unresolvable count so a cron or script notices:
+//
+//	filled       rows written
+//	unresolved   rows whose MBID could not be resolved
+//	complete     rows skipped because they already had provenance
+//	dryRun       nothing was written
+//
+// "Unresolved" deliberately covers BOTH a deleted entity and an outage. They are
+// different situations with the same caller-visible consequence -- the row stays
+// blank -- and separating them here would tempt a caller to report an outage as
+// "that artist is gone", which is the conclusion an operator would act on. The
+// distinction belongs in the log line, not in the exit code.
+//
+// A row is complete only when BOTH fields are set. MusicBrainz entities
+// routinely carry a country and no type, so treating "one of two" as done would
+// leave exactly the rows this exists to fix.
+func BackfillArtistProvenance(
+	ctx context.Context,
+	db *gorm.DB,
+	get func(string) (*services.MusicBrainzArtist, error),
+	dryRun bool,
+) (filled int, unresolved int, complete int, err error) {
+	var completeCount int64
+
+	// Complete rows are counted separately rather than loaded into the work
+	// queue. Filtering them out of `rows` alone would make the "complete"
+	// figure permanently zero, because the loop would never see them -- and
+	// "12 of 40 already had provenance" is the number an operator wants.
+	//
+	// The queue is read once. Re-querying per row would let a concurrent add
+	// starve the run or double-count it.
+	if err := db.Model(&database.MonitoredArtist{}).
+		Where("country <> '' AND country IS NOT NULL AND artist_type <> '' AND artist_type IS NOT NULL").
+		Count(&completeCount).Error; err != nil {
+		return 0, 0, 0, err
+	}
+
+	var rows []database.MonitoredArtist
+	if err := db.Where("country = '' OR country IS NULL OR artist_type = '' OR artist_type IS NULL").
+		Find(&rows).Error; err != nil {
+		return 0, 0, 0, err
+	}
+
+	for i := range rows {
+		row := rows[i]
+		found, lookupErr := get(row.MusicBrainzID)
+		if lookupErr != nil || found == nil {
+			// Left blank on purpose. There is no provenance to record for an
+			// entity that does not resolve, and inventing one would be worse
+			// than showing nothing.
+			unresolved++
+			slog.Warn("Artist provenance could not be resolved; leaving the row blank",
+				"mbid", row.MusicBrainzID, "error", lookupErr)
+			continue
+		}
+
+		if !dryRun {
+			updates := map[string]any{
+				"country":     found.Country,
+				"artist_type": found.Type,
+			}
+			if err := db.Model(&database.MonitoredArtist{}).
+				Where("id = ?", row.ID).Updates(updates).Error; err != nil {
+				return filled, unresolved, complete, err
+			}
+		}
+		filled++
+
+		// A courtesy pause between lookups. This command is pointed at a
+		// rate-limited public API, and a large library is hundreds of rows.
+		select {
+		case <-ctx.Done():
+			return filled, unresolved, int(completeCount), ctx.Err()
+		case <-time.After(backfillLookupDelay):
+		}
+	}
+	return filled, unresolved, int(completeCount), nil
+}
+
+// backfillLookupDelay is the pause between MusicBrainz lookups.
+const backfillLookupDelay = 250 * time.Millisecond
 
 // ListMonitoredArtists returns all monitored artists with their release counts.
 func ListMonitoredArtists(db *gorm.DB) ([]database.MonitoredArtist, error) {
