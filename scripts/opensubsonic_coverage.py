@@ -1,0 +1,414 @@
+#!/usr/bin/env python3
+"""Generate docs/OPENSUBSONIC_COVERAGE.md from the pinned OpenSubsonic spec.
+
+The spec revision is pinned in SPEC_VERSION / SPEC_SHA256 below. The document
+is generated so that the mechanical half (which endpoints exist, what they are
+called, which extension gates them) cannot drift from the spec, and so that the
+judgement half (is this implemented, who owns the gap) lives in version control
+as reviewable data rather than as prose.
+
+Re-run when the pin moves:
+
+    curl -sSL -o .osp.json https://opensubsonic.netlify.app/docs/openapi/openapi.json
+    py scripts/opensubsonic_coverage.py .osp.json docs/OPENSUBSONIC_COVERAGE.md
+
+The script verifies the sha256 of the file it is given before reading it, so a
+silently-rewritten upstream document is refused rather than absorbed.
+
+Route coverage is measured off the registration sites in backend/cmd/server/main.go
+and is cross-checked by backend/cmd/server/opensubsonic_coverage_test.go, which
+fails if this document and app.GetRoutes() disagree.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+# --- the pin -----------------------------------------------------------------
+SPEC_VERSION = "1.16.1"
+SPEC_SHA256 = "cb54c03c33835d132c555863e9771e30dfaa2930312853ca27dfece2ed46bfb6"
+SPEC_URL = "https://opensubsonic.netlify.app/docs/openapi/openapi.json"
+SPEC_DOCS_REPO = "https://github.com/opensubsonic/open-subsonic-api"
+
+# Endpoint name -> the extensions the spec documents for the server as a whole.
+# None of these are implemented; the ledger in the document says so explicitly.
+EXTENSIONS = [
+    ("apiKeyAuthentication", "NR05", "tokenInfo"),
+    ("formPost", "NR24", "POST on 83 paths"),
+    ("getPodcastEpisode", "NR26", "getPodcastEpisode"),
+    ("indexBasedQueue", "NR10", "getPlayQueueByIndex / savePlayQueueByIndex"),
+    ("playbackReport", "NR10", "reportPlayback"),
+    ("songLyrics", "NR22", "getLyricsBySongId"),
+    ("sonicSimilarity", "NR06", "getSimilarSongs2 / getSonicSimilarTracks"),
+    ("templating", "NR12", "template parameters"),
+    ("topSongsByArtistId", "NR06", "getTopSongs by artistId"),
+    ("transcodeOffset", "NR20", "byte-range transcode offsets"),
+    ("transcoding", "NR20", "getTranscodeStream / getTranscodeDecision"),
+]
+
+# Endpoint name -> (handler, behavioural test). Every entry here is asserted to
+# exist as a route by the Go guard; the test column is a claim about coverage
+# that a reviewer can check with `go test -run`.
+IMPLEMENTED = {
+    "ping": ("backend/internal/api/subsonic.go", "TestSubsonic_Ping, TestSubsonic_Ping_JSON, e2e subsonic.spec.ts 'Ping succeeds with valid auth'"),
+    "getLicense": ("backend/internal/api/subsonic.go", "TestSubsonic_License — aliased at /rest/license.view, see Finding 1"),
+    "getIndexes": ("backend/internal/api/subsonic.go", "TestSubsonic_GetIndexes_{Empty,WithArtists,ArtistsAZ,JSON}"),
+    "getMusicDirectory": ("backend/internal/api/subsonic.go", "TestSubsonic_GetMusicDirectory_{MissingID,ArtistDirectory,AlbumDirectory,TrackDirectory,NotFound}"),
+    "getArtist": ("backend/internal/api/subsonic.go", "TestSubsonic_GetArtist_{Found,MalformedID,NotFound}"),
+    "getAlbum": ("backend/internal/api/subsonic.go", "TestSubsonic_GetAlbum_{Found,MalformedID,NotFound}"),
+    "getSong": ("backend/internal/api/subsonic.go", "TestSubsonic_GetSong_{Found,NotFound,BadUUID,MissingID,JSON}"),
+    "search3": ("backend/internal/api/subsonic.go", "TestSubsonic_Search3_{MissingQuery,EmptyResults,WithResults,WithPagination,JSON}"),
+    "getAlbumList2": ("backend/internal/api/subsonic.go", "TestSubsonic_GetAlbumList2_{Random,Newest,AlphabeticalByName,AlphabeticalByArtist,Empty,WithPagination,JSON}"),
+    "getRandomSongs": ("backend/internal/api/subsonic.go", "TestSubsonic_GetRandomSongs_{Normal,Empty,WithSize}"),
+    "getCoverArt": ("backend/internal/api/subsonic.go", "TestSubsonic_GetCoverArt_{SSRBlocked,MissingID,InvalidID,NotFound}"),
+    "stream": ("backend/internal/api/subsonic.go:871",
+                "smoke only: `scripts/smoke.sh:486-492` asserts >1000 bytes, "
+                "manual, not in CI; no handler test — see Finding 2"),
+    "getScanStatus": ("backend/internal/api/subsonic.go", "TestSubsonic_GetScanStatus"),
+    "startScan": ("backend/internal/api/subsonic.go", "TestSubsonic_StartScan"),
+    "getPlaylists": ("backend/internal/api/subsonic.go", "TestSubsonic_GetPlaylists_{Empty,WithPlaylists,Public}"),
+    "getPlaylist": ("backend/internal/api/subsonic.go", "TestSubsonic_GetPlaylist_{MissingID,NotFound,InvalidUUID,Found,AccessDenied}"),
+    "createPlaylist": ("backend/internal/api/subsonic.go", "TestSubsonic_CreatePlaylist_{MissingName,New,WithComment,Public,UpdateExisting}"),
+    "deletePlaylist": ("backend/internal/api/subsonic.go", "TestSubsonic_DeletePlaylist_{MissingID,InvalidUUID,NotFound,Success,AccessDenied}"),
+}
+
+# Routes registered under a name the spec does not define. Each is an
+# intentional alias kept for clients written against the older name.
+# Alias route stem -> (spec endpoint it serves, why it stays). The served name
+# is spelled out because the matrix is keyed by spec endpoint: an alias table
+# that said "license" pointed a reader at a row that does not exist.
+ALIASES = {
+    "license": (
+        "getLicense",
+        "alias for getLicense — registered at backend/cmd/server/main.go so "
+        "pre-rename clients keep working",
+    ),
+}
+
+# Endpoint name -> owning ticket for every gap. Every gap names a ticket
+# as of 2026-10-08: the eleven podcast/chat/jukebox endpoints NR01 found
+# ownerless now belong to NR26-NR28 (DJI-620/621/622), so no row is left
+# without one and P-DJI-29's wave order can reach all of them.
+GAPS = {
+    # NR05 — truthful identity, extension and management discovery (DJI-565)
+    "getOpenSubsonicExtensions": "NR05",
+    "tokenInfo": "NR05",
+    # NR06 — browsing, search and music lists (DJI-566)
+    "getAlbumInfo": "NR06", "getAlbumInfo2": "NR06", "getArtistInfo": "NR06",
+    "getArtistInfo2": "NR06", "getArtists": "NR06", "getGenres": "NR06",
+    "getMusicFolders": "NR06", "getTopSongs": "NR06", "getVideos": "NR06",
+    "getVideoInfo": "NR06", "getSimilarSongs": "NR06", "getSimilarSongs2": "NR06",
+    "findSonicPath": "NR06", "getSonicSimilarTracks": "NR06",
+    "getAlbumList": "NR06", "getNowPlaying": "NR06", "getSongsByGenre": "NR06",
+    "getStarred": "NR06", "getStarred2": "NR06",
+    "search": "NR06", "search2": "NR06",
+    # NR07 — streaming and seeking (DJI-567)
+    "download": "NR07", "hls.m3u8": "NR07", "getAvatar": "NR07",
+    # NR08 — metadata and artwork (DJI-568)
+    "getCaptions": "NR08",
+    # NR09 — playlist operations (DJI-569)
+    "updatePlaylist": "NR09",
+    # NR10 — annotations, history and saved state (DJI-570)
+    "star": "NR10", "unstar": "NR10", "scrobble": "NR10", "setRating": "NR10",
+    "reportPlayback": "NR10", "getPlayQueue": "NR10", "savePlayQueue": "NR10",
+    "getPlayQueueByIndex": "NR10", "savePlayQueueByIndex": "NR10",
+    "createBookmark": "NR10", "deleteBookmark": "NR10", "getBookmarks": "NR10",
+    # NR04 — unified authorization (DJI-564)
+    "getUser": "NR04", "getUsers": "NR04", "createUser": "NR04",
+    "updateUser": "NR04", "deleteUser": "NR04", "changePassword": "NR04",
+    # NR20 — transcoding (DJI-581)
+    "getTranscodeStream": "NR20", "getTranscodeDecision": "NR20",
+    # NR22 — lyrics (DJI-584)
+    "getLyrics": "NR22", "getLyricsBySongId": "NR22",
+    # NR23 — internet radio (DJI-585)
+    "createInternetRadioStation": "NR23", "updateInternetRadioStation": "NR23",
+    "deleteInternetRadioStation": "NR23", "getInternetRadioStations": "NR23",
+    # NR24 — media sharing (DJI-586)
+    "createShare": "NR24", "updateShare": "NR24",
+    "deleteShare": "NR24", "getShares": "NR24",
+    # NR26 — podcast catalogue, episode listing and delivery (DJI-620)
+    "getPodcasts": "NR26", "getNewestPodcasts": "NR26",
+    "createPodcastChannel": "NR26", "refreshPodcasts": "NR26",
+    "deletePodcastChannel": "NR26", "deletePodcastEpisode": "NR26",
+    "downloadPodcastEpisode": "NR26", "getPodcastEpisode": "NR26",
+    # NR27 — chat message history and posting (DJI-621)
+    "getChatMessages": "NR27", "addChatMessage": "NR27",
+    # NR28 — jukebox control (DJI-622)
+    "jukeboxControl": "NR28",
+}
+
+EXT_RE = re.compile(r"[Oo]pen[Ss]ubsonic extension name `(?P<e>[a-zA-Z]+)`")
+
+
+def spec_rows(spec: dict) -> list[dict]:
+    """One row per documented endpoint, with its extension gate.
+
+    The gate is read from every operation, not from GET alone. Three shapes in
+    the pinned spec make GET-only reading wrong:
+
+      * `getPodcastEpisode` names its extension only on the POST operation, so
+        a GET-only read marks a genuinely extension-provided endpoint as base;
+      * `getTranscodeDecision` is POST-only, so there is no GET description to
+        read at all and it silently came out ungated;
+      * the spec's own `Extension` tag marks five endpoints as
+        extension-provided, and `stream` is one of them while naming no
+        extension anywhere. Text alone therefore both over-reports and
+        under-reports, so both signals are kept.
+
+    `formPost` is excluded from the gate throughout: it describes how the POST
+    form-encoding extension works, and says nothing about whether the GET is
+    base API.
+    """
+    rows = []
+    for path, ops in spec["paths"].items():
+        verbs = sorted(v for v in ops if v != "parameters")
+        if not verbs:
+            continue
+
+        text = " ".join((ops[v].get("description") or "") for v in verbs)
+        tags = sorted({t for v in verbs for t in (ops[v].get("tags") or [])})
+
+        # The gate is read across every operation, not just GET. `getPodcastEpisode`
+        # names its extension only on the POST operation, so a GET-only read marks a
+        # genuinely extension-provided endpoint as base API.
+        named = sorted({e for e in EXT_RE.findall(text) if e != "formPost"})
+
+        rows.append({
+            "name": path.removeprefix("/rest/"),
+            "verbs": "+".join(verbs),
+            "tags": ", ".join(tags),
+            "extension": named[0] if named else "",
+            "ext_tag": "Extension" in tags,
+            "deprecated": any(ops[v].get("deprecated") for v in verbs),
+        })
+    rows.sort(key=lambda r: r["name"])
+    return rows
+
+
+def is_base(r: dict) -> bool:
+    """True when a plain GET reaches this endpoint with no extension."""
+    return not r["extension"] and not r["ext_tag"]
+
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        sys.stderr.write("usage: opensubsonic_coverage.py <openapi.json> <out.md>\n")
+        return 2
+    src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+
+    try:
+        raw = src.read_bytes()
+    except OSError as exc:
+        sys.stderr.write(f"cannot read {src}: {exc}\n")
+        return 1
+    try:
+        spec = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        sys.stderr.write(f"{src} is not valid UTF-8 JSON: {exc}\n")
+        return 1
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != SPEC_SHA256:
+        sys.stderr.write(
+            f"{src} sha256 is {digest}, not the pinned {SPEC_SHA256}.\n"
+            "The upstream document changed without its version changing. Re-read "
+            "it before regenerating; do not simply update the pin.\n"
+        )
+        return 1
+    version = spec.get("info", {}).get("version")
+    if version != SPEC_VERSION:
+        sys.stderr.write(
+            f"spec version {version!r} does not match the pin {SPEC_VERSION!r}.\n"
+            "Re-read the spec, re-classify the matrix, then update SPEC_VERSION "
+            "and SPEC_SHA256 together.\n"
+        )
+        return 1
+
+    rows = spec_rows(spec)
+    total = len(rows)
+    have = [r for r in rows if r["name"] in IMPLEMENTED]
+    gaps = [r for r in rows if r["name"] in GAPS]
+    base = [r for r in rows if is_base(r)]
+    base_have = [r for r in base if r["name"] in IMPLEMENTED]
+    base_gaps = [r for r in base if r["name"] in GAPS]
+    # Implemented endpoints the spec nonetheless classifies as extension-provided.
+    ext_have = [r for r in rows if r["name"] in IMPLEMENTED and not is_base(r)]
+    unowned = [r for r in rows if GAPS.get(r["name"]) == "unowned"]
+
+    unknown = [
+        r["name"] for r in rows
+        if r["name"] not in IMPLEMENTED and r["name"] not in GAPS
+    ]
+    if unknown:
+        sys.stderr.write("unclassified endpoints: " + ", ".join(unknown) + "\n")
+        return 1
+    if len(have) + len(gaps) != total:
+        sys.stderr.write(f"matrix is not total: {len(have)} + {len(gaps)} != {total}\n")
+        return 1
+
+    out = []
+    w = out.append
+    w("# OpenSubsonic coverage")
+    w("")
+    w("Generated by `scripts/opensubsonic_coverage.py`. Do not hand-edit: the")
+    w("endpoint inventory is derived from the pinned spec, and the classification")
+    w("is the script's data table so it can be reviewed as a diff.")
+    w("")
+    w("| | |")
+    w("|---|---|")
+    w(f"| Spec | OpenSubsonic {SPEC_VERSION} |")
+    w(f"| Source | `{SPEC_URL}` |")
+    w(f"| sha256 | `{SPEC_SHA256}` |")
+    w(f"| Docs | {SPEC_DOCS_REPO} |")
+    w(f"| Endpoints | {total} paths — {len(base)} reachable by plain GET, "
+      f"{len(rows) - len(base)} provided by an extension |")
+    w("| Re-point the pin | change `SPEC_VERSION` and `SPEC_SHA256` together |")
+    w("")
+    w("## Where this stands")
+    w("")
+    w("| | count | share |")
+    w("|---|---|---|")
+    w(f"| Base-API endpoints | {len(base)} | 100% |")
+    w(f"| Base-API implemented | {len(base_have)} | {len(base_have) * 100 // len(base)}% |")
+    w(f"| Base-API gaps | {len(base_gaps)} | {len(base_gaps) * 100 // len(base)}% |")
+    w(f"| Extension-provided endpoints | {len(rows) - len(base)} | — |")
+    w(f"| Implemented but spec-tagged as an extension | {len(ext_have)} | — |")
+    w(f"| Extensions implemented | 0 of {len(EXTENSIONS)} | 0% |")
+    w(f"| Gaps with no owning ticket | {len(unowned)} | — |")
+    w("")
+    w("## Findings")
+    w("")
+    w("### 1. `/rest/license.view` was an endpoint no client could reach")
+    w("")
+    w("The License handler was registered as `/rest/license.view`; the spec's name")
+    w("is `getLicense`. A conformant client asking for the licence got a 404 while")
+    w("the handler worked fine, and nothing in the suite could see it:")
+    w("`subsonic.spec.ts` has a case called *License endpoint works* which passed")
+    w("because it called the wrong URL, and `TestSubsonic_License` drove the handler")
+    w("directly. Route existence, a handler test and a green browser spec all agreed")
+    w("while the feature was unreachable to the clients that need it.")
+    w("")
+    w("Fixed: `/rest/getLicense.view` is the spec name and `/rest/license.view` is")
+    w("kept as an alias, so nothing breaks for a client that learned the old one.")
+    w("The guard below fails if either half of that pair disappears.")
+    w("")
+    w("### 2. `/rest/stream.view` has no automated test")
+    w("")
+    w("`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the")
+    w("endpoint every client actually uses to listen to music. One check drives it —")
+    w("`scripts/smoke.sh:486-492`, which fetches a track and fails unless more than")
+    w("1,000 bytes come back. That is a happy path with no assertion about ranges,")
+    w("content type, authorization or error shape, it needs a running stack, and")
+    w("**no workflow invokes `smoke.sh`**, so nothing runs it on a change. An earlier")
+    w("draft of this document called the endpoint untested; it is not, and the")
+    w("distinction is the point: the check exists somewhere a CI failure cannot")
+    w("reach it.")
+    w("")
+    w("There are nine passing tests named `TestStreamTrack_*` in")
+    w("`backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,")
+    w("`206` range and the error paths. They test a **different handler** —")
+    w("`LibraryHandler.StreamTrack`, registered at `/tracks/:id/stream` — so a name")
+    w("match between `Stream` and `StreamTrack` reads as coverage that is not there.")
+    w("Streaming is the endpoint whose failure a user notices first, so it is the")
+    w("one gap here that matters more than its size.")
+    w("")
+    w("### 3. Discovery is the base-API hole that hides every other one")
+    w("")
+    w("`getOpenSubsonicExtensions` is base API (tags `System`, `Addition`, no")
+    w("extension requirement) and unimplemented. A client cannot ask which of the")
+    w(f"{len(EXTENSIONS)} extensions this server supports, so every extension below is")
+    w("invisible rather than absent. `tokenInfo` is extension-gated")
+    w("(`apiKeyAuthentication`), so it is correctly counted as an NR05 gap rather")
+    w("than a base-API one.")
+    w("")
+    w("### 4. Eleven endpoints had no ticket behind them (resolved 2026-10-08)")
+    w("")
+    w("Podcast (8), chat (2) and `jukeboxControl` (1) appear in the spec but in")
+    w("none of NR01-NR25, so the wave order could not reach them and no wave")
+    w("could clear them. That was a scope decision rather than an")
+    w("implementation gap, and it has been made: every one now has an owner.")
+    w("")
+    w("| feature | endpoints | owner |")
+    w("|---|---|---|")
+    w("| podcast | 8 | NR26 (DJI-620) |")
+    w("| chat | 2 | NR27 (DJI-621) |")
+    w("| jukebox | 1 | NR28 (DJI-622) |")
+    w("")
+    w("The `getPodcastEpisode` extension in the ledger is owned by NR26 as well.")
+    w("Ownership is not a claim that any of these is implemented: every one is")
+    w("still a gap row, and a ticket may legitimately close by recording its")
+    w("endpoints as deliberately unsupported, with the reason.")
+    w("")
+    w("## Endpoint matrix")
+    w("")
+    w("`impl` = route registered and behaviourally tested · `gap` = not registered,")
+    w("owner named · `unowned` = not registered and no ticket owns it.")
+    w("")
+    w("`gated by` reads the GET operation\'s extension requirement. `spec tag`")
+    w("records the spec\'s own `Extension` classification, which is what moves an")
+    w("endpoint out of base API when its text names no extension at all.")
+    w("")
+    w("| endpoint | verbs | tags | gated by | spec tag | status | evidence / owner |")
+    w("|---|---|---|---|---|---|---|")
+    for r in rows:
+        name = r["name"]
+        gated = r["extension"] or ("`Extension`" if r["ext_tag"] else "—")
+        if name in IMPLEMENTED:
+            handler, test = IMPLEMENTED[name]
+            status = "impl"
+            ev = f"`{handler}`<br>{test}"
+        else:
+            owner = GAPS.get(name, "")
+            status = "unowned" if owner == "unowned" else "gap"
+            ev = f"not in the route table · **{owner}**" if status == "gap" else "**no ticket**"
+        tag = "Extension" if r["ext_tag"] else "—"
+        if r["deprecated"]:
+            name = f"`{name}` (deprecated)"
+        w(f"| `{name}` | {r['verbs']} | {r['tags']} | {gated} | {tag} | "
+          f"{status} | {ev} |")
+    w("")
+    w("## Compatibility aliases")
+    w("")
+    w("Registered alongside a spec endpoint so clients written against an older")
+    w("name keep working. These are not spec endpoints and are not counted as")
+    w("coverage.")
+    w("")
+    w("| alias route | serves | why it stays |")
+    w("|---|---|---|")
+    for name, (serves, why) in ALIASES.items():
+        w(f"| `/rest/{name}.view` | `{serves}` | {why} |")
+    w("")
+    w("## Extension ledger")
+    w("")
+    w("| extension | what it adds | owner |")
+    w("|---|---|---|")
+    for name, owner, adds in EXTENSIONS:
+        w(f"| `{name}` | {adds} | {owner} |")
+    w("")
+    w("## Guard")
+    w("")
+    w("`backend/cmd/server/opensubsonic_coverage_test.go` reads the `impl` rows")
+    w("above and compares them with `app.GetRoutes()` under")
+    w("`cfg.Subsonic.Enabled = true`. It fails if this document claims an endpoint")
+    w("that is not registered, or omits one that is — so the coverage number above")
+    w("cannot rot into a claim. It also asserts both `getLicense.view` and the")
+    w("`license.view` alias are registered.")
+    w("")
+    w("The guard reads the first column of the status position, so it is unaffected")
+    w("by the extra `spec tag` column; the row regexp pins the column count.")
+    w("")
+
+    dst.write_text("\n".join(out), encoding="utf-8", newline="\n")
+    sys.stdout.write(
+        f"{dst}: {total} endpoints, {len(have)} implemented "
+        f"({len(base_have)} of {len(base)} base), "
+        f"{len(gaps)} gaps, {len(unowned)} unowned\n"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

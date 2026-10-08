@@ -13,6 +13,8 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - AGENTS.md — agentic IDE guidelines, constraints, and "do not break" rules.
 - docs/ARCHITECTURE.md — worker model, locks, tables, and correctness contracts.
 - docs/UIIMPLEMENTATION.md — HTMX patterns, console streaming, attach modes, minimal JS contract.
+- docs/OPENSUBSONIC_COVERAGE.md — generated Subsonic/OpenSubsonic endpoint matrix, the pinned spec revision, and which gaps belong to which ticket.
+- docs/SECRET_SCAN_FINDINGS.md — a triaged full-history secret scan: what the 15 findings are, why 14 of them are not leaks, and whether to add a CI gate.
 - docs/RUNBOOK.md — day-to-day operations and troubleshooting.
 
 ### Operators
@@ -29,6 +31,8 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - Install: README.md, docs/RUNBOOK.md
 - Understand architecture: docs/WHITEPAPER.md, docs/ARCHITECTURE.md
 - Modify UI: docs/UIIMPLEMENTATION.md
+- Change the Subsonic/OpenSubsonic surface: docs/OPENSUBSONIC_COVERAGE.md (regenerate it with `py scripts/opensubsonic_coverage.py <openapi.json> docs/OPENSUBSONIC_COVERAGE.md`, never hand-edit)
+- Investigate a secret-scan finding, or gate CI on one: docs/SECRET_SCAN_FINDINGS.md
 - Add features/job types: AGENTS.md, docs/ARCHITECTURE.md
 - Debug prod issues: docs/RUNBOOK.md, then docs/ARCHITECTURE.md
 
@@ -38,5 +42,7 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - Update docs/RUNBOOK.md when new failure modes or operational procedures are discovered.
 - Update CHANGELOG.md in the same PR that changes behaviour: the `[Unreleased]` section
   is the only place a release is described, and it is what an operator reads.
+- Update docs/SECRET_SCAN_FINDINGS.md in the same PR that adds a secret scan to CI,
+  changes the scan result, or allowlists a finding.
 - Add a dated section to docs/project-history.md at the end of a wave, linking the PRs.
   It is the only narrative record of why a change was made.
