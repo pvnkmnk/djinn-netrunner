@@ -355,6 +355,18 @@ otherwise-good change are the thing to flag before anything else.
   in `stylesheet_coverage_test.go` only counts an *unconditional* declaration, skips
   reduced-motion blocks and `@keyframes` bodies, and is why the deletion is caught
   rather than argued about.
+- **Balanced tags are not a valid structure, and a browser spec asserts that a
+  button exists, never what is printed inside it.** #344 shipped an artist card
+  whose Sync button's opening tag was never closed: four `<button`, four
+  `</button>`, so a tag-balance check passes on the defect that actually
+  shipped. An HTML parser auto-closes the outer button at the inner one, so
+  Sync rendered as an empty box -- its `aria-label` gave it an accessible name,
+  which is exactly why the accessibility snapshot looked correct -- and its
+  `Sync` text became an orphan sibling of the buttons. The full e2e suite
+  passed. Assert on the PARSED tree, not on substrings: parse the pongo2 output
+  with `golang.org/x/net/html` in `backend/internal/api/templates` and check
+  each button has text and none is nested inside another. Playwright cannot
+  cover this class; a spec asserts the control exists and what it posts.
 - **`ops/web/templates` and `styles.css` drift silently** — Playwright asserts
   behaviour, and a raw native `<button>` passes every behavioural assertion.
   `TestTemplateClassesHaveStylesheetRules` is the gate. Classes with no rule must be

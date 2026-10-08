@@ -17,6 +17,8 @@
     </div>
     <div class="actions">
         <button class="btn btn-sm btn-secondary" hx-post="/api/artists/{{ Artist.ID }}/sync" hx-target="#notice" hx-disabled-elt="this" aria-label="Sync discography for {{ Artist.Name }}">
+            Sync
+        </button>
         <button class="btn btn-sm"
                 hx-post="/api/artists/search"
                 hx-vals='{"repoint_for": "{{ Artist.ID }}"}'
@@ -24,8 +26,6 @@
                 hx-swap="innerHTML"
                 aria-label="Re-point {{ Artist.Name }} at a different artist">
             Re-point
-        </button>
-            Sync
         </button>
         <button class="btn btn-sm" hx-patch="/api/artists/{{ Artist.ID }}" hx-target="#artist-{{ Artist.ID }}" hx-swap="outerHTML" aria-label="{% if Artist.Monitored %}Pause monitoring for {{ Artist.Name }}{% else %}Resume monitoring for {{ Artist.Name }}{% endif %}">
             {% if Artist.Monitored %}Pause{% else %}Resume{% endif %}
