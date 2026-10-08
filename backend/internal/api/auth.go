@@ -33,6 +33,12 @@ type AuthHandler struct {
 	// registering would never become an admin.
 	bootstrapAdminEmail string
 
+	// bootstrapAdminSecret is BOOTSTRAP_ADMIN_SECRET: the out-of-band proof that
+	// the operator meant this promotion for that person. Registration is the one
+	// place a stranger can present it, so it is checked here. Empty means the
+	// bootstrap is off, and then no code is accepted at all.
+	bootstrapAdminSecret string
+
 	// minPasswordLength is the floor registration enforces. Zero means the
 	// package default, so a zero-valued handler - which every test that builds
 	// one as a struct literal produces - still enforces a policy rather than
@@ -46,15 +52,17 @@ type AuthHandler struct {
 const DefaultMinPasswordLength = config.DefaultMinPasswordLength
 
 // NewAuthHandlerWithPolicy returns a handler that enforces minLength at
-// registration. Pass 0 for DefaultMinPasswordLength.
-func NewAuthHandlerWithPolicy(db *gorm.DB, bootstrapAdminEmail string, minLength int) *AuthHandler {
+// registration, and arms the bootstrap with the configured address and secret.
+// Pass 0 for DefaultMinPasswordLength.
+func NewAuthHandlerWithPolicy(db *gorm.DB, bootstrapAdminEmail, bootstrapAdminSecret string, minLength int) *AuthHandler {
 	if minLength < 1 {
 		minLength = DefaultMinPasswordLength
 	}
 	return &AuthHandler{
-		db:                  db,
-		bootstrapAdminEmail: bootstrapAdminEmail,
-		minPasswordLength:   minLength,
+		db:                   db,
+		bootstrapAdminEmail:  bootstrapAdminEmail,
+		bootstrapAdminSecret: bootstrapAdminSecret,
+		minPasswordLength:    minLength,
 	}
 }
 
@@ -63,10 +71,12 @@ func NewAuthHandler(db *gorm.DB) *AuthHandler {
 }
 
 // NewAuthHandlerWithBootstrapAdmin returns a handler that promotes the account
-// registered with bootstrapAdminEmail to admin. The one-argument constructor is
-// kept so every existing call site - and every existing test - is unaffected.
-func NewAuthHandlerWithBootstrapAdmin(db *gorm.DB, bootstrapAdminEmail string) *AuthHandler {
-	return &AuthHandler{db: db, bootstrapAdminEmail: bootstrapAdminEmail}
+// registered with bootstrapAdminEmail to admin, but only when the registration
+// also presents bootstrapAdminSecret. Both are required to arm the bootstrap:
+// the address names the account, the secret proves the operator meant it, and
+// with an empty secret nothing is promoted at all.
+func NewAuthHandlerWithBootstrapAdmin(db *gorm.DB, bootstrapAdminEmail, bootstrapAdminSecret string) *AuthHandler {
+	return &AuthHandler{db: db, bootstrapAdminEmail: bootstrapAdminEmail, bootstrapAdminSecret: bootstrapAdminSecret}
 }
 
 // Register handles user registration
@@ -74,6 +84,10 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	var payload struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		// EnrollmentCode is the operator's BOOTSTRAP_ADMIN_SECRET, presented to
+		// claim the configured admin account. Both encodings are tagged: the
+		// browser posts JSON, and a form poster has to work too.
+		EnrollmentCode string `json:"enrollment_code" form:"enrollment_code"`
 	}
 
 	if err := c.BodyParser(&payload); err != nil {
@@ -133,11 +147,35 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to create user"})
 	}
 
+	// A correct enrollment code is recorded on the account, whatever address it
+	// registered with. That record is the proof the boot-time trigger requires,
+	// and registration is the only place it can come from - a boot has no code
+	// to compare, so it promotes on the account's word or not at all.
+	//
+	// Compared through services so the check stays constant-time, and so an
+	// unconfigured secret matches nothing: a disabled bootstrap must not read as
+	// "any code will do".
+	enrolled := services.VerifyBootstrapSecret(payload.EnrollmentCode, h.bootstrapAdminSecret)
+	if enrolled {
+		if err := services.MarkBootstrapEnrolled(h.db, user.ID); err != nil {
+			// Not fatal: the account exists and is usable, and a later registration
+			// or boot can establish the proof again.
+			slog.Error("Failed to record the enrollment proof",
+				"email", user.Email, "error", err)
+		}
+	}
+
 	// An operator who configured BOOTSTRAP_ADMIN_EMAIL before registering is
-	// promoted as soon as the account exists. Failure here must not fail the
-	// registration - the account is already created and usable, and the next
-	// boot retries the same promotion.
-	if h.bootstrapAdminEmail != "" &&
+	// promoted as soon as the account exists - but ONLY when this registration
+	// also presented the matching enrollment secret. Failure here must not fail
+	// the registration: the account is already created and usable, and the
+	// proof just recorded lets the next boot finish the promotion.
+	//
+	// The secret is what makes the address insufficient on its own. Promoting on
+	// the address alone handed the admin role to whoever registered it first,
+	// which needs no proof of control of the mailbox and no knowledge beyond an
+	// address that is usually published.
+	if enrolled && h.bootstrapAdminEmail != "" &&
 		services.NormalizeBootstrapEmail(h.bootstrapAdminEmail) == user.Email {
 		result, err := services.BootstrapAdmin(h.db, h.bootstrapAdminEmail)
 		if err != nil {

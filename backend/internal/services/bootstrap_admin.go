@@ -1,6 +1,8 @@
 package services
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -56,6 +58,9 @@ type BootstrapResult struct {
 	AlreadyBootstrapped bool
 	// NoAccount is true when the configured address matches no user yet.
 	NoAccount bool
+	// NotEnrolled is true when the account exists but has never presented the
+	// enrollment secret, so the boot left its role alone.
+	NotEnrolled bool
 }
 
 // String renders a result as one log-friendly line.
@@ -71,6 +76,8 @@ func (r BootstrapResult) String() string {
 		return fmt.Sprintf("%s was already bootstrapped; leaving its role alone", r.Email)
 	case r.NoAccount:
 		return fmt.Sprintf("no account matches %s", r.Email)
+	case r.NotEnrolled:
+		return fmt.Sprintf("%s has never presented the enrollment secret; role left alone", r.Email)
 	default:
 		return fmt.Sprintf("%s: nothing to do", r.Email)
 	}
@@ -93,6 +100,35 @@ func NormalizeBootstrapEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(trimmed))
 }
 
+// VerifyBootstrapSecret reports whether a presented enrollment code is the one
+// the operator configured.
+//
+// Compared as fixed-size digests, so it leaks neither the secret through timing
+// nor its length through an early length mismatch. An empty configuration never
+// matches: the bootstrap being off must not read as "any code will do".
+func VerifyBootstrapSecret(presented, configured string) bool {
+	if configured == "" || presented == "" {
+		return false
+	}
+	presentedSum := sha256.Sum256([]byte(presented))
+	configuredSum := sha256.Sum256([]byte(configured))
+	return subtle.ConstantTimeCompare(presentedSum[:], configuredSum[:]) == 1
+}
+
+// MarkBootstrapEnrolled records that an account presented the enrollment
+// secret.
+//
+// This is the proof the boot-time bootstrap requires, and registration is the
+// only code path that can write it, because registration is the only place a
+// code is ever presented. A nil column means the account has proved nothing,
+// and a boot must not promote it however the environment is configured.
+func MarkBootstrapEnrolled(db *gorm.DB, userID uint64) error {
+	now := time.Now()
+	return db.Model(&database.User{}).
+		Where("id = ?", userID).
+		Update("bootstrap_enrolled_at", &now).Error
+}
+
 // BootstrapAdmin promotes the account matching email to admin, once.
 //
 // The promotion is deliberately one-way, which is what "a later manual role
@@ -102,6 +138,11 @@ func NormalizeBootstrapEmail(email string) string {
 // operator who later demotes the account stays demoted across restarts.
 //
 // It is also safe to leave the variable set: repeated boots are no-ops.
+//
+// A boot can only promote an account that has proven it holds the enrollment
+// secret, because a boot has no code to check. The proof is written by
+// registration, which is the only place a stranger could present one, so the
+// two triggers cannot disagree about who the operator meant.
 //
 // The audit marker is not just bookkeeping. It is the only record that this
 // particular promotion already happened, so it is written even when the
@@ -137,6 +178,18 @@ func BootstrapAdmin(db *gorm.DB, email string) (BootstrapResult, error) {
 				return nil
 			}
 			return err
+		}
+
+		// The boot has no enrollment code to compare, so the account itself has
+		// to carry the proof that it presented one. Without this the address is a
+		// bearer credential again: whoever registers it first stays a user at
+		// registration and becomes an admin at the next restart.
+		//
+		// Checked BEFORE the marker is written, so an address nobody has proved
+		// is not spent - the account can still enroll later and be promoted then.
+		if user.BootstrapEnrolledAt == nil {
+			result.NotEnrolled = true
+			return nil
 		}
 
 		entry := database.AuditLog{
@@ -182,10 +235,13 @@ func LogBootstrapResult(result BootstrapResult) {
 		slog.Warn("Bootstrap admin promoted", attrs...)
 	case result.NoAccount:
 		slog.Warn("Bootstrap admin not applied: no account matches the configured address. "+
-			"It will be promoted when that address registers, or promoted on the next start once it exists.",
+			"It is promoted when that address registers with the enrollment code.",
 			attrs...)
 	case result.AlreadyBootstrapped:
 		slog.Info("Bootstrap admin already applied; role left unchanged", attrs...)
+	case result.NotEnrolled:
+		slog.Warn("Bootstrap admin not applied: that account has never presented the enrollment secret. "+
+			"It is promoted the moment it registers with that code.", attrs...)
 	default:
 		slog.Info("Bootstrap admin", attrs...)
 	}

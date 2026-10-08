@@ -43,7 +43,7 @@ func TestRegisterEnforcesMinimumPasswordLength(t *testing.T) {
 			db, _, _, _ := setupPartialsTestDB(t)
 
 			app := fiber.New()
-			handler := NewAuthHandlerWithPolicy(db, "", minimum)
+			handler := NewAuthHandlerWithPolicy(db, "", "", minimum)
 			app.Post("/api/auth/register", handler.Register)
 
 			body := fmt.Sprintf(
@@ -138,7 +138,7 @@ func TestRegisterCountsRunesNotBytes(t *testing.T) {
 			db, _, _, _ := setupPartialsTestDB(t)
 
 			app := fiber.New()
-			app.Post("/api/auth/register", NewAuthHandlerWithPolicy(db, "", minimum).Register)
+			app.Post("/api/auth/register", NewAuthHandlerWithPolicy(db, "", "", minimum).Register)
 
 			body := fmt.Sprintf(`{"email":%q,"password":%q}`, tc.email, tc.password)
 			req := httptest.NewRequest("POST", "/api/auth/register", bytes.NewBufferString(body))
@@ -325,7 +325,7 @@ func TestRegisterRefusesPasswordsOverBcryptsByteLimit(t *testing.T) {
 			db, _, _, _ := setupPartialsTestDB(t)
 
 			app := fiber.New()
-			app.Post("/api/auth/register", NewAuthHandlerWithPolicy(db, "", minimum).Register)
+			app.Post("/api/auth/register", NewAuthHandlerWithPolicy(db, "", "", minimum).Register)
 
 			body := fmt.Sprintf(`{"email":%q,"password":%q}`, tc.email, tc.password)
 			req := httptest.NewRequest("POST", "/api/auth/register", bytes.NewBufferString(body))
@@ -363,7 +363,7 @@ func TestCeilingRefusalDoesNotRevealWhetherTheAccountExists(t *testing.T) {
 	db, _, _, _ := setupPartialsTestDB(t)
 
 	app := fiber.New()
-	app.Post("/api/auth/register", NewAuthHandlerWithPolicy(db, "", minimum).Register)
+	app.Post("/api/auth/register", NewAuthHandlerWithPolicy(db, "", "", minimum).Register)
 
 	register := func(email, password string) int {
 		body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, password)

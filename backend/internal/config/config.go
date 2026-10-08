@@ -19,6 +19,11 @@ import (
 // error, not a truncation, so the registration floor has to stay under it.
 const BcryptMaxPasswordBytes = 72
 
+// MinBootstrapSecretLength is the shortest enrollment secret the bootstrap
+// accepts. The secret is the entire proof that the operator meant this
+// promotion for that person, so a short or guessable one is the same as none.
+const MinBootstrapSecretLength = 16
+
 // Config holds all configuration for the application
 type Config struct {
 	// Server
@@ -30,10 +35,23 @@ type Config struct {
 	// Security
 	JWTSecret string
 
-	// BootstrapAdminEmail, when set, is promoted to the admin role at startup
-	// and again when that address registers. Empty disables the bootstrap,
-	// which is the default and safe to leave unset.
+	// BootstrapAdminEmail names the account the operator intends to be admin.
+	// Registration of that address promotes when it also presents
+	// BootstrapAdminSecret; the startup promotion only completes the job for an
+	// account that has already proved it holds that secret, because a boot has
+	// no code to check. Empty disables the bootstrap, which is the default and
+	// safe to leave unset.
 	BootstrapAdminEmail string
+
+	// BootstrapAdminSecret is the enrollment secret that must accompany a
+	// registration of BootstrapAdminEmail before that account is promoted.
+	//
+	// An address is not proof of anything. Promoting on the address alone gave
+	// the admin role to whoever registered it first, with no proof of control of
+	// that mailbox and nothing in the product able to verify one. The operator
+	// hands this secret to the intended admin out of band. Empty disables the
+	// bootstrap entirely, even when the address is set.
+	BootstrapAdminSecret string
 
 	// MinPasswordLength is the shortest password registration accepts. It is
 	// enforced on the server: the form only mirrors it, and registration used
@@ -294,7 +312,8 @@ func Load(filenames ...string) (*Config, error) {
 		Domain:      getEnv("DOMAIN", "localhost"),
 		JWTSecret:   jwtSecret,
 
-		BootstrapAdminEmail: getEnv("BOOTSTRAP_ADMIN_EMAIL", ""),
+		BootstrapAdminEmail:  getEnv("BOOTSTRAP_ADMIN_EMAIL", ""),
+		BootstrapAdminSecret: getEnv("BOOTSTRAP_ADMIN_SECRET", ""),
 
 		MinPasswordLength: getEnvInt("MIN_PASSWORD_LENGTH", 12),
 
@@ -432,6 +451,22 @@ func Load(filenames ...string) (*Config, error) {
 		if getEnv("NAVIDROME_URL", "") != "" && (os.Getenv("NAVIDROME_USER") == "" || os.Getenv("NAVIDROME_PASS") == "") {
 			slog.Warn("NAVIDROME_USER or NAVIDROME_PASS not set — Navidrome integration will fail until credentials are configured.")
 		}
+	}
+
+	// The bootstrap promotes by address, so an address alone must not be enough.
+	// With no secret the feature is DISABLED rather than armed, and in production
+	// that is a startup failure: the address is usually published, which would
+	// make it an open admin claim.
+	switch {
+	case cfg.BootstrapAdminEmail == "":
+	case cfg.BootstrapAdminSecret == "":
+		if cfg.Environment == "production" {
+			return nil, fmt.Errorf("BOOTSTRAP_ADMIN_SECRET is required in production when BOOTSTRAP_ADMIN_EMAIL is set: without it the admin role goes to whoever registers that address first")
+		}
+		slog.Warn("BOOTSTRAP_ADMIN_EMAIL is set without BOOTSTRAP_ADMIN_SECRET - no account will be promoted. Set the secret in .env and give it to the intended admin.")
+	case len(cfg.BootstrapAdminSecret) < MinBootstrapSecretLength:
+		return nil, fmt.Errorf("BOOTSTRAP_ADMIN_SECRET is %d characters; at least %d are required, because the secret is the only proof this promotion was meant for that person",
+			len(cfg.BootstrapAdminSecret), MinBootstrapSecretLength)
 	}
 
 	// Validate required fields

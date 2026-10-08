@@ -59,6 +59,17 @@ type User struct {
 	UpdatedAt    time.Time
 	LastLoginAt  *time.Time
 
+	// BootstrapEnrolledAt is when this account proved it holds the operator's
+	// enrollment secret - the only evidence the boot-time bootstrap accepts.
+	//
+	// A boot has no enrollment code to present, so without this the boot would
+	// promote whatever account happens to sit at BOOTSTRAP_ADMIN_EMAIL. That is
+	// the defect the secret exists to close, only deferred: register the
+	// published address first, wait for any deploy, and the restart hands over
+	// admin. Nil for every account that never presented the code, which is every
+	// account registration creates by default.
+	BootstrapEnrolledAt *time.Time
+
 	Sessions []Session `gorm:"foreignKey:UserID"`
 }
 

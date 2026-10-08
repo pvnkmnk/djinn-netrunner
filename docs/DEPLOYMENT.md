@@ -182,13 +182,26 @@ administer NetRunner into `.env`:
 
 ```bash
 BOOTSTRAP_ADMIN_EMAIL=you@example.com
+BOOTSTRAP_ADMIN_SECRET=<a long random string you keep>
 ```
 
-That address is promoted to `admin` **once**: at the next start if the account
-already exists, or the moment it registers if it does not exist yet. Either
-ordering works, so this step survives the mistake of setting it afterwards —
-restart the web container and the existing account is promoted then. Startup
-says which happened:
+An address on its own promotes nobody. Promoting on one would give `admin` to
+whoever registered it first, which needs no proof of control of that mailbox and
+no knowledge beyond an address that is usually published. Both values are
+required: the secret is your proof that the promotion is meant for that person,
+so generate one (at least 16 characters) and hand it over out of band.
+Production refuses to start with the address set and the secret missing.
+
+That address is promoted to `admin` **once**, when it registers with the
+enrollment code. The secret is checked where a code can actually be presented,
+so registration is the trigger: an account that never presented one is never
+promoted, not by registering and not by restarting.
+
+A boot can only finish a promotion a registration already began, because a boot
+has no code to compare. It promotes an account at the configured address only
+when that account has presented the code, which keeps the retry after a failed
+promotion working while leaving an account that merely happens to sit at that
+address alone. **Set both values before registering.**
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.release.yml logs ops-web | grep -i bootstrap
@@ -201,13 +214,19 @@ account — is never reverted. Clear it and recreate `ops-web` once you are
 signed in as admin anyway, so the address is not left lying around in a
 plaintext config file.
 
-One thing to be deliberate about: the promotion follows the **address**, not the
-person holding it. Registration is open to whoever can reach the port — that
-is unchanged by this variable — so whoever registers the configured address
-first gets the admin role. On a fresh install, set the variable, register your
-own account, and clear it before pointing anything else at the instance. If the
-address does get claimed first, point the variable at a different one: the
-promotion is recorded per address, so an unused address is promoted at once.
+One consequence to be deliberate about: an account that already existed when
+you set these values cannot be promoted by configuration, because it never
+presented a code and the whole point of the secret is that the address alone is
+not enough. Promote it explicitly, then clear both values:
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'you@example.com';
+```
+
+Registration itself stays open to whoever can reach the port. That is unchanged
+by this variable, and it is no longer a route to `admin`. Treat the secret as a
+password: hand it over out of band, and clear both values and recreate `ops-web`
+once you are signed in, so neither is left in a plaintext config file.
 
 ### Account password policy
 

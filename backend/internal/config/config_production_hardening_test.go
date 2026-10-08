@@ -182,3 +182,103 @@ func TestLoad_ProductionFromYAMLPassesWithJWTSecret(t *testing.T) {
 		t.Fatalf("expected the YAML overlay to win, got environment %q", cfg.Environment)
 	}
 }
+
+// DJI-641. The bootstrap promoted whoever registered BOOTSTRAP_ADMIN_EMAIL
+// first. The address is usually published and proves nothing about who holds
+// the mailbox, so an armed bootstrap with no secret was an open admin claim -
+// and production refuses to start that way rather than quietly arming it.
+func TestLoad_ProductionRefusesABootstrapWithNoSecret(t *testing.T) {
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
+	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	os.Setenv("ENVIRONMENT", "production")
+	os.Setenv("JWT_SECRET", "production-test-secret")
+	os.Setenv("BOOTSTRAP_ADMIN_EMAIL", "operator@example.com")
+	os.Unsetenv("BOOTSTRAP_ADMIN_SECRET")
+
+	_, err := Load(".non-existent-env")
+	if err == nil {
+		t.Fatal("Expected error for production with BOOTSTRAP_ADMIN_EMAIL and no BOOTSTRAP_ADMIN_SECRET, got nil")
+	}
+	if !strings.Contains(err.Error(), "BOOTSTRAP_ADMIN_SECRET is required in production") {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+// Development keeps the warn-only shape every other bootstrap check has, but
+// "warn" must not mean "still promote": the address survives so a restart with
+// the secret set can promote, and the secret stays empty so nothing can.
+func TestLoad_DevelopmentBootstrapWithoutASecretStillLoads(t *testing.T) {
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
+	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	os.Unsetenv("ENVIRONMENT")
+	os.Unsetenv("CONFIG_ENV")
+	os.Setenv("JWT_SECRET", "development-test-secret")
+	os.Setenv("BOOTSTRAP_ADMIN_EMAIL", "operator@example.com")
+	os.Unsetenv("BOOTSTRAP_ADMIN_SECRET")
+
+	cfg, err := Load(".non-existent-env")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if cfg.BootstrapAdminSecret != "" {
+		t.Errorf("BootstrapAdminSecret should be empty, got %q", cfg.BootstrapAdminSecret)
+	}
+	if cfg.BootstrapAdminEmail != "operator@example.com" {
+		t.Errorf("the address must survive so a later restart can arm it, got %q", cfg.BootstrapAdminEmail)
+	}
+}
+
+// A short secret is not a secret. Eight characters is a guessable one, and the
+// whole point of the value is that it cannot be guessed.
+func TestLoad_RejectsAShortBootstrapSecret(t *testing.T) {
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
+	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	os.Unsetenv("ENVIRONMENT")
+	os.Unsetenv("CONFIG_ENV")
+	os.Setenv("JWT_SECRET", "development-test-secret")
+	os.Setenv("BOOTSTRAP_ADMIN_EMAIL", "operator@example.com")
+
+	short := "short-12char" // 12 characters, under the 16 floor
+	if len(short) >= MinBootstrapSecretLength {
+		t.Fatalf("the fixture is %d characters and no longer exercises the floor of %d",
+			len(short), MinBootstrapSecretLength)
+	}
+	os.Setenv("BOOTSTRAP_ADMIN_SECRET", short)
+
+	_, err := Load(".non-existent-env")
+	if err == nil {
+		t.Fatal("Expected error for a BOOTSTRAP_ADMIN_SECRET below the floor, got nil")
+	}
+	if !strings.Contains(err.Error(), "BOOTSTRAP_ADMIN_SECRET") {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+// Exactly at the floor is the shortest acceptable secret.
+func TestLoad_AcceptsABootstrapSecretAtTheFloor(t *testing.T) {
+	cleanup := saveRestoreEnv()
+	defer cleanup()
+
+	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	os.Unsetenv("ENVIRONMENT")
+	os.Unsetenv("CONFIG_ENV")
+	os.Setenv("JWT_SECRET", "development-test-secret")
+	os.Setenv("BOOTSTRAP_ADMIN_EMAIL", "operator@example.com")
+
+	atFloor := strings.Repeat("x", MinBootstrapSecretLength)
+	os.Setenv("BOOTSTRAP_ADMIN_SECRET", atFloor)
+
+	cfg, err := Load(".non-existent-env")
+	if err != nil {
+		t.Fatalf("a secret of exactly MinBootstrapSecretLength should load, got: %v", err)
+	}
+	if cfg.BootstrapAdminSecret != atFloor {
+		t.Errorf("the secret should round-trip, got %q", cfg.BootstrapAdminSecret)
+	}
+}

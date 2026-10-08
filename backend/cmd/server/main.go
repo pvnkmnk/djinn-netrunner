@@ -54,11 +54,26 @@ func main() {
 	// Run in the web process only: it owns the admin surface, and a single
 	// process writing the one-way bootstrap marker avoids two replicas racing
 	// for it. Idempotent, so leaving the variable set costs nothing.
-	bootstrapResult, err := services.BootstrapAdmin(db, cfg.BootstrapAdminEmail)
-	if err != nil {
-		slog.Error("Bootstrap admin failed", "error", err)
-	} else {
-		services.LogBootstrapResult(bootstrapResult)
+	// Only with an enrollment secret. Promoting on the address alone gave the
+	// admin role to whoever registered that address first, so a missing secret
+	// disables the bootstrap rather than arming it - and registration enforces
+	// the same secret, so the two triggers cannot disagree.
+	//
+	// BootstrapAdmin additionally requires the account to have proved it holds
+	// that secret (users.bootstrap_enrolled_at, written at registration), since
+	// this call has no code to compare. An account that merely sits at the
+	// configured address is left alone.
+	switch {
+	case cfg.BootstrapAdminEmail != "" && cfg.BootstrapAdminSecret == "":
+		slog.Warn("Bootstrap admin is set without BOOTSTRAP_ADMIN_SECRET - no account will be promoted. " +
+			"Set the secret and give it to the intended admin, then restart.")
+	case cfg.BootstrapAdminEmail != "":
+		bootstrapResult, err := services.BootstrapAdmin(db, cfg.BootstrapAdminEmail)
+		if err != nil {
+			slog.Error("Bootstrap admin failed", "error", err)
+		} else {
+			services.LogBootstrapResult(bootstrapResult)
+		}
 	}
 
 	// 4. Seed default quality profiles
@@ -153,7 +168,7 @@ func main() {
 
 	// Handlers
 	healthHandler := api.NewHealthHandler(db, cfg)
-	authHandler := api.NewAuthHandlerWithPolicy(db, cfg.BootstrapAdminEmail, cfg.MinPasswordLength)
+	authHandler := api.NewAuthHandlerWithPolicy(db, cfg.BootstrapAdminEmail, cfg.BootstrapAdminSecret, cfg.MinPasswordLength)
 	dashHandler := api.NewDashboardHandlerWithPolicy(db, cfg.MinPasswordLength)
 	statsHandler := api.NewStatsHandler(db)
 	libraryHandler := api.NewLibraryHandler(db)
