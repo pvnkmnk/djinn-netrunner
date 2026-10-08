@@ -112,15 +112,42 @@ The ordered work queue lives in Linear as the *NetRunner Beta Readiness* project
 
 ## Known Gaps & Future Work
 
+> Reconciled 2026-10-07 by re-probing each claim rather than inheriting it. Three
+> entries below had gone stale: two are struck with what closed them, and one
+> named the wrong endpoint. The ordered dev path is
+> `docs/superpowers/specs/2026-10-03-release-readiness-initiative-design.md`,
+> which now carries per-stage status.
+
 ### Release-scoped, still open
 
-- [ ] **Subsonic `getAlbum` reports `duration="0"` and an empty `contentType`** for
-      tracks whose duration/format the scanner did not record. Streaming itself is
-      correct and byte-verified; only these two attributes are unpopulated.
-- [ ] **Playwright specs for artists, playlists, jobs, and admin are absent**, so the
-      browser suite cannot evidence DJI-426/428/429/430/433/434. Those stay open.
+- [ ] **Three Subsonic endpoints report a hardcoded `duration="0"`**: 
+      `GetAlbumList2` (`subsonic.go:1404`), `GetPlaylists` (:1589) and
+      `GetPlaylist` (:1671). Streaming itself is correct and byte-verified; only
+      the attribute is unpopulated. **Corrected twice over.** This entry previously
+      read "`getAlbum` reports `duration="0"` and an empty `contentType`", and
+      both halves were wrong:
+      - *Wrong endpoint.* `GetAlbum` sums durations from its own song rows
+        (`album.Duration += song.Duration`, `subsonic.go:709`) and is fine. The
+        three zeroed sites are the two album/playlist **listings** and playlist
+        **detail**; they were found by re-probing, not inherited.
+      - *`contentType` is populated.* It is rendered from `track.Format` in six
+        places, and `Track.Format` is written by both writers that matter —
+        `import_file.go:87` (`metadata.Format = ext`) and
+        `scanner_service.go:239`. An imported or scanned track carries it.
+
+      The remaining gap is the same class as the N+1 work #284 did for
+      `artistAlbums` — per-item duration is expensive to aggregate in a
+      listing — so it belongs inside NR08 (DJI-568) rather than here.
+- [x] ~~Playwright specs for artists, playlists, jobs, and admin are absent.~~
+      **Closed by re-probe.** All four exist today: `artists.spec.ts`,
+      `playlists.spec.ts`, `jobs.spec.ts`, `admin.spec.ts` (plus
+      `artist-picker`, `artist-scan`, `dashboard`, `permissions`, `subsonic`).
+      DJI-426/428/429/430/433/434 can be evidenced by the browser suite again.
 - [ ] **The browser suite is a manual pre-release step**, not a required check. It
       builds every image and drives real Chromium, which is too slow for every PR.
+      Still true, and now a deliberate documented decision rather than an
+      oversight — `.github/workflows/e2e.yml` states it explicitly and runs on
+      `push` to `master` plus `workflow_dispatch`.
 
 ### Post-v0.0.1 backlog
 

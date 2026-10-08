@@ -1,10 +1,52 @@
 # NetRunner Release Readiness Initiative — Design
 
 - **Date:** 2026-10-03
-- **Status:** Design approved; awaiting implementation plan
+- **Status:** Design approved. **Stages 1 complete, Stage 2 two-thirds complete** (reconciled 2026-10-07 — see §0).
 - **Path:** architectural (brainstorming skill)
 - **Release target:** public open-source release
 - **Working agreement:** full autonomy — commit, push, open and merge per stage once its exit criterion is met
+
+---
+
+## 0. Status, reconciled 2026-10-07
+
+Measured against Linear and `master`, not inherited from the section below.
+
+**Stage 1 is complete.** All five work items closed, most on 2026-10-03:
+
+| Item | State | Receipt |
+| --- | --- | --- |
+| `fix/e2e-job-type-add-form-submit-nav` (DJI-592/593/594) | Done | #325, `9ecb281` |
+| nav-count orphan (DJI-598) | Done | #324, `aff21f1` |
+| DJI-595 browser-worker crash | Done | 2026-10-03 |
+| DJI-516 library precondition | Done | 2026-10-03 — **and see the correction below** |
+| DJI-596 close as merged | Done | 2026-10-03 |
+
+**DJI-516 only half-landed, and that is what cost three weeks.** #329 seeded
+the library for the ga-probes *success* probe but added the matching
+`requireLibrary` to the *refusal* probe without its `ensureLibrary`, so the
+refusal probe failed its own precondition whenever run alone. `Mutation checks`
+was red on three consecutive scheduled runs (2026-09-21, 09-28, 10-05) and the
+only green run in its history was a manual dispatch. Fixed in #336, `26ccbad`,
+with all three cycles re-proven green. The generalisable lesson is in `AGENTS.md`:
+**a probe must establish every precondition it asserts — an ordered suite hides
+a missing precondition and only the isolated run finds it.** Filed as DJI-610.
+
+**Stage 2 is two of six done.** DJI-559 (`51d17d2`) and DJI-588 (`a08a448`,
+#334) landed. DJI-589, DJI-583, DJI-562 and the DJI-555 decision (§6) remain.
+
+**Position against §2's 37 issues:** 8 Done (DJI-516, 559, 588, 592, 593, 594,
+595, 596), **29 remaining** — 4 product bugs plus NR01–NR25.
+
+**Two things this design did not anticipate.** First, seven autonomous Sentinel
+and Palette PRs had accumulated; all are now reconciled and **no PR is open**
+(two were duplicates of each other). Second, the CVE **GO-2026-6629** in
+`golang.org/x/text` turned `master` red with no commit causing it —
+`govulncheck` reads a live database, so a newly published advisory breaks builds
+that were green yesterday. Fixed in #339, `a9519ac`; filed as DJI-611.
+
+**Stages 3–6 remain as written.** §9's "immediately next step" is superseded
+below.
 
 ---
 
@@ -84,6 +126,12 @@ polish so neither is squeezed by the conformance epic.
 
 ### Stage 1 — Make the instrument trustworthy
 
+> **Status: COMPLETE (2026-10-07).** All five items Done; receipts in §0. The
+> exit criterion below was met, with one caveat worth keeping: the suite was
+> green, but a latent precondition defect (DJI-610) meant the *gate itself* was
+> silently vacuous for three weeks. A green instrument is not the same as a
+> trustworthy one — which is exactly the §1 lesson, recurring one level up.
+
 **Objective:** a full-suite run completes, and its result is evidence.
 
 **Work**
@@ -137,22 +185,31 @@ Ordered by public-release impact.
    The message must state the unit, because the floor counts runes and this
    ceiling counts bytes: a password can clear a 12-rune floor and still exceed
    72 bytes. Floor and ceiling read one shared `config.BcryptMaxPasswordBytes`.
+   → **Done**, `51d17d2` (#330).
 2. **DJI-588** — adding a monitored artist is a bare insert; nothing scans it,
    and there is no surface to ask for a scan. This is the product's core
    promise stopping short. Queue the scan on add, give the operator an on-demand
    scan control, and assert the scan reaches the queue.
+   → **Done**, `a08a448` (#334). Note DJI-609: #334 also carried two changes
+   DJI-588 did not ask for, and the ratify-or-revert decision is still open.
 3. **DJI-589** — the artist card shows no MusicBrainz provenance and cannot be
    re-pointed at a different entity. Show disambiguation, country and type from
    data the service already decodes, and add an edit control reusing the DJI-548
    candidate picker. This repairs rows created before the picker shipped — the
    `Napalm Death` row from typing "Death" is the proof case.
+   → **Open.** Do this before DJI-605/606/607: they are the same subsystem, and
+   DJI-589 is the one that changes the card the others touch.
 4. **DJI-583** — owner-less jobs are silently omitted, presenting an owner-scoped
    list as the whole queue. Make the truncation visible. Write scope (Cancel,
    Retry) stays unchanged; only read presentation changes.
+   → **Open.**
 5. **DJI-562** — the console stream connects to `/ws/jobs`, which has no route.
    Real feature work per the ticket: build a job-selection surface over the
    settled jobs queue. The server route is already correct and secured.
+   → **Open.** The only Stage 2 item that is net-new surface rather than a
+   correction, so it needs its own design before code.
 6. **DJI-555** — see §6.
+   → **Open**, and the one item here that is a decision rather than a defect.
 
 **Exit criterion:** each bug has a Go guard and e2e proof, and
 `docs/DEPLOYMENT.md` matches what was decided.
@@ -295,4 +352,6 @@ knowing Stage 1's gate is trustworthy, and Stage 4's is written knowing Stage
 3's UI findings exist. NR01's audit in Stage 4 may legitimately resize Stage 4,
 which is a reason to plan it late rather than early.
 
-**Immediately next step:** an implementation plan for Stage 1 only.
+**Immediately next step (superseded 2026-10-07):** Stage 1 needs no plan — it is
+done, per §0. The next plan is **Stage 2's remaining four items**, written
+against the state actually reached.
