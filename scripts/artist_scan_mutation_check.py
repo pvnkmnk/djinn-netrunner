@@ -54,7 +54,7 @@ ROOT = os.path.dirname(HERE)
 BACKEND = os.path.join(ROOT, "backend")
 
 SVC = os.path.join(BACKEND, "internal", "services", "artist_tracking_service.go")
-TPL = os.path.join(ROOT, "ops", "web", "templates", "partials", "artists.html")
+TPL = os.path.join(ROOT, "ops", "web", "templates", "partials", "artist-card.html")
 CAND = os.path.join(ROOT, "ops", "web", "templates", "partials", "artist-candidates.html")
 MAIN = os.path.join(BACKEND, "cmd", "server", "main.go")
 
@@ -189,7 +189,7 @@ RELEASE_DELETE = (
 JOB_TYPE_LINE = TAB * 2 + 'Type:        "artist_scan",' + NL
 JOB_SCOPE_LINE = TAB * 2 + 'ScopeType:   "artist",' + NL
 CREATE_LINE = TAB + 'if err := db.Create(&job).Error; err != nil {' + NL
-TPL_SYNC = 'hx-post="/api/artists/{{ artist.ID }}/sync" hx-target="#notice"'
+TPL_SYNC = 'hx-post="/api/artists/{{ Artist.ID }}/sync" hx-target="#notice"'
 
 for probe, where in (
     (ENQUEUE_CALL, "the enqueue call inside AddMonitoredArtist's transaction"),
@@ -198,13 +198,13 @@ for probe, where in (
     (JOB_TYPE_LINE, "the job type in the queued Job literal"),
     (JOB_SCOPE_LINE, "the job scope type in the queued Job literal"),
     (CREATE_LINE, "the job insert in queueArtistScan"),
-    (TPL_SYNC, "the artists-list Sync button's hx-target"),
+    (TPL_SYNC, "the artist card Sync button's hx-target"),
 ):
-    require(probe in SVC_SRC if where != "the artists-list Sync button's hx-target" else probe in TPL_SRC,
+    require(probe in SVC_SRC if where != "the artist card Sync button's hx-target" else probe in TPL_SRC,
             "cannot find %s" % where)
 
 require(TPL_SRC.count(TPL_SYNC) == 1,
-        "expected exactly one artists-list Sync button, found %d" % TPL_SRC.count(TPL_SYNC))
+        "expected exactly one artist-card Sync button, found %d" % TPL_SRC.count(TPL_SYNC))
 
 Q = chr(39)  # quotes, built rather than escaped: every anchor below is full of
 DQ = chr(34) # them, and an escaped literal is exactly what a patch script
@@ -261,7 +261,7 @@ def m_delete_leaves_releases_behind(svc, tpl, cand, main):
 
 
 def m_list_button_discards_the_answer(svc, tpl, cand, main):
-    return svc, tpl.replace(TPL_SYNC, 'hx-post="/api/artists/{{ artist.ID }}/sync" hx-target="#artist-{{ artist.ID }}" hx-swap="none"'), cand, main
+    return svc, tpl.replace(TPL_SYNC, 'hx-post="/api/artists/{{ Artist.ID }}/sync" hx-target="#artist-{{ Artist.ID }}" hx-swap="none"'), cand, main
 
 
 def m_picker_needs_eval_again(svc, tpl, cand, main):
