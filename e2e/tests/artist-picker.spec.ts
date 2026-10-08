@@ -21,15 +21,19 @@ import { test } from '../fixtures/auth.fixture';
  * seeds through the test API and never renders the picker. So the picker had no
  * coverage at all, which is how a shipped flow sat inert for this long.
  *
- * This spec depends on MusicBrainz being reachable, and says so rather than
- * hiding it. An earlier version SKIPPED itself when the search came back
- * failed, which cannot work here: scripts/e2e_gate.sh treats DECLARED_SKIPS as
- * exact in BOTH directions, so a conditional skip either fails the gate as an
- * undeclared one or fails it as a declared one that stopped running. Making the
- * search deterministic would mean a seeding seam into the MusicBrainz client,
- * which is more machinery than one broken attribute is worth. So the dependency
- * is explicit and the failure names it: if this goes red on an unrelated
- * commit, check whether musicbrainz.org answered.
+ * This spec used to depend on musicbrainz.org being reachable, which made it a
+ * canary for a third party's uptime: an outage produced a red CI run on an
+ * unrelated commit. It could not simply skip, because scripts/e2e_gate.sh treats
+ * DECLARED_SKIPS as exact in BOTH directions -- a conditional skip either fails
+ * the gate as an undeclared skip, or fails it as a declared skip that stopped
+ * running (DJI-603).
+ *
+ * That dependency is gone. The e2e stack serves MusicBrainz from a local
+ * stand-in (ops/fake-musicbrainz) and the service reads MUSICBRAINZ_URL to find
+ * it, so the search below is a fixed answer on every run. What is left is a real
+ * assertion rather than an excuse: the no-alert check below now fails because
+ * the SEAM is misconfigured -- the override missing, the service ignoring it, the
+ * stand-in unreachable -- and not because someone else's server was down.
  */
 
 // A real artist with more than one plausible match, so the spec exercises the
@@ -90,12 +94,13 @@ test.describe('Add Artist picker (CSP-safe selection)', () => {
     await page.locator('#modal-container button[type=submit]').click();
     await page.waitForTimeout(3000);
 
-    // The modal's own words for "MusicBrainz did not answer". Asserted as a
-    // named failure rather than skipped, so a red run says which third party is
-    // the reason instead of looking like a broken picker.
+    // The modal's own words for "MusicBrainz did not answer". The stand-in always
+    // answers, so seeing this means the SEAM is broken -- MUSICBRAINZ_URL unset, the
+    // service ignoring it, or the stand-in unreachable -- and the message says so.
+    // It is no longer a note about someone else's uptime.
     await expect(
       page.locator('#modal-container [role=alert]'),
-      'MusicBrainz did not answer from the e2e stack, so the picker could not be exercised'
+      'the e2e MusicBrainz stand-in did not answer: check MUSICBRAINZ_URL is set on ops-web and ops-worker, and that fake-musicbrainz is healthy'
     ).toHaveCount(0);
 
     expect(posts, 'the modal must search before it creates').toContain('/api/artists/search');

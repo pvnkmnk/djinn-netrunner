@@ -54,6 +54,12 @@ type Config struct {
 	// MusicBrainz
 	MusicBrainzUserAgent string
 	MusicBrainzAPIKey    string
+	// MusicBrainzURL points the service at a different host. It exists so
+	// the e2e stack can serve MusicBrainz from a local stand-in instead of
+	// the public one: artist-picker.spec.ts was a canary for
+	// musicbrainz.org's uptime, so a third-party outage turned into a red
+	// CI run on an unrelated commit. Empty means the real service.
+	MusicBrainzURL string
 
 	// AcoustID
 	AcoustIDApiKey string
@@ -77,16 +83,16 @@ type Config struct {
 	NavidromePass string
 
 	// SMTP
-	SMTPHost     string
-	SMTPPort     string
-	SMTPUser     string
-	SMTPPass     string
-	SMTPFrom     string
-	SMTPEnabled  bool
+	SMTPHost    string
+	SMTPPort    string
+	SMTPUser    string
+	SMTPPass    string
+	SMTPFrom    string
+	SMTPEnabled bool
 
 	// Library
-	MusicLibraryPath     string
-	DownloadStagingPath  string
+	MusicLibraryPath    string
+	DownloadStagingPath string
 	// Staging reclaim is the janitor for staged downloads no live item owns.
 	// Both switches default on; the orphan pass (files no item references) is
 	// the higher-blast-radius half, so it can be disabled on its own.
@@ -300,6 +306,7 @@ func Load(filenames ...string) (*Config, error) {
 
 		MusicBrainzUserAgent: getEnv("MUSICBRAINZ_USER_AGENT", "NetRunner/1.0.0 (contact@example.com)"),
 		MusicBrainzAPIKey:    getEnv("MUSICBRAINZ_API_KEY", ""),
+		MusicBrainzURL:       getEnv("MUSICBRAINZ_URL", ""),
 		AcoustIDApiKey:       getEnv("ACOUSTID_API_KEY", ""),
 
 		SlskdURL:    getEnv("SLSKD_URL", "http://localhost:5030"),

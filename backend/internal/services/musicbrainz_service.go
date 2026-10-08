@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
@@ -30,10 +32,34 @@ type MusicBrainzService struct {
 }
 
 // NewMusicBrainzService creates a new MusicBrainz service
+// musicBrainzBaseURL is the real MusicBrainz unless MUSICBRAINZ_URL overrides
+// it.
+//
+// The override exists for the e2e stack, which serves MusicBrainz from a local
+// stand-in (ops/fake-musicbrainz). Without it, artist-picker.spec.ts was a
+// canary for musicbrainz.org's uptime and a third-party outage produced a red CI
+// run on an unrelated commit -- and the gate could not express the skip, because
+// scripts/e2e_gate.sh holds DECLARED_SKIPS exact in BOTH directions.
+//
+// It is a plain host override rather than a test hook, so it cannot be set by
+// accident in production: it defaults to empty, and nothing reads it except this.
+func musicBrainzBaseURL(cfg *config.Config) string {
+	if cfg != nil {
+		if u := strings.TrimSpace(cfg.MusicBrainzURL); u != "" {
+			return strings.TrimRight(u, "/")
+		}
+	}
+	return defaultMusicBrainzURL
+}
+
+// defaultMusicBrainzURL is the public service. Named so the override above has
+// one owner and the string is not repeated at the call site.
+const defaultMusicBrainzURL = "https://musicbrainz.org"
+
 func NewMusicBrainzService(cfg *config.Config) *MusicBrainzService {
 	return &MusicBrainzService{
 		cfg:         cfg,
-		baseURL:     "https://musicbrainz.org",
+		baseURL:     musicBrainzBaseURL(cfg),
 		httpClient:  NewSafeProxyAwareHTTPClient(cfg, 30*time.Second),
 		rateLimiter: time.NewTicker(time.Second),
 	}
