@@ -7,31 +7,8 @@
     </div>
     
     <div id="artists-list">
-    {% for artist in artists %}
-    <div class="artist-card" id="artist-{{ artist.ID }}">
-        <div class="artist-info">
-            <div class="name">
-                {{ artist.Name }}
-                {% if not artist.Monitored %}<span class="badge badge-disabled">Paused</span>{% endif %}
-            </div>
-            <div class="details">
-                <span>MBID: {{ artist.MusicBrainzID }}</span>
-                <span>Releases: {{ artist.AcquiredReleases }}/{{ artist.TotalReleases }}</span>
-                <span>Last Scan: {{ artist.LastScanLabel }}</span>
-            </div>
-        </div>
-        <div class="actions">
-            <button class="btn btn-sm btn-secondary" hx-post="/api/artists/{{ artist.ID }}/sync" hx-target="#notice" hx-disabled-elt="this" aria-label="Sync discography for {{ artist.Name }}">
-                Sync
-            </button>
-            <button class="btn btn-sm" hx-patch="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" aria-label="{% if artist.Monitored %}Pause monitoring for {{ artist.Name }}{% else %}Resume monitoring for {{ artist.Name }}{% endif %}">
-                {% if artist.Monitored %}Pause{% else %}Resume{% endif %}
-            </button>
-            <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ artist.ID }}" hx-target="#artist-{{ artist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to remove {{ artist.Name }}?" aria-label="Remove {{ artist.Name }} from monitoring">
-                Remove
-            </button>
-        </div>
-    </div>
+    {% for Artist in artists %}
+    {% include "partials/artist-card.html" %}
     {% empty %}
     <p class="empty-state">No artists being monitored</p>
     <p class="text-secondary">Add an artist using the button above to track new releases.</p>
