@@ -19,6 +19,18 @@ name: E2E Tests
 # dropping it to save minutes is precisely what let #346 through. The single
 # `!` negation earns its keep: ops/ and e2e/ both carry markdown (codemap.md,
 # runbooks) that cannot change a rendered page.
+#
+# Known limits of a path-filtered gate, both from GitHub rather than from us:
+#
+#   * GitHub evaluates at most the first 300 changed files against a path
+#     filter. A PR larger than that whose matching paths sort late starts no
+#     run at all. The remedy is to drop the filter and gate inside the job.
+#   * A PR touching only excluded paths starts no workflow, so a *required*
+#     check of this name would sit pending forever. The remedy is a second,
+#     always-running workflow that reports success when this one is skipped --
+#     deliberately NOT added yet, because no branch protection requires the
+#     check today, so nothing can hang. Add it in the same change that makes
+#     the check required.
 on:
   workflow_dispatch:
   push:
@@ -37,6 +49,12 @@ on:
 
 # Five pushes to one branch used to queue five full suites, and the last one
 # landed an hour after anyone cared about it.
+#
+# Note what this workflow does NOT do: it cannot make itself required. As of
+# this commit master has no branch protection and the repo has no rulesets, so
+# a failing E2E run is visible but does not block a merge. Making the check
+# required is a repository setting, not a workflow change, and it affects how
+# humans merge too -- so it is raised rather than assumed.
 concurrency:
   group: e2e-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
