@@ -656,6 +656,15 @@ Read a body back through the API (`{issue(id: "DJI-601"){description}}`) or MCP
 `get_issue` before claiming a write landed. A create that returned a URL is not
 proof the evidence survived Linear's markdown normalisation.
 
+**`linear.py issue-list` with no filter returns HTTP 400 -- `query()` is not a
+valid signature.** `cmd_issue_list` builds `"query(%s){ issues(...) }"`, so an
+unfiltered call emits `query(){ ... }` and Linear answers `Syntax Error:
+Expected "$", found ")"` (GRAPHQL_PARSE_FAILED). Pass `--project`/`--state`, or
+build the signature only when `decls` is non-empty (`"query"` plus
+`"(%s)" % decls` when there are any). Filtered calls are unaffected, which is
+why it went unnoticed. When the script is unusable, `orca linear issue <ID>
+--full --json` reads the same data.
+
 Tests: `python scripts/test_linear.py` (offline, no key). Mutation proof:
 `python scripts/linear_mutation_check.py` (9/9 caught, 3/3 controls green).
 
