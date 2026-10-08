@@ -121,6 +121,18 @@ services:
       # MusicBrainz comes from the stand-in above, not the public service:
       # artist-picker.spec.ts was a canary for musicbrainz.org's uptime.
       MUSICBRAINZ_URL: http://fake-musicbrainz:8082
+    # The edge that makes the stand-in actually exist. e2e/setup-test-db.sh runs
+    # `compose up -d ops-web ops-worker caddy`, and compose starts the named
+    # services plus their declared dependencies -- nothing else. With no
+    # depends_on here, fake-musicbrainz was never started, so MusicBrainz did
+    # not resolve and the picker's own guard fired:
+    #   "the e2e MusicBrainz stand-in did not answer: check MUSICBRAINZ_URL ..."
+    # on a stack where MUSICBRAINZ_URL was plainly set and the image had built.
+    # service_healthy, not just service_started: the guard must not race the
+    # stand-in's own first bind.
+    depends_on:
+      fake-musicbrainz:
+        condition: service_healthy
 
   # The same validating egress boundary as the release overlay, under the e2e
   # naming rules. This overlay merges with the BASE compose, not the release one,
@@ -176,6 +188,8 @@ services:
       egress-proxy:
         condition: service_healthy
       audio-probe:
+        condition: service_healthy
+      fake-musicbrainz:
         condition: service_healthy
     # The wrong-work refusal probe (see audio-probe below). /etc/hosts pins the
     # probe's name to ONE address — the documentation-IPv6 one — in the
