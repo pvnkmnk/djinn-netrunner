@@ -475,6 +475,8 @@ func TestSafeNextPath(t *testing.T) {
 	for _, raw := range []string{
 		"", "//evil.example", "/\\evil.example", "https://evil.example",
 		"http://evil.example/x", "javascript:alert(1)", "watchlists", "\n//evil.example",
+		"/\t/evil.example", "/\n/evil.example", "/\r/evil.example", "/\t\\evil.example",
+		"/\x00/evil.example", "/\t//evil.example", "/ /evil.example", "/\r\\evil.example",
 	} {
 		assert.Equal(t, "", safeNextPath(raw), "%q must be dropped", raw)
 	}
