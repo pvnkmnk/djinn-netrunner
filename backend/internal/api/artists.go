@@ -383,9 +383,26 @@ func (h *ArtistsHandler) GetForm(c *fiber.Ctx) error {
 		return c.SendString("<div class=\"error\">Error loading form.</div>")
 	}
 
+	// repoint_for names the monitored row this form was opened to change. The
+	// card's Re-point control loads this form the way Add does, and the partial
+	// carries the value through the search into the candidate row, so the pick
+	// lands on PATCH /api/artists/:id/repoint instead of creating a second row.
+	//
+	// A value that is not a UUID is dropped rather than echoed: rendering
+	// "Re-point artist" over a destination that cannot resolve would promise a
+	// move the PATCH then refuses.
+	repointFor := strings.TrimSpace(c.Query("repoint_for"))
+	if repointFor == "" {
+		repointFor = strings.TrimSpace(c.FormValue("repoint_for"))
+	}
+	if _, err := uuid.Parse(repointFor); err != nil {
+		repointFor = ""
+	}
+
 	c.Set("HX-Trigger", "openModal")
 	return c.Render("partials/artist-form", fiber.Map{
-		"profiles": profiles,
+		"profiles":    profiles,
+		"repoint_for": repointFor,
 	})
 }
 
@@ -405,7 +422,11 @@ func (h *ArtistsHandler) RenderPartial(c *fiber.Ctx) error {
 	var artists []database.MonitoredArtist
 	// Bolt Optimization: Select only necessary columns to reduce database I/O and memory usage.
 	query := h.db.Model(&database.MonitoredArtist{}).
-		Select("id, name, monitored, music_brainz_id, acquired_releases, total_releases, last_scan_date")
+		// country, artist_type and disambiguation are selected because the card
+		// renders them. Without them the provenance span is omitted for every
+		// artist in the list, and a re-point loses the very fields it was
+		// performed to change.
+		Select("id, name, monitored, music_brainz_id, acquired_releases, total_releases, last_scan_date, disambiguation, country, artist_type")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}

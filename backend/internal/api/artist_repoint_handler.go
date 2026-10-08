@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/pvnkmnk/netrunner/backend/internal/database"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -71,12 +69,13 @@ func (h *ArtistsHandler) Repoint(c *fiber.Ctx) error {
 		return internalServerError(c, err)
 	}
 
-	// Return the updated card. The control that triggers this swaps
-	// #artist-<id> with outerHTML, so a JSON body would leave the operator
-	// looking at the provenance of the entity they just replaced.
-	var updated database.MonitoredArtist
-	if err := h.db.Where("id = ? AND owner_user_id = ?", id, user.ID).First(&updated).Error; err != nil {
-		return internalServerError(c, err)
-	}
-	return c.Render("partials/artist-card", fiber.Map{"Artist": updated})
+	// The pick is made from the candidate list, whose row swaps the whole
+	// artists region (#artists-region, innerHTML) -- the same swap the Add flow
+	// uses. So this answers with the same partial Add does. A lone card would
+	// replace the region's innerHTML and take its .section-header Add button and
+	// every other card with it.
+	//
+	// closeModal rides along: the picker is open over the list it just changed.
+	c.Set("HX-Trigger", "closeModal")
+	return h.RenderPartial(c)
 }
