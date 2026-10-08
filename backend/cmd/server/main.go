@@ -118,7 +118,7 @@ func main() {
 	// UI must always run with CSRF enabled.
 	if cfg.CSRFEnabled {
 		app.Use(csrf.New(csrf.Config{
-			KeyLookup:      "header:X-CSRF-Token",
+			KeyLookup: "header:X-CSRF-Token",
 			// A plain <form> cannot set a header, and the sign-out control
 			// is a plain form on purpose: ending a session must not depend
 			// on JavaScript having loaded. The header is tried first so every
@@ -397,7 +397,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	playlistRoutes.Delete("/:id", playlistHandler.Delete)
 	playlistRoutes.Post("/:id/tracks", playlistHandler.AddTrack)
 	playlistRoutes.Delete("/:id/tracks/:trackId", playlistHandler.RemoveTrack)
-	playlistRoutes.Put("/:id/tracks/order", playlistHandler.Reorder)	// E2E test helpers (/api/test/*) live in internal/api/testapi — conditionally
+	playlistRoutes.Put("/:id/tracks/order", playlistHandler.Reorder) // E2E test helpers (/api/test/*) live in internal/api/testapi — conditionally
 	// registered so a production binary without E2E_ENABLE_TEST_API exposes
 	// nothing at all. Contract tests in that package pin the endpoint surface.
 	if cfg.E2EEnableTestAPI {
