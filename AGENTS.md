@@ -486,7 +486,10 @@ otherwise-good change are the thing to flag before anything else.
   `admin:PASS` in a curl example, 2 are the checked-in `e2e-` test key, and 1 is
   spotDL's publicly-published OAuth client secret in `spotify_spdc.go` (real,
   third-party, not rotatable by us). Detail and the allowlist decision:
-  `docs/SECRET_SCAN_FINDINGS.md`.
+  `docs/SECRET_SCAN_FINDINGS.md`. One trap found the hard way: **a report that
+  quotes a flagged line becomes a finding itself** — Sourcery's check failed on
+  that document's first revision because it reproduced the runbook's curl line.
+  Mask the value and say in the text that you masked it.
 - Runner Go installs can be transiently corrupted (`compile: version X does
   not match go tool version Y` in stdlib internals unrelated to your diff) —
   re-run before debugging.

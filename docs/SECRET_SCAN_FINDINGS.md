@@ -54,16 +54,21 @@ in a revision that has since moved on, it is the line at that commit.
 ### Placeholders in a runbook — 3 findings
 
 `ops/docs/library-dedup-runbook.md` contains a copy-pasteable Navidrome
-re-index command:
+re-index command that authenticates with `curl -u` and repeats the same
+credential in the Subsonic `p=` parameter. Both carry the same four-character
+placeholder instead of a password.
 
-```bash
-curl -s -u "admin:PASS" "http://navidrome:4533/rest/startScan.view?u=admin&p=PASS&v=1.16.1&c=netrunner&f=json"
-```
+The `curl-auth-user` rule matches the shape `-u user:pass` and cannot tell a
+placeholder from a real password, so it fires on the documented form exactly as
+it would on a live credential. Nothing to rotate; the runbook is meant to be
+filled in by the operator.
 
-`PASS` is the literal placeholder. The `curl-auth-user` rule matches the shape
-`-u user:pass` and cannot tell a placeholder from a real password, so it fires
-on the documented form exactly as it would on a live credential. Nothing to
-rotate; the runbook is meant to be filled in by the operator.
+If the firing is unwanted, the fix belongs in the runbook rather than in a
+scanner allowlist: take the credential from the environment
+(`-u "$NAVIDROME_AUTH"`) so that no inline `user:pass` exists to match. That is
+the better runbook regardless — nobody should be pasting a password into a
+shell history. This document does not reproduce the line, for the reason in
+[This document is masked by design](#this-document-is-masked-by-design).
 
 ### The checked-in e2e test key — 2 findings
 
@@ -79,11 +84,12 @@ the example file is what a developer copies from. The `e2e-` prefix is the tell.
 ```go
 // SpotDL's well-known Spotify OAuth client credentials.
 // Used for client_credentials flow — public data only, no 429 blocks.
-spotdlClientID     = "5f573c9620494bae87890c0f08a60293"
-spotdlClientSecret = "212476d9b0f3472eaa762d90b19b0ba8"
+spotdlClientID     = "5f573c96…"
+spotdlClientSecret = "212476d9…"
 ```
 
-This is a **real credential, and the only finding that is one** — but it is
+Both values are truncated above; the full pair is in the file. This is a
+**real credential, and the only finding that is one** — but it is
 spotDL's, published in that project's own source and shared by every spotDL
 user, not a NetRunner secret. It cannot be rotated by us, so the scanner will
 report it forever. The forward-looking risk is not ours to leak: it is that if
@@ -160,6 +166,14 @@ history number when talking about what the repository leaks.
    `.slim/cartography.json` and `.slim/clonedeps.json` belong in the repo at
    all. They are agent artifacts, they churn, and they are the source of nine of
    the fifteen findings.
+
+## This document is masked by design
+
+Values the scanner flags are truncated or replaced here, and the substitution is
+always stated. That is deliberate rather than tidiness: the first revision quoted
+the runbook's curl line verbatim, and CI failed — Sourcery's check reported
+`docs/SECRET_SCAN_FINDINGS.md:60` as a blocking security issue. A document about
+flagged lines must not reproduce a flagged line.
 
 ## Reproducing
 
