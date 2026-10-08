@@ -531,6 +531,8 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             var email = document.getElementById('reg-email').value;
             var password = document.getElementById('reg-password').value;
+            var enrollmentEl = document.getElementById('reg-enrollment');
+            var enrollmentCode = enrollmentEl ? enrollmentEl.value : '';
             var errorDiv = document.getElementById('register-error');
             try {
                 var resp = await fetch('/api/auth/register', {
@@ -539,7 +541,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         'Content-Type': 'application/json',
                         'X-CSRF-Token': getCookie('csrf_')
                     },
-                    body: JSON.stringify({email: email, password: password})
+                    body: JSON.stringify(enrollmentCode
+                        ? {email: email, password: password, enrollment_code: enrollmentCode}
+                        : {email: email, password: password})
                 });
                 if (resp.ok) {
                     var loginResp = await fetch('/api/auth/login', {

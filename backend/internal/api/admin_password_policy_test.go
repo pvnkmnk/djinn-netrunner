@@ -284,7 +284,7 @@ func TestAllThreePasswordRoutesAnswerIdentically(t *testing.T) {
 			regDB, _, _, _ := setupPartialsTestDB(t)
 			regApp := fiber.New()
 			regApp.Post("/api/auth/register",
-				NewAuthHandlerWithPolicy(regDB, "", min).Register)
+				NewAuthHandlerWithPolicy(regDB, "", "", min).Register)
 			regStatus, regBody := postPolicyJSON(t, regApp, "/api/auth/register",
 				fmt.Sprintf(`{"email":"reg@nr.test","password":%q}`, password))
 
