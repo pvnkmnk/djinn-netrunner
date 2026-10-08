@@ -943,6 +943,33 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   values *inside the container*. `docker compose config` can print two
   different values for the same key and only one reaches the process —
   check which block a value came from before debugging.
+- **Compose interpolation precedence is `shell env` > `--env-file` >
+  `.env`**, and an exported variable silently wins over both. An agent shell
+  that has sourced `.env` (or inherited those exports) therefore makes
+  `docker compose --env-file ../.env.e2e ...` substitute `.env`'s values
+  while every check still reads like the override worked. Measured on
+  2026-10-08: `POSTGRES_PASSWORD`, `SLSKD_API_KEY`, `JWT_SECRET` and
+  `SUBSONIC_PASSWORD` exported with `.env`'s values made the e2e stack ship
+  `.env`'s password to both `postgres` and `ops-web` *against* a role
+  initialised earlier from `.env.e2e`'s -- `FATAL: password authentication
+  failed for user "musicops" (SQLSTATE 28P01)`, which I attributed to a
+  password template defect for hours. `--env-file` is not broken: it loses.
+  Before diagnosing compose, check whether those names are exported
+  WITHOUT printing their values -- `env | cut -d= -f1 | grep -E
+  '^(POSTGRES_PASSWORD|SLSKD_API_KEY|JWT_SECRET|SUBSONIC_)'`. A bare
+  `env | grep` puts live secrets into terminal scrollback and into any
+  captured agent log. To bring the e2e stack up from such a shell, either
+  `unset` the nine keys `.env.e2e` defines in that shell, or prefix the
+  compose invocation itself: `env -u POSTGRES_PASSWORD -u SLSKD_API_KEY
+  -u SLSKD_USERNAME -u SLSKD_PASSWORD -u ENVIRONMENT -u CONFIG_ENV
+  -u JWT_SECRET -u SUBSONIC_ENABLED -u SUBSONIC_PASSWORD docker compose ...`.
+  A bare `env -u ...` typed at a prompt changes nothing -- with no command it
+  prints a modified environment and leaves the parent shell exported, so
+  compose still reads the overrides and the stack stays misconfigured, which
+  reads as "the fix did nothing". Aligning `.env.e2e` to `.env`'s values also
+  works, but arms the trap for the next person. A `psql -h 127.0.0.1` password probe
+  is worthless here: `pg_hba.conf` carries `trust` for loopback, so *any*
+  password "succeeds" -- probe over the container's compose-network IP.
 - One secret, one source: `docker-compose.e2e.yml` once hardcoded
   `musicops:testpass` in `DATABASE_URL` while the postgres role took its
   password from `POSTGRES_PASSWORD` — any `.env.e2e` with a different
