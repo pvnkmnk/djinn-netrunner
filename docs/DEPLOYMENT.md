@@ -84,9 +84,15 @@ The repo-root `.env` is not read by that process: `config.Load()` loads
 `../../.env`, which resolves above the checkout, and that error is discarded.
 So `infisical run` is the source of the environment, not a supplement to it.
 
-- `dev` carries `DATABASE_URL=netrunner.db` (SQLite) because `.env` has no
-  `DATABASE_URL` at all — compose injects that for the containers — and no
-  postgres is published to the host. Point it at your own server if you run one.
+- `dev` carries the **host** Postgres URL
+  (`postgresql://musicops:…@127.0.0.1:5432/musicops?sslmode=disable`) because
+  `.env` has no `DATABASE_URL` at all — compose injects the in-network one for the
+  containers. It resolves against the dev stack's own database service:
+  `docker compose up -d postgres` publishes `127.0.0.1:${PG_HOST_PORT:-5432}`.
+  Keep the loopback **literal**: `localhost` resolves to `::1` here first while
+  the publish is IPv4-only. `DATABASE_URL=netrunner.db` (SQLite, what
+  `.env.example` documents) is the reduced-capability NetrunnerLite path — see
+  `docs/decisions/0004-postgres-first-development-and-editions.md`.
 - A headless target (CI, a self-hosted image) wants a service token:
   `infisical service-token create --name <name> --scope dev:/ --expiry-seconds 0
   --access-level read --token-only`, passed on as `INFISICAL_TOKEN`. The expiry

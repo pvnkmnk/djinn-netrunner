@@ -1253,10 +1253,16 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   `../../.env`, which from the repo root resolves to
   `C:\Users\idols\DevWorks\.env`, and godotenv's "not found" is discarded.
   So a host run needs `DATABASE_URL` from the ambient environment.
-- `.env` carries 36 keys and **no `DATABASE_URL`** at all (compose sets that),
-  and no postgres is published to the host (`e2e-postgres` has no host port).
-  A host-run dev server therefore has to use SQLite (`DATABASE_URL=netrunner.db`,
-  the value `.env.example` documents).
+- `.env` carries 36 keys and **no `DATABASE_URL`** at all (compose sets that).
+  Infisical `dev` supplies the host-run value, and since 2026-10-09 that value is
+  **PostgreSQL**, not the `netrunner.db` SQLite file: `docker compose up -d postgres`
+  (project `djinn-netrunner`, container `netrunner-postgres`) publishes
+  `127.0.0.1:${PG_HOST_PORT:-5432}` — see **ADR 0004 / DJI-649**. Two traps: use
+  the loopback **literal**, because `localhost` resolves to `::1` first here
+  while the publish is IPv4-only; and the e2e overlay's `e2e-postgres` publishes
+  **no** host port, so a host run needs the dev stack's own service.
+  `DATABASE_URL=netrunner.db` (the value `.env.example` documents) is now the
+  reduced-capability **NetrunnerLite** path, not the development default.
 - Infisical `dev` mirrors `.env` plus `LINEAR_API_KEY` and `DATABASE_URL` (38
   names); `prod` holds the 24 non-empty ones minus `LINEAR_API_KEY`, with
   `DATABASE_URL`/`APP_VERSION` overridden. `infisical run --project-config-dir .

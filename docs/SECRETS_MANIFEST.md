@@ -17,7 +17,7 @@ git-ignored.
 | App env vars, `dev` | Infisical → `dev` (38 names) | `infisical secrets --env dev --plain` names == the 36 keys in `REPO\.env` + `LINEAR_API_KEY` + `DATABASE_URL` |
 | Linear CLI token | `HOME\.linear_token` (0600) | file present |
 | Linear drain token | `HOME\.linear_drain_token` (0600) | file present |
-| `DATABASE_URL` (value `netrunner.db`, SQLite) | Infisical → `dev` | added 2026-10-09; the documented local single-binary dev value — compose overrides `DATABASE_URL` for containers anyway, so this only affects host-run processes |
+| `DATABASE_URL` (host Postgres URL) | Infisical → `dev` | added 2026-10-09 as the SQLite `netrunner.db`, then repointed the same day to `postgresql://musicops:…@127.0.0.1:5432/musicops?sslmode=disable` (ADR 0004 / DJI-649) — the host form of the value both compose files inject for containers, so this key only affects host-run processes. A host-run server boots on it with `database: ok` and creates no `netrunner.db` |
 | dev service token | `C:\Users\idols\DevWorks\.secrets\infisical-dev.token` (ACL: this user only) | `netrunner-dev-local`, scope `dev:/`, `--access-level read`, `--expiry-seconds 0`; created 2026-10-09 |
 | app env vars, `prod` | Infisical → `prod` (24 names) | filled 2026-10-09 from the `dev` set with the per-environment overrides in §3; 22 of the 24 values are byte-identical to `dev`, only `DATABASE_URL` and `APP_VERSION` deliberately differ |
 
@@ -125,7 +125,7 @@ supply the real value:
 | --- | --- | --- |
 | `POSTGRES_PASSWORD` | **copied from `dev`** | any strong string; must equal the password embedded in `DATABASE_URL` (URL-encoded). A fresh postgres volume initialises with this value |
 | `JWT_SECRET` | **copied from `dev`** | long random; production refuses to boot without it. Sharing it across environments means a session cookie minted by `dev` validates against `prod` |
-| `DATABASE_URL` | `netrunner.prod.db` | a host-run placeholder; the deployed target is the postgres URL both compose files inject |
+| `DATABASE_URL` | `netrunner.prod.db` | a host-run placeholder, and now the odd one out: `dev` moved to PostgreSQL on 2026-10-09 (ADR 0004 / DJI-649) while this still names a SQLite file. The deployed target is the postgres URL both compose files inject |
 | `BOOTSTRAP_ADMIN_SECRET` | absent in both | **≥ 16 chars** (`config.MinBootstrapSecretLength`); without it `BOOTSTRAP_ADMIN_EMAIL` promotes nobody |
 | `BOOTSTRAP_ADMIN_EMAIL` | absent in both | an address only — safe to leave unset after first login |
 | `SLSKD_API_KEY` | copied from `dev` | **16–255 chars** — slskd logs its complaint and exits (code 0) below 16 |
