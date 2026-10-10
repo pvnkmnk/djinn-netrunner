@@ -40,6 +40,14 @@ jobs:
       - name: E2E completeness gate tests
         run: bash scripts/test_e2e_gate.sh
 
+      # The Postgres gate (see the `postgres` job) is the only thing standing
+      # between a skipped advisory-lock or wakeup test and a green tick, so the
+      # gate's own rules are tested on every PR too. Offline: no database, no
+      # `go test` -- crafted `go test -json` fixtures and the refusal paths.
+      # ~0.05s, 23 cases, and eleven of them are rejections.
+      - name: Postgres gate tests
+        run: python scripts/test_postgres_gate.py
+
       # The password policy is one function called from three routes, and a
       # suite that only tests the function cannot see a route that stops asking
       # it -- the failure mode a shared helper invites. Four of the eight
@@ -98,6 +106,54 @@ jobs:
         with:
           name: coverage
           path: backend/coverage.out
+
+  # ADR 0004: a green SQLite-only run is not evidence for a change that touches
+  # claims, locks, wakeups or aggregate SQL. Every test that would prove those
+  # paths calls t.Skip when DATABASE_URL is absent -- 16 of them in
+  # internal/database alone -- and a skip is not a pass, so the `test` job above
+  # cannot see a regression in any of them. This job hands them a real Postgres
+  # and gates on them having RUN: scripts/postgres_gate.py refuses a run where a
+  # required test skipped, disappeared, or failed.
+  #
+  # The database is a throwaway service container behind a throwaway password --
+  # there is no secret here, and the tests create and drop their own schema
+  # (TestMigrate_Postgres primes it through the production migrator).
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: netrunner_gate
+          POSTGRES_USER: netrunner
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - 5432:5432
+        # No hand-rolled wait loop: pg_isready is what the compose files use,
+        # and GitHub holds the job until the container reports healthy.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://netrunner:testpass@127.0.0.1:5432/netrunner_gate?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.13'
+
+      - name: Download dependencies
+        working-directory: backend
+        run: go mod download
+
+      - name: Postgres gate (claims, locks, wakeups, aggregate SQL)
+        env:
+          CGO_ENABLED: 0
+        run: python scripts/postgres_gate.py
 
   # lint job disabled until golangci-lint supports go1.25
   # lint:

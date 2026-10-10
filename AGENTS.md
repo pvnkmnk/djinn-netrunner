@@ -60,6 +60,8 @@ docker compose up -d                # full stack; logs: docker compose logs -f n
 ./scripts/smoke.sh                  # smoke gate vs a running stack (--dev | --release; release is the default, 28 checks)
 ./scripts/smoke-test.sh             # self-contained: up netrunner-smoke (:18081/:18443/:18444), health/auth/CRUD checks, down
 ./scripts/validate.sh            # (Windows PowerShell: ./scripts/validate.ps1)
+DATABASE_URL=postgres://... python scripts/postgres_gate.py  # the DB-gated tests vs Postgres; refuses a run where any skipped
+python scripts/test_postgres_gate.py  # the gate's own rules, offline (fixtures, no database)
 govulncheck ./...                   # CI fails on reachable CVEs; install the pinned version, not @latest
 ```
 
@@ -321,13 +323,17 @@ the e2e one.
    - **The migration file needs a Postgres test that duplicates its DDL** --
      precedent `backend/internal/database/artist_provenance_migration_test.go`,
      followed by `bootstrap_enrolled_at_migration_test.go`. Reading the file
-     proves it parses, not that its statements do what the comment claims.
-     `setupPostgresForMigration` must `t.Skip` when `DATABASE_URL` is empty,
-     unreachable or non-postgres: four such tests skip cleanly (exit 0) with
-     no database, and a skip is not a pass -- run them against
-     `docker compose -f docker-compose.integration.yml up -d integration-db`
-     (publishes `15432`, db `netrunner_integration`, user/pass
-     `testuser`/`testpass`) before trusting them.
+     proves it parses, not that its statements do what the comment claims.      `setupPostgresForMigration` must `t.Skip` when `DATABASE_URL` is empty,
+      unreachable or non-postgres: 16 tests in `internal/database` alone skip
+      cleanly (exit 0) with no database, and a skip is not a pass. CI enforces
+      that now -- `scripts/postgres_gate.py` (the `postgres` job in
+      `.github/workflows/ci.yml`) runs the 18 database-gated tests against a real
+      Postgres and refuses a run where one skipped, vanished or failed. Locally,
+      start a database with
+      `docker compose -f docker-compose.integration.yml up -d integration-db`
+      (publishes `15432`, db `netrunner_integration`, user/pass
+      `testuser`/`testpass`) and run the same script against it; its own rules
+      are tested offline by `python scripts/test_postgres_gate.py`.
    - Adding `DEFAULT now()` to such a column is the mutation that proves the
      guard: it must fail (`a default would let a bare INSERT invent an
      enrollment proof`).
