@@ -16,8 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider keys CI reads, and the Linear/Cloudflare tokens, so "a secret is
   missing" is a checklist rather than a debugging session. The `dev`
   environment's variables also exist in Infisical (the same 36 keys plus
-  `LINEAR_API_KEY` and `DATABASE_URL=netrunner.db`), and `infisical run` boots
-  the server with `.env` renamed away — proved, not assumed, on 2026-10-09.
+  `LINEAR_API_KEY` and `DATABASE_URL`), and `infisical run` boots the server with
+  `.env` renamed away — proved, not assumed, on 2026-10-09. `DATABASE_URL` first
+  named the SQLite file and was repointed to the dev Postgres service the same
+  day (ADR 0004), with the boot re-proved on it: `database: ok`, a host client in
+  `pg_stat_activity`, and no `netrunner.db` created.
 - **`scripts/linear.py` — the way this repo reads and writes Linear.** Linear's
   API has no `patch` argument on any mutation, and the MCP connector's is
   rejected in every shape, so editing a project body used to mean resending
