@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +59,7 @@ func writeAsset(t *testing.T, root, name, body string) {
 func serveAssets(root string) *fiber.App {
 	app := fiber.New()
 	app.Use("/static", StaticAssetRevalidation())
-	app.Static("/static", root)
+	app.Use("/static", static.New(root))
 	return app
 }
 
@@ -68,7 +69,7 @@ func getAsset(t *testing.T, app *fiber.App, headers map[string]string) *http.Res
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := app.Test(req, 5000)
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: time.Duration(5000) * time.Millisecond})
 	require.NoError(t, err)
 	return resp
 }
@@ -254,8 +255,8 @@ func TestStaticAssetRevalidation_OnlyTouchesStaticPaths(t *testing.T) {
 
 	app := fiber.New()
 	app.Use("/static", StaticAssetRevalidation())
-	app.Static("/static", root)
-	app.Get("/api/thing", func(c *fiber.Ctx) error {
+	app.Use("/static", static.New(root))
+	app.Get("/api/thing", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	})
 
@@ -263,7 +264,7 @@ func TestStaticAssetRevalidation_OnlyTouchesStaticPaths(t *testing.T) {
 	asset.Body.Close()
 	assert.Equal(t, "no-cache", asset.Header.Get("Cache-Control"))
 
-	apiResp, err := app.Test(httptest.NewRequest("GET", "/api/thing", nil), 5000)
+	apiResp, err := app.Test(httptest.NewRequest("GET", "/api/thing", nil), fiber.TestConfig{Timeout: time.Duration(5000) * time.Millisecond})
 	require.NoError(t, err)
 	defer apiResp.Body.Close()
 	assert.Empty(t, apiResp.Header.Get("Cache-Control"),

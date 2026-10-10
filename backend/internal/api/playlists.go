@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
@@ -19,7 +19,7 @@ func NewPlaylistHandler(db *gorm.DB) *PlaylistHandler {
 }
 
 // List returns all playlists for the authenticated user (admin sees all)
-func (h *PlaylistHandler) List(c *fiber.Ctx) error {
+func (h *PlaylistHandler) List(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -39,7 +39,7 @@ func (h *PlaylistHandler) List(c *fiber.Ctx) error {
 }
 
 // Get returns a single playlist with tracks ordered by position
-func (h *PlaylistHandler) Get(c *fiber.Ctx) error {
+func (h *PlaylistHandler) Get(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -84,7 +84,7 @@ func (h *PlaylistHandler) Get(c *fiber.Ctx) error {
 }
 
 // Create creates a new playlist
-func (h *PlaylistHandler) Create(c *fiber.Ctx) error {
+func (h *PlaylistHandler) Create(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -96,7 +96,7 @@ func (h *PlaylistHandler) Create(c *fiber.Ctx) error {
 		Public      bool   `json:"public"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -125,7 +125,7 @@ func (h *PlaylistHandler) Create(c *fiber.Ctx) error {
 }
 
 // Update updates an existing playlist
-func (h *PlaylistHandler) Update(c *fiber.Ctx) error {
+func (h *PlaylistHandler) Update(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -159,7 +159,7 @@ func (h *PlaylistHandler) Update(c *fiber.Ctx) error {
 		Public      *bool   `json:"public"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -184,7 +184,7 @@ func (h *PlaylistHandler) Update(c *fiber.Ctx) error {
 }
 
 // Delete deletes a playlist and its tracks
-func (h *PlaylistHandler) Delete(c *fiber.Ctx) error {
+func (h *PlaylistHandler) Delete(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -229,7 +229,7 @@ func (h *PlaylistHandler) Delete(c *fiber.Ctx) error {
 }
 
 // AddTrack adds a track to a playlist at the next position
-func (h *PlaylistHandler) AddTrack(c *fiber.Ctx) error {
+func (h *PlaylistHandler) AddTrack(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -261,7 +261,7 @@ func (h *PlaylistHandler) AddTrack(c *fiber.Ctx) error {
 		TrackID string `json:"track_id"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -301,7 +301,7 @@ func (h *PlaylistHandler) AddTrack(c *fiber.Ctx) error {
 }
 
 // RemoveTrack removes a track from a playlist
-func (h *PlaylistHandler) RemoveTrack(c *fiber.Ctx) error {
+func (h *PlaylistHandler) RemoveTrack(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -342,7 +342,7 @@ func (h *PlaylistHandler) RemoveTrack(c *fiber.Ctx) error {
 }
 
 // Reorder updates the positions of tracks in a playlist to match the provided order
-func (h *PlaylistHandler) Reorder(c *fiber.Ctx) error {
+func (h *PlaylistHandler) Reorder(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -374,7 +374,7 @@ func (h *PlaylistHandler) Reorder(c *fiber.Ctx) error {
 		TrackIDs []string `json:"track_ids"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -398,7 +398,7 @@ func (h *PlaylistHandler) Reorder(c *fiber.Ctx) error {
 }
 
 // PlaylistsPage renders the playlists page
-func (h *PlaylistHandler) PlaylistsPage(c *fiber.Ctx) error {
+func (h *PlaylistHandler) PlaylistsPage(c fiber.Ctx) error {
 	_, ok, err := requirePageUser(c)
 	if !ok {
 		return err
@@ -408,7 +408,7 @@ func (h *PlaylistHandler) PlaylistsPage(c *fiber.Ctx) error {
 }
 
 // RenderPlaylistsPartial renders the playlists partial for HTMX
-func (h *PlaylistHandler) RenderPlaylistsPartial(c *fiber.Ctx) error {
+func (h *PlaylistHandler) RenderPlaylistsPartial(c fiber.Ctx) error {
 	_, ok, err := requirePartialUser(c)
 	if !ok {
 		return err

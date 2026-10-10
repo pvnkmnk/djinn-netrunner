@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 )
@@ -18,7 +18,7 @@ import (
 // POST /api/artists/search, so the operator chooses the entity here exactly the
 // way they do when adding -- and a bare POST carrying a name still takes the top
 // result, deliberately, because the CLI and the MCP server both post one.
-func (h *ArtistsHandler) Repoint(c *fiber.Ctx) error {
+func (h *ArtistsHandler) Repoint(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -32,7 +32,7 @@ func (h *ArtistsHandler) Repoint(c *fiber.Ctx) error {
 	var payload struct {
 		MusicBrainzID string `json:"musicbrainz_id" form:"musicbrainz_id"`
 	}
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 	chosen := strings.TrimSpace(payload.MusicBrainzID)

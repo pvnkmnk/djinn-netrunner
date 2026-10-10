@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -32,7 +32,7 @@ func setupTestApp(t *testing.T, db *gorm.DB) *fiber.App {
 	app.Post("/register", auth.Register)
 	app.Post("/login", auth.Login)
 	app.Post("/logout", auth.Logout)
-	app.Get("/protected", auth.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/protected", auth.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("ok")
 	})
 	return app

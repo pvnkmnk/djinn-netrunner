@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,7 +36,7 @@ func setupPartialsTestDB(t *testing.T) (*gorm.DB, database.User, database.User, 
 // partialsApp creates a fiber app with user set in locals for testing.
 func partialsApp(user database.User) *fiber.App {
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})

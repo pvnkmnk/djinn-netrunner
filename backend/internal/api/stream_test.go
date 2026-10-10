@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -130,7 +130,7 @@ func injectAuthMiddleware(userID uint64) fiber.Handler {
 }
 
 func injectAuthMiddlewareWithRole(userID uint64, role string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Locals("user", database.User{ID: userID, Role: role})
 		return c.Next()
 	}

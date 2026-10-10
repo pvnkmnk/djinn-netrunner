@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"golang.org/x/crypto/bcrypt"
@@ -55,7 +55,7 @@ func NewAdminHandlerWithPolicy(db *gorm.DB, minLength int) *AdminHandler {
 // It is deliberately not a redirect: "you are not an admin" and "sign in" are
 // different facts, and quietly sending someone to the dashboard would hide the
 // second one from them.
-func (h *AdminHandler) AdminOnly(c *fiber.Ctx) error {
+func (h *AdminHandler) AdminOnly(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		if shouldRenderPage(c) {
@@ -132,7 +132,7 @@ func normalizeAdminSection(section string) string {
 
 // AdminPage renders the admin dashboard with the selected section already in
 // place, so the URL the nav pushes is a real page that survives a reload.
-func (h *AdminHandler) AdminPage(c *fiber.Ctx) error {
+func (h *AdminHandler) AdminPage(c fiber.Ctx) error {
 	section := normalizeAdminSection(c.Query("section"))
 	_, data := h.adminSection(section)
 	// RenderPage, not a bare c.Render: the admin page is the one place an
@@ -144,7 +144,7 @@ func (h *AdminHandler) AdminPage(c *fiber.Ctx) error {
 }
 
 // GET /api/admin/users — list all users (sensitive fields excluded)
-func (h *AdminHandler) ListUsers(c *fiber.Ctx) error {
+func (h *AdminHandler) ListUsers(c fiber.Ctx) error {
 	var users []database.User
 	if err := h.db.Select("id, email, role, created_at, updated_at, last_login_at").Find(&users).Error; err != nil {
 		return internalServerError(c, err)
@@ -153,13 +153,13 @@ func (h *AdminHandler) ListUsers(c *fiber.Ctx) error {
 }
 
 // POST /api/admin/users — create a new user
-func (h *AdminHandler) CreateUser(c *fiber.Ctx) error {
+func (h *AdminHandler) CreateUser(c fiber.Ctx) error {
 	var payload struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 		Role     string `json:"role"`
 	}
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 	if payload.Email == "" || payload.Password == "" {
@@ -203,7 +203,7 @@ func (h *AdminHandler) CreateUser(c *fiber.Ctx) error {
 }
 
 // DELETE /api/admin/users/:id — delete a user
-func (h *AdminHandler) DeleteUser(c *fiber.Ctx) error {
+func (h *AdminHandler) DeleteUser(c fiber.Ctx) error {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid user ID"})
@@ -230,7 +230,7 @@ func (h *AdminHandler) DeleteUser(c *fiber.Ctx) error {
 }
 
 // PATCH /api/admin/users/:id/role — update user role
-func (h *AdminHandler) UpdateRole(c *fiber.Ctx) error {
+func (h *AdminHandler) UpdateRole(c fiber.Ctx) error {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid user ID"})
@@ -238,7 +238,7 @@ func (h *AdminHandler) UpdateRole(c *fiber.Ctx) error {
 	var payload struct {
 		Role string `json:"role"`
 	}
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 	if payload.Role != "user" && payload.Role != "admin" {
@@ -267,7 +267,7 @@ func (h *AdminHandler) UpdateRole(c *fiber.Ctx) error {
 }
 
 // POST /api/admin/users/:id/reset-password — admin resets a user's password
-func (h *AdminHandler) ResetPassword(c *fiber.Ctx) error {
+func (h *AdminHandler) ResetPassword(c fiber.Ctx) error {
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid user ID"})
@@ -275,7 +275,7 @@ func (h *AdminHandler) ResetPassword(c *fiber.Ctx) error {
 	var payload struct {
 		Password string `json:"password"`
 	}
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 	// This used to accept any non-empty password, which is how an admin could
@@ -304,7 +304,7 @@ func (h *AdminHandler) ResetPassword(c *fiber.Ctx) error {
 }
 
 // GET /api/admin/audit — paginated audit log
-func (h *AdminHandler) ListAudit(c *fiber.Ctx) error {
+func (h *AdminHandler) ListAudit(c fiber.Ctx) error {
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 	if page < 1 {
@@ -332,7 +332,7 @@ func (h *AdminHandler) ListAudit(c *fiber.Ctx) error {
 }
 
 // GET /api/admin/config — list all Setting rows
-func (h *AdminHandler) ListConfig(c *fiber.Ctx) error {
+func (h *AdminHandler) ListConfig(c fiber.Ctx) error {
 	var settings []database.Setting
 	if err := h.db.Order("key ASC").Find(&settings).Error; err != nil {
 		return internalServerError(c, err)
@@ -341,12 +341,12 @@ func (h *AdminHandler) ListConfig(c *fiber.Ctx) error {
 }
 
 // PATCH /api/admin/config — upsert a Setting row
-func (h *AdminHandler) UpdateConfig(c *fiber.Ctx) error {
+func (h *AdminHandler) UpdateConfig(c fiber.Ctx) error {
 	var payload struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
 	}
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 	if payload.Key == "" {
@@ -390,7 +390,7 @@ func (h *AdminHandler) UpdateConfig(c *fiber.Ctx) error {
 }
 
 // Helper: write audit log entry asynchronously
-func (h *AdminHandler) logAudit(action string, c *fiber.Ctx, targetType, targetID string, metadata map[string]string) {
+func (h *AdminHandler) logAudit(action string, c fiber.Ctx, targetType, targetID string, metadata map[string]string) {
 	actor, ok := currentUserFromLocals(c)
 	if !ok {
 		return
@@ -418,25 +418,25 @@ func (h *AdminHandler) logAudit(action string, c *fiber.Ctx, targetType, targetI
 }
 
 // GET /partials/admin/users — renders users list partial
-func (h *AdminHandler) RenderUsersPartial(c *fiber.Ctx) error {
+func (h *AdminHandler) RenderUsersPartial(c fiber.Ctx) error {
 	partial, data := h.adminSection(adminSectionUsers)
 	return c.Render(partial, data)
 }
 
 // GET /partials/admin/audit — renders audit log partial
-func (h *AdminHandler) RenderAuditPartial(c *fiber.Ctx) error {
+func (h *AdminHandler) RenderAuditPartial(c fiber.Ctx) error {
 	partial, data := h.adminSection(adminSectionAudit)
 	return c.Render(partial, data)
 }
 
 // GET /partials/admin/config — renders system config partial
-func (h *AdminHandler) RenderConfigPartial(c *fiber.Ctx) error {
+func (h *AdminHandler) RenderConfigPartial(c fiber.Ctx) error {
 	partial, data := h.adminSection(adminSectionConfig)
 	return c.Render(partial, data)
 }
 
 // GET /partials/admin/config-edit — renders inline edit row for a config setting
-func (h *AdminHandler) RenderConfigEditPartial(c *fiber.Ctx) error {
+func (h *AdminHandler) RenderConfigEditPartial(c fiber.Ctx) error {
 	key := c.Query("key")
 	if key == "" {
 		return c.Status(400).SendString("<div class=\"error\">key parameter required</div>")

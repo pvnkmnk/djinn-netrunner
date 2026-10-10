@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -44,7 +44,7 @@ func TestSubsonic_AuthMiddleware_TokenRejectedWhenNoPasswordConfigured(t *testin
 	token := hex.EncodeToString(hash[:])
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
 
@@ -78,7 +78,7 @@ func TestSubsonic_AuthMiddleware_PasswordAuthStillWorksWhenNoSharedPassword(t *t
 	createTestUserForSubsonic(t, db, "pwonly@example.com", "accountpass")
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
 

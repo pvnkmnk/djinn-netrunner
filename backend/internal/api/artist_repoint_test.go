@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -36,7 +36,7 @@ func repointFixture(t *testing.T, db *gorm.DB, owner database.User, get func(str
 	dir := filepath.Join("..", "..", "..", "ops", "web", "templates")
 
 	app := fiber.New(fiber.Config{Views: templates.NewPongo2(dir, ".html")})
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", owner)
 		return c.Next()
 	})

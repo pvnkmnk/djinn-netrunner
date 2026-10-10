@@ -4,14 +4,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 )
 
 // withUser middleware injects a user into locals for testing.
 func withUser(user database.User) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	}
@@ -19,7 +19,7 @@ func withUser(user database.User) fiber.Handler {
 
 // withUserPtr middleware injects a user pointer into locals for testing.
 func withUserPtr(user *database.User) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	}
@@ -27,7 +27,7 @@ func withUserPtr(user *database.User) fiber.Handler {
 
 // withCSRF returns a middleware that injects a CSRF token into locals.
 func withCSRF(token string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Locals("csrf", token)
 		return c.Next()
 	}
@@ -35,18 +35,18 @@ func withCSRF(token string) fiber.Handler {
 
 func TestRenderPage(t *testing.T) {
 	tests := []struct {
-		name           string
-		page           string
-		template       string
-		data           fiber.Map
-		setCSRF        bool
-		csrfToken      string
-		setUser        bool
-		user           database.User
-		wantPage       string
-		wantCSRF       bool
-		wantCSRFVal    string
-		wantDataKeys   []string
+		name         string
+		page         string
+		template     string
+		data         fiber.Map
+		setCSRF      bool
+		csrfToken    string
+		setUser      bool
+		user         database.User
+		wantPage     string
+		wantCSRF     bool
+		wantCSRFVal  string
+		wantDataKeys []string
 	}{
 		{
 			name:         "sets Page key correctly",
@@ -107,7 +107,7 @@ func TestRenderPage(t *testing.T) {
 			}
 
 			var capturedBase fiber.Map
-			app.Get("/test", func(c *fiber.Ctx) error {
+			app.Get("/test", func(c fiber.Ctx) error {
 				// Inject user if set
 				if tt.setUser {
 					c.Locals("user", tt.user)
@@ -149,12 +149,12 @@ func TestRenderPage_CSRFTokenFromLocals(t *testing.T) {
 	app := fiber.New()
 
 	// Middleware sets CSRF token
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("csrf", "csrf-12345")
 		return c.Next()
 	})
 
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		user := database.User{ID: 1, Email: "test@test.com", Role: "user"}
 		c.Locals("user", user)
 		// Call actual RenderPage - it will fail on render but CSRF should be set
@@ -179,7 +179,7 @@ func TestRenderPage_CSRFTokenFromLocals(t *testing.T) {
 func TestRenderPage_NoCSRFTokenWithoutLocals(t *testing.T) {
 	app := fiber.New()
 
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		user := database.User{ID: 1, Email: "test@test.com", Role: "user"}
 		c.Locals("user", user)
 		// No CSRF token set in locals

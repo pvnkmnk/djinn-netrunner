@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +29,7 @@ func setupAdminTestApp(t *testing.T, db *gorm.DB, user database.User) *fiber.App
 	handler := NewAdminHandler(db)
 
 	// Inject user into Locals for all routes (simulate auth middleware)
-	injectUser := func(c *fiber.Ctx) error {
+	injectUser := func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	}
@@ -45,7 +45,7 @@ func setupAdminTestAppNoAuth(t *testing.T, db *gorm.DB) *fiber.App {
 	handler := NewAdminHandler(db)
 
 	// No-op middleware (doesn't inject user)
-	noop := func(c *fiber.Ctx) error { return c.Next() }
+	noop := func(c fiber.Ctx) error { return c.Next() }
 
 	registerAdminRoutes(app, handler, noop)
 	return app

@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -66,7 +66,7 @@ type subsonicResponse struct {
 }
 
 // respond formats and sends a Subsonic response as XML or JSON based on the f parameter
-func (h *SubsonicHandler) respond(c *fiber.Ctx, resp *subsonicResponse) error {
+func (h *SubsonicHandler) respond(c fiber.Ctx, resp *subsonicResponse) error {
 	if c.Query("f") == "json" {
 		return h.respondJSON(c, resp)
 	}
@@ -205,7 +205,7 @@ type subsonicChild struct {
 }
 
 // AuthMiddleware validates Subsonic authentication parameters
-func (h *SubsonicHandler) AuthMiddleware(c *fiber.Ctx) error {
+func (h *SubsonicHandler) AuthMiddleware(c fiber.Ctx) error {
 	// Parse query parameters
 	username := c.Query("u")
 	token := c.Query("t")
@@ -256,19 +256,19 @@ func (h *SubsonicHandler) AuthMiddleware(c *fiber.Ctx) error {
 }
 
 // respondXML returns an XML response
-func (h *SubsonicHandler) respondXML(c *fiber.Ctx, resp interface{}) error {
+func (h *SubsonicHandler) respondXML(c fiber.Ctx, resp interface{}) error {
 	c.Set("Content-Type", "application/xml; charset=utf-8")
 	return c.XML(resp)
 }
 
 // respondJSON returns a JSON response wrapped in subsonic-response envelope
-func (h *SubsonicHandler) respondJSON(c *fiber.Ctx, resp interface{}) error {
+func (h *SubsonicHandler) respondJSON(c fiber.Ctx, resp interface{}) error {
 	c.Set("Content-Type", "application/json; charset=utf-8")
 	return c.JSON(fiber.Map{"subsonic-response": resp})
 }
 
 // respondError returns a Subsonic error response
-func (h *SubsonicHandler) respondError(c *fiber.Ctx, code int, message string) error {
+func (h *SubsonicHandler) respondError(c fiber.Ctx, code int, message string) error {
 	error := &subsonicError{Code: code, Message: message}
 	resp := &subsonicResponse{
 		Status:  "failed",
@@ -281,7 +281,7 @@ func (h *SubsonicHandler) respondError(c *fiber.Ctx, code int, message string) e
 }
 
 // Ping handles the ping endpoint
-func (h *SubsonicHandler) Ping(c *fiber.Ctx) error {
+func (h *SubsonicHandler) Ping(c fiber.Ctx) error {
 	resp := &subsonicResponse{
 		Status:  "ok",
 		Version: "1.16.1",
@@ -292,7 +292,7 @@ func (h *SubsonicHandler) Ping(c *fiber.Ctx) error {
 }
 
 // License handles the license endpoint
-func (h *SubsonicHandler) License(c *fiber.Ctx) error {
+func (h *SubsonicHandler) License(c fiber.Ctx) error {
 	resp := &subsonicResponse{
 		Status:  "ok",
 		Version: "1.16.1",
@@ -304,7 +304,7 @@ func (h *SubsonicHandler) License(c *fiber.Ctx) error {
 }
 
 // GetIndexes handles the getIndexes endpoint
-func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetIndexes(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -398,7 +398,7 @@ func (h *SubsonicHandler) GetIndexes(c *fiber.Ctx) error {
 }
 
 // GetMusicDirectory handles the getMusicDirectory endpoint
-func (h *SubsonicHandler) GetMusicDirectory(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetMusicDirectory(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -594,7 +594,7 @@ func (h *SubsonicHandler) getTrackDuration(path string) int {
 }
 
 // GetSong handles the getSong endpoint
-func (h *SubsonicHandler) GetSong(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetSong(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -659,7 +659,7 @@ func (h *SubsonicHandler) trackToSong(track database.Track, albumIDValue, artist
 }
 
 // GetAlbum handles the getAlbum endpoint
-func (h *SubsonicHandler) GetAlbum(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetAlbum(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -808,7 +808,7 @@ func (h *SubsonicHandler) artistAlbums(user database.User, artistName string) ([
 }
 
 // GetArtist handles the getArtist endpoint
-func (h *SubsonicHandler) GetArtist(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetArtist(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -868,7 +868,7 @@ func (h *SubsonicHandler) GetArtist(c *fiber.Ctx) error {
 }
 
 // Stream handles the stream endpoint
-func (h *SubsonicHandler) Stream(c *fiber.Ctx) error {
+func (h *SubsonicHandler) Stream(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -965,7 +965,7 @@ func (h *SubsonicHandler) Stream(c *fiber.Ctx) error {
 }
 
 // streamTranscoded pipes FFmpeg output to the HTTP response
-func (h *SubsonicHandler) streamTranscoded(c *fiber.Ctx, inputPath, outputFormat string, bitrate int) error {
+func (h *SubsonicHandler) streamTranscoded(c fiber.Ctx, inputPath, outputFormat string, bitrate int) error {
 	// Set up streaming response
 	c.Set("Transfer-Encoding", "chunked")
 	c.Set("Cache-Control", "no-cache")
@@ -1067,7 +1067,7 @@ func isLossyFormat(format string) bool {
 }
 
 // GetCoverArt handles the getCoverArt endpoint
-func (h *SubsonicHandler) GetCoverArt(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetCoverArt(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -1135,7 +1135,7 @@ func findCoverArtInDirectory(path string) string {
 }
 
 // Search3 handles the search3 endpoint
-func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
+func (h *SubsonicHandler) Search3(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -1327,7 +1327,7 @@ func (h *SubsonicHandler) Search3(c *fiber.Ctx) error {
 }
 
 // GetAlbumList2 handles the getAlbumList2 endpoint
-func (h *SubsonicHandler) GetAlbumList2(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetAlbumList2(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -1416,7 +1416,7 @@ func (h *SubsonicHandler) GetAlbumList2(c *fiber.Ctx) error {
 }
 
 // GetRandomSongs handles the getRandomSongs endpoint
-func (h *SubsonicHandler) GetRandomSongs(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetRandomSongs(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Authentication required")
@@ -1473,7 +1473,7 @@ func (h *SubsonicHandler) GetRandomSongs(c *fiber.Ctx) error {
 }
 
 // GetScanStatus handles the getScanStatus endpoint
-func (h *SubsonicHandler) GetScanStatus(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetScanStatus(c fiber.Ctx) error {
 	// For now, return a scan status indicating scanning is not running
 	// In a real implementation, this would check for scan jobs
 	scanStatus := &scanStatus{
@@ -1492,7 +1492,7 @@ func (h *SubsonicHandler) GetScanStatus(c *fiber.Ctx) error {
 }
 
 // StartScan handles the startScan endpoint
-func (h *SubsonicHandler) StartScan(c *fiber.Ctx) error {
+func (h *SubsonicHandler) StartScan(c fiber.Ctx) error {
 	// For now, just return a scan status indicating scanning is not running
 	// In a real implementation, this would trigger a scan job
 	return h.GetScanStatus(c)
@@ -1514,7 +1514,7 @@ func (h *SubsonicHandler) getAlbumDuration(user database.User, albumName, artist
 }
 
 // GetPlaylists handles the getPlaylists endpoint
-func (h *SubsonicHandler) GetPlaylists(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetPlaylists(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Not authenticated")
@@ -1602,7 +1602,7 @@ func (h *SubsonicHandler) GetPlaylists(c *fiber.Ctx) error {
 }
 
 // GetPlaylist handles the getPlaylist endpoint
-func (h *SubsonicHandler) GetPlaylist(c *fiber.Ctx) error {
+func (h *SubsonicHandler) GetPlaylist(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Not authenticated")
@@ -1677,7 +1677,7 @@ func (h *SubsonicHandler) GetPlaylist(c *fiber.Ctx) error {
 }
 
 // CreatePlaylist handles the createPlaylist endpoint
-func (h *SubsonicHandler) CreatePlaylist(c *fiber.Ctx) error {
+func (h *SubsonicHandler) CreatePlaylist(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Not authenticated")
@@ -1758,7 +1758,7 @@ func (h *SubsonicHandler) CreatePlaylist(c *fiber.Ctx) error {
 }
 
 // DeletePlaylist handles the deletePlaylist endpoint
-func (h *SubsonicHandler) DeletePlaylist(c *fiber.Ctx) error {
+func (h *SubsonicHandler) DeletePlaylist(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return h.respondError(c, 40, "Not authenticated")

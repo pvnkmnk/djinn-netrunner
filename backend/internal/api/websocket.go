@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/contrib/websocket"
+	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/lib/pq"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"

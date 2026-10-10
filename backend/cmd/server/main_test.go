@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -36,6 +36,7 @@ func TestListenAddressUsesConfiguredPort(t *testing.T) {
 	assert.Equal(t, ":18080", listenAddress(&config.Config{Port: "18080"}))
 	assert.Equal(t, ":8080", listenAddress(&config.Config{}))
 }
+
 // --- Route table -----------------------------------------------------------
 //
 // setupRoutes registers every route, so the table can be asserted directly
@@ -62,7 +63,7 @@ func baseRouteTestConfig() *config.Config {
 
 func newRouteTestApp(t *testing.T, cfg *config.Config) *fiber.App {
 	t.Helper()
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{})
 	artistsHandler := &api.ArtistsHandler{}
 	schedulesHandler := &api.SchedulesHandler{}
 	acquireHandler := &api.AcquireHandler{}

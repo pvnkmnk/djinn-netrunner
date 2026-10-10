@@ -9,7 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -60,7 +60,7 @@ func postPolicyJSON(t *testing.T, app *fiber.App, path, body string) (int, strin
 	t.Helper()
 	req := httptest.NewRequest("POST", path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	require.NoError(t, err)
 	buf := new(bytes.Buffer)
 	_, err = buf.ReadFrom(resp.Body)
@@ -96,7 +96,7 @@ func adminPolicyAppFor(t *testing.T, db *gorm.DB, minLength ...int) *fiber.App {
 	}
 	app := fiber.New()
 	handler := NewAdminHandlerWithPolicy(db, floor)
-	registerAdminRoutes(app, handler, func(c *fiber.Ctx) error {
+	registerAdminRoutes(app, handler, func(c fiber.Ctx) error {
 		c.Locals("user", database.User{ID: 1, Email: "admin@nr.test", Role: "admin"})
 		return c.Next()
 	})

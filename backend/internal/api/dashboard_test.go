@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -72,7 +72,7 @@ func dashboardTestApp(t *testing.T, db *gorm.DB, user *database.User) *fiber.App
 	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
 	app := fiber.New(fiber.Config{Views: engine})
 	h := NewDashboardHandler(db)
-	app.Get("/", func(c *fiber.Ctx) error {
+	app.Get("/", func(c fiber.Ctx) error {
 		if user != nil {
 			c.Locals("user", *user)
 		}

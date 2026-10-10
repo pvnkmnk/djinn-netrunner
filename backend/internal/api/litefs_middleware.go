@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // LiteFSNodeDetector abstracts primary-node detection for LiteFS.
@@ -32,7 +32,7 @@ func LiteFSWriteForward(guard LiteFSNodeDetector, scheme string, port string) fi
 		port = "8080"
 	}
 
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		method := c.Method()
 		if method == fiber.MethodGet || method == fiber.MethodHead || method == fiber.MethodOptions {
 			return c.Next()
@@ -55,7 +55,7 @@ func LiteFSWriteForward(guard LiteFSNodeDetector, scheme string, port string) fi
 		}
 		slog.Info("LiteFS forwarding write to primary", "method", method, "target", target)
 
-		ctx, cancel := context.WithTimeout(c.UserContext(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
 		defer cancel()
 
 		req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(c.Body()))
@@ -119,3 +119,5 @@ func LiteFSWriteForward(guard LiteFSNodeDetector, scheme string, port string) fi
 		return c.Send(body)
 	}
 }
+
+// fiber:context-methods migrated

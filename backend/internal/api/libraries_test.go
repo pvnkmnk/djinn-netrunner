@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -131,7 +131,7 @@ func setupLibraryTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User) {
 	app := fiber.New()
 
 	// Inject user into Locals for all routes (simulate auth middleware)
-	injectUser := func(c *fiber.Ctx) error {
+	injectUser := func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	}
@@ -482,7 +482,7 @@ func TestCreateLibrary_DuplicatePathHtmxReturnsPartial(t *testing.T) {
 	require.NoError(t, engine.LoadFromDir())
 	app := fiber.New(fiber.Config{Views: engine})
 	handler := NewLibraryHandler(db)
-	app.Post("/api/libraries", func(c *fiber.Ctx) error {
+	app.Post("/api/libraries", func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return handler.CreateLibrary(c)
 	})

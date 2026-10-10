@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // DJI-547.
@@ -39,7 +39,7 @@ var machinePathPrefixes = []string{
 // document. htmx is excluded deliberately: it sends HX-Request on every swap
 // and asks for "text/html, */*", so the Accept header alone would classify an
 // htmx fragment fetch as a page navigation and swap a login page into a panel.
-func wantsHTMLPage(c *fiber.Ctx) bool {
+func wantsHTMLPage(c fiber.Ctx) bool {
 	if isHTMXRequest(c) {
 		return false
 	}
@@ -48,7 +48,7 @@ func wantsHTMLPage(c *fiber.Ctx) bool {
 
 // isPageRoute reports whether the matched route is a full page a person can
 // arrive at by clicking, typing a URL or following a shared link.
-func isPageRoute(c *fiber.Ctx) bool {
+func isPageRoute(c fiber.Ctx) bool {
 	path := c.Route().Path
 	for _, prefix := range machinePathPrefixes {
 		if underPrefix(path, prefix) {
@@ -74,7 +74,7 @@ func underPrefix(path, prefix string) bool {
 
 // shouldRenderPage is the single question both guards ask: is this refusal
 // going to be read by a person in a browser?
-func shouldRenderPage(c *fiber.Ctx) bool {
+func shouldRenderPage(c fiber.Ctx) bool {
 	return isPageRoute(c) && wantsHTMLPage(c)
 }
 
@@ -82,8 +82,8 @@ func shouldRenderPage(c *fiber.Ctx) bool {
 // was going so login can send it back. c.OriginalURL is the path the person
 // actually asked for, query string included, which is what makes a deep link
 // survive the round trip.
-func redirectToSignIn(c *fiber.Ctx) error {
-	return c.Redirect("/?next="+url.QueryEscape(c.OriginalURL()), fiber.StatusFound)
+func redirectToSignIn(c fiber.Ctx) error {
+	return c.Redirect().Status(fiber.StatusFound).To("/?next=" + url.QueryEscape(c.OriginalURL()))
 }
 
 // renderForbiddenPage answers a browser that reached a page it has no role
@@ -94,7 +94,7 @@ func redirectToSignIn(c *fiber.Ctx) error {
 // The status matters as much as the page: it is what tells a screen reader
 // this is a refusal rather than a page that failed to load, and it is what
 // keeps this honest for the non-browser callers that never see the HTML.
-func renderForbiddenPage(c *fiber.Ctx) error {
+func renderForbiddenPage(c fiber.Ctx) error {
 	c.Status(fiber.StatusForbidden)
 	return RenderPage(c, "forbidden", "pages/forbidden", fiber.Map{})
 }

@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"gorm.io/gorm"
 )
@@ -42,7 +42,7 @@ func NewHealthHandler(db *gorm.DB, cfg *config.Config) *HealthHandler {
 // returns a summary. The overall status is "ok" when all critical checks
 // (database) pass; optional checks (slskd, gonic, disk) are reported but
 // do not degrade the top-level status.
-func (h *HealthHandler) GetHealth(c *fiber.Ctx) error {
+func (h *HealthHandler) GetHealth(c fiber.Ctx) error {
 	checks := make(map[string]HealthCheck)
 
 	// Database (critical)

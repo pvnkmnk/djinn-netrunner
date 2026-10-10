@@ -12,12 +12,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/glebarez/sqlite"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -52,7 +52,7 @@ func setup(t *testing.T, opts ...func(*fixture)) fixture {
 	require.NoError(t, db.Create(&f.user).Error)
 
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", f.user)
 		return c.Next()
 	})
@@ -238,7 +238,7 @@ func TestTestAPI_SeedPeerForwarding(t *testing.T) {
 func TestTestAPI_SeedPeerLocalDerivation(t *testing.T) {
 	f := setup(t)
 
-	id, _ := seed(t, f, `{"artist":"P","album":"A","no_fallback":true,` +
+	id, _ := seed(t, f, `{"artist":"P","album":"A","no_fallback":true,`+
 		`"peer":{"username":"u","filename":"CD01/08 - Song.flac","tag_artist":"P","tag_album":"A","tag_title":"S","marker":"song"}}`)
 	assert.NotZero(t, id, "seed with peer must succeed without a fake slskd on the stack")
 }
@@ -252,16 +252,16 @@ func TestTestAPI_SeedPeerLocalDerivation(t *testing.T) {
 // learned the name.
 func TestTestAPI_CleanupCoversDeclaredSeeds(t *testing.T) {
 	f := setup(t)
-	body := `{"artist":"On Demand Probe","album":"Fresh Clause","no_fallback":true,` +
+	body := `{"artist":"On Demand Probe","album":"Fresh Clause","no_fallback":true,` +
 		`"peer":{"username":"on-demand","filename":"CD/01 - Song.flac",` +
 		`"tag_artist":"On Demand Band","tag_album":"Their LP","tag_title":"Song","marker":"fresh clause"}}`
 	seed(t, f, body)
-	roster := cleanupRoster()
+	roster := cleanupRoster()
 	assert.Contains(t, roster, "On Demand Probe", "the request artist must be declared")
 	assert.Contains(t, roster, "On Demand Band", "the peer's TAG artist must be declared (import lands under it)")
 	// Baseline roster still present.
 	assert.Contains(t, roster, "Clean Success Artist")
-	// The full cleanup removes the declared names' rows and folders too.
+	// The full cleanup removes the declared names' rows and folders too.
 	lib := database.Library{Name: "D Lib", Path: filepath.Join(f.cfg.MusicLibraryPath, "d-lib")}
 	require.NoError(t, f.db.Create(&lib).Error)
 	require.NoError(t, f.db.Create(&database.Track{LibraryID: lib.ID, Artist: "On Demand Band", Album: "x", Title: "t", Path: filepath.Join(f.cfg.MusicLibraryPath, "On Demand Band", "a.flac")}).Error)
@@ -282,14 +282,14 @@ func TestTestAPI_CleanupCoversDeclaredSeeds(t *testing.T) {
 // would be forgotten and the residue hazard would return.
 func TestTestAPI_CleanupRosterAdditive(t *testing.T) {
 	f := setup(t)
-	seed(t, f, `{"artist":"Additive Probe","album":"A","no_fallback":true}`)
+	seed(t, f, `{"artist":"Additive Probe","album":"A","no_fallback":true}`)
 	before := len(cleanupRoster())
 	req := httptest.NewRequest("POST", "/api/test/seed-fallback-refusal/cleanup", nil)
 	resp, err := f.app.Test(req)
 	require.NoError(t, err)
 	require.Equal(t, 200, resp.StatusCode)
 	assert.Equal(t, before, len(cleanupRoster()), "cleanup must not shrink the roster")
-	// A second seed with the SAME names is idempotent (no duplicate entries):
+	// A second seed with the SAME names is idempotent (no duplicate entries):
 	// the name is already in the set, so the roster stays the same size.
 	seed(t, f, `{"artist":"Additive Probe","album":"A","no_fallback":true}`)
 	assert.Equal(t, before, len(cleanupRoster()), "identical re-seed must not grow the roster")
@@ -357,7 +357,7 @@ func TestTestAPI_CreateDir(t *testing.T) {
 	second := t.TempDir()
 	f.cfg.MusicLibraryPath = second
 	app2 := fiber.New()
-	app2.Use(func(c *fiber.Ctx) error { c.Locals("user", f.user); return c.Next() })
+	app2.Use(func(c fiber.Ctx) error { c.Locals("user", f.user); return c.Next() })
 	Mount(app2.Group("/api"), f.cfg, f.db)
 	req := httptest.NewRequest("POST", "/api/test/create-dir", strings.NewReader(`{"path":"`+strings.ReplaceAll(filepath.ToSlash(filepath.Join(second, "Sub", "Dir")), `"`, `\"`)+`"}`))
 	req.Header.Set("Content-Type", "application/json")

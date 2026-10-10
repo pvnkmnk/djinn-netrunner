@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
@@ -85,7 +85,7 @@ type SummaryStats struct {
 }
 
 // GetJobStats returns job statistics
-func (h *StatsHandler) GetJobStats(c *fiber.Ctx) error {
+func (h *StatsHandler) GetJobStats(c fiber.Ctx) error {
 	// BOLA Protection: Verify user authentication
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
@@ -118,7 +118,7 @@ func (h *StatsHandler) GetJobStats(c *fiber.Ctx) error {
 }
 
 // GetJobTypeBreakdown returns job stats by type
-func (h *StatsHandler) GetJobTypeBreakdown(c *fiber.Ctx) error {
+func (h *StatsHandler) GetJobTypeBreakdown(c fiber.Ctx) error {
 	// BOLA Protection: Verify user authentication
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
@@ -143,7 +143,7 @@ func (h *StatsHandler) GetJobTypeBreakdown(c *fiber.Ctx) error {
 }
 
 // GetJobTrends returns daily job trends
-func (h *StatsHandler) GetJobTrends(c *fiber.Ctx) error {
+func (h *StatsHandler) GetJobTrends(c fiber.Ctx) error {
 	// BOLA Protection: Verify user authentication
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
@@ -175,7 +175,7 @@ func (h *StatsHandler) GetJobTrends(c *fiber.Ctx) error {
 }
 
 // GetLibraryStats returns library statistics
-func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
+func (h *StatsHandler) GetLibraryStats(c fiber.Ctx) error {
 	// BOLA Protection: Verify user authentication
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
@@ -235,7 +235,7 @@ func (h *StatsHandler) GetLibraryStats(c *fiber.Ctx) error {
 }
 
 // GetActivityStats returns activity metrics
-func (h *StatsHandler) GetActivityStats(c *fiber.Ctx) error {
+func (h *StatsHandler) GetActivityStats(c fiber.Ctx) error {
 	// BOLA Protection: Verify user authentication
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
@@ -288,7 +288,7 @@ func (h *StatsHandler) GetActivityStats(c *fiber.Ctx) error {
 }
 
 // GetSummary returns combined overview stats
-func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
+func (h *StatsHandler) GetSummary(c fiber.Ctx) error {
 	// BOLA Protection: Verify user authentication
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
@@ -389,7 +389,7 @@ func (h *StatsHandler) GetSummary(c *fiber.Ctx) error {
 }
 
 // RenderStatsPartial returns stats HTML for HTMX
-func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
+func (h *StatsHandler) RenderStatsPartial(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
 	isHtmx := isHTMXRequest(c)
@@ -398,7 +398,7 @@ func (h *StatsHandler) RenderStatsPartial(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	return c.Render("partials/stats", statsRegionContext(h.db, user))

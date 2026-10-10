@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -77,7 +77,7 @@ func createTestLibraryAndTrack(t *testing.T, db *gorm.DB, ownerID uint64) (datab
 	return lib, track
 }
 
-func withAuthUser(c *fiber.Ctx, user database.User) {
+func withAuthUser(c fiber.Ctx, user database.User) {
 	c.Locals("user", user)
 }
 
@@ -219,7 +219,7 @@ func TestPlaylistHandler_Create_Success(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Post("/api/playlists", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Create(c)
 	})
@@ -245,7 +245,7 @@ func TestPlaylistHandler_Create_MissingName(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Post("/api/playlists", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Create(c)
 	})
@@ -270,7 +270,7 @@ func TestPlaylistHandler_List_UserSeesOwn(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Get("/api/playlists", func(c *fiber.Ctx) error {
+	app.Get("/api/playlists", func(c fiber.Ctx) error {
 		withAuthUser(c, user1)
 		return handler.List(c)
 	})
@@ -297,7 +297,7 @@ func TestPlaylistHandler_List_AdminSeesAll(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Get("/api/playlists", func(c *fiber.Ctx) error {
+	app.Get("/api/playlists", func(c fiber.Ctx) error {
 		withAuthUser(c, admin)
 		return handler.List(c)
 	})
@@ -319,7 +319,7 @@ func TestPlaylistHandler_Get_Success(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Get("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Get("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Get(c)
 	})
@@ -341,7 +341,7 @@ func TestPlaylistHandler_Get_InvalidUUID(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Get("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Get("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Get(c)
 	})
@@ -358,7 +358,7 @@ func TestPlaylistHandler_Get_NotFound(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Get("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Get("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Get(c)
 	})
@@ -381,7 +381,7 @@ func TestPlaylistHandler_AddTrack_BOLA(t *testing.T) {
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
 
-	app.Post("/api/playlists/:id/tracks/user1", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists/:id/tracks/user1", func(c fiber.Ctx) error {
 		withAuthUser(c, user1)
 		return handler.AddTrack(c)
 	})
@@ -393,7 +393,7 @@ func TestPlaylistHandler_AddTrack_BOLA(t *testing.T) {
 
 	assert.Equal(t, 404, resp.StatusCode)
 
-	app.Post("/api/playlists/:id/tracks/admin", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists/:id/tracks/admin", func(c fiber.Ctx) error {
 		withAuthUser(c, admin)
 		return handler.AddTrack(c)
 	})
@@ -412,7 +412,7 @@ func TestPlaylistHandler_Update_Success(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Patch("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Patch("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Update(c)
 	})
@@ -437,7 +437,7 @@ func TestPlaylistHandler_Update_EmptyName(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Patch("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Patch("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Update(c)
 	})
@@ -457,7 +457,7 @@ func TestPlaylistHandler_Update_NotFound(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Patch("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Patch("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Update(c)
 	})
@@ -478,7 +478,7 @@ func TestPlaylistHandler_Delete_Success(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Delete("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Delete("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Delete(c)
 	})
@@ -503,7 +503,7 @@ func TestPlaylistHandler_Delete_OtherUsersPlaylist(t *testing.T) {
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
 	// Admin bypasses ownership checks - they can delete any playlist
-	app.Delete("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Delete("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, admin)
 		return handler.Delete(c)
 	})
@@ -521,7 +521,7 @@ func TestPlaylistHandler_Delete_NotFound(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Delete("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Delete("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Delete(c)
 	})
@@ -544,7 +544,7 @@ func TestPlaylistHandler_AddTrack_Success(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Post("/api/playlists/:id/tracks", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists/:id/tracks", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.AddTrack(c)
 	})
@@ -569,7 +569,7 @@ func TestPlaylistHandler_AddTrack_InvalidTrackID(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Post("/api/playlists/:id/tracks", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists/:id/tracks", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.AddTrack(c)
 	})
@@ -589,7 +589,7 @@ func TestPlaylistHandler_AddTrack_TrackNotFound(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Post("/api/playlists/:id/tracks", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists/:id/tracks", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.AddTrack(c)
 	})
@@ -609,7 +609,7 @@ func TestPlaylistHandler_AddTrack_PlaylistNotFound(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Post("/api/playlists/:id/tracks", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists/:id/tracks", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.AddTrack(c)
 	})
@@ -638,7 +638,7 @@ func TestPlaylistHandler_RemoveTrack_Success(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Delete("/api/playlists/:id/tracks/:trackId", func(c *fiber.Ctx) error {
+	app.Delete("/api/playlists/:id/tracks/:trackId", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.RemoveTrack(c)
 	})
@@ -669,7 +669,7 @@ func TestPlaylistHandler_Reorder_Success(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Put("/api/playlists/:id/tracks/reorder", func(c *fiber.Ctx) error {
+	app.Put("/api/playlists/:id/tracks/reorder", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Reorder(c)
 	})
@@ -699,7 +699,7 @@ func TestPlaylistHandler_Create_HTMXRequest(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Post("/api/playlists", func(c *fiber.Ctx) error {
+	app.Post("/api/playlists", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Create(c)
 	})
@@ -723,7 +723,7 @@ func TestPlaylistHandler_Delete_HTMXRequest(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Delete("/api/playlists/:id", func(c *fiber.Ctx) error {
+	app.Delete("/api/playlists/:id", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.Delete(c)
 	})
@@ -748,7 +748,7 @@ func TestPlaylistHandler_PlaylistsPage_WithUser(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Get("/playlists", func(c *fiber.Ctx) error {
+	app.Get("/playlists", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.PlaylistsPage(c)
 	})
@@ -768,7 +768,7 @@ func TestPlaylistHandler_RenderPlaylistsPartial_WithUser(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
-	app.Get("/partials/playlists", func(c *fiber.Ctx) error {
+	app.Get("/partials/playlists", func(c fiber.Ctx) error {
 		withAuthUser(c, user)
 		return handler.RenderPlaylistsPartial(c)
 	})

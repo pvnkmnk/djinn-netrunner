@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -44,7 +44,7 @@ func TestArtistsHandler_SyncQueuesArtistScanJob(t *testing.T) {
 
 	handler := NewArtistsHandler(db, services.NewArtistTrackingService(db, services.NewMusicBrainzService(nil)), nil)
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})
@@ -100,7 +100,7 @@ func TestArtistsHandler_RenderPartialHandlesNeverScannedArtist(t *testing.T) {
 	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
 	require.NoError(t, engine.LoadFromDir())
 	app := fiber.New(fiber.Config{Views: engine})
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})

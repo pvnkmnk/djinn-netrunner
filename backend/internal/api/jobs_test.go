@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +24,7 @@ import (
 func jobsApp(db *gorm.DB, user database.User) *fiber.App {
 	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
 	app := fiber.New(fiber.Config{Views: engine})
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})
@@ -67,7 +67,7 @@ func renderJobsHTML(t *testing.T, db *gorm.DB, user database.User, query string)
 	t.Helper()
 	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
 	app := fiber.New(fiber.Config{Views: engine})
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})

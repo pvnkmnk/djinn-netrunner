@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -320,7 +320,7 @@ func TestSubsonic_respond_XML(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		resp := &subsonicResponse{
 			Status:  "ok",
 			Version: "1.16.1",
@@ -349,7 +349,7 @@ func TestSubsonic_respond_JSON(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		resp := &subsonicResponse{
 			Status:  "ok",
 			Version: "1.16.1",
@@ -378,7 +378,7 @@ func TestSubsonic_respondXML(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		resp := &subsonicResponse{
 			Status:  "ok",
 			Version: "1.16.1",
@@ -409,7 +409,7 @@ func TestSubsonic_respondJSON(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		resp := &subsonicResponse{
 			Status:  "ok",
 			Version: "1.16.1",
@@ -437,7 +437,7 @@ func TestSubsonic_respondError(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 40, "Test error message")
 	})
 
@@ -460,7 +460,7 @@ func TestSubsonic_respondError_JSON(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 40, "Test error message")
 	})
 
@@ -595,7 +595,7 @@ func TestSubsonic_AuthMiddleware_MissingUsername(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
 
@@ -621,7 +621,7 @@ func TestSubsonic_AuthMiddleware_ValidPassword(t *testing.T) {
 	user := createTestUserForSubsonic(t, db, "test@example.com", password)
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		u, ok := c.Locals("user").(database.User)
 		if !ok {
 			return c.SendStatus(500)
@@ -650,7 +650,7 @@ func TestSubsonic_AuthMiddleware_InvalidPassword(t *testing.T) {
 	createTestUserForSubsonic(t, db, "test@example.com", "correctpassword")
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
 
@@ -691,7 +691,7 @@ func TestSubsonic_AuthMiddleware_ValidToken(t *testing.T) {
 	token := hex.EncodeToString(hash[:])
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		u, ok := c.Locals("user").(database.User)
 		if !ok {
 			return c.SendStatus(500)
@@ -729,7 +729,7 @@ func TestSubsonic_AuthMiddleware_InvalidToken(t *testing.T) {
 	createTestUserForSubsonic(t, db, "test@example.com", "dummy")
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
 
@@ -753,7 +753,7 @@ func TestSubsonic_AuthMiddleware_MissingBothPasswordAndToken(t *testing.T) {
 	createTestUserForSubsonic(t, db, "test@example.com", "dummy")
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
 
@@ -776,7 +776,7 @@ func TestSubsonic_AuthMiddleware_UserNotFound(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", handler.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
 
@@ -1453,7 +1453,7 @@ func TestSubsonic_ErrorResponse_XMLStructure(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 10, "Test error")
 	})
 
@@ -1480,7 +1480,7 @@ func TestSubsonic_ErrorResponse_Code40(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 40, "Authentication failed")
 	})
 
@@ -1500,7 +1500,7 @@ func TestSubsonic_ErrorResponse_Code70(t *testing.T) {
 	handler := NewSubsonicHandler(db, cfg)
 
 	app := fiber.New()
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 70, "Not found")
 	})
 

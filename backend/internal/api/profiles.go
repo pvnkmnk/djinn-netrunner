@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
@@ -20,7 +20,7 @@ func NewProfileHandler(db *gorm.DB) *ProfileHandler {
 }
 
 // List returns all quality profiles
-func (h *ProfileHandler) List(c *fiber.Ctx) error {
+func (h *ProfileHandler) List(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -38,7 +38,7 @@ func (h *ProfileHandler) List(c *fiber.Ctx) error {
 }
 
 // Get returns a single profile by ID
-func (h *ProfileHandler) Get(c *fiber.Ctx) error {
+func (h *ProfileHandler) Get(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -65,7 +65,7 @@ func (h *ProfileHandler) Get(c *fiber.Ctx) error {
 }
 
 // Create creates a new quality profile
-func (h *ProfileHandler) Create(c *fiber.Ctx) error {
+func (h *ProfileHandler) Create(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -84,7 +84,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 		IsDefault           bool   `json:"is_default" form:"is_default"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -172,7 +172,7 @@ func (h *ProfileHandler) Create(c *fiber.Ctx) error {
 }
 
 // Update updates an existing profile
-func (h *ProfileHandler) Update(c *fiber.Ctx) error {
+func (h *ProfileHandler) Update(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -208,7 +208,7 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 		IsDefault           *bool   `json:"is_default" form:"is_default"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -305,7 +305,7 @@ func (h *ProfileHandler) Update(c *fiber.Ctx) error {
 }
 
 // Delete deletes a profile
-func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
+func (h *ProfileHandler) Delete(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -355,7 +355,7 @@ func (h *ProfileHandler) Delete(c *fiber.Ctx) error {
 }
 
 // GetForm returns the profile form for add/edit
-func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
+func (h *ProfileHandler) GetForm(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	isHtmx := isHTMXRequest(c)
 
@@ -363,7 +363,7 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	id := c.Query("id")
@@ -409,7 +409,7 @@ func (h *ProfileHandler) GetForm(c *fiber.Ctx) error {
 }
 
 // RenderProfilesPartial returns profiles HTML for HTMX
-func (h *ProfileHandler) RenderProfilesPartial(c *fiber.Ctx) error {
+func (h *ProfileHandler) RenderProfilesPartial(c fiber.Ctx) error {
 	user, ok, err := requirePartialUser(c)
 	if !ok {
 		return err
@@ -432,7 +432,7 @@ func (h *ProfileHandler) RenderProfilesPartial(c *fiber.Ctx) error {
 }
 
 // SetDefault sets a profile as the default (admin only — default profiles are system-wide)
-func (h *ProfileHandler) SetDefault(c *fiber.Ctx) error {
+func (h *ProfileHandler) SetDefault(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})

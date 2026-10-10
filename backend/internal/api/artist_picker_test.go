@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -66,7 +66,7 @@ func newPickerTestApp(t *testing.T) *pickerTestApp {
 	handler.mbService = stub.asService()
 
 	app := fiber.New(fiber.Config{Views: engine})
-	inject := func(c *fiber.Ctx) error {
+	inject := func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	}

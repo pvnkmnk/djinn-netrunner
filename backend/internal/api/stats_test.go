@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -94,7 +94,7 @@ func TestStatsHandler_GetActivityStats_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})
@@ -141,7 +141,7 @@ func TestStatsHandler_GetSummary_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})
@@ -184,7 +184,7 @@ func TestStatsHandler_GetLibraryStats_Integration(t *testing.T) {
 
 	handler := NewStatsHandler(db)
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})
@@ -213,7 +213,7 @@ func TestStatsHandler_GetLibraryStats_Integration(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&stats)
 
 	assert.Equal(t, int64(2), stats.TotalTracks) // Still 2
-	assert.Len(t, stats.LibraryBreakdown, 2)      // Now 2 including the empty one
+	assert.Len(t, stats.LibraryBreakdown, 2)     // Now 2 including the empty one
 
 	foundEmpty := false
 	for _, lib := range stats.LibraryBreakdown {
@@ -248,7 +248,7 @@ func TestStatsHandler_BOLA_Integration(t *testing.T) {
 
 	// Test GetActivityStats as user 1
 	app1 := fiber.New()
-	app1.Use(func(c *fiber.Ctx) error {
+	app1.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user1)
 		return c.Next()
 	})
@@ -266,7 +266,7 @@ func TestStatsHandler_BOLA_Integration(t *testing.T) {
 
 	// Test GetLibraryStats as user 2
 	app2 := fiber.New()
-	app2.Use(func(c *fiber.Ctx) error {
+	app2.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user2)
 		return c.Next()
 	})
@@ -298,7 +298,7 @@ func TestStatsHandler_RenderStatsPartial_RejectsEmptyLocalsUser(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			app := fiber.New()
-			app.Use(func(c *fiber.Ctx) error {
+			app.Use(func(c fiber.Ctx) error {
 				c.Locals("user", tc.localUser)
 				return c.Next()
 			})

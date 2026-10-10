@@ -3,7 +3,7 @@ package api
 import (
 	"log/slog"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -28,7 +28,7 @@ type PreviewTrack struct {
 	CoverURL string `json:"cover_art_url"`
 }
 
-func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
+func (h *WatchlistPreviewHandler) GetPreview(c fiber.Ctx) error {
 	// Bolt Optimization: Eliminated redundant session lookup. AuthMiddleware already populates c.Locals("user").
 	user, ok := c.Locals("user").(database.User)
 	isHtmx := isHTMXRequest(c)
@@ -37,7 +37,7 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	idParam := c.Params("id")
@@ -65,7 +65,7 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).SendString("forbidden")
 	}
 
-	allTracks, _, err := h.watchlistService.FetchWatchlistTracks(c.Context(), watchlist)
+	allTracks, _, err := h.watchlistService.FetchWatchlistTracks(c.RequestCtx(), watchlist)
 	if err != nil {
 		slog.Error("Failed to fetch watchlist tracks for preview", "error", err, "watchlist_id", watchlist.ID)
 		if isHtmx {
@@ -99,3 +99,5 @@ func (h *WatchlistPreviewHandler) GetPreview(c *fiber.Ctx) error {
 		"Remaining":   total - previewLimit,
 	})
 }
+
+// fiber:context-methods migrated

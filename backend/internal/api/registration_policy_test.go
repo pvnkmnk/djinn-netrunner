@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -169,7 +169,7 @@ func TestJobsTypeFilterOffersEveryJobType(t *testing.T) {
 
 	engine := templates.NewPongo2("../../../ops/web/templates", ".html")
 	app := fiber.New(fiber.Config{Views: engine})
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})
@@ -208,7 +208,7 @@ func TestJobsTypeFilterActuallyFilters(t *testing.T) {
 
 	engine := templates.NewPongo2("../../../ops/web/templates", ".html")
 	app := fiber.New(fiber.Config{Views: engine})
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	})

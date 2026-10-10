@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -50,15 +50,15 @@ func TestSpotifyAuthHandler_LoginCookieSecure(t *testing.T) {
 	handler := NewSpotifyAuthHandler(db)
 
 	app := fiber.New(fiber.Config{
-		EnableTrustedProxyCheck: true,
-		ProxyHeader:             fiber.HeaderXForwardedProto,
-		TrustedProxies:          []string{"127.0.0.1", "0.0.0.0/0"},
+		TrustProxy:       true,
+		ProxyHeader:      fiber.HeaderXForwardedProto,
+		TrustProxyConfig: fiber.TrustProxyConfig{Proxies: []string{"127.0.0.1", "0.0.0.0/0"}},
 	})
 	app.Get("/auth/spotify/login", handler.Login)
 
 	// Test HTTP request -> Secure cookie should NOT be set
 	reqHTTP := httptest.NewRequest("GET", "http://example.com/auth/spotify/login", nil)
-	respHTTP, err := app.Test(reqHTTP, -1)
+	respHTTP, err := app.Test(reqHTTP, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusFound, respHTTP.StatusCode)
 
@@ -76,7 +76,7 @@ func TestSpotifyAuthHandler_LoginCookieSecure(t *testing.T) {
 	// Test HTTPS request -> Secure cookie SHOULD be set
 	reqHTTPS := httptest.NewRequest("GET", "http://example.com/auth/spotify/login", nil)
 	reqHTTPS.Header.Set("X-Forwarded-Proto", "https")
-	respHTTPS, err := app.Test(reqHTTPS, -1)
+	respHTTPS, err := app.Test(reqHTTPS, fiber.TestConfig{Timeout: 0, FailOnTimeout: false})
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusFound, respHTTPS.StatusCode)
 

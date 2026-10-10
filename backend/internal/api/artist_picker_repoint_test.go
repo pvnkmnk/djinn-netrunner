@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/stretchr/testify/assert"
@@ -36,7 +36,7 @@ func newRepointPickerTestApp(t *testing.T) *pickerTestApp {
 		services.NewMusicBrainzService(nil))
 	handler.mbService = p.stub.asService()
 
-	inject := func(c *fiber.Ctx) error {
+	inject := func(c fiber.Ctx) error {
 		c.Locals("user", p.user)
 		return c.Next()
 	}
@@ -215,7 +215,7 @@ func newArtistsFormTestApp(t *testing.T) *pickerTestApp {
 		services.NewMusicBrainzService(nil))
 	handler.mbService = p.stub.asService()
 
-	inject := func(c *fiber.Ctx) error {
+	inject := func(c fiber.Ctx) error {
 		c.Locals("user", p.user)
 		return c.Next()
 	}

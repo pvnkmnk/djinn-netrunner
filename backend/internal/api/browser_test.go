@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -83,11 +83,11 @@ func browserTestApp(t *testing.T, db *gorm.DB, user *database.User) *fiber.App {
 
 	// The sign-in page. In the real app this is the dashboard rendering its
 	// login form; here it is just enough to prove where the redirect went.
-	app.Get("/", auth.OptionalAuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/", auth.OptionalAuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString(`<html><body data-next="` + safeNextPath(c.Query("next")) + `">sign in</body></html>`)
 	})
 
-	page := func(c *fiber.Ctx) error {
+	page := func(c fiber.Ctx) error {
 		if _, ok, err := requirePageUser(c); !ok {
 			return err
 		}
@@ -107,15 +107,15 @@ func browserTestApp(t *testing.T, db *gorm.DB, user *database.User) *fiber.App {
 
 	// Machine surfaces, each behind the same guards as production.
 	apiGroup := app.Group("/api", auth.AuthMiddleware)
-	apiGroup.Get("/watchlists", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
-	apiGroup.Get("/health", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
+	apiGroup.Get("/watchlists", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
+	apiGroup.Get("/health", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
 	adminGroup := app.Group("/api/admin", auth.AuthMiddleware, admin.AdminOnly)
-	adminGroup.Get("/users", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
-	adminGroup.Get("/audit", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
-	app.Get("/partials/stats", auth.AuthMiddleware, func(c *fiber.Ctx) error {
+	adminGroup.Get("/users", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
+	adminGroup.Get("/audit", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
+	app.Get("/partials/stats", auth.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("<div>stats</div>")
 	})
-	app.Get("/partials/admin/users", auth.AuthMiddleware, admin.AdminOnly, func(c *fiber.Ctx) error {
+	app.Get("/partials/admin/users", auth.AuthMiddleware, admin.AdminOnly, func(c fiber.Ctx) error {
 		return c.SendString("<div>users</div>")
 	})
 
@@ -176,7 +176,7 @@ func renderLayoutForEmail(t *testing.T, role, email string) string {
 	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
 	app := fiber.New(fiber.Config{Views: engine})
 
-	app.Get("/probe", func(c *fiber.Ctx) error {
+	app.Get("/probe", func(c fiber.Ctx) error {
 		if role != "" {
 			c.Locals("user", database.User{ID: 1, Email: email, Role: role})
 		}
@@ -411,7 +411,7 @@ func TestIsPageRoute_CarvesOutTheMachineSurfaces(t *testing.T) {
 	// comes from a real matched route rather than a guess.
 	decision := map[string]bool{}
 	app := fiber.New()
-	record := func(c *fiber.Ctx) error {
+	record := func(c fiber.Ctx) error {
 		decision[c.Route().Path] = isPageRoute(c)
 		return c.SendStatus(fiber.StatusOK)
 	}
@@ -445,14 +445,14 @@ func TestIsPageRoute_GroupedRoutesKeepTheirPrefix(t *testing.T) {
 	decision := map[string]bool{}
 	app := fiber.New()
 
-	record := func(c *fiber.Ctx) error {
+	record := func(c fiber.Ctx) error {
 		decision[c.Route().Path] = isPageRoute(c)
 		return c.SendStatus(fiber.StatusOK)
 	}
 	group := app.Group("/api", record)
-	group.Get("/watchlists", func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
+	group.Get("/watchlists", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 	admin := group.Group("/admin", record)
-	admin.Get("/users", func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
+	admin.Get("/users", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 
 	for _, path := range []string{"/api/watchlists", "/api/admin/users"} {
 		resp, err := app.Test(httptest.NewRequest("GET", path, nil))

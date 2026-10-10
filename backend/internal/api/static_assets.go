@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // DJI-556.
@@ -49,7 +49,7 @@ import (
 // Subsonic or page routes changes. It sets the header before calling Next
 // because the file handler appends to the response rather than replacing it.
 func StaticAssetRevalidation() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(fiber.HeaderCacheControl, "no-cache")
 		return c.Next()
 	}
