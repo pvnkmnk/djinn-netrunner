@@ -691,6 +691,16 @@ automation. Two consequences: an **open** PR legitimately shows no attachment
 yet, and a manual `orca linear attach` would leave a *second* one once the merge
 lands. Check that the PR body names the identifier, and do not attach by hand.
 
+- `orca linear` needs the Orca **app running** (`orca open`); without it every
+  verb fails with `Could not connect to the running Orca app`. `scripts/linear.py`
+  needs no app — `comment`, `state` and `issue-list` carried a full reconciliation
+  pass (comment, move state, read back) with Orca closed.
+- **`scripts/linear.py issue` cannot create an issue**: it sends no team, and
+  Linear requires it — `Field "IssueCreateInput.teamId" of required type
+  "String!" was not provided`. Create via the MCP `save_issue` with `team`
+  (name or id); `teamId` is rejected there as an unrecognized key. Passing
+  `state` on create saves the follow-up call.
+
 ### Linear webhooks (`ops/linear-webhook`)
 
 Linear requires a **public, non-localhost HTTPS** endpoint, expects 200 within
