@@ -94,9 +94,16 @@ describing behaviour, not metaphor.
    **loopback literal `127.0.0.1`** rather than `localhost` — `localhost` resolves to `::1` first
    on this host while the publish is IPv4-only. Containers are unaffected: both compose files
    inject the in-network URL, so this key only affects host runs.
-3. **Correct the wording** in README.md, docs/ARCHITECTURE.md, docs/WHITEPAPER.md,
-   docs/RUNBOOK.md, and AGENTS.md, from "SQLite is the default" to "PostgreSQL is what we develop
-   against; SQLite is the NetrunnerLite edition".
+3. **Correct the wording — done 2026-10-09.** README.md, docs/ARCHITECTURE.md,
+   docs/WHITEPAPER.md, docs/RUNBOOK.md, docs/UIIMPLEMENTATION.md, AGENTS.md and both `codemap.md`
+   files no longer present SQLite as the default, the primary system-of-record, or the
+   local-development database; each names PostgreSQL as the development and production target
+   with SQLite as the NetrunnerLite edition, and keeps the capability limits stated as such.
+   LiteFS moved in docs/RUNBOOK.md from a recommended scaling path to a legacy one kept on record
+   per ADR 0001. Dated records were left as written on purpose — `docs/plans/`,
+   `docs/superpowers/`, `docs/project-history.md`, the released `CHANGELOG.md` entries and
+   `docs/BETA_ACCEPTANCE*.md` describe what was true when they were written, which is the point
+   of keeping them.
 4. **Define NetrunnerLite's boundary** — the capability table in §2 is a direction, not a promise.
    It needs a per-feature audit (watchlists, acquisition pipeline, Subsonic surface, multi-user
    scoping, WebSockets) before it is published as what Lite does and does not do.
@@ -118,7 +125,7 @@ Existing SQLite installations keep working. Nothing here changes runtime behavio
 This decision is reviewable without code. It holds if: (a) AGENTS.md and the README describe
 PostgreSQL as the development target and SQLite as the Lite edition; (b) the `dev` secret set can
 boot a host-run server against a PostgreSQL instance; (c) nothing in the repository promises Lite
-capability the table in §2 denies. Revisit when items 3–4 land, and put the naming into the release
+capability the table in §2 denies. Revisit when item 4 lands, and put the naming into the release
 copy, not the docs.
 
 Measured for item 2 (2026-10-09): a host-run server started with `infisical run --env dev`

@@ -1,7 +1,7 @@
 # backend/internal/database/
 
 ## Responsibility
-Provides the data persistence layer for NETRUNNER using GORM with CGO-free SQLite (modernc.org/sqlite) in WAL mode, supporting PostgreSQL as an alternative. Handles all database operations including models, migrations, connection management, and advisory locking for job scope protection.
+Provides the data persistence layer for NETRUNNER using GORM, targeting PostgreSQL (the development and production database) with CGO-free SQLite (modernc.org/sqlite) in WAL mode backing the reduced NetrunnerLite edition. Handles all database operations including models, migrations, connection management, and advisory locking for job scope protection.
 
 ## Design
 
@@ -21,7 +21,7 @@ Provides the data persistence layer for NETRUNNER using GORM with CGO-free SQLit
 - **Setting**: Key-value configuration store
 
 ### Connection Strategy (connection.go)
-- Dual-backend support: SQLite (default) or PostgreSQL
+- Dual-backend support: PostgreSQL (default, and the development/production target) or SQLite (the reduced NetrunnerLite edition)
 - SQLite: WAL mode, synchronous=NORMAL, foreign_keys=ON, busy_timeout=5000ms
 - Connection pool: 10 idle, 100 max, 1hr lifetime
 

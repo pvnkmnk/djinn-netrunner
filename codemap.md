@@ -12,7 +12,7 @@ Console-first operations UI for a music acquisition pipeline. Monitors watchlist
 
 ## Architecture Constraints
 - **Language**: Go 1.25+
-- **Database**: SQLite (CGO-free via `modernc.org/sqlite`) in WAL mode, or PostgreSQL
+- **Database**: PostgreSQL is the development and production target (ADR 0004); SQLite (CGO-free via `modernc.org/sqlite`, WAL mode) backs the reduced **NetrunnerLite** edition. The driver is selected from `DATABASE_URL`.
 - **Frontend**: HTMX + server-rendered Pongo2 templates + vanilla CSS (no SPA)
 - **Concurrency**: Native goroutines, round-robin job dispatch, advisory locking
 - **Privacy**: All P2P/API traffic supports SOCKS5/HTTP proxying

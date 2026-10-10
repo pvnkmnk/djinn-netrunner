@@ -14,9 +14,15 @@ This runbook covers day-to-day operation and common troubleshooting for NETRUNNE
   - docker compose logs -f ops-web
   - docker compose logs -f slskd
 
-## LiteFS / SQLite multi-worker scaling
+## LiteFS / SQLite multi-worker scaling (legacy — not part of NetrunnerLite)
 
-When using SQLite instead of PostgreSQL, LiteFS enables multiple worker processes to share the same database file.
+**Kept on record, no longer recommended.** LiteFS + SQLite is ADR 0001's multi-node SQLite
+path. Since ADR 0004 the development and production target is PostgreSQL, and LiteFS is not
+part of **NetrunnerLite**'s promise: a Lite deployment is a single SQLite file with one
+worker. Use a PostgreSQL deployment for multi-worker work. The steps below stay accurate for
+anyone still running that topology.
+
+LiteFS is the SQLite route to multiple workers sharing one database file — the alternative to PostgreSQL's own multi-worker support, and the reason this section exists at all.
 
 ### Architecture
 - **Primary node**: Receives all write operations and replicates to replicas via FUSE.
@@ -43,9 +49,10 @@ When using SQLite instead of PostgreSQL, LiteFS enables multiple worker processe
 ### When to use PostgreSQL vs SQLite + LiteFS
 | Scenario | Recommendation |
 |---|---|
-| Single worker, local dev | SQLite (no LiteFS needed) |
+| Local development | PostgreSQL (the compose `postgres` service — ADR 0004) |
+| Single-user appliance | SQLite WAL (**NetrunnerLite**, one worker) |
 | Multi-worker, production | PostgreSQL (recommended) |
-| Multi-worker, constrained resources | SQLite + LiteFS |
+| Multi-worker, constrained resources | SQLite + LiteFS — legacy, unsupported; PostgreSQL covers this |
 | Horizontal scaling across hosts | PostgreSQL |
 
 ### Known limitations
