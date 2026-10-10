@@ -34,10 +34,10 @@
             <button class="btn btn-sm" hx-get="/partials/libraries/{{ library.ID }}/browse" hx-target="#libraries-region" hx-swap="innerHTML" aria-label="Browse library {{ library.Name }}">
                 Browse
             </button>
-            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/scan" hx-disabled-elt="this" aria-label="Scan library {{ library.Name }}">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/scan" hx-target="#notice" hx-swap="innerHTML" hx-disabled-elt="this" aria-label="Scan library {{ library.Name }}">
                 Scan
             </button>
-            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/enrich" hx-disabled-elt="this" aria-label="Enrich library {{ library.Name }}">
+            <button class="btn btn-sm" hx-post="/api/libraries/{{ library.ID }}/enrich" hx-target="#notice" hx-swap="innerHTML" hx-disabled-elt="this" aria-label="Enrich library {{ library.Name }}">
                 Enrich
             </button>
             <button class="btn btn-sm" hx-get="/api/libraries/form?id={{ library.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit library {{ library.Name }}">
