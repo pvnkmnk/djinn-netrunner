@@ -17,6 +17,7 @@ slskd (Soulseek), metadata enrichment, local libraries, Fiber + HTMX UI.
 - **Before any task, read `codemap.md`** (project root) for architecture,
   entry points, and data flow; for deep work also read the folder's own
   `codemap.md` (e.g. `backend/internal/services/codemap.md`).
+- **Use CodeGraph for architecture questions, symbol discovery, caller/dependency tracing, and change-impact analysis.** If `graphify-out/` exists, treat questions about the codebase, architecture, file relationships, or project content as graph queries first. Ask focused questions and retrieve only what the task needs. Refresh the index after relevant code changes. Read the actual source before editing; use ordinary search when the graph does not answer the question. Keep lasting design decisions in the repository's architecture docs.
 - **Autonomy:** read-write for local code/docs/tests/non-destructive tooling;
   runtime/deployment changes (compose, prod env, credentials) are
   operator-reviewed.
@@ -448,6 +449,12 @@ otherwise-good change are the thing to flag before anything else.
   attribute VALUES.** `hx-include="closest [role='listitem']"` contains `role=`,
   so `assert.NotContains(openTag, "role=")` fails on correct markup. Match an
   attribute as `(?:^|\s)role="` — whitespace before it, and the quoting it takes.
+
+- **`A && B && CMD &` backgrounds the entire chain**, not just `CMD`. In a
+  probe that captures a file hash, renames the file, starts a server and
+  restores it, the `&` swept the hash and the rename into a subshell: the
+  foreground compared its restore against an *empty* variable and reported
+  the mismatch as `ENV_MISMATCH`. Background the one long-running command.
 
 ## Consolidated workspace learnings (merged from DevWorks base, 2026-09-18)
 
@@ -1228,6 +1235,35 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   disables conversion of the script's own Windows paths, so compose resolved
   `../.env.e2e` to a phantom `C:\c\Users\...` and `e2e.sh down` failed. Scope
   it to the container-side command only.
+
+### Secret management (Infisical)
+
+- **The repo `.env` reaches containers only** — via compose's `env_file:`. A
+  host-run `go run ./cmd/server` never reads it: `config.Load()` loads
+  `../../.env`, which from the repo root resolves to
+  `C:\Users\idols\DevWorks\.env`, and godotenv's "not found" is discarded.
+  So a host run needs `DATABASE_URL` from the ambient environment.
+- `.env` carries 36 keys and **no `DATABASE_URL`** at all (compose sets that),
+  and no postgres is published to the host (`e2e-postgres` has no host port).
+  A host-run dev server therefore has to use SQLite (`DATABASE_URL=netrunner.db`,
+  the value `.env.example` documents).
+- Infisical `dev` mirrors `.env` plus `LINEAR_API_KEY` and `DATABASE_URL`;
+  `prod` is empty. `infisical run --project-config-dir . --env dev -- <cmd>`
+  injects them, authenticated by `INFISICAL_TOKEN` (service token) or
+  `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID`/`_SECRET`. The CLI (0.43.140) also
+  honours `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_DOMAIN`.
+- `infisical service-token create` defaults to **`--expiry-seconds 86400` (one
+  day)** and grants nothing without `--scope dev:/` — pass `--expiry-seconds 0`
+  for a headless target. There is no `identities` verb (machine identities are
+  dashboard-only) and no `service-token` read-back, so an absent expiry cannot
+  be verified from the CLI.
+- Git Bash rewrites a bare `--path /` to `C:/Program Files/Git/`, and Infisical
+  answers `Invalid secret path. Only alphanumeric characters, dashes, and
+  underscores are allowed.` Omit `--path`; it already defaults to `/`.
+- `infisical run -- <binary>` needs a Windows `.exe` suffix on the target
+  binary, or the child dies as `executable file not found in %PATH%`.
+- `docs/SECRETS_MANIFEST.md` is the destination manifest for every credential
+  this repo needs: secret → form → exact file (and key) it belongs in.
 
 ## Skills & dependency sources
 
