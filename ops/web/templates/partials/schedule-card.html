@@ -16,7 +16,7 @@
         <button class="btn btn-sm" hx-get="/api/schedules/form?id={{ schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit schedule for {{ schedule.Watchlist.Name }}">
             Edit
         </button>
-        <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ schedule.ID }}" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete the schedule for {{ schedule.Watchlist.Name }}?" aria-label="Delete schedule for {{ schedule.Watchlist.Name }}">
+        <button class="btn btn-sm btn-danger" hx-delete="/api/schedules/{{ schedule.ID }}" hx-target="#schedules-region" hx-swap="innerHTML" hx-confirm="Are you sure you want to delete the schedule for {{ schedule.Watchlist.Name }}?" aria-label="Delete schedule for {{ schedule.Watchlist.Name }}">
             Delete
         </button>
     </div>
