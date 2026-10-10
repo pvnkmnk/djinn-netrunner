@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
@@ -24,7 +24,7 @@ func NewAcquireHandler(db *gorm.DB) *AcquireHandler {
 }
 
 // Create handles POST /api/acquire — enqueues a new acquisition job.
-func (h *AcquireHandler) Create(c *fiber.Ctx) error {
+func (h *AcquireHandler) Create(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		if c.Get("HX-Request") == "true" {
@@ -40,7 +40,7 @@ func (h *AcquireHandler) Create(c *fiber.Ctx) error {
 		QualityProfileID string `json:"quality_profile_id" form:"quality_profile_id"`
 	}
 
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		if c.Get("HX-Request") == "true" {
 			return h.renderFormWithError(c, "", "", "", "Invalid request.")
 		}
@@ -150,13 +150,13 @@ func (h *AcquireHandler) Create(c *fiber.Ctx) error {
 }
 
 // GetForm returns the acquisition form partial for HTMX modal.
-func (h *AcquireHandler) GetForm(c *fiber.Ctx) error {
+func (h *AcquireHandler) GetForm(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
 		if c.Get("HX-Request") == "true" {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	var profiles []database.QualityProfile
@@ -175,7 +175,7 @@ func (h *AcquireHandler) GetForm(c *fiber.Ctx) error {
 	})
 }
 
-func (h *AcquireHandler) renderFormWithError(c *fiber.Ctx, artist, album, title, errMsg string) error {
+func (h *AcquireHandler) renderFormWithError(c fiber.Ctx, artist, album, title, errMsg string) error {
 	user, _ := currentUserFromLocals(c)
 	var profiles []database.QualityProfile
 	query := h.db.Order("name")
@@ -199,6 +199,6 @@ func (h *AcquireHandler) renderFormWithError(c *fiber.Ctx, artist, album, title,
 // rather than rendering the partial itself: this path used to pass a bare
 // {"jobs": ...} context, so the region arrived with its filters reset and with
 // no queue explanations at all.
-func (h *AcquireHandler) renderJobsList(c *fiber.Ctx, user database.User) error {
+func (h *AcquireHandler) renderJobsList(c fiber.Ctx, user database.User) error {
 	return renderJobsRegion(c, h.db, user)
 }

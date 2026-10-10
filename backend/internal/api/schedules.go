@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"strconv"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/robfig/cron/v3"
@@ -20,7 +20,7 @@ func NewSchedulesHandler(db *gorm.DB) *SchedulesHandler {
 }
 
 // GET /api/schedules - List all schedules
-func (h *SchedulesHandler) List(c *fiber.Ctx) error {
+func (h *SchedulesHandler) List(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -38,7 +38,7 @@ func (h *SchedulesHandler) List(c *fiber.Ctx) error {
 }
 
 // POST /api/schedules - Create new schedule
-func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
+func (h *SchedulesHandler) Create(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -51,7 +51,7 @@ func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
 		Enabled     *bool  `json:"enabled" form:"enabled"`
 	}
 
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
@@ -103,7 +103,7 @@ func (h *SchedulesHandler) Create(c *fiber.Ctx) error {
 }
 
 // DELETE /api/schedules/:id - Delete schedule
-func (h *SchedulesHandler) Delete(c *fiber.Ctx) error {
+func (h *SchedulesHandler) Delete(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -137,7 +137,7 @@ func (h *SchedulesHandler) Delete(c *fiber.Ctx) error {
 }
 
 // PATCH /api/schedules/:id - Update schedule
-func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
+func (h *SchedulesHandler) Update(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -154,7 +154,7 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 		Enabled  *bool   `json:"enabled" form:"enabled"`
 	}
 
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
@@ -204,7 +204,7 @@ func (h *SchedulesHandler) Update(c *fiber.Ctx) error {
 }
 
 // PATCH /api/schedules/:id/toggle - Toggle schedule enabled/disabled
-func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
+func (h *SchedulesHandler) Toggle(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -239,7 +239,7 @@ func (h *SchedulesHandler) Toggle(c *fiber.Ctx) error {
 }
 
 // GetForm returns the schedule form for add/edit
-func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
+func (h *SchedulesHandler) GetForm(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	isHtmx := isHTMXRequest(c)
 
@@ -247,7 +247,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	id := c.Query("id")
@@ -294,7 +294,7 @@ func (h *SchedulesHandler) GetForm(c *fiber.Ctx) error {
 }
 
 // RenderSchedulesPartial returns schedules HTML for HTMX
-func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
+func (h *SchedulesHandler) RenderSchedulesPartial(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	isHtmx := isHTMXRequest(c)
 
@@ -302,7 +302,7 @@ func (h *SchedulesHandler) RenderSchedulesPartial(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	var schedules []database.Schedule

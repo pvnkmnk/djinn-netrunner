@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ func TestLiteFSWriteForward_GETPassesThrough(t *testing.T) {
 	guard := &liteFSPrimaryGuard{}
 	app := fiber.New()
 	app.Use(LiteFSWriteForward(guard, "http", "8080"))
-	app.Get("/api/test", func(c *fiber.Ctx) error {
+	app.Get("/api/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"local": true})
 	})
 
@@ -38,7 +38,7 @@ func TestLiteFSWriteForward_POSTPassesThroughOnPrimary(t *testing.T) {
 	guard := &liteFSPrimaryGuard{}
 	app := fiber.New()
 	app.Use(LiteFSWriteForward(guard, "http", "8080"))
-	app.Post("/api/test", func(c *fiber.Ctx) error {
+	app.Post("/api/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"written": true})
 	})
 
@@ -67,7 +67,7 @@ func TestLiteFSWriteForward_ForwardsToPrimary(t *testing.T) {
 
 	app := fiber.New()
 	app.Use(LiteFSWriteForward(guard, "http", "8080"))
-	app.Post("/api/test", func(c *fiber.Ctx) error {
+	app.Post("/api/test", func(c fiber.Ctx) error {
 		t.Fatal("should not reach local handler")
 		return nil
 	})

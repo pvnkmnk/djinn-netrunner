@@ -3,7 +3,7 @@ package api
 import (
 	"log/slog"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
 )
@@ -17,7 +17,7 @@ type StatsData struct {
 }
 
 // RenderStatsPartial - MOVED to StatsHandler.RenderStatsPartial
-// func RenderStatsPartial(c *fiber.Ctx) error {
+// func RenderStatsPartial(c fiber.Ctx) error {
 // 	db, ok := c.Locals("db").(*gorm.DB)
 // 	if !ok || db == nil {
 // 		log.Printf("Error getting DB from context")
@@ -45,7 +45,7 @@ type StatsData struct {
 // }
 
 // RenderWatchlistsPartial - MOVED to WatchlistHandler.RenderWatchlistsPartial
-// func RenderWatchlistsPartial(c *fiber.Ctx) error {
+// func RenderWatchlistsPartial(c fiber.Ctx) error {
 // 	db, ok := c.Locals("db").(*gorm.DB)
 // 	if !ok || db == nil {
 // 		return c.SendString("<div class=\"error\">Error loading watchlists.</div>")
@@ -63,13 +63,13 @@ type StatsData struct {
 // }
 
 // RenderJobLogsPartial returns job log entries for a given job.
-func (h *StatsHandler) RenderJobLogsPartial(c *fiber.Ctx) error {
+func (h *StatsHandler) RenderJobLogsPartial(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
 	}
 
-	jobID := c.QueryInt("job_id", 0)
+	jobID := fiber.Query[int](c, "job_id", 0)
 	if jobID == 0 {
 		return c.SendString("<p class=\"text-secondary\">Select a job to view its logs.</p>")
 	}
@@ -96,7 +96,7 @@ func (h *StatsHandler) RenderJobLogsPartial(c *fiber.Ctx) error {
 }
 
 // RenderJobsPartial returns jobs HTML for HTMX
-func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
+func (h *StatsHandler) RenderJobsPartial(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -113,7 +113,7 @@ func (h *StatsHandler) RenderJobsPartial(c *fiber.Ctx) error {
 // the partial with a hand-built context ships a region whose dropdowns silently
 // reset and whose queued rows claim to be waiting for no stated reason, which is
 // the exact failure this slice exists to remove.
-func renderJobsRegion(c *fiber.Ctx, db *gorm.DB, user database.User) error {
+func renderJobsRegion(c fiber.Ctx, db *gorm.DB, user database.User) error {
 	var jobs []database.Job
 	// Bolt Optimization: Select only necessary columns to reduce memory allocation and database I/O.
 	// summary carries the human-readable outcome ("Acquired 21/25 items…") and

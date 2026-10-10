@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -67,7 +67,7 @@ func TestProfilePrivilegeEscalation(t *testing.T) {
 	if err := db.Create(&p).Error; err != nil {
 		t.Fatalf("Failed to create test profile: %v", err)
 	}
-	
+
 	// Verify profile was created
 	var checkP database.QualityProfile
 	if err := db.First(&checkP, "id = ?", p.ID).Error; err != nil {

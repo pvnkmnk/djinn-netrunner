@@ -10,13 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gofiber/adaptor/v2"
-	"github.com/gofiber/contrib/websocket"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/csrf"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/contrib/v3/websocket"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/extractors"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	"github.com/gofiber/fiber/v3/middleware/csrf"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/pvnkmnk/netrunner/backend/internal/api"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
@@ -94,16 +96,18 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		Views:                   engine,
-		ProxyHeader:             fiber.HeaderXForwardedFor,
-		EnableTrustedProxyCheck: true,
-		TrustedProxies: []string{
-			"127.0.0.0/8",    // IPv4 loopback
-			"10.0.0.0/8",     // RFC1918 private
-			"172.16.0.0/12",  // RFC1918 private
-			"192.168.0.0/16", // RFC1918 private
-			"::1/128",        // IPv6 loopback
-			"fc00::/7",       // IPv6 unique local
+		Views:       engine,
+		ProxyHeader: fiber.HeaderXForwardedFor,
+		TrustProxy:  true,
+		TrustProxyConfig: fiber.TrustProxyConfig{
+			Proxies: []string{
+				"127.0.0.0/8",    // IPv4 loopback
+				"10.0.0.0/8",     // RFC1918 private
+				"172.16.0.0/12",  // RFC1918 private
+				"192.168.0.0/16", // RFC1918 private
+				"::1/128",        // IPv6 loopback
+				"fc00::/7",       // IPv6 unique local
+			},
 		},
 	})
 
@@ -121,10 +125,12 @@ func main() {
 	// when nothing changed. See api.StaticAssetRevalidation for why there is
 	// deliberately no ETag here.
 	app.Use("/static", api.StaticAssetRevalidation())
-	app.Static("/static", cfg.StaticFilesPath)
+	// Fiber v3 moved app.Static into the static middleware.
+	staticmw := static.New(cfg.StaticFilesPath)
+	app.Use("/static", func(c fiber.Ctx) error { return staticmw(c) })
 
 	// Prometheus metrics endpoint (no auth, no CSRF — scraped by monitoring)
-	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
+	registerMetrics(app)
 
 	// SECURITY: CSRF protection for state-changing operations
 	// Uses cookie-based storage with HTMX-compatible header matching.
@@ -133,7 +139,6 @@ func main() {
 	// UI must always run with CSRF enabled.
 	if cfg.CSRFEnabled {
 		app.Use(csrf.New(csrf.Config{
-			KeyLookup: "header:X-CSRF-Token",
 			// A plain <form> cannot set a header, and the sign-out control
 			// is a plain form on purpose: ending a session must not depend
 			// on JavaScript having loaded. The header is tried first so every
@@ -141,22 +146,21 @@ func main() {
 			// same cookie-backed double-submit check - only the delivery
 			// differs. KeyLookup is a single string in this Fiber version,
 			// which is why this is an Extractor rather than a second lookup.
-			Extractor: func(c *fiber.Ctx) (string, error) {
+			Extractor: extractors.Extractor{Extract: func(c fiber.Ctx) (string, error) {
 				if token := c.Get("X-CSRF-Token"); token != "" {
 					return token, nil
 				}
 				return c.FormValue("csrf_token"), nil
-			},
+			}},
 			CookieName:     "csrf_",
 			CookieSameSite: "Lax",
-			Expiration:     24 * time.Hour,
-			ContextKey:     "csrf",
+			IdleTimeout:    24 * time.Hour,
 		}))
 	}
 
 	// SECURITY: Add security headers to all responses
 	// CSP is set here (not just in Caddy) to protect direct :8080 access
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Set("X-Content-Type-Options", "nosniff")
 		c.Set("X-Frame-Options", "DENY")
 		c.Set("X-XSS-Protection", "1; mode=block")
@@ -221,7 +225,7 @@ func main() {
 
 	// Start server
 	go func() {
-		if err := app.Listen(listenAddress(cfg)); err != nil {
+		if err := app.Listen(listenAddress(cfg), fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
 			slog.Error("Server failed", "error", err)
 		}
 	}()
@@ -234,6 +238,17 @@ func main() {
 	slog.Info("Shutting down server...")
 	listenerCancel()
 	app.Shutdown()
+}
+
+// registerMetrics mounts the Prometheus scrape endpoint. It is a function
+// rather than a line in main so that a test can register it: Fiber v3's Add
+// takes handlers as `any`, so a handler carrying the pre-v3 signature --
+// `func(*fiber.Ctx) error`, which is what the old gofiber/adaptor/v2 module
+// returns -- compiles and then panics at Add time ("add: invalid handler #0").
+// Build and vet never see it, and it fires only when a real server starts, so
+// the route table is the only place a unit test can catch it.
+func registerMetrics(app *fiber.App) {
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 }
 
 func listenAddress(cfg *config.Config) string {
@@ -260,10 +275,10 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			}
 			return 1 * time.Minute // fallback
 		}(),
-		KeyGenerator: func(c *fiber.Ctx) string {
+		KeyGenerator: func(c fiber.Ctx) string {
 			// Get raw TCP connection address — c.IP() may already apply
 			// trusted-proxy logic, making the X-Real-IP trust check circular.
-			rawAddr := c.Context().RemoteAddr().String()
+			rawAddr := c.RequestCtx().RemoteAddr().String()
 			remoteAddr := rawAddr
 			if host, _, err := net.SplitHostPort(rawAddr); err == nil {
 				remoteAddr = host
@@ -280,7 +295,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 			// Fall back to normalized remoteAddr (already stripped of port)
 			return remoteAddr
 		},
-		LimitReached: func(c *fiber.Ctx) error {
+		LimitReached: func(c fiber.Ctx) error {
 			return c.Status(429).JSON(fiber.Map{"error": "too many requests, please try again later"})
 		},
 	})
@@ -314,7 +329,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	// that reads like an instruction. The button targets #console-socket,
 	// so the region that shows the console is the one that explains
 	// itself, and the Attach label survives the swap.
-	app.Post("/console/attach", auth.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Post("/console/attach", auth.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.Type("html").SendString(`<div class="console-entry">Not attached: no job is selected. The console shows the output of one running job at a time.</div>`)
 	})
 
@@ -432,7 +447,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 
 	// Jobs
 	jobRoutes := apiProtected.Group("/jobs")
-	jobRoutes.Get("/", func(c *fiber.Ctx) error {
+	jobRoutes.Get("/", func(c fiber.Ctx) error {
 		user, ok := c.Locals("user").(database.User)
 		if !ok {
 			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
@@ -449,7 +464,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		}
 		return c.JSON(jobs)
 	})
-	jobRoutes.Post("/sync", func(c *fiber.Ctx) error {
+	jobRoutes.Post("/sync", func(c fiber.Ctx) error {
 		watchlistID := c.Query("watchlist_id")
 		if watchlistID != "" {
 			return c.JSON(fiber.Map{"status": "watchlist_sync_triggered", "id": watchlistID})
@@ -466,11 +481,11 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		ws.HandleConsole(c, db)
 	}))
 
-	apiProtected.Post("/library/scan", func(c *fiber.Ctx) error {
+	apiProtected.Post("/library/scan", func(c fiber.Ctx) error {
 		var payload struct {
 			LibraryID string `json:"library_id"`
 		}
-		if err := c.BodyParser(&payload); err != nil {
+		if err := c.Bind().Body(&payload); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
 		}
 		return c.JSON(fiber.Map{"status": "scan_triggered"})
@@ -514,3 +529,5 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		subsonic.Get("/deletePlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.DeletePlaylist)
 	}
 }
+
+// fiber:context-methods migrated

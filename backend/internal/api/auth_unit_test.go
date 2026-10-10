@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -212,7 +212,7 @@ func TestAuthMiddleware_NoCookie(t *testing.T) {
 	db := setupInMemoryDB(t)
 	app := fiber.New()
 	auth := NewAuthHandler(db)
-	app.Get("/protected", auth.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/protected", auth.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("ok")
 	})
 
@@ -225,7 +225,7 @@ func TestAuthMiddleware_InvalidSession(t *testing.T) {
 	db := setupInMemoryDB(t)
 	app := fiber.New()
 	auth := NewAuthHandler(db)
-	app.Get("/protected", auth.AuthMiddleware, func(c *fiber.Ctx) error {
+	app.Get("/protected", auth.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("ok")
 	})
 

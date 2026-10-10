@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -151,14 +151,14 @@ func registerPeer(cfg *config.Config, spec *PeerSpec) error {
 	return nil
 }
 
-func currentUser(c *fiber.Ctx) (database.User, bool) {
+func currentUser(c fiber.Ctx) (database.User, bool) {
 	user, ok := c.Locals("user").(database.User)
 	return user, ok
 }
 
 // createDir: create directory (used by E2E tests to create library paths).
 func createDir(cfg *config.Config) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if !gateEnabled(cfg) {
 			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
 		}
@@ -169,7 +169,7 @@ func createDir(cfg *config.Config) fiber.Handler {
 		var payload struct {
 			Path string `json:"path"`
 		}
-		if err := c.BodyParser(&payload); err != nil {
+		if err := c.Bind().Body(&payload); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
 		}
 		if payload.Path == "" {
@@ -211,7 +211,7 @@ func createDir(cfg *config.Config) fiber.Handler {
 // what makes cleanup self-extending (DJI-502): a new acceptance clause's
 // residue is removed by the same endpoint, with no fixture-list edit.
 func seedFallbackRefusal(cfg *config.Config, db *gorm.DB) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if !gateEnabled(cfg) {
 			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
 		}
@@ -250,7 +250,7 @@ func seedFallbackRefusal(cfg *config.Config, db *gorm.DB) fiber.Handler {
 			// retry run already demonstrated the retry path ends terminal.
 			MaxAttempts int `json:"max_attempts"`
 		}
-		if err := c.BodyParser(&payload); err != nil {
+		if err := c.Bind().Body(&payload); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
 		}
 		if payload.Artist == "" {
@@ -273,7 +273,7 @@ func seedFallbackRefusal(cfg *config.Config, db *gorm.DB) fiber.Handler {
 		}
 
 		// Declare this seed's fixture names to cleanup: the requested artist
-		// (the folder a refused item is stranded under) and, when a peer is		// specified, the peer's TAG artist (the library name a successfully		// imported decoy would carry). See sessionCleanup.
+		// (the folder a refused item is stranded under) and, when a peer is		// specified, the peer's TAG artist (the library name a successfully		// imported decoy would carry). See sessionCleanup.
 		declareSeedArtists(payload.Artist, peerTagArtist(payload.Peer))
 
 		job := database.Job{
@@ -343,7 +343,7 @@ var probeFixtureArtists = []string{"Totally Different Band", "Wrong Work Probe",
 // files). Every failure is reported: a cleanup that silently no-ops leaves the
 // duplicate paths active and the next probe exercises nothing.
 func cleanupProbeResidue(cfg *config.Config, db *gorm.DB) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if !gateEnabled(cfg) {
 			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
 		}
@@ -371,7 +371,6 @@ func cleanupProbeResidue(cfg *config.Config, db *gorm.DB) fiber.Handler {
 	}
 }
 
-
 // seedMonitoredArtist creates a monitored artist through the REAL
 // ArtistTrackingService, so a browser spec can assert the promise DJI-588 made:
 // adding an artist puts its scan on the queue.
@@ -387,7 +386,7 @@ func cleanupProbeResidue(cfg *config.Config, db *gorm.DB) fiber.Handler {
 // pinned by backend/internal/api/artist_scan_queue_test.go and proved by
 // scripts/artist_scan_mutation_check.py.
 func seedMonitoredArtist(cfg *config.Config, db *gorm.DB) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		if !gateEnabled(cfg) {
 			return c.Status(403).JSON(fiber.Map{"error": "test API not enabled"})
 		}
@@ -402,7 +401,7 @@ func seedMonitoredArtist(cfg *config.Config, db *gorm.DB) fiber.Handler {
 			MusicBrainzID    string `json:"musicbrainz_id"`
 			QualityProfileID string `json:"quality_profile_id"`
 		}
-		if err := c.BodyParser(&payload); err != nil {
+		if err := c.Bind().Body(&payload); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
 		}
 		if payload.MusicBrainzID == "" {

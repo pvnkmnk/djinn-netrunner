@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -25,7 +25,7 @@ func setupAdminPageApp(t *testing.T, db *gorm.DB) *fiber.App {
 	app := fiber.New(fiber.Config{Views: engine})
 
 	handler := NewAdminHandler(db)
-	injectUser := func(c *fiber.Ctx) error {
+	injectUser := func(c fiber.Ctx) error {
 		// ID must be non-zero: currentUserFromLocals treats a zero ID as absent.
 		c.Locals("user", database.User{ID: 1, Email: "admin@example.com", Role: "admin"})
 		return c.Next()

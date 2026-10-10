@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 )
 
@@ -19,7 +19,7 @@ type PageData struct {
 var AppVersion = "dev"
 
 // RenderPage renders a page with common layout
-func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) error {
+func RenderPage(c fiber.Ctx, page string, template string, data fiber.Map) error {
 	// IsAdmin and CurrentUserEmail are derived here rather than passed by each
 	// handler. The base layout decides whether to show the admin link and the
 	// sign-out control from them, and a page that forgot to set them would
@@ -41,7 +41,7 @@ func RenderPage(c *fiber.Ctx, page string, template string, data fiber.Map) erro
 }
 
 // WatchlistsPage renders the watchlists page shell
-func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
+func (h *WatchlistHandler) WatchlistsPage(c fiber.Ctx) error {
 	if _, ok, err := requirePageUser(c); !ok {
 		return err
 	}
@@ -52,7 +52,7 @@ func (h *WatchlistHandler) WatchlistsPage(c *fiber.Ctx) error {
 }
 
 // LibrariesPage renders the libraries page shell
-func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
+func (h *LibraryHandler) LibrariesPage(c fiber.Ctx) error {
 	if _, ok, err := requirePageUser(c); !ok {
 		return err
 	}
@@ -63,7 +63,7 @@ func (h *LibraryHandler) LibrariesPage(c *fiber.Ctx) error {
 }
 
 // ProfilesPage renders the profiles page shell
-func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
+func (h *ProfileHandler) ProfilesPage(c fiber.Ctx) error {
 	if _, ok, err := requirePageUser(c); !ok {
 		return err
 	}
@@ -74,7 +74,7 @@ func (h *ProfileHandler) ProfilesPage(c *fiber.Ctx) error {
 }
 
 // SchedulesPage renders the schedules page shell
-func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
+func (h *SchedulesHandler) SchedulesPage(c fiber.Ctx) error {
 	if _, ok, err := requirePageUser(c); !ok {
 		return err
 	}
@@ -85,7 +85,7 @@ func (h *SchedulesHandler) SchedulesPage(c *fiber.Ctx) error {
 }
 
 // ArtistsPage renders the artists page shell
-func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
+func (h *ArtistsHandler) ArtistsPage(c fiber.Ctx) error {
 	if _, ok, err := requirePageUser(c); !ok {
 		return err
 	}
@@ -96,7 +96,7 @@ func (h *ArtistsHandler) ArtistsPage(c *fiber.Ctx) error {
 }
 
 // JobsPage renders the jobs page shell
-func (h *StatsHandler) JobsPage(c *fiber.Ctx) error {
+func (h *StatsHandler) JobsPage(c fiber.Ctx) error {
 	user, ok, err := requirePageUser(c)
 	if !ok {
 		return err

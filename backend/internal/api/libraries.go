@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
@@ -58,7 +58,7 @@ func NewLibraryHandler(db *gorm.DB) *LibraryHandler {
 }
 
 // ListLibraries returns all libraries
-func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
+func (h *LibraryHandler) ListLibraries(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -79,7 +79,7 @@ func (h *LibraryHandler) ListLibraries(c *fiber.Ctx) error {
 }
 
 // GetLibrary returns a single library by ID
-func (h *LibraryHandler) GetLibrary(c *fiber.Ctx) error {
+func (h *LibraryHandler) GetLibrary(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -107,7 +107,7 @@ func (h *LibraryHandler) GetLibrary(c *fiber.Ctx) error {
 }
 
 // CreateLibrary creates a new library
-func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
+func (h *LibraryHandler) CreateLibrary(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -118,7 +118,7 @@ func (h *LibraryHandler) CreateLibrary(c *fiber.Ctx) error {
 		Path string `json:"path" form:"path"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -197,7 +197,7 @@ func (h *LibraryHandler) libraryAtPath(path string) (database.Library, bool, err
 // also claimable by anyone, which is the point — so the answer is an offer to
 // adopt, not a conflict. Collapsing this into the same 409 as a foreign-owned
 // row is what left the documented path uncreatable.
-func (h *LibraryHandler) respondWithExistingLibrary(c *fiber.Ctx, existing database.Library, user database.User) error {
+func (h *LibraryHandler) respondWithExistingLibrary(c fiber.Ctx, existing database.Library, user database.User) error {
 	if existing.OwnerUserID != nil && *existing.OwnerUserID == user.ID {
 		c.Set("HX-Trigger", "closeModal")
 		if isHTMXRequest(c) {
@@ -240,7 +240,7 @@ func (h *LibraryHandler) respondWithExistingLibrary(c *fiber.Ctx, existing datab
 // already sitting at this path. When the row has no owner the message carries
 // the adopt control; when someone else owns it, the message says so and offers
 // nothing, because there is nothing this user may do about it.
-func (h *LibraryHandler) renderAdoptionOffer(c *fiber.Ctx, existing database.Library, adoptable bool) error {
+func (h *LibraryHandler) renderAdoptionOffer(c fiber.Ctx, existing database.Library, adoptable bool) error {
 	var libraries []database.Library
 	query := h.db.Select(libraryListColumns).Order("name")
 	if user, ok := currentUserFromLocals(c); ok && user.Role != "admin" {
@@ -273,7 +273,7 @@ func (h *LibraryHandler) renderAdoptionOffer(c *fiber.Ctx, existing database.Lib
 // attempt. The row must still be unowned when the write lands — the check and
 // the update share one statement, so two people racing for the same orphan row
 // cannot both win it.
-func (h *LibraryHandler) AdoptLibrary(c *fiber.Ctx) error {
+func (h *LibraryHandler) AdoptLibrary(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -382,7 +382,7 @@ func recordAdoption(tx *gorm.DB, library database.Library, user database.User) e
 }
 
 // UpdateLibrary updates an existing library
-func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
+func (h *LibraryHandler) UpdateLibrary(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -412,7 +412,7 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 		QuotaAlertAt *int    `json:"quota_alert_at" form:"quota_alert_at"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -461,7 +461,7 @@ func (h *LibraryHandler) UpdateLibrary(c *fiber.Ctx) error {
 }
 
 // DeleteLibrary deletes a library
-func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
+func (h *LibraryHandler) DeleteLibrary(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -501,7 +501,7 @@ func (h *LibraryHandler) DeleteLibrary(c *fiber.Ctx) error {
 }
 
 // TriggerScan creates a scan job for the library
-func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
+func (h *LibraryHandler) TriggerScan(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -549,7 +549,7 @@ func (h *LibraryHandler) TriggerScan(c *fiber.Ctx) error {
 }
 
 // TriggerEnrich creates an enrich job for the library
-func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
+func (h *LibraryHandler) TriggerEnrich(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -597,7 +597,7 @@ func (h *LibraryHandler) TriggerEnrich(c *fiber.Ctx) error {
 }
 
 // TriggerPrune creates a prune job for the library
-func (h *LibraryHandler) TriggerPrune(c *fiber.Ctx) error {
+func (h *LibraryHandler) TriggerPrune(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -645,7 +645,7 @@ func (h *LibraryHandler) TriggerPrune(c *fiber.Ctx) error {
 }
 
 // ListTracks returns all tracks for a library
-func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
+func (h *LibraryHandler) ListTracks(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -678,7 +678,7 @@ func (h *LibraryHandler) ListTracks(c *fiber.Ctx) error {
 }
 
 // GetForm returns the library form for add/edit
-func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
+func (h *LibraryHandler) GetForm(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	isHtmx := isHTMXRequest(c)
 
@@ -686,7 +686,7 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	id := c.Query("id")
@@ -720,7 +720,7 @@ func (h *LibraryHandler) GetForm(c *fiber.Ctx) error {
 }
 
 // RenderLibrariesPartial returns libraries HTML for HTMX
-func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
+func (h *LibraryHandler) RenderLibrariesPartial(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	isHtmx := isHTMXRequest(c)
 
@@ -728,7 +728,7 @@ func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	var libraries []database.Library
@@ -747,14 +747,14 @@ func (h *LibraryHandler) RenderLibrariesPartial(c *fiber.Ctx) error {
 }
 
 // BrowseTracks returns HTML partial with searchable, sortable, paginated track listing
-func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
+func (h *LibraryHandler) BrowseTracks(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	isHtmx := isHTMXRequest(c)
 	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	libraryID, err := uuid.Parse(c.Params("id"))
@@ -851,14 +851,14 @@ func (h *LibraryHandler) BrowseTracks(c *fiber.Ctx) error {
 }
 
 // TrackDetail returns HTML partial with full track metadata (for modal display)
-func (h *LibraryHandler) TrackDetail(c *fiber.Ctx) error {
+func (h *LibraryHandler) TrackDetail(c fiber.Ctx) error {
 	user, ok := c.Locals("user").(database.User)
 	isHtmx := isHTMXRequest(c)
 	if !ok {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	trackID, err := uuid.Parse(c.Params("id"))

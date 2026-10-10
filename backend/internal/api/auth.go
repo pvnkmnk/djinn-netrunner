@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -80,7 +80,7 @@ func NewAuthHandlerWithBootstrapAdmin(db *gorm.DB, bootstrapAdminEmail, bootstra
 }
 
 // Register handles user registration
-func (h *AuthHandler) Register(c *fiber.Ctx) error {
+func (h *AuthHandler) Register(c fiber.Ctx) error {
 	var payload struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -90,7 +90,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		EnrollmentCode string `json:"enrollment_code" form:"enrollment_code"`
 	}
 
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -190,13 +190,13 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 }
 
 // Login handles user login
-func (h *AuthHandler) Login(c *fiber.Ctx) error {
+func (h *AuthHandler) Login(c fiber.Ctx) error {
 	var payload struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -242,8 +242,11 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	// Set cookie with security best practices
 	// SECURITY: SameSite=Strict prevents CSRF (no cross-site top-level GET navigations)
-	// Secure flag set dynamically: false for local HTTP dev, true for HTTPS behind Caddy
-	secure := c.Protocol() == "https"
+	// Secure flag set dynamically: false for local HTTP dev, true for HTTPS behind Caddy.
+	// Fiber v3: c.Scheme() reads X-Forwarded-Proto when TrustProxy is on (see the
+	// TrustProxyConfig allowlist in cmd/server/main.go), while c.Protocol() is the wire
+	// protocol ("HTTP/1.1") -- under v2 Protocol() returned the scheme, so this matched.
+	secure := c.Scheme() == "https"
 	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookie,
 		Value:    sessionID,
@@ -259,11 +262,11 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	if strings.Contains(acceptHeader, "application/json") || strings.Contains(acceptHeader, "application/*+json") {
 		return c.JSON(fiber.Map{"status": "ok"})
 	}
-	return c.Redirect("/", 302)
+	return c.Redirect().Status(302).To("/")
 }
 
 // Logout handles user logout
-func (h *AuthHandler) Logout(c *fiber.Ctx) error {
+func (h *AuthHandler) Logout(c fiber.Ctx) error {
 	sessionID := c.Cookies(SessionCookie)
 	if sessionID != "" {
 		h.db.Where("session_id = ?", sessionID).Delete(&database.Session{})
@@ -278,7 +281,7 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	// and the criterion is that a person ends up back at the signed-out
 	// dashboard. API and htmx callers still get the JSON acknowledgement.
 	if wantsHTMLPage(c) {
-		return c.Redirect("/", fiber.StatusFound)
+		return c.Redirect().Status(fiber.StatusFound).To("/")
 	}
 	return c.JSON(fiber.Map{"status": "ok"})
 }
@@ -290,7 +293,7 @@ func (h *AuthHandler) GetDB() *gorm.DB {
 // OptionalAuthMiddleware loads user context when a valid session exists but
 // does not reject unauthenticated requests. Use on routes that serve both
 // authenticated and guest visitors (e.g. the dashboard landing page).
-func (h *AuthHandler) OptionalAuthMiddleware(c *fiber.Ctx) error {
+func (h *AuthHandler) OptionalAuthMiddleware(c fiber.Ctx) error {
 	sessionID := c.Cookies(SessionCookie)
 	if sessionID == "" {
 		return c.Next()
@@ -312,7 +315,7 @@ func (h *AuthHandler) OptionalAuthMiddleware(c *fiber.Ctx) error {
 // remembered, so a bookmark, a refresh or a shared deep link lands on the login
 // page and returns to where it was going. Everything else - the JSON API,
 // Subsonic, htmx fragments - keeps the 401 JSON body it has always returned.
-func (h *AuthHandler) AuthMiddleware(c *fiber.Ctx) error {
+func (h *AuthHandler) AuthMiddleware(c fiber.Ctx) error {
 	sessionID := c.Cookies(SessionCookie)
 	if sessionID == "" {
 		return h.rejectUnauthenticated(c)
@@ -333,7 +336,7 @@ func (h *AuthHandler) AuthMiddleware(c *fiber.Ctx) error {
 }
 
 // rejectUnauthenticated answers a request that has no valid session.
-func (h *AuthHandler) rejectUnauthenticated(c *fiber.Ctx) error {
+func (h *AuthHandler) rejectUnauthenticated(c fiber.Ctx) error {
 	if shouldRenderPage(c) {
 		return redirectToSignIn(c)
 	}

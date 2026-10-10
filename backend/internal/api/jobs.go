@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"strconv"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/agent"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
@@ -24,7 +24,7 @@ func NewJobHandler(db *gorm.DB) *JobHandler {
 }
 
 // jobIDParam parses the :id route parameter.
-func jobIDParam(c *fiber.Ctx) (uint64, error) {
+func jobIDParam(c fiber.Ctx) (uint64, error) {
 	return strconv.ParseUint(c.Params("id"), 10, 64)
 }
 
@@ -54,7 +54,7 @@ func mayActOnJob(user database.User, job database.Job) bool {
 // down, releasing its scope lock; when no worker owns the job at all the next
 // worker start stamps it. Either way the row is terminal from the request's
 // point of view, which is what the operator asked for.
-func (h *JobHandler) Cancel(c *fiber.Ctx) error {
+func (h *JobHandler) Cancel(c fiber.Ctx) error {
 	jobID, err := jobIDParam(c)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
@@ -95,7 +95,7 @@ func (h *JobHandler) Cancel(c *fiber.Ctx) error {
 }
 
 // Retry re-queues a failed job.
-func (h *JobHandler) Retry(c *fiber.Ctx) error {
+func (h *JobHandler) Retry(c fiber.Ctx) error {
 	jobID, err := jobIDParam(c)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})

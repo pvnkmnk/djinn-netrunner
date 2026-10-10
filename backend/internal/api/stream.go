@@ -9,14 +9,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )
 
 // StreamTrack serves an audio file with Range/partial content support.
 // It is designed for use with the <audio> HTML element, which sends
 // Range headers automatically for seeking and scrub-preview.
-func (h *LibraryHandler) StreamTrack(c *fiber.Ctx) error {
+func (h *LibraryHandler) StreamTrack(c fiber.Ctx) error {
 	// 1. Auth — user must be set by AuthMiddleware via session cookie
 	user, ok := currentUserFromLocals(c)
 	if !ok {

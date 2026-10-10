@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -50,7 +50,7 @@ func adoptionTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User) {
 
 	handler := NewLibraryHandler(db)
 	app := fiber.New(fiber.Config{Views: engine})
-	inject := func(c *fiber.Ctx) error {
+	inject := func(c fiber.Ctx) error {
 		c.Locals("user", user)
 		return c.Next()
 	}

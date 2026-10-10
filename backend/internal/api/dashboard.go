@@ -3,7 +3,7 @@ package api
 import (
 	"strconv"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"gorm.io/gorm"
@@ -31,7 +31,7 @@ func NewDashboardHandlerWithPolicy(db *gorm.DB, minLength int) *DashboardHandler
 	return &DashboardHandler{db: db, minPasswordLength: minLength}
 }
 
-func (h *DashboardHandler) RenderIndex(c *fiber.Ctx) error {
+func (h *DashboardHandler) RenderIndex(c fiber.Ctx) error {
 	// Try to get user from middleware locals (optional auth for landing page).
 	var user database.User
 	var authUserID string

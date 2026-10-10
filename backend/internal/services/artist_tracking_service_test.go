@@ -7,6 +7,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +18,7 @@ func setupArtistTrackingDB(t *testing.T) (*gorm.DB, func()) {
 	// Use a temp file for the database to avoid sharing issues between tests
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
-	
+
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
@@ -330,21 +331,33 @@ func TestDeleteMonitoredArtist_WithMissingID(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestArtistTrackingService is the integration test that was already in the file
+// TestArtistTrackingService builds the service against the database the suite
+// was pointed at and asserts it comes up.
+//
+// It used to hand DATABASE_URL to sqlite.Open, so a Postgres URL was not a
+// connection string but a filename: the call failed and the test skipped with
+// "Failed to connect to database", which read like an integration test that had
+// run. It is dialector-agnostic now -- database.Connect is the same entry point
+// the binaries use -- so it exercises whichever driver DATABASE_URL names:
+// SQLite in the unit suite's default, Postgres under scripts/postgres_gate.py.
 func TestArtistTrackingService(t *testing.T) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set, skipping integration test")
 	}
 
-	db, err := gorm.Open(sqlite.Open(dbURL), &gorm.Config{})
+	db, err := database.Connect(&config.Config{DatabaseURL: dbURL})
 	if err != nil {
-		t.Skipf("Failed to connect to database: %v", err)
+		t.Fatalf("connect to the database under test: %v", err)
 	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 
-	err = database.Migrate(db)
-	if err != nil {
-		t.Skipf("Failed to migrate: %v", err)
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 
 	cfg := &MusicBrainzService{}

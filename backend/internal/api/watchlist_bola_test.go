@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
@@ -21,9 +21,7 @@ func TestWatchlistBOLA(t *testing.T) {
 	db := setupTestDBForAuth(t)
 	// Use Pongo2 engine for HTMX partials
 	engine := templates.NewPongo2("../../../ops/web/templates", ".html")
-	app := fiber.New(fiber.Config{
-		Views: engine,
-	})
+	app := fiber.New(fiber.Config{Views: engine})
 
 	auth := NewAuthHandler(db)
 	spotifyAuth := NewSpotifyAuthHandler(db)

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
@@ -26,7 +26,7 @@ func NewWatchlistHandler(db *gorm.DB, service *services.WatchlistService) *Watch
 }
 
 // ListWatchlists returns all watchlists for the current user
-func (h *WatchlistHandler) ListWatchlists(c *fiber.Ctx) error {
+func (h *WatchlistHandler) ListWatchlists(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -66,7 +66,7 @@ func (h *WatchlistHandler) resolveFormProfileID(raw string) (uuid.UUID, error) {
 }
 
 // CreateWatchlist creates a new automated watchlist
-func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
+func (h *WatchlistHandler) CreateWatchlist(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -79,7 +79,7 @@ func (h *WatchlistHandler) CreateWatchlist(c *fiber.Ctx) error {
 		QualityProfileID string `json:"quality_profile_id" form:"quality_profile_id"`
 	}
 
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -120,7 +120,7 @@ type UpdateWatchlistInput struct {
 }
 
 // UpdateWatchlist updates an existing watchlist
-func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
+func (h *WatchlistHandler) UpdateWatchlist(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -142,7 +142,7 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 	}
 
 	var input UpdateWatchlistInput
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
@@ -199,7 +199,7 @@ func (h *WatchlistHandler) UpdateWatchlist(c *fiber.Ctx) error {
 }
 
 // DeleteWatchlist removes a watchlist
-func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
+func (h *WatchlistHandler) DeleteWatchlist(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -224,7 +224,7 @@ func (h *WatchlistHandler) DeleteWatchlist(c *fiber.Ctx) error {
 
 // Profile endpoints
 
-func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
+func (h *WatchlistHandler) ListProfiles(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -243,7 +243,7 @@ func (h *WatchlistHandler) ListProfiles(c *fiber.Ctx) error {
 }
 
 // ToggleWatchlist toggles enabled state
-func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
+func (h *WatchlistHandler) ToggleWatchlist(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -274,7 +274,7 @@ func (h *WatchlistHandler) ToggleWatchlist(c *fiber.Ctx) error {
 }
 
 // GetForm returns the watchlist form for add/edit
-func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
+func (h *WatchlistHandler) GetForm(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
 	isHtmx := isHTMXRequest(c)
@@ -283,7 +283,7 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	id := c.Query("id")
@@ -333,7 +333,7 @@ func (h *WatchlistHandler) GetForm(c *fiber.Ctx) error {
 }
 
 // RenderWatchlistsPartial returns watchlists HTML for HTMX
-func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
+func (h *WatchlistHandler) RenderWatchlistsPartial(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 
 	isHtmx := isHTMXRequest(c)
@@ -342,7 +342,7 @@ func (h *WatchlistHandler) RenderWatchlistsPartial(c *fiber.Ctx) error {
 		if isHtmx {
 			return c.SendString("<div class=\"error\">Not authenticated.</div>")
 		}
-		return c.Redirect("/", 302)
+		return c.Redirect().Status(302).To("/")
 	}
 
 	return c.Render("partials/watchlists", watchlistsRegionContext(h.db, user))
@@ -383,7 +383,7 @@ func watchlistsRegionContext(db *gorm.DB, user database.User) fiber.Map {
 }
 
 // SyncWatchlist triggers a sync job for a watchlist
-func (h *WatchlistHandler) SyncWatchlist(c *fiber.Ctx) error {
+func (h *WatchlistHandler) SyncWatchlist(c fiber.Ctx) error {
 	user, hasAuth := currentUserFromLocals(c)
 	if !hasAuth {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})

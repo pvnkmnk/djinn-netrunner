@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
@@ -58,7 +58,7 @@ func NewSpotifyAuthHandler(db *gorm.DB) *SpotifyAuthHandler {
 }
 
 // Login redirects the user to Spotify for authentication
-func (h *SpotifyAuthHandler) Login(c *fiber.Ctx) error {
+func (h *SpotifyAuthHandler) Login(c fiber.Ctx) error {
 	state, err := generateOAuthState()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to generate oauth state"})
@@ -70,17 +70,18 @@ func (h *SpotifyAuthHandler) Login(c *fiber.Ctx) error {
 		Value:    state,
 		MaxAge:   600, // 10 minutes
 		HTTPOnly: true,
-		Secure:   c.Protocol() == "https",
+		// c.Scheme(), not c.Protocol(): v3's Protocol() is the wire protocol ("HTTP/1.1").
+		Secure:   c.Scheme() == "https",
 		SameSite: "Lax",
 		Path:     "/",
 	})
 
 	url := h.config.AuthCodeURL(state)
-	return c.Redirect(url)
+	return c.Redirect().Status(fiber.StatusFound).To(url)
 }
 
 // Callback handles the redirect from Spotify
-func (h *SpotifyAuthHandler) Callback(c *fiber.Ctx) error {
+func (h *SpotifyAuthHandler) Callback(c fiber.Ctx) error {
 	// Verify state matches cookie (CSRF protection)
 	queryState := c.Query("state")
 	cookieState := c.Cookies(oauthStateCookie)
@@ -134,7 +135,7 @@ func (h *SpotifyAuthHandler) Callback(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.Redirect("/#sources")
+	return c.Redirect().Status(fiber.StatusFound).To("/#sources")
 }
 
 // GetClient returns an authenticated Spotify client for a user
@@ -192,7 +193,7 @@ func (h *SpotifyAuthHandler) IsSpDcLinked(userID uint64) bool {
 
 // LinkSpDc handles submission of an sp_dc cookie for a user.
 // POST /api/auth/spotify/spdc with JSON body {"sp_dc": "..."}
-func (h *SpotifyAuthHandler) LinkSpDc(c *fiber.Ctx) error {
+func (h *SpotifyAuthHandler) LinkSpDc(c fiber.Ctx) error {
 	u := c.Locals("user")
 	if u == nil {
 		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
@@ -202,7 +203,7 @@ func (h *SpotifyAuthHandler) LinkSpDc(c *fiber.Ctx) error {
 	var body struct {
 		SpDc string `json:"sp_dc"`
 	}
-	if err := c.BodyParser(&body); err != nil {
+	if err := c.Bind().Body(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 	if body.SpDc == "" {
