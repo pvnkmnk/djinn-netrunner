@@ -4,7 +4,7 @@ This document defines the runtime contracts and invariants for NETRUNNER, especi
 
 ## Services
 - **caddy**: Edge proxy and TLS termination.
-- **SQLite (WAL)**: Primary system-of-record for jobs, logs, metadata, and concurrency primitives (PostgreSQL also supported).
+- **PostgreSQL**: System-of-record for jobs, logs, metadata, and concurrency primitives, and the database this project develops and verifies against (ADR 0004). **SQLite (WAL)** backs the reduced-capability NetrunnerLite edition.
 - **ops-web (Go/Fiber)**: Management API + server-rendered templates + HTMX UI; WebSockets for console streaming (fanout filtered by job_id subscription, Phase 8).
 - **ops-worker (Go)**: Background job orchestrator with native goroutine concurrency, heartbeats, and reaper.
 - **slskd**: Acquisition daemon with bounded download slots.
@@ -76,7 +76,7 @@ The worker orchestrates multiple specialized services:
 - `WS /ws/events` - System-wide event stream (admin-only)
 
 ## Concurrency + Correctness Invariants
-1. **Contention-Safe Claims**: Jobs and jobitems are claimed using atomic status updates (SQLite) or `FOR UPDATE SKIP LOCKED` (PostgreSQL) to prevent duplicate claims.
+1. **Contention-Safe Claims**: Jobs and jobitems are claimed using `FOR UPDATE SKIP LOCKED` (PostgreSQL) or atomic status updates (NetrunnerLite's SQLite path) to prevent duplicate claims.
 2. **Explicit Exclusivity**: Per-scope locks (file-based or DB-level advisory locks) prevent multiple workers from executing the same scope (e.g., syncing the same playlist) simultaneously.
 3. **Deterministic Work Plans**: `jobitems` are created before execution; retries resume without re-deriving metadata.
 4. **Fair Scheduling**: Round-robin task selection across active jobs to prevent starvation.
@@ -146,7 +146,7 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 - No known-CVE dependencies in the dependency tree (as of last audit).
 
 ## DB Connection Model
-The system uses a unified GORM connection with specific optimizations for SQLite:
+PostgreSQL is the development and production target; that connection is pooled and takes real session-level advisory locks. The SQLite path — which backs the reduced-capability NetrunnerLite edition — uses the same unified GORM connection with its own tuning:
 - **WAL Mode**: Enabled for high-concurrency read/write operations.
 - **Busy Timeout**: Configured to 5000ms to prevent locking issues.
 - **Synchronous**: Set to `NORMAL` for performance while maintaining crash-safety.

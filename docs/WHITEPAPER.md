@@ -6,7 +6,7 @@ The core UX is a “protocol console”: structured logs are the primary progres
 
 ## Goals
 - Provide a reliable, observable pipeline from playlist/source → acquired files → organized library → streamable catalog.
-- Keep critical state in a database (SQLite WAL for dev, PostgreSQL for production) so crashes/restarts are recoverable and explainable.
+- Keep critical state in a database (PostgreSQL for Djinn-Netrunner, including local development; SQLite WAL for NetrunnerLite) so crashes/restarts are recoverable and explainable.
 - Maintain predictable concurrency and fairness under multiple simultaneous jobs.
 
 ## Non-goals
@@ -16,24 +16,25 @@ The core UX is a “protocol console”: structured logs are the primary progres
 ## Deployment modes (database)
 | Mode | `DATABASE_URL` | Worker wakeups | Typical use |
 |------|----------------|----------------|-------------|
-| **Production stack** | `postgresql://...` (Docker Compose default) | `LISTEN/NOTIFY` + WebSockets | Multi-service appliance behind Caddy |
-| **Local dev** | SQLite file path (e.g. `netrunner.db`) | Polling loops (no Postgres NOTIFY) | Single-binary `go run ./cmd/server` + worker |
+| **Djinn-Netrunner (production stack)** | `postgresql://...` (Docker Compose default) | `LISTEN/NOTIFY` + WebSockets | Multi-service appliance behind Caddy |
+| **Djinn-Netrunner (local development)** | `postgresql://...` (the compose `postgres` service, run from the host via `infisical run --env dev`) | `LISTEN/NOTIFY` + WebSockets | Development and verification — the same invariants as production |
+| **NetrunnerLite** | SQLite file path (e.g. `netrunner.db`) | Polling loops (no Postgres NOTIFY) | Single-binary `go run ./cmd/server` + worker, **one worker only** |
 
-Both modes share the same schema and GORM models. Production invariants (row locks, advisory locks, NOTIFY fanout) apply fully only on PostgreSQL.
+PostgreSQL is the database this project develops and verifies against (ADR 0004). All modes share the same schema and GORM models, but the production invariants (row locks, advisory locks, NOTIFY fanout) apply fully only on PostgreSQL.
 
 ## System overview
 NETRUNNER runs as a small container stack:
 - Caddy: edge proxy + TLS termination
-- PostgreSQL (or SQLite WAL for dev): system-of-record (jobs, logs, metadata, concurrency primitives)
+- PostgreSQL: system-of-record (jobs, logs, metadata, concurrency primitives); SQLite WAL plays the same role in NetrunnerLite
 - ops-web: operations UI + API (Go/Fiber + HTMX + server-rendered templates) and WebSockets for console streaming
 - ops-worker: async orchestration (job claims, locks, round-robin dispatch, heartbeats, reaper)
 - slskd: acquisition daemon (Soulseek)
 - Gonic: Subsonic-compatible streaming
 
 The system uses:
-- `FOR UPDATE SKIP LOCKED` (PostgreSQL) or atomic status updates (SQLite) for safe claiming
-- Advisory locks (PostgreSQL) or table-based lock manager (SQLite) for per-scope exclusivity
-- PostgreSQL LISTEN/NOTIFY (or polling in SQLite mode) for event-driven wakeups and UI fanout
+- `FOR UPDATE SKIP LOCKED` (PostgreSQL) or atomic status updates (NetrunnerLite's SQLite) for safe claiming
+- Advisory locks (PostgreSQL) or table-based lock manager (NetrunnerLite's SQLite) for per-scope exclusivity
+- LISTEN/NOTIFY (PostgreSQL) or polling (NetrunnerLite) for event-driven wakeups and UI fanout
 
 ## Pipeline flow (end-to-end)
 1. Source registration
@@ -72,7 +73,7 @@ The console is a first-class operations surface:
 - The database is not exposed publicly.
 - Secrets are provided via environment variables and should be rotated and locked down as part of standard ops hygiene.
 - For multi-worker production deployments, use PostgreSQL for proper advisory locking.
-- SQLite WAL is suitable for single-user/local dev, with a startup warning if `MaxConcurrentJobs > 1`.
+- SQLite WAL is **NetrunnerLite**: single-user, one worker. The startup warning above `MaxConcurrentJobs > 1` is that edition's limit, not a supported production configuration.
 
 ## Extensibility
 A new job type typically requires:

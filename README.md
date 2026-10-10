@@ -5,7 +5,7 @@
 NetRunner is a modern, Go-native system for automated music discovery, download, organization, and streaming. Built for performance and privacy, it transforms your server into a resilient music acquisition terminal.
 
 ![Status](https://img.shields.io/badge/status-v0.0.1--release-green)
-![Architecture](https://img.shields.io/badge/architecture-standalone--sqlite-blue)
+![Architecture](https://img.shields.io/badge/architecture-postgresql--sqlite-blue)
 ![UI](https://img.shields.io/badge/ui-htmx--cyberpunk-magenta)
 ![Security](https://img.shields.io/badge/security-session--auth-brightgreen)
 [![CI](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/ci.yml/badge.svg)](https://github.com/pvnkmnk/djinn-netrunner/actions/workflows/ci.yml)
@@ -18,7 +18,7 @@ NetRunner is a modern, Go-native system for automated music discovery, download,
 NetRunner is a security-hardened, performance-optimized music acquisition pipeline. It provides a "zero-config" standalone experience with a high-fidelity operations console, intelligent library curation, and comprehensive multi-user data isolation.
 
 - 📥 **Acquisition**: Seamless integration with Soulseek (via `slskd`).
-- 🏗️ **Standalone Architecture**: Single-binary focus with CGO-free SQLite (WAL mode) or PostgreSQL.
+- 🏗️ **Two editions, one codebase**: **Djinn-Netrunner** runs on PostgreSQL (advisory locks, `LISTEN/NOTIFY`, concurrent workers); **NetrunnerLite** runs on a single CGO-free SQLite (WAL) file.
 - 🏷️ **Metadata Resilience**: Persistent "Shadow Cache" for MusicBrainz & Spotify.
 - ⚡ **High-Performance**: Concurrent worker pools and round-robin task orchestration.
 - 🛡️ **Privacy-First**: Native SOCKS5/HTTP proxy support for all P2P and API traffic.
@@ -142,7 +142,7 @@ bash scripts/validate.sh
 NetRunner 2.0 uses a unified Go 1.25 backend:
 - **NetRunner API (Fiber)**: High-performance web server handling the UI and real-time event fanout.
 - **NetRunner Worker**: Multi-threaded orchestrator using native goroutines for discovery and acquisition.
-- **SQLite (WAL)**: Default persistence layer providing ACID compliance with zero external dependencies.
+- **PostgreSQL**: The development and verification target (ADR 0004), and the database Djinn-Netrunner ships on. **SQLite (WAL)**: The zero-dependency alternative NetrunnerLite runs on — ACID-compliant with no external service, single-worker.
 - **MCP Server**: Embedded server at `backend/cmd/agent` for AI agent interaction.
 
 ### Directory Structure
@@ -172,13 +172,14 @@ NetRunner 2.0 uses a unified Go 1.25 backend:
 
 ## 💾 Database Support
 
-NetRunner supports both SQLite and PostgreSQL. Choose based on your deployment:
+NetRunner ships in two editions over one codebase, and **PostgreSQL is what the project itself develops and verifies against** ([ADR 0004](docs/decisions/0004-postgres-first-development-and-editions.md)):
 
-| Use Case | Recommended DB | Notes |
+| Edition / deployment | Database | Notes |
 |---|---|---|
-| Local / single-user dev | SQLite WAL | Zero config, no external deps |
-| Multi-user / homelab production | PostgreSQL 16 | Required for advisory locks, NOTIFY wakeup, concurrent workers |
-| Multi-node / LiteFS cluster | LiteFS + SQLite | Advanced; single primary only for scheduler/poller |
+| **Djinn-Netrunner** (dev and production) | PostgreSQL 16 | Advisory locks, `LISTEN/NOTIFY` wakeup, concurrent workers; the dev stack runs it on a loopback publish |
+| **NetrunnerLite** (single user, zero config) | SQLite WAL | One worker, polling wakeups, no external service to run |
+| Multi-node / horizontal scaling | PostgreSQL | Multiple workers across hosts |
+| LiteFS + SQLite cluster | — | Not the recommended path; [ADR 0001](docs/decisions/0001-multi-node-sqlite-litefs.md) stays on record |
 
 **Key differences:**
 - **Advisory locks**: Postgres uses `pg_try_advisory_lock` for real session-level mutual exclusion; SQLite uses a `TableLockManager` (row-based emulation — **single-worker only**)
@@ -186,7 +187,7 @@ NetRunner supports both SQLite and PostgreSQL. Choose based on your deployment:
 - **Concurrent workers**: Multiple worker instances require Postgres for safe concurrent job claims
 - **`LiteFSGuard`**: Automatically detects LiteFS primary node and adjusts worker behavior
 
-> A startup warning is emitted when SQLite is used with `MaxConcurrentJobs > 1` — switch to Postgres for concurrent workloads.
+> The startup warning stands: SQLite with `MaxConcurrentJobs > 1` is NetrunnerLite hitting its single-worker limit, not a supported production configuration. Use PostgreSQL for concurrent workloads.
 
 For operational runbooks (backup, upgrade, migration), see [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
@@ -274,4 +275,4 @@ We welcome contributions that align with our "Console-First" and "Standalone" de
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
-**Architecture**: Go 1.25+, SQLite/PostgreSQL, Fiber, HTMX
+**Architecture**: Go 1.25+, PostgreSQL (SQLite for NetrunnerLite), Fiber, HTMX
