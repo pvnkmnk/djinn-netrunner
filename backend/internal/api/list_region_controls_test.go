@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -81,7 +81,7 @@ func listRegionTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User, datab
 	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
 	require.NoError(t, engine.LoadFromDir())
 	app := fiber.New(fiber.Config{Views: engine})
-	app.Use(func(c *fiber.Ctx) error { c.Locals("user", user); return c.Next() })
+	app.Use(func(c fiber.Ctx) error { c.Locals("user", user); return c.Next() })
 
 	playlists := NewPlaylistHandler(db)
 	app.Get("/partials/playlists", playlists.RenderPlaylistsPartial)
