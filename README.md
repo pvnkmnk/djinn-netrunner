@@ -84,6 +84,12 @@ MUSIC_LIBRARY=/music
 ACOUSTID_API_KEY=your_acoustid_api_key
 ```
 
+Every variable the project reads, what form each one takes, and the exact file it
+belongs in (including the CI, Linear and Cloudflare credentials this list does not
+cover) is in [docs/SECRETS_MANIFEST.md](docs/SECRETS_MANIFEST.md). A local process
+can also take its environment from Infisical instead of `.env` — see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#supplying-secrets-from-infisical-optional).
+
 ### 3. Launch the Appliance
 ```bash
 docker compose up -d --build
