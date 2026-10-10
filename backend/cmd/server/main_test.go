@@ -161,3 +161,16 @@ func TestSetupRoutes_SubsonicAbsentWhenDisabled(t *testing.T) {
 		t.Errorf("no /rest route may be registered when Subsonic is disabled: %v", registered)
 	}
 }
+
+// TestRegisterMetrics_RegistersTheScrapeRoute pins the registration the v2 -> v3
+// migration broke. With the old gofiber/adaptor/v2 module the handler carries
+// the pre-v3 signature, which Fiber accepts as `any` and then rejects inside
+// Add -- so it is a runtime panic, "add: invalid handler #0
+// (func(*fiber.Ctx) error)", raised the first time a real server starts. Build
+// and vet stay green, the whole suite stays green, and the image builds; only
+// registering it on an app fails. This is that registration, on a bare app.
+func TestRegisterMetrics_RegistersTheScrapeRoute(t *testing.T) {
+	app := fiber.New()
+	registerMetrics(app) // panics here if the handler is not a Fiber v3 handler
+	assert.True(t, routeTable(app)["GET /metrics"], "GET /metrics must be registered")
+}

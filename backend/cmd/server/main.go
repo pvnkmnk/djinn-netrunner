@@ -10,11 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gofiber/fiber/v3/extractors"
-
-	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/extractors"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/gofiber/fiber/v3/middleware/csrf"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/gofiber/fiber/v3/middleware/logger"
@@ -131,7 +130,7 @@ func main() {
 	app.Use("/static", func(c fiber.Ctx) error { return staticmw(c) })
 
 	// Prometheus metrics endpoint (no auth, no CSRF — scraped by monitoring)
-	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
+	registerMetrics(app)
 
 	// SECURITY: CSRF protection for state-changing operations
 	// Uses cookie-based storage with HTMX-compatible header matching.
@@ -239,6 +238,17 @@ func main() {
 	slog.Info("Shutting down server...")
 	listenerCancel()
 	app.Shutdown()
+}
+
+// registerMetrics mounts the Prometheus scrape endpoint. It is a function
+// rather than a line in main so that a test can register it: Fiber v3's Add
+// takes handlers as `any`, so a handler carrying the pre-v3 signature --
+// `func(*fiber.Ctx) error`, which is what the old gofiber/adaptor/v2 module
+// returns -- compiles and then panics at Add time ("add: invalid handler #0").
+// Build and vet never see it, and it fires only when a real server starts, so
+// the route table is the only place a unit test can catch it.
+func registerMetrics(app *fiber.App) {
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 }
 
 func listenAddress(cfg *config.Config) string {
