@@ -1,6 +1,6 @@
 module github.com/pvnkmnk/netrunner/backend
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/bogem/id3v2/v2 v2.1.4
