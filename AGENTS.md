@@ -1257,11 +1257,32 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   and no postgres is published to the host (`e2e-postgres` has no host port).
   A host-run dev server therefore has to use SQLite (`DATABASE_URL=netrunner.db`,
   the value `.env.example` documents).
-- Infisical `dev` mirrors `.env` plus `LINEAR_API_KEY` and `DATABASE_URL`;
-  `prod` is empty. `infisical run --project-config-dir . --env dev -- <cmd>`
-  injects them, authenticated by `INFISICAL_TOKEN` (service token) or
-  `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID`/`_SECRET`. The CLI (0.43.140) also
-  honours `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_DOMAIN`.
+- Infisical `dev` mirrors `.env` plus `LINEAR_API_KEY` and `DATABASE_URL` (38
+  names); `prod` holds the 24 non-empty ones minus `LINEAR_API_KEY`, with
+  `DATABASE_URL`/`APP_VERSION` overridden. `infisical run --project-config-dir .
+  --env dev -- <cmd>` injects them, authenticated by `INFISICAL_TOKEN` (service
+  token) or `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID`/`_SECRET`; the CLI (0.43.140)
+  also honours `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`,
+  `INFISICAL_DOMAIN`. An interactive login session needs no token at all. Note
+  `.env` — hence `dev` — carries `ENVIRONMENT=production`/`CONFIG_ENV=production`
+  (a release-run leftover), so a host-run "dev" process loads
+  `config.production.yaml` and enforces production requirements.
+- **`infisical secrets set --file .env` writes NOTHING when any key is empty**:
+  it aborts on the first one (`Secret key 'SMTP_USER' has an empty value`) after
+  writing the keys before it. `.env` has 13 empty values, so filter first. Both
+  halves of that round-trip have a trap: `infisical export` renders an empty
+  value as `KEY=""`, which a bare `'=$'` filter does not catch, and the default
+  `--expand` treats a `$` inside a value as a shell expansion, corrupting it.
+  Export with `--expand=false`, strip
+  `^[A-Za-z_][A-Za-z0-9_]*=(""|[[:space:]])*$`, then `set --file`. Keep the seed
+  outside the checkout: **`.art/` is NOT git-ignored** (a status entry there is
+  real untracked content, not scratch).
+- **A host-run server binary must start from the repo root.** Templates load
+  from the relative `ops/web/templates` (`MustNewLocalFileSystemLoader`
+  *panics* on a missing dir) and `configFileCandidates` looks at
+  `wd/config.<env>.yaml` then `wd/../../config.<env>.yaml` — so a cwd of
+  `backend/` finds neither config overlay, and an isolated temp cwd is only good
+  for proving env-secret resolution, not for a full boot.
 - `infisical service-token create` defaults to **`--expiry-seconds 86400` (one
   day)** and grants nothing without `--scope dev:/` — pass `--expiry-seconds 0`
   for a headless target. There is no `identities` verb (machine identities are

@@ -19,9 +19,11 @@ git-ignored.
 | Linear drain token | `HOME\.linear_drain_token` (0600) | file present |
 | `DATABASE_URL` (value `netrunner.db`, SQLite) | Infisical → `dev` | added 2026-10-09; the documented local single-binary dev value — compose overrides `DATABASE_URL` for containers anyway, so this only affects host-run processes |
 | dev service token | `C:\Users\idols\DevWorks\.secrets\infisical-dev.token` (ACL: this user only) | `netrunner-dev-local`, scope `dev:/`, `--access-level read`, `--expiry-seconds 0`; created 2026-10-09 |
+| app env vars, `prod` | Infisical → `prod` (24 names) | filled 2026-10-09 from the `dev` set with the per-environment overrides in §3; 22 of the 24 values are byte-identical to `dev`, only `DATABASE_URL` and `APP_VERSION` deliberately differ |
 
-Not in place: `prod` is **empty**, and `gh secret list --repo pvnkmnk/djinn-netrunner` returns
-**zero** repository secrets.
+Still not in place: `gh secret list --repo pvnkmnk/djinn-netrunner` returns **zero**
+repository secrets (§2, §4), and no `prod` service token exists — the `prod` boot proof in §3
+used this CLI's interactive session, so only a human-driven `infisical run` works there today.
 
 ## 2. Infisical rollout — one credential per target
 
@@ -39,7 +41,7 @@ infisical service-token create --name netrunner-docker-dev \
 | --- | --- | --- |
 | dev service token, Docker target | `st.`-prefixed string, printed once by the command | `REPO\.env` → new line `INFISICAL_TOKEN=…` (both containers already receive it via `env_file: .env`) |
 | dev service token, CI target | `st.`-prefixed string | GitHub repo secret `INFISICAL_TOKEN` (repo → Settings → Secrets and variables → Actions) |
-| prod service token | `st.`-prefixed string | the same two places, once `prod` exists |
+| prod service token | `st.`-prefixed string | the same two places — **not created yet**; §3 records what `prod` holds without one |
 
 > `--expiry-seconds` defaults to **86400 (1 day)**: a token created without
 > `--expiry-seconds 0` stops working tomorrow, which is the failure this line exists to
@@ -64,27 +66,80 @@ against the installed binary): `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID`,
 `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`, `INFISICAL_UNIVERSAL_AUTH_ACCESS_TOKEN`,
 `INFISICAL_TOKEN`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_DOMAIN`.
 
-## 3. Values still missing from Infisical
+## 3. Filling `prod` — what landed, and what differs
 
-Destination for all of them: `prod` in the Infisical project (`dev` is complete as of
-2026-10-09). Easiest `prod` fill: `infisical secrets set --env prod --file .env` from this
-checkout, then fix the keys that must not be copied verbatim: `POSTGRES_PASSWORD` (and the
-password inside `DATABASE_URL`) differ per environment, and `ENVIRONMENT`, `CONFIG_ENV`,
-`APP_VERSION`, `DOMAIN`, `NAVIDROME_PORT`, `BETA_HTTP_PORT` are local-deploy values that
-should not be inherited by `prod`.
+`infisical secrets set --env prod --file .env`, the obvious first move, **writes nothing**: a
+single empty-valued key aborts the whole file (`Secret key 'SMTP_USER' has an empty value`),
+and `REPO\.env` has 13 of them. What works is to copy the `dev` set, drop the empties, then
+set the overrides:
 
-| Key | Form / constraint |
-| --- | --- |
-| `POSTGRES_PASSWORD` | any strong string; must equal the password embedded in `DATABASE_URL` (URL-encoded) |
-| `JWT_SECRET` | long random; production refuses to boot without it |
-| `SLSKD_API_KEY` | **16–255 chars** — slskd logs its complaint and exits (code 0) below 16 |
-| `SLSKD_USERNAME` / `SLSKD_PASSWORD` | real Soulseek account; searches and downloads fail without them |
-| `BOOTSTRAP_ADMIN_SECRET` | **≥ 16 chars** (`config.MinBootstrapSecretLength`); without it `BOOTSTRAP_ADMIN_EMAIL` promotes nobody |
-| `BOOTSTRAP_ADMIN_EMAIL` | an address only — safe to leave unset after first login |
-| `SUBSONIC_PASSWORD` | required when `SUBSONIC_ENABLED=true` in production |
-| `NAVIDROME_USER` / `NAVIDROME_PASS` | required in production when `NAVIDROME_URL` is set |
-| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | Spotify app credentials, optional |
-| `LASTFM_API_KEY`, `LISTENBRAINZ_TOKEN`, `DISCOGS_TOKEN`, `ACOUSTID_API_KEY`, `MUSICBRAINZ_API_KEY`, `LIDARR_API_KEY`, `PROXY_URL`, `YTDLP_PROXY`, SMTP keys | optional provider keys; an empty one degrades to a logged skip |
+```bash
+SEED=/c/Users/idols/DevWorks/.secrets/prod-seed.env   # outside the checkout: .art/ is NOT ignored
+infisical export --env dev --format=dotenv --expand=false --output-file "$SEED"
+# an empty value exports as KEY="" — a bare '=$' filter keeps it
+rg -v '^[A-Za-z_][A-Za-z0-9_]*=(""|[[:space:]])*$' "$SEED" > "$SEED.clean"
+rg -v '^LINEAR_API_KEY=' "$SEED.clean" > "$SEED"
+infisical secrets set --env prod --file "$SEED"
+infisical secrets set --env prod DATABASE_URL=netrunner.prod.db APP_VERSION=v0.1.1 \
+  ENVIRONMENT=production CONFIG_ENV=production
+rm -f "$SEED" "$SEED.clean"                           # a plaintext dump of dev: delete it
+```
+
+`--expand=false` matters as much as the filter: with the default `--expand`, a `$` inside a
+value (a password, a secret) is read as a shell expansion and the copy lands corrupted.
+
+`prod` holds **24 names** = the 22 non-empty `dev` keys (minus `LINEAR_API_KEY`) +
+`DATABASE_URL` + `APP_VERSION`. Compared against `dev` afterwards, 22 of the 24 values are
+identical and exactly 2 differ:
+
+| Key | `dev` | `prod` | Why |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | `netrunner.db` | `netrunner.prod.db` | keeps a host-run `prod` off the `dev` database; containers never read this key — both compose files set it to the postgres URL explicitly |
+| `APP_VERSION` | `dev` | `v0.1.1` | release pointer: `scripts/deploy.sh --release` resolves the latest git tag into this key |
+| `ENVIRONMENT` / `CONFIG_ENV` | `production` | `production` | set explicitly in `prod`; note `dev` inherits `production` from `REPO\.env`, so a host-run "dev" process loads `config.production.yaml` and enforces production requirements |
+
+`LINEAR_API_KEY` is deliberately absent from `prod`: both app services load `env_file: .env`,
+the same reason §5 forbids Linear credentials in that file.
+
+**Boot proof against `prod`** (2026-10-09, repo-root cwd, `PORT=18099`, `REPO\.env` present and
+untouched): `infisical run --env prod -- <server>` returned
+
+```
+health_http=200
+{"status":"ok","checks":{"database":{"status":"ok"},"slskd":{"status":"error","error":"service unreachable"}}}
+INFO Loaded config overlay file=…\config.yaml
+INFO Loaded config overlay file=…\config.production.yaml
+netrunner.prod.db  netrunner.prod.db-shm  netrunner.prod.db-wal      # created
+```
+
+The database file name is the proof that the `prod` set was in effect: `REPO\.env` contains no
+`DATABASE_URL` at all, so that value can only have come from Infisical. Production mode also
+refuses to load without `JWT_SECRET`, so a 200 means the set supplied a usable one.
+`slskd: "error"` is expected — nothing is published on host:5030. Afterwards: port 18099 free,
+no stray process, no `netrunner.prod.db*` left in the checkout.
+
+**Still open there** — each of these is wrong today or absent, and only the operator can
+supply the real value:
+
+| Key | Status today | Constraint / note |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | **copied from `dev`** | any strong string; must equal the password embedded in `DATABASE_URL` (URL-encoded). A fresh postgres volume initialises with this value |
+| `JWT_SECRET` | **copied from `dev`** | long random; production refuses to boot without it. Sharing it across environments means a session cookie minted by `dev` validates against `prod` |
+| `DATABASE_URL` | `netrunner.prod.db` | a host-run placeholder; the deployed target is the postgres URL both compose files inject |
+| `BOOTSTRAP_ADMIN_SECRET` | absent in both | **≥ 16 chars** (`config.MinBootstrapSecretLength`); without it `BOOTSTRAP_ADMIN_EMAIL` promotes nobody |
+| `BOOTSTRAP_ADMIN_EMAIL` | absent in both | an address only — safe to leave unset after first login |
+| `SLSKD_API_KEY` | copied from `dev` | **16–255 chars** — slskd logs its complaint and exits (code 0) below 16 |
+| `SLSKD_USERNAME` / `SLSKD_PASSWORD` | copied from `dev` | real Soulseek account; searches and downloads fail without them |
+| `SUBSONIC_PASSWORD` | copied from `dev` | required when `SUBSONIC_ENABLED=true` in production |
+| prod service token | not created | §2 — needed for the Docker and CI targets |
+| GitHub repo secrets | zero | §2, §4 |
+
+The optional provider keys (`NAVIDROME_URL`, `NAVIDROME_USER` / `NAVIDROME_PASS`,
+`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`, `LASTFM_API_KEY`, `LISTENBRAINZ_TOKEN`,
+`DISCOGS_TOKEN`, `ACOUSTID_API_KEY`, `MUSICBRAINZ_API_KEY`, `LIDARR_*`, `SMTP_*`, `PROXY_URL`,
+`NOTIFICATION_WEBHOOK_URL`) are deliberately absent from `prod`: an empty value degrades to a
+logged skip, so fill each one there only when that integration is actually used in `prod`.
+An empty `SLSKD_API_KEY`/`SUBSONIC_PASSWORD` is *not* in that class — both are required.
 
 ## 4. Other credentials this repo's tooling and CI read
 
@@ -119,7 +174,7 @@ Never place Linear credentials in this repo's `.env`: both app services load tha
 
 ```bash
 infisical secrets --env dev  --plain | cut -d= -f1 | sort   # expect 38 names (incl. DATABASE_URL)
-infisical secrets --env prod --plain | cut -d= -f1 | sort   # currently empty
+infisical secrets --env prod --plain | cut -d= -f1 | sort   # expect 24 names (no empty values)
 gh secret list --repo pvnkmnk/djinn-netrunner               # expect the names from §2–§4
 infisical run --project-config-dir "$REPO" --env dev -- go run ./backend/cmd/server
 ```
