@@ -49,15 +49,9 @@ is called done.
 | Workers | multiple, real advisory locks | one (`MaxConcurrentJobs > 1` warns) |
 | Wakeups | `LISTEN/NOTIFY` | polling interval |
 | Multi-node | supported | not promised |
-<<<<<<< HEAD
 | Feature set | everything | a documented subset, audited per feature ([docs/NETRUNNERLITE.md](../NETRUNNERLITE.md)) |
 
 **Audited 2026-10-09:** the rows above are promises per feature, not directions — [docs/NETRUNNERLITE.md](../NETRUNNERLITE.md) carries the verdict and the evidence for each one, including the measurement that the wakeup row reads better than reality: the `NOTIFY` publisher is a SQL trigger no deployment installs, so both editions poll on a 5 s loop today and the Postgres fast path is dormant until that SQL is wired. The driver detection and both code paths stay in one codebase; the editions differ by
-=======
-| Feature set | everything | a documented subset, audited per feature (§4 below) |
-
-The driver detection and both code paths stay in one codebase; the editions differ by
->>>>>>> bc8a5d9 (docs(adr): PostgreSQL becomes the development target; two editions (DJI-649))
 configuration and by what each one promises, not by a fork.
 
 ### 3. Naming
@@ -100,7 +94,6 @@ describing behaviour, not metaphor.
    **loopback literal `127.0.0.1`** rather than `localhost` — `localhost` resolves to `::1` first
    on this host while the publish is IPv4-only. Containers are unaffected: both compose files
    inject the in-network URL, so this key only affects host runs.
-<<<<<<< HEAD
 3. **Correct the wording — done 2026-10-09.** README.md, docs/ARCHITECTURE.md,
    docs/WHITEPAPER.md, docs/RUNBOOK.md, docs/UIIMPLEMENTATION.md, AGENTS.md and both `codemap.md`
    files no longer present SQLite as the default, the primary system-of-record, or the
@@ -124,14 +117,6 @@ describing behaviour, not metaphor.
    `DATABASE_URL` to `sqlite.Open`, where a Postgres URL is not a connection string but a filename
    and the resulting skip read like a passing integration test. The gate's own rules are covered
    offline by `python scripts/test_postgres_gate.py` (23 cases, 11 of them rejections).
-=======
-3. **Correct the wording** in README.md, docs/ARCHITECTURE.md, docs/WHITEPAPER.md,
-   docs/RUNBOOK.md, and AGENTS.md, from "SQLite is the default" to "PostgreSQL is what we develop
-   against; SQLite is the NetrunnerLite edition".
-4. **Define NetrunnerLite's boundary** — the capability table in §2 is a direction, not a promise.
-   It needs a per-feature audit (watchlists, acquisition pipeline, Subsonic surface, multi-user
-   scoping, WebSockets) before it is published as what Lite does and does not do.
->>>>>>> bc8a5d9 (docs(adr): PostgreSQL becomes the development target; two editions (DJI-649))
 
 ## Consequences
 
@@ -150,11 +135,7 @@ Existing SQLite installations keep working. Nothing here changes runtime behavio
 This decision is reviewable without code. It holds if: (a) AGENTS.md and the README describe
 PostgreSQL as the development target and SQLite as the Lite edition; (b) the `dev` secret set can
 boot a host-run server against a PostgreSQL instance; (c) nothing in the repository promises Lite
-<<<<<<< HEAD
 capability the table in §2 denies. Revisit when item 4 lands, and put the naming into the release
-=======
-capability the table in §2 denies. Revisit when items 3–4 land, and put the naming into the release
->>>>>>> bc8a5d9 (docs(adr): PostgreSQL becomes the development target; two editions (DJI-649))
 copy, not the docs.
 
 Measured for item 2 (2026-10-09): a host-run server started with `infisical run --env dev`
