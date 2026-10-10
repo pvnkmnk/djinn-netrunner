@@ -14,6 +14,14 @@ NetRunner is a Go music-acquisition and library-operations platform: watchlist
 ingest (Spotify, Last.fm, ListenBrainz, RSS, local), acquisition jobs through
 slskd (Soulseek), metadata enrichment, local libraries, Fiber + HTMX UI.
 
+- **Never reach for `grep` or `sed`: use `rg` (ripgrep) and `sd`.** This is a
+  standing rule, not a preference. `grep`/`sed` are acceptable only in scripted,
+  piped work where `rg`'s ignore rules or `sd`'s in-place rewrite would get in
+  the way. `sd` rewrites files **in place** and prints nothing, so verify the
+  write; `rg` is the search tool (`-n` line numbers, `-g '*.go'` glob, `-c`
+  counts, `-l` names only) and honours `.gitignore`. Both are installed. Full
+  detail and the edge cases: "Shell tooling: `rg` and `sd`, not `grep` and
+  `sed`" below.
 - **Before any task, read `codemap.md`** (project root) for architecture,
   entry points, and data flow; for deep work also read the folder's own
   `codemap.md` (e.g. `backend/internal/services/codemap.md`).
@@ -284,6 +292,20 @@ locks expire after 15 min, not cross-process-safe), no `FILTER (WHERE ...)`
 `WorkerOrchestrator` takes advisory locks per scope ID before processing;
 if `MaxConcurrentJobs > 1` with SQLite the worker warns at startup — use
 Postgres for concurrent production workloads.
+
+**Develop against Postgres (ADR 0004, 2026-10-09).** SQLite remains supported
+as the reduced-capability **NetrunnerLite** edition, but it is no longer the
+default we optimise for: "green on SQLite" is not evidence for a change that
+touches claims, locks, wakeups, or aggregate SQL — check those on Postgres
+before calling the change done. The dev database is the compose service:
+`docker compose up -d postgres` (project `djinn-netrunner`, container
+`netrunner-postgres`, publishing `127.0.0.1:${PG_HOST_PORT:-5432}:5432`), and
+Infisical `dev`'s `DATABASE_URL` points at it. **Use the literal `127.0.0.1`,
+not `localhost`** — `localhost` resolves to `::1` first here, the publish is
+IPv4-only, and the server would dial nothing (the slskd health check already
+logs `dial tcp [::1]:5030` for the same reason). The e2e overlay's
+`e2e-postgres` publishes **no** host port, so a host run needs this service, not
+the e2e one.
 
 ## Common tasks
 
