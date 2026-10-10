@@ -72,22 +72,21 @@ jobs:
       - name: Vulnerability scan
         working-directory: backend
         env:
-# Pinned, not @latest, and this is what it cost to learn: jumping
-# the pin past what the runner's Go satisfies made govulncheck
-# fetch an unpublished toolchain and die as a phantom scan
-# (nothing scanned, exit 1, "404 Not Found" from sum.golang.org).
-# x/vuln v1.8.0 declares go 1.26.0 and the go-version pin above is
-# 1.27.2, so v1.8.0 is the newest release the pin satisfies. Bump
-# the two together, and check a release's go directive before
-# bumping it (curl proxy.golang.org/.../@v/vX.Y.Z.mod).
-#
-# The patch level matters as much as the minor: the go-version pin
-# must be >= the newest "Fixed in: go1.x.y" govulncheck reports for
-# the standard library, or the scan fails on findings the toolchain
-# itself carries. This branch's red was exactly that -- reached
-# net/http call sites in go1.25.13, fixed in go1.26.9 -- so the pin
-# moves to 1.27.2. The x/net half of the same advisory
-# (GO-2026-6617, fixed in v0.60.0) is cleared in backend/go.mod.
+          # Pinned, not @latest, and this is what it cost to learn: jumping
+          # the pin past what the runner's Go satisfies made govulncheck
+          # fetch an unpublished toolchain and die as a phantom scan
+          # (nothing scanned, exit 1, "404 Not Found" from sum.golang.org).
+          # x/vuln v1.8.0 declares go 1.26.0 and the go-version pin above is
+          # 1.27.2, so v1.8.0 is the newest release the pin satisfies. Bump
+          # the two together, and check a release's go directive before
+          # bumping it (curl proxy.golang.org/.../@v/vX.Y.Z.mod).
+          #
+          # The PATCH level matters as much as the minor: the go-version pin
+          # must be >= the newest "Fixed in: go1.x.y" that govulncheck reports
+          # for the standard library, or the scan fails on findings the
+          # toolchain itself carries. On 1.27.0 it reported 11 stdlib findings
+          # whose fix is go1.27.2 (net/http, net/http/internal/http2,
+          # html/template, crypto/tls, net/textproto); 1.27.2 clears them.
           GOTOOLCHAIN: local
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
