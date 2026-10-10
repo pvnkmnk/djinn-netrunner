@@ -15,7 +15,10 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - docs/UIIMPLEMENTATION.md — HTMX patterns, console streaming, attach modes, minimal JS contract.
 - docs/OPENSUBSONIC_COVERAGE.md — generated Subsonic/OpenSubsonic endpoint matrix, the pinned spec revision, and which gaps belong to which ticket.
 - docs/SECRET_SCAN_FINDINGS.md — a triaged full-history secret scan: what the 15 findings are, why 14 of them are not leaks, and whether to add a CI gate.
+<<<<<<< HEAD
 - docs/SECRETS_MANIFEST.md — every credential the project needs, its form, and the exact file (and key) it belongs in; the checklist for supplying or rotating one.
+=======
+>>>>>>> bc8a5d9 (docs(adr): PostgreSQL becomes the development target; two editions (DJI-649))
 - docs/decisions/ — architecture decision records; 0004 sets PostgreSQL as the database we develop against and splits the product into Djinn-Netrunner (full) and NetrunnerLite (reduced).
 - docs/RUNBOOK.md — day-to-day operations and troubleshooting.
 
