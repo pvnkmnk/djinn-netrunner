@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`docs/SECRETS_MANIFEST.md` — every credential this project needs, its form,
+  and the exact file (and key) it belongs in.** The repo's `.env` holds 36 keys
+  but no `DATABASE_URL` (compose injects that), and the file reaches only the
+  containers — a host-run `go run ./cmd/server` loads `../../.env`, which
+  resolves above the checkout and fails silently. The manifest records that, the
+  provider keys CI reads, and the Linear/Cloudflare tokens, so "a secret is
+  missing" is a checklist rather than a debugging session. The `dev`
+  environment's variables also exist in Infisical (the same 36 keys plus
+  `LINEAR_API_KEY` and `DATABASE_URL`), and `infisical run` boots the server with
+  `.env` renamed away — proved, not assumed, on 2026-10-09. `DATABASE_URL` first
+  named the SQLite file and was repointed to the dev Postgres service the same
+  day (ADR 0004), with the boot re-proved on it: `database: ok`, a host client in
+  `pg_stat_activity`, and no `netrunner.db` created.
 - **`scripts/linear.py` — the way this repo reads and writes Linear.** Linear's
   API has no `patch` argument on any mutation, and the MCP connector's is
   rejected in every shape, so editing a project body used to mean resending

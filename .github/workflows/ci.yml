@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25.13'
+          go-version: '1.27.2'
 
       - name: Download dependencies
         working-directory: backend
@@ -72,16 +72,24 @@ jobs:
       - name: Vulnerability scan
         working-directory: backend
         env:
-          # Pinned, not @latest, and this is what it cost to learn: x/vuln
-          # v1.8.0 requires go >= 1.26.0, so the runner's Go 1.25.13 tried to
-          # fetch the go1.26.9 toolchain, and that toolchain module is not
-          # published -- a 404 from sum.golang.org, reported as a failed
-          # vulnerability scan. Nothing was vulnerable; the scan never ran.
-          # v1.7.0 is the newest release whose go directive (1.25.0) the
-          # go-version pin above satisfies. Bump the two together.
+          # Pinned, not @latest, and this is what it cost to learn: jumping
+          # the pin past what the runner's Go satisfies made govulncheck
+          # fetch an unpublished toolchain and die as a phantom scan
+          # (nothing scanned, exit 1, "404 Not Found" from sum.golang.org).
+          # x/vuln v1.8.0 declares go 1.26.0 and the go-version pin above is
+          # 1.27.2, so v1.8.0 is the newest release the pin satisfies. Bump
+          # the two together, and check a release's go directive before
+          # bumping it (curl proxy.golang.org/.../@v/vX.Y.Z.mod).
+          #
+          # The PATCH level matters as much as the minor: the go-version pin
+          # must be >= the newest "Fixed in: go1.x.y" that govulncheck reports
+          # for the standard library, or the scan fails on findings the
+          # toolchain itself carries. On 1.27.0 it reported 11 stdlib findings
+          # whose fix is go1.27.2 (net/http, net/http/internal/http2,
+          # html/template, crypto/tls, net/textproto); 1.27.2 clears them.
           GOTOOLCHAIN: local
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck ./...
 
       - name: Upload coverage

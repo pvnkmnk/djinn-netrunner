@@ -69,6 +69,37 @@ as the runtime environment of the `ops-web` / `ops-worker` containers (`env_file
 in `docker-compose.yml`). Values the compose files set explicitly — `DATABASE_URL`,
 `SLSKD_URL`, `MUSIC_LIBRARY`, `DOWNLOAD_STAGING`, paths — win over `.env`.
 
+### Supplying secrets from Infisical (optional)
+
+`.env` is not the only source. The project's `dev` environment mirrors it in
+Infisical (plus `DATABASE_URL`), and a process can take its environment from
+there instead:
+
+```bash
+infisical login                        # once per machine
+infisical run --project-config-dir . --env dev -- go run ./backend/cmd/server
+```
+
+The repo-root `.env` is not read by that process: `config.Load()` loads
+`../../.env`, which resolves above the checkout, and that error is discarded.
+So `infisical run` is the source of the environment, not a supplement to it.
+
+- `dev` carries the **host** Postgres URL
+  (`postgresql://musicops:…@127.0.0.1:5432/musicops?sslmode=disable`) because
+  `.env` has no `DATABASE_URL` at all — compose injects the in-network one for the
+  containers. It resolves against the dev stack's own database service:
+  `docker compose up -d postgres` publishes `127.0.0.1:${PG_HOST_PORT:-5432}`.
+  Keep the loopback **literal**: `localhost` resolves to `::1` here first while
+  the publish is IPv4-only. `DATABASE_URL=netrunner.db` (SQLite, what
+  `.env.example` documents) is the reduced-capability NetrunnerLite path — see
+  `docs/decisions/0004-postgres-first-development-and-editions.md`.
+- A headless target (CI, a self-hosted image) wants a service token:
+  `infisical service-token create --name <name> --scope dev:/ --expiry-seconds 0
+  --access-level read --token-only`, passed on as `INFISICAL_TOKEN`. The expiry
+  defaults to **one day**, and a token without `--scope` grants nothing.
+- `docs/SECRETS_MANIFEST.md` lists every credential the project needs, what
+  form it takes, and the exact file (and key) it belongs in.
+
 ### Versioning the image
 
 The page footer names the running version. That version is stamped into the

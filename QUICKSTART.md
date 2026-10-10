@@ -19,6 +19,11 @@ driving `${VAR}` substitution in the compose files, so the values below actually
 reach the app. For a full single-machine deployment (dev and release paths,
 streaming, verification, troubleshooting) see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
+Credentials do not have to come from `.env`: the local dev process can read them
+from Infisical instead (`infisical run --env dev -- go run ./backend/cmd/server`),
+and [docs/SECRETS_MANIFEST.md](docs/SECRETS_MANIFEST.md) lists every credential the
+project needs with the exact file each one belongs in.
+
 2. Edit `.env` with minimum required values:
 ```env
 POSTGRES_PASSWORD=your_secure_password
