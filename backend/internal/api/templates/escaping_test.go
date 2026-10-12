@@ -106,6 +106,18 @@ var partialProbes = map[string]map[string]any{
 		"JobType":       "",
 		"State":         "",
 	},
+	// DJI-562: the console's own three templates. The picker's option labels are
+	// a job's type and state as they come out of the database, and the reply's
+	// status line and socket URL are built from the job that was resolved - all
+	// of them values, none of them markup.
+	"partials/console-attach.html": {
+		"JobID": 12, "JobType": escapingProbe, "JobState": escapingProbe, "WSURL": escapingProbe,
+	},
+	"partials/console-detached.html": {"Reason": escapingProbe},
+	"partials/console-jobs.html": {
+		"jobs":       []map[string]any{{"ID": 12, "Type": escapingProbe, "State": escapingProbe}},
+		"SelectedID": 12,
+	},
 	"partials/libraries.html": {
 		"libraries": []map[string]any{{"ID": "library-1", "Name": escapingProbe, "Path": escapingProbe}},
 	},

@@ -187,6 +187,7 @@ func main() {
 	adminHandler := api.NewAdminHandlerWithPolicy(db, cfg.MinPasswordLength)
 	playlistHandler := api.NewPlaylistHandler(db)
 	jobHandler := api.NewJobHandler(db)
+	consoleHandler := api.NewConsoleHandler(db)
 
 	// Health check (public, no authentication)
 	app.Get("/api/health", healthHandler.GetHealth)
@@ -221,7 +222,7 @@ func main() {
 	}()
 
 	// Routes
-	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler, adminHandler, playlistHandler, jobHandler)
+	setupRoutes(app, db, cfg, authHandler, dashHandler, statsHandler, libraryHandler, profileHandler, watchlistHandler, watchlistService, spotifyAuthHandler, wsManager, atService, scanService, artistsHandler, schedulesHandler, acquireHandler, adminHandler, playlistHandler, jobHandler, consoleHandler)
 
 	// Start server
 	go func() {
@@ -259,7 +260,7 @@ func listenAddress(cfg *config.Config) string {
 	return ":" + port
 }
 
-func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler, adminHandler *api.AdminHandler, playlistHandler *api.PlaylistHandler, jobHandler *api.JobHandler) {
+func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.AuthHandler, dash *api.DashboardHandler, stats *api.StatsHandler, library *api.LibraryHandler, profile *api.ProfileHandler, watchlist *api.WatchlistHandler, watchlistService *services.WatchlistService, spotifyAuth *api.SpotifyAuthHandler, ws *api.WebSocketManager, at *services.ArtistTrackingService, scan *services.ScannerService, artistsHandler *api.ArtistsHandler, schedulesHandler *api.SchedulesHandler, acquireHandler *api.AcquireHandler, adminHandler *api.AdminHandler, playlistHandler *api.PlaylistHandler, jobHandler *api.JobHandler, consoleHandler *api.ConsoleHandler) {
 	// Public API routes
 	apiPublic := app.Group("/api")
 
@@ -323,15 +324,10 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/admin", auth.AuthMiddleware, adminHandler.AdminOnly, adminHandler.AdminPage)
 	app.Get("/playlists", auth.AuthMiddleware, playlistHandler.PlaylistsPage)
 
-	// Console attach. Nothing selects a job yet (DJI-562: the console
-	// streams /ws/jobs/:job_id and the page never names one), so this
-	// reports the state honestly instead of replying with a constant
-	// that reads like an instruction. The button targets #console-socket,
-	// so the region that shows the console is the one that explains
-	// itself, and the Attach label survives the swap.
-	app.Post("/console/attach", auth.AuthMiddleware, func(c fiber.Ctx) error {
-		return c.Type("html").SendString(`<div class="console-entry">Not attached: no job is selected. The console shows the output of one running job at a time.</div>`)
-	})
+	// Console attach (DJI-562). The reply is the console region itself: a status
+	// line plus the socket element for the job the caller picked, or the reason
+	// that job cannot be streamed. See api.ConsoleHandler.
+	app.Post("/console/attach", auth.AuthMiddleware, consoleHandler.Attach)
 
 	// Partial routes (all protected)
 	app.Get("/partials/stats", auth.AuthMiddleware, stats.RenderStatsPartial)
@@ -344,6 +340,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	app.Get("/partials/artist-form", auth.AuthMiddleware, artistsHandler.GetForm)
 	app.Get("/partials/jobs", auth.AuthMiddleware, stats.RenderJobsPartial)
 	app.Get("/partials/job-logs", auth.AuthMiddleware, stats.RenderJobLogsPartial)
+	app.Get("/partials/console-jobs", auth.AuthMiddleware, consoleHandler.RenderJobPicker)
 	app.Get("/partials/libraries/:id/browse", auth.AuthMiddleware, library.BrowseTracks)
 	app.Get("/partials/tracks/:id", auth.AuthMiddleware, library.TrackDetail)
 	app.Get("/partials/acquire-form", auth.AuthMiddleware, acquireHandler.GetForm)

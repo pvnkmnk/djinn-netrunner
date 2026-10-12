@@ -658,6 +658,26 @@ textarea:focus-visible,
 
 .console-placeholder { color: var(--text-secondary); text-align: center; padding: 2rem; }
 
+/* Attach status line, e.g. "Attached to job #12 (acquisition, running)". */
+.console-entry {
+    padding: 0.5rem 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+}
+
+/* The job picker shares the controls row, so it is sized to that row rather than
+   to .form-group select, which is width: 100% for a stacked form. */
+.console-picker {
+    max-width: 22rem;
+    padding: 0.375rem 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
 /* Forms */
 .form-group { margin-bottom: 1rem; }
 

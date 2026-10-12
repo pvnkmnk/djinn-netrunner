@@ -1,0 +1,11 @@
+<!-- Options for #console-job-picker, swapped into the select itself. Only <option>
+     elements: a browser drops any other node inside a <select>, so a stray <p>
+     here would be invisible rather than obviously wrong. The current selection is
+     echoed back as `selected`, because the select refreshes itself and an option
+     list that forgot the pick would reset the control under the operator every
+     thirty seconds. An HTML comment because pongo2 comments cannot span lines. -->
+{% for job in jobs %}
+<option value="{{ job.ID }}"{% if job.ID == SelectedID %} selected{% endif %}>#{{ job.ID }} - {{ job.Type }} - {{ job.State }}</option>
+{% empty %}
+<option value="">No queued or running jobs</option>
+{% endfor %}

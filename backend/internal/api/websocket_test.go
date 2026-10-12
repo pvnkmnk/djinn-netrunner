@@ -3,10 +3,14 @@ package api
 import (
 	"context"
 	"html"
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -120,4 +124,75 @@ func TestLogSanitization(t *testing.T) {
 	escapedMessage := "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;"
 
 	assert.Equal(t, escapedMessage, html.EscapeString(rawMessage))
+}
+
+// Console frame contract (DJI-562).
+//
+// The console's socket does not swap a message into the element that opened it.
+// This app ships htmx's in-core websocket support (hx-ws), and in-core ws swaps
+// each top-level element of a message into the element carrying the same id. A
+// frame that names no destination is dropped with an oobErrorNoTarget and the
+// console simply stays empty - which is exactly how it read before: a pane that
+// could not be told from "no output yet". These pin the destination, and pin it
+// against the page, because it is written down in two places that cannot check
+// each other.
+
+// consoleFrameTargetRE pulls the out-of-band destination out of a console frame.
+var consoleFrameTargetRE = regexp.MustCompile(`hx-swap-oob="beforeend:#([^"]+)"`)
+
+func TestLogLineFrameNamesItsDestination(t *testing.T) {
+	frame := logLineHTML(database.JobLog{
+		ID:        7,
+		JobID:     3,
+		Level:     "INFO",
+		Message:   "downloaded 1 of 5",
+		CreatedAt: time.Now(),
+	})
+
+	match := consoleFrameTargetRE.FindStringSubmatch(frame)
+	require.Len(t, match, 2,
+		"a console frame has to name where it goes, or htmx drops it silently: %s", frame)
+	assert.Equal(t, "console-logs", match[1],
+		"every streamed line appends to the log pane; anything else is a pane nobody reads")
+
+	assert.Contains(t, frame, `data-log-id="7"`,
+		"the log filters read data-log-id, so a frame without it is unfilterable")
+
+	// The line has to be a CHILD of the element carrying the swap attribute.
+	// htmx inserts the children of the out-of-band element into the target, so a
+	// log-line carrying the attribute itself loses its own wrapper: measured in
+	// the browser, only the time/level/message spans reached the pane, which left
+	// .log-line empty and the console's filters and Copy Last 200 matching
+	// nothing while the pane looked right.
+	assert.Regexp(t, `(?s)<div hx-swap-oob="[^"]*"[^>]*>\s*<div class="log-line\b`, frame,
+		"the log line must be a child of the element that carries hx-swap-oob, "+
+			"not the element itself")
+}
+
+func TestConsoleNoticeFrameNamesTheSameDestination(t *testing.T) {
+	frame := consoleNoticeHTML("Access denied: you do not own this job.")
+
+	match := consoleFrameTargetRE.FindStringSubmatch(frame)
+	require.Len(t, match, 2,
+		"the socket's own refusals have to land where the operator is looking: %s", frame)
+	assert.Equal(t, "console-logs", match[1])
+
+	assert.Contains(t, frame, "[ERR]",
+		"the level filter matches on the [LEVEL] marker, so a refusal without one "+
+			"disappears the moment the operator filters to WARN or ERR")
+}
+
+// The destination is the one string that has to agree between a Go format string
+// and ops/web/templates/index.html, and nothing else checks the pair: renaming
+// the pane leaves a page that looks right and a console that receives every line
+// and shows none of them.
+func TestTheFrameDestinationExistsOnTheDashboard(t *testing.T) {
+	page, err := os.ReadFile(filepath.Join("..", "..", "..", "ops", "web", "templates", "index.html"))
+	require.NoError(t, err)
+
+	match := consoleFrameTargetRE.FindStringSubmatch(logLineHTML(database.JobLog{ID: 1, Level: "INFO"}))
+	require.Len(t, match, 2, "the log frame no longer names a destination")
+
+	assert.Contains(t, string(page), `id="`+match[1]+`"`,
+		"the pane every frame names has to exist on the page (expected #%s)", match[1])
 }

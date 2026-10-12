@@ -25,7 +25,7 @@ func TestHealthCheck(t *testing.T) {
 	healthHandler := api.NewHealthHandler(nil, cfg)
 	app.Get("/api/health", healthHandler.GetHealth)
 	acquireHandler := &api.AcquireHandler{}
-	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{}, &api.JobHandler{})
+	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{}, &api.JobHandler{}, &api.ConsoleHandler{})
 
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/health", nil))
 	assert.NoError(t, err)
@@ -67,7 +67,7 @@ func newRouteTestApp(t *testing.T, cfg *config.Config) *fiber.App {
 	artistsHandler := &api.ArtistsHandler{}
 	schedulesHandler := &api.SchedulesHandler{}
 	acquireHandler := &api.AcquireHandler{}
-	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{}, &api.JobHandler{})
+	setupRoutes(app, nil, cfg, &api.AuthHandler{}, &api.DashboardHandler{}, &api.StatsHandler{}, &api.LibraryHandler{}, &api.ProfileHandler{}, &api.WatchlistHandler{}, &services.WatchlistService{}, &api.SpotifyAuthHandler{}, &api.WebSocketManager{}, &services.ArtistTrackingService{}, &services.ScannerService{}, artistsHandler, schedulesHandler, acquireHandler, &api.AdminHandler{}, &api.PlaylistHandler{}, &api.JobHandler{}, &api.ConsoleHandler{})
 	return app
 }
 
@@ -97,6 +97,14 @@ func TestSetupRoutes_RegistersCriticalRoutes(t *testing.T) {
 		"GET /partials/artists",
 		"GET /tracks/:id/stream",
 		"GET /ws/events",
+		// DJI-562: this trio is the console's whole wiring - the picker the page
+		// loads on arrival, the attach that hands back a job-scoped socket URL,
+		// and the socket route that URL has to name. All three are easy to lose
+		// in a rename: the page would keep rendering, and only the picker would
+		// quietly stop filling.
+		"GET /partials/console-jobs",
+		"POST /console/attach",
+		"GET /ws/jobs/:job_id",
 	}
 
 	for _, want := range critical {

@@ -88,7 +88,22 @@
     <section class="console-region" aria-labelledby="console-heading">
         <h2 id="console-heading" class="sr-only">Live Console</h2>
         <div class="console-controls">
-            <button class="btn" id="btn-attach" hx-post="/console/attach" hx-target="#console-socket" hx-swap="innerHTML" aria-label="Attach to job console">Attach</button>
+            <!-- The dashboard cannot name a job, so it cannot open the stream:
+                 /ws/jobs/:job_id needs one, and a job id is exactly what this
+                 page does not have until the operator picks one. The picker is
+                 what names it - Attach sends the selection to /console/attach,
+                 and the reply carries a socket element for the job the server
+                 resolved and ownership-checked. This region used to open the
+                 socket itself, through an htmx extension this build ships no
+                 copy of (htmx.min.js is 1.9.10 core) and at a socket route with
+                 no job in it, so nothing connected and nothing said so. An HTML
+                 comment because pongo2 comments cannot span lines. -->
+            <label class="sr-only" for="console-job-picker">Job to stream</label>
+            <select id="console-job-picker" name="job_id" class="console-picker"
+                    hx-get="/partials/console-jobs" hx-trigger="load, every 30s" hx-swap="innerHTML">
+                <option value="">Loading jobs...</option>
+            </select>
+            <button class="btn" id="btn-attach" hx-post="/console/attach" hx-include="#console-job-picker" hx-target="#console-socket" hx-swap="innerHTML" aria-label="Attach to job console">Attach</button>
             <button class="btn" id="btn-detach" aria-label="Detach from job console">Detach</button>
             <span class="filter-group" role="group" aria-label="Filter logs by level">
                 <button class="filter-btn active" data-filter="all" aria-label="Show all logs">ALL</button>
@@ -106,8 +121,12 @@
             <div class="console-placeholder">Select a job to attach</div>
         </div>
         
-        <div id="console-logs" class="console-logs" hx-ext="ws" ws-connect="/ws/jobs" aria-live="polite">
-        </div>
+        <!-- The log pane carries no htmx attributes of its own. The socket lives
+             on #console-live, inside the attach reply above, and every frame that
+             socket receives names this element as its out-of-band target (see
+             api.websocket.go's logLineHTML), which is the only reason this id is
+             load-bearing. -->
+        <div id="console-logs" class="console-logs" aria-live="polite"></div>
     </section>
 </div>
 {% endif %}

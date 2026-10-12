@@ -31,9 +31,12 @@ HTMX forms use server-side modal triggering:
 - No inline `hx-on:htmx:after-request` handlers on buttons
 
 ## Console socket pattern
-A dedicated DOM region (e.g., #console-socket) is swapped to "attach" to a job without custom front-end routing.
-- When jobid is present, render an element that opens a WebSocket (hx-ext="")ws"") to /ws/jobs/{jobid}.
-- When jobid is absent, render an inert placeholder.
+A dedicated DOM region (#console-socket) is swapped to "attach" to a job without custom front-end routing.
+- `#console-job-picker` lists the caller's queued and running jobs - their own, or everyone's for an admin - from `GET /partials/console-jobs`, refreshing on load and every 30 seconds, and echoing the current selection back as `selected` so a refresh cannot reset it.
+- The Attach button posts the picked `job_id` to `POST /console/attach`.
+- When the job resolves and the caller may stream it, the reply renders the socket element with `hx-ws="connect:/ws/jobs/{jobid}?tail=200"`; otherwise it renders an inert placeholder that says why, and no socket element at all.
+- The socket is opened by htmx's in-core `hx-ws` attribute, not `hx-ext="ws"`: this app ships htmx 1.9.10 core, which has no `ws` extension, so `ws-connect` was inert and the console never connected. (`hx-ws` is deprecated upstream in favour of the extension; if the extension is ever vendored, this note and the templates move with it.)
+- Every frame the server sends carries `hx-swap-oob="beforeend:#console-logs"`: in-core ws swaps each top-level element of a message into the element carrying the same id, so a frame has to name the pane, and appending is what a log stream is. The attach reply clears that pane out of band, so two jobs' lines cannot mix.
 
 ## Attach modes (STARTED vs ATTACHED)
 Two attach modes balance liveness proof with spam prevention:
