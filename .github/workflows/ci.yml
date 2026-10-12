@@ -47,6 +47,18 @@ jobs:
       # ~0.05s, 23 cases, and eleven of them are rejections.
       - name: Postgres gate tests
         run: python scripts/test_postgres_gate.py
+      # The handoff audit re-derives a handoff's factual claims -- branch heads,
+      # commit ids, counts, byte sizes, dependency versions, file:line references,
+      # absence claims -- from the tree instead of trusting them, and a checklist
+      # that silently stops checking is worse than no checklist. Its own suite runs
+      # on every PR. Offline: unittest over throwaway git fixture repos in tempdirs,
+      # no network, no `gh`, no `go test`. ~10s on a Windows checkout (fixture git
+      # calls dominate; the fixtures set their own commit identity). 40 cases, 23 of
+      # them rejections -- a FALSE claim, or one that must not be reported as
+      # CONFIRMED -- and 13 more hold the safety machinery, which is that a command
+      # taken from the document is never run off the read-only allowlist.
+      - name: Handoff audit tests
+        run: python scripts/test_handoff_audit.py
 
       # The password policy is one function called from three routes, and a
       # suite that only tests the function cannot see a route that stops asking
