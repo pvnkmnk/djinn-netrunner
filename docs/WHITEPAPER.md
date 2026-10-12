@@ -20,7 +20,7 @@ The core UX is a “protocol console”: structured logs are the primary progres
 | **Djinn-Netrunner (local development)** | `postgresql://...` (the compose `postgres` service, run from the host via `infisical run --env dev`) | `LISTEN/NOTIFY` + WebSockets | Development and verification — the same invariants as production |
 | **NetrunnerLite** | SQLite file path (e.g. `netrunner.db`) | Polling loops (no Postgres NOTIFY) | Single-binary `go run ./cmd/server` + worker, **one worker only** |
 
-PostgreSQL is the database this project develops and verifies against (ADR 0004). All modes share the same schema and GORM models, but the production invariants (row locks, advisory locks, NOTIFY fanout) apply fully only on PostgreSQL.
+PostgreSQL is the database this project develops and verifies against (ADR 0004). All modes share the same schema and GORM models, but the production invariants (row locks, advisory locks, NOTIFY fanout) apply fully only on PostgreSQL. **Measured 2026-10-09:** the NOTIFY publisher is a SQL trigger in `ops/db/init/02-functions.sql` that no compose file mounts and no code path executes, so every mode currently polls on a 5-second loop and the fast path is dormant rather than removed — `docs/NETRUNNERLITE.md` is the audited per-feature boundary and carries the evidence.
 
 ## System overview
 NETRUNNER runs as a small container stack:
@@ -34,7 +34,7 @@ NETRUNNER runs as a small container stack:
 The system uses:
 - `FOR UPDATE SKIP LOCKED` (PostgreSQL) or atomic status updates (NetrunnerLite's SQLite) for safe claiming
 - Advisory locks (PostgreSQL) or table-based lock manager (NetrunnerLite's SQLite) for per-scope exclusivity
-- LISTEN/NOTIFY (PostgreSQL) or polling (NetrunnerLite) for event-driven wakeups and UI fanout
+- LISTEN/NOTIFY (PostgreSQL) or polling (NetrunnerLite) for event-driven wakeups and UI fanout; the NOTIFY sender is not installed in any current deployment, so both editions poll every 5 s today
 
 ## Pipeline flow (end-to-end)
 1. Source registration
