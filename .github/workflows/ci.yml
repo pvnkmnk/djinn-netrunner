@@ -107,6 +107,25 @@ jobs:
           name: coverage
           path: backend/coverage.out
 
+      # The UI visual harness (e2e/visual) is the evidence channel for the UI
+      # pass, so its comparator is checked like any other guard: it is the thing
+      # that decides whether a screenshot pair shows a real change, and one that
+      # cannot tell a change from a resize would pass a broken UI silently. The
+      # self-check is offline and stack-free -- synthetic images, no seeded data,
+      # no running app -- but it drives compare.mjs through its real CLI, which
+      # needs a browser to do the pixel work.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: UI visual harness comparator self-check
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          node visual/self-check.mjs
+
   # ADR 0004: a green SQLite-only run is not evidence for a change that touches
   # claims, locks, wakeups or aggregate SQL. Every test that would prove those
   # paths calls t.Skip when DATABASE_URL is absent -- 16 of them in

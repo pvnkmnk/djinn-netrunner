@@ -1,0 +1,135 @@
+{
+  "$comment": [
+    "Surface manifest for the UI visual harness. Every entry names a real route from",
+    "backend/cmd/server/main.go setupRoutes, an interaction that opens one of the",
+    ".impeccable/surfaces briefs, or a fragment the UI pass will touch.",
+    "Order is the reading order a reviewer should follow. Add a surface by adding an",
+    "entry here -- no code change needed unless it needs a new step verb."
+  ],
+  "defaultMask": [
+    "#console-logs",
+    "#console-socket"
+  ],
+  "surfaces": [
+    {
+      "name": "dashboard",
+      "kind": "page",
+      "path": "/",
+      "note": "The live console streams over a websocket and is masked; the stat and watchlist regions poll on a timer but only change when work runs."
+    },
+    {
+      "name": "watchlists",
+      "kind": "page",
+      "path": "/watchlists",
+      "waitFor": "#watchlists-region:has(*)"
+    },
+    {
+      "name": "libraries",
+      "kind": "page",
+      "path": "/libraries",
+      "waitFor": "#libraries-region:has(*)"
+    },
+    {
+      "name": "library-browse-view",
+      "kind": "interaction",
+      "mount": "/libraries",
+      "steps": [
+        { "click": "[aria-label^=\"Browse library\"]" },
+        { "waitForSelector": ".track-row" }
+      ],
+      "note": "Browse swaps #libraries-region in place; it is an interaction, not a route."
+    },
+    {
+      "name": "track-detail-modal",
+      "kind": "interaction",
+      "mount": "/libraries",
+      "steps": [
+        { "click": "[aria-label^=\"Browse library\"]" },
+        { "waitForSelector": ".track-row" },
+        { "click": "[aria-label^=\"Details for\"]" },
+        { "waitForContent": "#modal-container" }
+      ],
+      "note": "Brief ops-web-templates-partials-track-detail-html: an absent fingerprint is a state, not an omission."
+    },
+    {
+      "name": "artist-form-modal",
+      "kind": "interaction",
+      "mount": "/artists",
+      "steps": [
+        { "waitFor": "#artists-region:has(*)" },
+        { "click": "[aria-label=\"Add new artist to monitor\"]" },
+        { "waitForContent": "#modal-container" }
+      ],
+      "note": "Brief ops-web-templates-partials-artist-form-html: the MusicBrainz candidate picker."
+    },
+    {
+      "name": "artists",
+      "kind": "page",
+      "path": "/artists",
+      "waitFor": "#artists-region:has(*)"
+    },
+    {
+      "name": "profiles",
+      "kind": "page",
+      "path": "/profiles",
+      "waitFor": "#profiles-region:has(*)"
+    },
+    {
+      "name": "schedules",
+      "kind": "page",
+      "path": "/schedules",
+      "waitFor": "#schedules-region:has(*)"
+    },
+    {
+      "name": "playlists",
+      "kind": "page",
+      "path": "/playlists",
+      "waitFor": "#playlists-region:has(*)"
+    },
+    {
+      "name": "jobs",
+      "kind": "page",
+      "path": "/jobs",
+      "waitFor": "#jobs-region:has(*)"
+    },
+    {
+      "name": "admin",
+      "kind": "page",
+      "path": "/admin",
+      "requires": "admin",
+      "expectStatus": 403,
+      "note": "AdminOnly. The seeded account is not an admin, so this captures the refusal surface; point UI_VIS_EMAIL at an admin to capture the real page."
+    },
+    {
+      "name": "partial-stats",
+      "kind": "partial",
+      "path": "/partials/stats",
+      "note": "Fragment alone with the app stylesheet injected -- the region the dashboard polls."
+    },
+    {
+      "name": "partial-jobs",
+      "kind": "partial",
+      "path": "/partials/jobs"
+    },
+    {
+      "name": "partial-job-logs",
+      "kind": "partial",
+      "path": "/partials/job-logs"
+    },
+    {
+      "name": "partial-artists",
+      "kind": "partial",
+      "path": "/partials/artists"
+    },
+    {
+      "name": "partial-libraries",
+      "kind": "partial",
+      "path": "/partials/libraries"
+    },
+    {
+      "name": "partial-watchlists",
+      "kind": "partial",
+      "path": "/partials/watchlists"
+    }
+  ]
+}
