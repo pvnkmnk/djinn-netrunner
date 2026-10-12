@@ -147,7 +147,6 @@ the product, not an artifact of an early pass: **restore it and extend it.**
 - `docs/WHITEPAPER.md`, `docs/ARCHITECTURE.md`, `FEATURES.md`, `QUICKSTART.md`.
 - `docs/BETA_ACCEPTANCE.md` and `docs/BETA_ACCEPTANCE_EVIDENCE.md` — measured
   evidence, the evidence record for release claims.
-- `codemap.md` and `ops/web/templates/codemap.md`.
 - A real seeded music library in the `netrunner-music` volume, holding actual
   audio for Audiotree, Boards of Canada, Broadcast, Chelsea Wolfe, Converge
   (three collaboration variants), Noriyuki Iwadare, Overcast, PUP, Pink Floyd
@@ -167,7 +166,7 @@ the product, not an artifact of an early pass: **restore it and extend it.**
   aspirational, not rendered. Any screenshot showing "Orbitron" is showing a
   fallback.
 - **No logo or favicon asset exists.** Nothing in `ops/web/static/` beyond
-  `css/`, `js/` and a codemap.
+  `css/` and `js/`.
 - **No customer logos, testimonials, benchmarks, pricing or licence claims.**
   There is no marketing surface to draw these from, and none should be invented.
 

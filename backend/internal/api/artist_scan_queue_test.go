@@ -28,7 +28,7 @@ func newArtistScanTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User) {
 
 	// File-backed, not ":memory:": AddMonitoredArtist now writes the artist and
 	// its job in one transaction, and a memory DSN gives each pooled connection
-	// its own database (recorded in backend/internal/services/codemap.md).
+	// its own database.
 	dsn := filepath.Join(t.TempDir(), "artist-scan.db")
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
