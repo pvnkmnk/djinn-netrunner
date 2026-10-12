@@ -291,7 +291,9 @@ Driver auto-detects from `DATABASE_URL` (`.db` → SQLite WAL, `postgres://`
 locks expire after 15 min, not cross-process-safe), no `FILTER (WHERE ...)`
 (agent stats queries fail), GORM AutoMigrate only, `LiteFSGuard` checks
 `/litefs/.primary`. Postgres: pooling, real session-level advisory locks,
-`LISTEN/NOTIFY` job wakeup, SQL bootstrap + AutoMigrate. The
+`LISTEN/NOTIFY` job wakeup (the notify triggers are installed by
+`database.Migrate` on every boot — see `backend/internal/database/notify.go`),
+SQL bootstrap + AutoMigrate. The
 `WorkerOrchestrator` takes advisory locks per scope ID before processing;
 if `MaxConcurrentJobs > 1` with SQLite the worker warns at startup — use
 Postgres for concurrent production workloads.

@@ -78,11 +78,16 @@ REQUIRED = {
     "./internal/services": [
         "TestArtistTrackingService",
     ],
-    # internal/api has no database-gated test (nothing in it skips without a
-    # DATABASE_URL), so it declares none -- but it is still run here, and every
-    # skip it reports is therefore undeclared by construction. See the "why" on
-    # its entry in RUNS.
-    "./internal/api": [],
+    # internal/api carries the sender's proof tests: they drive the API's own
+    # enqueue and a job-log write and then wait for the notification the write
+    # produced, so they need a real Postgres with a real NOTIFY broker. Without a
+    # DATABASE_URL both skip, which is why the fast path would otherwise pass CI
+    # unexercised -- the aggregate-stats reason this package was already run here
+    # is the smaller half of it now. See also the "why" on its entry in RUNS.
+    "./internal/api": [
+        "TestAcquireAPIEnqueuePublishesAWakeup",
+        "TestJobLogInsertPublishesToTheConsoleStream",
+    ],
 }
 
 # Skips these packages are allowed to report, with the precondition each names.
@@ -120,8 +125,9 @@ RUNS = [
     {
         "package": "./internal/api",
         "timeout": "20m",
-        "why": "no database-gated test, but its stats endpoints are the aggregate "
-               "SQL ADR 0004 calls out, and it is skip-free here (~26s)",
+        "why": "the NOTIFY sender's proof tests (a real broker, so a skip here is "
+               "not a pass) plus the aggregate stats SQL ADR 0004 calls out; "
+               "skip-free here (~26s before those tests, ~30s with them)",
     },
     {
         "package": "./internal/services",

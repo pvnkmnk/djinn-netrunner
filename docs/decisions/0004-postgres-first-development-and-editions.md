@@ -47,11 +47,11 @@ is called done.
 |---|---|---|
 | Database | PostgreSQL | SQLite file |
 | Workers | multiple, real advisory locks | one (`MaxConcurrentJobs > 1` warns) |
-| Wakeups | `LISTEN/NOTIFY` | polling interval |
+| Wakeups | `LISTEN/NOTIFY` (triggers installed by `database.Migrate`) | polling interval |
 | Multi-node | supported | not promised |
 | Feature set | everything | a documented subset, audited per feature ([docs/NETRUNNERLITE.md](../NETRUNNERLITE.md)) |
 
-**Audited 2026-10-09:** the rows above are promises per feature, not directions — [docs/NETRUNNERLITE.md](../NETRUNNERLITE.md) carries the verdict and the evidence for each one, including the measurement that the wakeup row reads better than reality: the `NOTIFY` publisher is a SQL trigger no deployment installs, so both editions poll on a 5 s loop today and the Postgres fast path is dormant until that SQL is wired. The driver detection and both code paths stay in one codebase; the editions differ by
+**Audited 2026-10-09:** the rows above are promises per feature, not directions — [docs/NETRUNNERLITE.md](../NETRUNNERLITE.md) carries the verdict and the evidence for each one. That audit found the wakeup row reading better than reality: the `NOTIFY` publisher was a SQL bootstrap no deployment installs, so both editions polled. **Fixed 2026-10-11:** `database.Migrate` now installs the triggers on PostgreSQL — a job entering `queued` publishes on `opswakeup`, a `job_logs` insert on `opsevents` — so the wakeup row is the behaviour on Djinn-Netrunner while NetrunnerLite keeps polling, and the matrix records that as a real edition difference instead of a shared gap. The driver detection and both code paths stay in one codebase; the editions differ by
 configuration and by what each one promises, not by a fork.
 
 ### 3. Naming
@@ -104,7 +104,7 @@ describing behaviour, not metaphor.
    `docs/superpowers/`, `docs/project-history.md`, the released `CHANGELOG.md` entries and
    `docs/BETA_ACCEPTANCE*.md` describe what was true when they were written, which is the point
    of keeping them.
-4. **Define NetrunnerLite's boundary — done 2026-10-09.** [docs/NETRUNNERLITE.md](../NETRUNNERLITE.md) is the per-feature audit §2 pointed at: watchlist ingest, the acquisition pipeline, per-scope exclusivity, concurrent jobs, Subsonic, multi-user scoping, WebSockets, stats/CLI, migrations and LiteFS, each with a verdict and the code or measurement behind it. It also records three findings that are **not** edition differences, so they are not misread as Lite's fault: the `LISTEN/NOTIFY` fast path has no publisher installed (`ops/db/init/02-functions.sql` is never mounted or executed), the console's htmx socket points at `/ws/jobs` where the route is `/ws/jobs/:job_id` (DJI-562), and the SQL bootstrap is documentation rather than a live step.
+4. **Define NetrunnerLite's boundary — done 2026-10-09.** [docs/NETRUNNERLITE.md](../NETRUNNERLITE.md) is the per-feature audit §2 pointed at: watchlist ingest, the acquisition pipeline, per-scope exclusivity, concurrent jobs, Subsonic, multi-user scoping, WebSockets, stats/CLI, migrations and LiteFS, each with a verdict and the code or measurement behind it. It also records the findings that are **not** edition differences, so they are not misread as Lite's fault: the console's htmx socket points at `/ws/jobs` where the route is `/ws/jobs/:job_id` (DJI-562), and the SQL bootstrap is documentation rather than a live step. A third finding, that the `LISTEN/NOTIFY` fast path had no publisher installed, was fixed on 2026-10-11 by installing the triggers from `database.Migrate`.
 
 5. **Make the Postgres-only tests run in CI — done 2026-10-09.** The `test` job has no
    `DATABASE_URL`, so every test that proves a claim, a lock or a wakeup skipped itself to a green

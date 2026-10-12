@@ -158,6 +158,17 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to auto-migrate: %w", err)
 	}
 
+	// Install the LISTEN/NOTIFY sender. After AutoMigrate, because the triggers
+	// attach to jobs and joblogs, and PostgreSQL-only, because SQLite has no
+	// NOTIFY. The migrator is the right owner: it runs on every server boot, so
+	// an existing database gains the sender too -- the reason a compose mount of
+	// the SQL bootstrap could not deliver this (see notify.go).
+	if db.Dialector.Name() == "postgres" {
+		if err := installNotifyTriggers(db); err != nil {
+			return err
+		}
+	}
+
 	// Backfill the artist release counters.
 	//
 	// total_releases and acquired_releases were declared on MonitoredArtist but

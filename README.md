@@ -176,14 +176,14 @@ NetRunner ships in two editions over one codebase, and **PostgreSQL is what the 
 
 | Edition / deployment | Database | Notes |
 |---|---|---|
-| **Djinn-Netrunner** (dev and production) | PostgreSQL 16 | Advisory locks, concurrent workers and a dormant `LISTEN/NOTIFY` fast path; the dev stack runs it on a loopback publish |
+| **Djinn-Netrunner** (dev and production) | PostgreSQL 16 | Advisory locks, concurrent workers and the `LISTEN/NOTIFY` wakeup and log fast path; the dev stack runs it on a loopback publish |
 | **NetrunnerLite** (single user, zero config) | SQLite WAL | One worker, polling wakeups, no external service to run |
 | Multi-node / horizontal scaling | PostgreSQL | Multiple workers across hosts |
 | LiteFS + SQLite cluster | — | Not the recommended path; [ADR 0001](docs/decisions/0001-multi-node-sqlite-litefs.md) stays on record |
 
 **Key differences:**
 - **Advisory locks**: Postgres uses `pg_try_advisory_lock` for real session-level mutual exclusion; SQLite uses a `TableLockManager` (row-based emulation — **single-worker only**)
-- **Job wakeup**: Postgres supports `LISTEN/NOTIFY` for instant worker notification; SQLite workers poll on interval. Measured 2026-10-09: the sender is a SQL trigger in `ops/db/init/02-functions.sql` that no compose file mounts and no code path executes, so both editions poll every 5 s today — the fast path is dormant, not removed ([details](docs/NETRUNNERLITE.md)).
+- **Job wakeup**: Postgres supports `LISTEN/NOTIFY` for instant worker notification; SQLite workers poll on interval. The triggers are installed by `database.Migrate` on PostgreSQL — a job entering `queued` publishes on `opswakeup`, and a line of console output on `opsevents` — so an idle worker wakes on the write instead of on its next 5 s poll (measured 2026-10-11; [details](docs/NETRUNNERLITE.md)).
 - **Concurrent workers**: Multiple worker instances require Postgres for safe concurrent job claims
 - **`LiteFSGuard`**: Automatically detects LiteFS primary node and adjusts worker behavior
 

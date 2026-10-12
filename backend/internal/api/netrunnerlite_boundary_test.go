@@ -13,7 +13,7 @@ import (
 
 // docs/NETRUNNERLITE.md is the audited per-feature boundary of the reduced
 // NetrunnerLite edition, and the sentences the repo now leans on cite this
-// tree rather than argue from memory: README.md's "dormant, not removed" note,
+// tree rather than argue from memory: README.md's "Job wakeup" note,
 // docs/WHITEPAPER.md's deployment table, and ADR 0004 §2's
 // one-line-per-edition rows. A citation can be checked, so these tests check
 // it instead of trusting it. A failure is not "the text changed": it names the
@@ -79,43 +79,68 @@ func TestEngineDivergenceIsConfinedToTheAuditedPlaces(t *testing.T) {
 	}
 }
 
-// TestTheFastPathIsStillDormant guards the sentence README.md,
-// docs/WHITEPAPER.md and ADR 0004 all now carry: the NOTIFY sender is
-// installed nowhere, so both editions poll on a 5-second loop. Two things would
-// make it false -- a compose file mounting ops/db/init/, or Go code publishing
-// a notification itself -- and the documents, not this test, are what would
-// then have to change.
-func TestTheFastPathIsStillDormant(t *testing.T) {
+// TestTheFastPathPublishesOnTheChannelsTheListenersRead took over from a test
+// that asserted the opposite: until the sender was installed, this file held the
+// four documents to "the NOTIFY path is dormant", and its failure was the
+// checklist for making it real. The sender is real now -- the triggers are
+// installed by database.Migrate on every Postgres boot
+// (backend/internal/database/notify.go) -- so the claim worth guarding changed
+// from "nothing publishes" to "the two halves agree". A publisher on a channel
+// nobody subscribes to, or an installer nothing calls, looks the same as a
+// working fast path from every other angle: the worker's poll would hide it and
+// no test outside this file reads both ends.
+func TestTheFastPathPublishesOnTheChannelsTheListenersRead(t *testing.T) {
 	root := repoRoot(t)
 	sources := nonTestGoSources(t, root)
 
-	// The SQL bootstrap is the only NOTIFY sender in the tree, so a compose
-	// file mounting it is the activation path the backlog describes.
+	// The sender is Go-side by design: the image ships no ops/db/init, and
+	// Docker's init scripts only ever run against a fresh database.
 	compose := composeFiles(t, root)
 	require.NotEmpty(t, compose, "no compose file found under the checkout root; this guard would pass vacuously")
 	for _, rel := range compose {
 		assert.NotContains(t, readRepoFile(t, rel), "db/init",
-			"%s mounts ops/db/init/, so the NOTIFY sender is installed now: the \"Job wakeup\" note in "+
-				"README.md, the deployment table in docs/WHITEPAPER.md, ADR 0004 §2 and %s all need correcting",
-			rel, netrunnerLiteDoc)
+			"%s mounts ops/db/init/, whose bootstrap targets tables the runtime schema does not have "+
+				"(it creates triggers on `joblogs` and `sources`): the sender has one owner, "+
+				"database.Migrate, and %s describes it", rel, netrunnerLiteDoc)
 	}
 
-	// Publishing from the application is the other documented way to make the
-	// fast path real.
+	// A sender that nothing calls is dormant in every way that matters, so the
+	// installer and its call site are both required.
+	var installers []string
+	called := ""
 	for rel, src := range sources {
-		for _, line := range strings.Split(src, "\n") {
-			trimmed := strings.TrimSpace(line)
-			// Comment-only lines are skipped so prose about the dormant path
-			// ("LISTEN/NOTIFY is never installed") cannot trip the guard; a
-			// trailing comment that carries NOTIFY still would, which is the
-			// loud direction for a guard to be wrong in.
-			if strings.HasPrefix(trimmed, "//") {
-				continue
-			}
-			assert.False(t, strings.Contains(line, "pg_notify") || strings.Contains(line, "NOTIFY "),
-				"%s issues a notification (line %q): if the fast path is real now, say so in %s, README.md and ADR 0004 §2",
-				rel, trimmed, netrunnerLiteDoc)
+		if strings.Contains(src, "pg_notify(") && strings.Contains(src, "EXECUTE FUNCTION") {
+			installers = append(installers, rel)
 		}
+		if strings.Contains(src, "installNotifyTriggers(") && !strings.Contains(src, "func installNotifyTriggers(") {
+			called = rel
+		}
+	}
+	sort.Strings(installers)
+	require.NotEmpty(t, installers, "no non-test Go file installs the notification triggers: the fast path is "+
+		"dormant again, so the wakeup row in %s, the \"Job wakeup\" note in README.md, the deployment table in "+
+		"docs/WHITEPAPER.md and ADR 0004 §2 all have to say so instead of promising event-driven wakeups",
+		netrunnerLiteDoc)
+	require.NotEmpty(t, called, "nothing calls installNotifyTriggers: the triggers exist as text and are "+
+		"installed by no boot, which is the dormant state %s, README.md, docs/WHITEPAPER.md and ADR 0004 §2 "+
+		"were corrected away from", netrunnerLiteDoc)
+
+	// Each channel is checked on both ends at once: the SQL literal the installer
+	// publishes on, and the Go literal a listener subscribes with. Either alone can
+	// be renamed without the other, which is the failure this test exists for.
+	for _, channel := range []string{"opswakeup", "opsevents"} {
+		publisher := false
+		for _, rel := range installers {
+			if strings.Contains(readRepoFile(t, rel), "'"+channel+"'") {
+				publisher = true
+				break
+			}
+		}
+		assert.True(t, publisher, "the installed triggers publish nothing on %q: %s names that channel and a "+
+			"listener subscribes to it, so either the sender lost an event or the document and the listeners "+
+			"have to move to whatever replaced it", channel, netrunnerLiteDoc)
+		assert.Contains(t, readRepoFile(t, netrunnerLiteDoc), channel,
+			"%s no longer names the %q channel", netrunnerLiteDoc, channel)
 	}
 }
 
