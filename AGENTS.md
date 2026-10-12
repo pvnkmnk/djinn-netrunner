@@ -22,9 +22,10 @@ slskd (Soulseek), metadata enrichment, local libraries, Fiber + HTMX UI.
   counts, `-l` names only) and honours `.gitignore`. Both are installed. Full
   detail and the edge cases: "Shell tooling: `rg` and `sd`, not `grep` and
   `sed`" below.
-- **Before any task, read `codemap.md`** (project root) for architecture,
-  entry points, and data flow; for deep work also read the folder's own
-  `codemap.md` (e.g. `backend/internal/services/codemap.md`).
+- **Before any task, read `docs/ARCHITECTURE.md`** for architecture, entry
+  points, and data flow; for deep work, read the area's own docs where they
+  exist. The per-directory `codemap.md` files were retired on 2026-10-11:
+  they no longer exist, so do not cite them or recreate them.
 - **Use CodeGraph for architecture questions, symbol discovery, caller/dependency tracing, and change-impact analysis.** If `graphify-out/` exists, treat questions about the codebase, architecture, file relationships, or project content as graph queries first. Ask focused questions and retrieve only what the task needs. Refresh the index after relevant code changes. Read the actual source before editing; use ordinary search when the graph does not answer the question. Keep lasting design decisions in the repository's architecture docs.
 - **Autonomy:** read-write for local code/docs/tests/non-destructive tooling;
   runtime/deployment changes (compose, prod env, credentials) are
