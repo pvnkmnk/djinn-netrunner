@@ -13,6 +13,7 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - AGENTS.md — agentic IDE guidelines, constraints, and "do not break" rules.
 - docs/ARCHITECTURE.md — worker model, locks, tables, and correctness contracts.
 - docs/UIIMPLEMENTATION.md — HTMX patterns, console streaming, attach modes, minimal JS contract.
+- docs/NETRUNNERLITE.md — the audited capability boundary of the reduced NetrunnerLite edition: per-feature verdicts, the limits it does not promise, and the gaps that are not edition differences.
 - docs/OPENSUBSONIC_COVERAGE.md — generated Subsonic/OpenSubsonic endpoint matrix, the pinned spec revision, and which gaps belong to which ticket.
 - docs/SECRET_SCAN_FINDINGS.md — a triaged full-history secret scan: what the 15 findings are, why 14 of them are not leaks, and whether to add a CI gate.
 - docs/SECRETS_MANIFEST.md — every credential the project needs, its form, and the exact file (and key) it belongs in; the checklist for supplying or rotating one.
@@ -37,7 +38,7 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - Investigate a secret-scan finding, or gate CI on one: docs/SECRET_SCAN_FINDINGS.md
 - Add or rotate a credential, or wire secrets into a new target: docs/SECRETS_MANIFEST.md, then docs/DEPLOYMENT.md
 - Add features/job types: AGENTS.md, docs/ARCHITECTURE.md
-- Change anything touching job claims, advisory locks, or worker wakeups: docs/decisions/0004-postgres-first-development-and-editions.md, then docs/ARCHITECTURE.md
+- Change anything touching job claims, advisory locks, or worker wakeups: docs/decisions/0004-postgres-first-development-and-editions.md, then docs/ARCHITECTURE.md; docs/NETRUNNERLITE.md says what each edition is then allowed to promise
 - Debug prod issues: docs/RUNBOOK.md, then docs/ARCHITECTURE.md
 
 ## Keeping docs updated
