@@ -54,11 +54,11 @@ test.describe('Monitored artist scan is queued on add (DJI-588)', () => {
     return cookies.find((c: any) => c.name === 'csrf_')?.value || '';
   }
 
-  async function seedMonitoredArtist(page: any) {
+  async function seedMonitoredArtist(page: any, extra: Record<string, unknown> = {}) {
     const csrf = await getCsrfToken(page);
     const res = await page.request.post('/api/test/seed-monitored-artist', {
       headers: { 'X-CSRF-Token': csrf },
-      data: { name: NAME, musicbrainz_id: MBID },
+      data: { name: NAME, musicbrainz_id: MBID, ...extra },
     });
     expect(res.status()).toBe(201);
     const body = await res.json();
@@ -74,7 +74,10 @@ test.describe('Monitored artist scan is queued on add (DJI-588)', () => {
     // for a different artist, or one already settled, would keep the promise
     // looking kept while scanning nothing.
     expect(body.job_type).toBe('artist_scan');
-    expect(body.job_state).toBe('queued');
+    // Not necessarily 'queued': the worker now wakes on the insert itself, so it
+    // may already have claimed the scan by the time this response is read. What
+    // the promise requires is a scan on the queue rather than in history.
+    expect(['queued', 'running']).toContain(body.job_state);
     expect(body.artist.Name).toBe(NAME);
     expect(body.artist.MusicBrainzID).toBe(MBID);
 
@@ -87,15 +90,23 @@ test.describe('Monitored artist scan is queued on add (DJI-588)', () => {
   });
 
   test('2. the artist card is there, and Sync answers the scan Add already queued', async ({ authenticatedPage: page }) => {
-    await seedMonitoredArtist(page);
+    // Add queues this artist's scan, and a live worker now wakes on that very
+    // insert (the NOTIFY fast path database.Migrate installs), claims and settles
+    // it in milliseconds. A seeded 'queued' scan is therefore history by the time
+    // the card is on screen, and pressing Sync would legitimately queue a fresh
+    // one -- the race, not the behavior, is what this test would be measuring.
+    // 'running' is the state a claimer writes, so the fixture holds the scan in
+    // flight and the assertion below is about a scan that is actually active.
+    const seeded = await seedMonitoredArtist(page, { scan_state: 'running' });
+    expect(seeded.job_state).toBe('running');
 
     await page.goto('/artists');
     const artistCard = page.locator(`#artist-${artistId}`);
     await expect(artistCard).toBeVisible();
     await expect(artistCard.locator('.name')).toContainText(NAME);
 
-    // Pressing Sync now must NOT queue a second scan: Add already queued this
-    // artist's, and the two routes share one enqueue owner. The operator is told
+    // Pressing Sync must NOT queue a second scan: this artist already has one in
+    // flight, and the two routes share one enqueue owner. The operator is told
     // so in the notice region the button targets.
     await artistCard.getByRole('button', { name: /Sync discography for/ }).click();
     await expect(page.locator('#notice')).toContainText('Sync already active');

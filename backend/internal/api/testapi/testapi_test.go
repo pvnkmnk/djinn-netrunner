@@ -16,6 +16,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -373,4 +374,70 @@ func TestTestAPI_CreateDir(t *testing.T) {
 	assert.Equal(t, 400, resp.StatusCode, "traversal refused")
 	resp, _ = post(`{"path":""}`)
 	assert.Equal(t, 400, resp.StatusCode, "empty path refused")
+}
+
+// The seed's scan_state knob exists for DJI-588's second clause. Add queues the
+// artist's scan, and a live worker now wakes on that very insert (the NOTIFY
+// fast path database.Migrate installs), claims the scan and settles it in
+// milliseconds -- so a browser spec can no longer observe a scan that is merely
+// queued: by the time the card is on screen it is history, and pressing Sync
+// would legitimately queue a fresh one. The fixture records the state a claimer
+// writes instead, and this pins that a held scan is the job the product answers
+// Sync with, rather than a second one.
+func TestSeedMonitoredArtist_HoldsTheScanActive(t *testing.T) {
+	f := setup(t)
+	require.NoError(t, f.db.Create(&database.QualityProfile{Name: "e2e default", IsDefault: true}).Error)
+
+	post := func(body string) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/api/test/seed-monitored-artist", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := f.app.Test(req)
+		require.NoError(t, err)
+		var out map[string]any
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+		return resp.StatusCode, out
+	}
+
+	status, out := post(`{"name":"Held Scan","musicbrainz_id":"dji588-held-mbid","scan_state":"running"}`)
+	require.Equal(t, 201, status)
+	assert.Equal(t, "running", out["job_state"], "the fixture must report the scan as active, not as Add left it")
+
+	jobID := uint64(out["job_id"].(float64))
+	var job database.Job
+	require.NoError(t, f.db.First(&job, jobID).Error)
+	assert.Equal(t, "running", job.State)
+	require.NotNil(t, job.StartedAt, "a claimed scan has a start time")
+	require.NotNil(t, job.HeartbeatAt, "and a heartbeat, so ZombieRecovery's 2-minute threshold is minutes away")
+
+	// The reason for the state, not the state itself: the product answers this
+	// scan instead of queueing a second one. That is the assertion the browser
+	// spec makes, and it is only derivable from the row.
+	var artist database.MonitoredArtist
+	require.NoError(t, f.db.Where("music_brainz_id = ?", "dji588-held-mbid").First(&artist).Error)
+	answered, alreadyActive, err := services.NewArtistTrackingService(f.db, nil).QueueArtistScan(&artist, "spec")
+	require.NoError(t, err)
+	assert.True(t, alreadyActive, "a held scan is what Sync is answered with")
+	assert.Equal(t, jobID, answered.ID, "and it is the seeded job, not a fresh one")
+
+	var total int64
+	require.NoError(t, f.db.Model(&database.Job{}).Where("job_type = ?", "artist_scan").Count(&total).Error)
+	assert.EqualValues(t, 1, total, "asking again must not queue a second scan")
+
+	// Without the knob the fixture must not fabricate activity: a spec that does
+	// not ask for a held scan gets Add's own queued job.
+	status, out = post(`{"name":"Queued Scan","musicbrainz_id":"dji588-queued-mbid"}`)
+	require.Equal(t, 201, status)
+	assert.Equal(t, "queued", out["job_state"])
+	var queued database.Job
+	require.NoError(t, f.db.First(&queued, uint64(out["job_id"].(float64))).Error)
+	assert.Nil(t, queued.StartedAt, "nothing claimed it: the fixture only waits for the worker's own claim")
+
+	// An unknown value is refused rather than silently ignored, so a typo in a
+	// spec cannot leave it asserting against a scan that is not held.
+	status, _ = post(`{"name":"Typo Scan","musicbrainz_id":"dji588-typo-mbid","scan_state":"succeeded"}`)
+	assert.Equal(t, 400, status)
+	var typoCount int64
+	require.NoError(t, f.db.Model(&database.MonitoredArtist{}).Where("music_brainz_id = ?", "dji588-typo-mbid").Count(&typoCount).Error)
+	assert.Zero(t, typoCount, "the refusal must come before the artist is created")
 }
