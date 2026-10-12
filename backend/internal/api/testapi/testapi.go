@@ -400,10 +400,25 @@ func seedMonitoredArtist(cfg *config.Config, db *gorm.DB) fiber.Handler {
 			Name             string `json:"name"`
 			MusicBrainzID    string `json:"musicbrainz_id"`
 			QualityProfileID string `json:"quality_profile_id"`
+			// ScanState optionally pins the queued scan into an ACTIVE state.
+			// AddMonitoredArtist queues 'queued', and a live worker now wakes on
+			// that very insert (the NOTIFY fast path database.Migrate installs),
+			// so a seeded scan is claimed and settled in milliseconds. A spec
+			// that needs the scan still in flight when it acts -- DJI-588's
+			// "Sync answers the scan Add already queued" -- cannot get that by
+			// racing the worker, so the fixture records the state a claimer
+			// would have written instead: "running", owned by nobody, and
+			// skipped by claimCandidates, which only takes 'queued'. Empty
+			// leaves Add's own state alone.
+			ScanState string `json:"scan_state"`
 		}
 		if err := c.Bind().Body(&payload); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
 		}
+		if payload.ScanState != "" && payload.ScanState != "running" {
+			return c.Status(400).JSON(fiber.Map{"error": "scan_state must be empty or \"running\""})
+		}
+
 		if payload.MusicBrainzID == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "musicbrainz_id required"})
 		}
@@ -444,6 +459,24 @@ func seedMonitoredArtist(cfg *config.Config, db *gorm.DB) fiber.Handler {
 		if err := db.Where("job_type = ? AND scope_type = ? AND scope_id = ?",
 			"artist_scan", "artist", artist.ID.String()).First(&job).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "no artist_scan job was queued for this artist"})
+		}
+
+		// The knob: record the scan a worker would have claimed. Safe to leave
+		// behind -- ZombieRecovery's stale threshold is 2 minutes and the job
+		// it re-queues scans an artist the spec has already deleted.
+		if payload.ScanState == "running" {
+			now := time.Now()
+			if err := db.Model(&database.Job{}).Where("id = ?", job.ID).
+				Updates(map[string]interface{}{
+					"state":        "running",
+					"started_at":   &now,
+					"heartbeat_at": &now,
+				}).Error; err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			}
+			job.State = "running"
+			job.StartedAt = &now
+			job.HeartbeatAt = &now
 		}
 
 		return c.Status(201).JSON(fiber.Map{

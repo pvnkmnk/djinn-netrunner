@@ -12,11 +12,12 @@ output are in "How this was verified".
   (`backend/internal/database/connection.go:67`). Every other value takes the SQLite path:
   **NetrunnerLite is selected by `DATABASE_URL` — not by a flag, build tag, image, or separate
   binary.**
-- One codebase, one set of binaries. The entire engine divergence in Go is five places: the
+- One codebase, one set of binaries. The entire engine divergence in Go is six places: the
   `IsPostgres` branches at `connection.go:20`, `connection.go:51` (SQLite PRAGMAs) and
   `websocket.go:75` (log fan-out), the dialector check at `backend/cmd/worker/main.go:250`
-  (wakeup listener), and the `TableLockManager` wiring. Anything not on that list behaves
-  identically on both editions.
+  (wakeup listener), the `TableLockManager` wiring, and the notification-trigger install in
+  `database.Migrate` (`backend/internal/database/notify.go`, PostgreSQL-only because SQLite has
+  no `NOTIFY`). Anything not on that list behaves identically on both editions.
 - `/api/health` is the same route and the same contract on both: every reported check carries a
   `status`. With no slskd key and no library path configured, SQLite answers
   `{"status":"ok","checks":{"database":{"status":"ok"}}}`. Assert the contract, never a fixed key
@@ -34,14 +35,14 @@ not merely that it happened to pass on SQLite.
 | Acquisition pipeline (slskd search → download → library) | same stages and gates | identical code path | **Same** |
 | Per-scope exclusivity while processing | real session-level `pg_try_advisory_lock` (`locks.go:107`) | `TableLockManager`: a row with a 15-minute TTL | **Lite is weaker** |
 | Concurrent jobs per worker | `MAX_CONCURRENT_JOBS` (default 5) | **one**; `MAX_CONCURRENT_JOBS > 1` warns, it does not clamp | **Lite limit** |
-| Job wakeup latency | 5-second poll, plus a `LISTEN/NOTIFY` fast path | 5-second poll | **Same today** (see "dormant fast path") |
+| Job wakeup latency | instant on a queued job (`opswakeup`, installed by `database.Migrate`); 5-second poll as the fallback | 5-second poll | **Lite is weaker** |
 | Multi-node / horizontal scale | supported | not promised; LiteFS retired (ADR 0001) | **Lite limit** |
 | Multi-user data scoping | plain `owner_user_id` filters plus role checks | identical | **Same** |
 | Subsonic / OpenSubsonic `/rest/*` | full surface | identical; the only engine-sensitive SQL is `ORDER BY RANDOM()` (`subsonic.go:1378`, `:1439`), which is portable. The whole group is gated by config (`cfg.Subsonic.Enabled`, `cmd/server/main.go:491`), not by edition | **Same** |
 | Aggregate stats (`/api/stats/*`, CLI `stats`) | `SUM(CASE WHEN …)` aggregates, deliberately not `FILTER (WHERE …)` | identical, and measured working | **Same** |
 | Schema evolution | GORM `AutoMigrate` + `database.Migrate` backfills, portable SQL | identical | **Same** |
 | `netrunner-cli` and MCP tools (`cmd/agent`) | the same command and tool set: read-only probes plus stateful writes | identical | **Same** |
-| Live job-log / event streaming | backlog on connect; continuation needs a NOTIFY publisher that is not installed | backlog on connect, then silence | **Neither, today** |
+| Live job-log / event streaming | backlog on connect, then live lines: the `opsevents` trigger fires on every `job_logs` insert | backlog on connect, then silence | **Postgres only** — the console socket that consumes it is miswired on both editions (a separate gap, below) |
 
 ## What NetrunnerLite does not promise
 
@@ -56,20 +57,14 @@ not merely that it happened to pass on SQLite.
    overwrites the first's row — so this is best-effort exclusion inside one process, not a
    guarantee. It is adequate for the single-worker deployment Lite promises and must not be relied
    on beyond that.
-3. **No live push.** See the WebSocket row and the console note below.
+3. **No live push.** PostgreSQL publishes wakeups and log lines now (see the matrix); Lite has no
+   `NOTIFY` and keeps polling. The console socket that would consume those lines is a separate,
+   non-edition gap recorded below.
 
 ## Gaps that are not edition differences
 
 Recorded here so the Lite story is not blamed for them, and so nobody "fixes Lite" by chasing them.
 
-- **The NOTIFY fast path has no publisher in a composed deployment.** The worker listens on
-  `opswakeup` (`worker/main.go:331`) and the web server listens on `opsevents` for log fan-out
-  (`websocket.go:89`), but the only sender is a SQL trigger in
-  `ops/db/init/02-functions.sql` (`PERFORM pg_notify('opsevents'|'opswakeup', …)`). No compose file
-  mounts `ops/db/init/`, no Go code executes it, and no Go code issues `NOTIFY`. Wakeups and log
-  fan-out therefore fall back to the worker's 5-second job poll (`worker/main.go:272`) and to the
-  UI's htmx polling on **both** editions. Install that SQL (or publish from the application) and
-  Postgres gains the fast path; Lite does not, and never will.
 - **The console socket is miswired.** `ops/web/templates/index.html:109` points htmx's `ws`
   extension at `/ws/jobs`, while the registered route is `/ws/jobs/:job_id`
   (`cmd/server/main.go:465`), and `/console/attach` answers "Not attached: no job is selected"
@@ -95,14 +90,37 @@ worker : go build ./cmd/worker  -> still running after 10s with MAX_CONCURRENT_J
          log: scheduler, zombie cleanup, watchlist polling and staging janitor loops started
 cli    : go build ./cmd/cli     -> `stats jobs` and `stats summary` both succeed on SQLite
 static : rg 'FILTER (WHERE'     -> one comment (migrate.go:171), no live SQL
-         rg 'pg_notify'         -> ops/db/init/02-functions.sql + tests only
+         rg 'pg_notify'         -> the SQL bootstrap and tests only; no compose mount
          rg 'db/init'           -> docs, codemaps, skills, two test comments; no compose mount
 ```
+
+The dormant fast path was the first entry on the ADR 0004 follow-up list, so its fix is measured
+separately — same host, against the compose `postgres` service (fresh database, so the install path
+is the one a new deployment takes):
+
+```
+api    : DATABASE_URL=postgres://…@127.0.0.1:5432/… go test ./internal/api \
+           -run 'TestAcquireAPIEnqueuePublishesAWakeup|TestJobLogInsertPublishesToTheConsoleStream'
+         -> 2 passed: POST /api/acquire published `opswakeup` {event:job_queued, jobtype:acquisition},
+            and a `job_logs` insert published `opsevents` {event:job_log, job_id, log_id}
+         (both listen on the channels the two consumers subscribe to, and prove the listener was
+          live before the write, so neither can pass by losing its own race)
+static : rg 'pg_notify'         -> backend/internal/database/notify.go + tests only
+```
+
+Note what the install path had to be, and why the bootstrap file could not have been it: `ops/db/init/`
+is not in the image at all (`backend/Dockerfile` copies `./backend` and `ops/web`), Docker's init
+scripts run against a **fresh** database only, and `02-functions.sql` attaches its triggers to
+`joblogs` and `sources` — tables the runtime schema does not have (GORM creates `job_logs` for
+`database.JobLog`). Installing from `database.Migrate` reaches a fresh volume and an existing
+database alike, on every boot.
 
 ## Keeping it true
 
 - A feature that gains an `IsPostgres` branch belongs in the matrix with a verdict.
-- If the `opswakeup` / `opsevents` fast path is made real, correct the wakeup row here, the "Job
-  wakeup" note in `README.md`, and ADR 0004 §2.
+- The fast path's two halves are held together by
+  `backend/internal/api/netrunnerlite_boundary_test.go`: the installer must be called by a boot, and
+  every channel it publishes on must be one a listener subscribes to. A listener or a sender that
+  moves alone fails there instead of quietly polling forever.
 - If Lite's lock manager gains an ownership-checked release or a monotonic `expires_at`, state the
   new guarantee instead of quietly deleting the caveat.

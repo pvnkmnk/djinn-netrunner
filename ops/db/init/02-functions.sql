@@ -1,5 +1,10 @@
 -- Djinn NETRUNNER Database Functions
 -- Helper functions for job management and notifications
+--
+-- NOT the source of the notification triggers: this file is never mounted by a
+-- compose file and no code path executes it, and its triggers attach to tables
+-- the runtime schema does not have (`joblogs`, `sources`). The sender that runs is
+-- installed by database.Migrate -- see backend/internal/database/notify.go.
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
