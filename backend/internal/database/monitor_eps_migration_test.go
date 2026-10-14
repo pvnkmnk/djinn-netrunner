@@ -1,6 +1,8 @@
 package database
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -9,34 +11,36 @@ import (
 	"gorm.io/gorm"
 )
 
-// migrationMonitorEPsColumnSQL is the body of
-// ops/db/init/migrations/2026_10_08_002_reconcile_monitor_eps_column.sql,
-// duplicated here deliberately: a test that reads the file proves the file
-// parses, not that these statements do what the migration claims on the driver
-// that runs in production. Same shape as artist_provenance_migration_test.go and
-// bootstrap_enrolled_at_migration_test.go, and if the migration changes this must
-// change with it.
-const migrationMonitorEPsColumnSQL = `
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'monitored_artists' AND column_name = 'monitor_e_ps'
-    ) THEN
-        IF EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'monitored_artists' AND column_name = 'monitor_eps'
-        ) THEN
-            UPDATE monitored_artists SET monitor_eps = monitor_e_ps;
-            ALTER TABLE monitored_artists DROP COLUMN monitor_e_ps;
-        ELSE
-            ALTER TABLE monitored_artists RENAME COLUMN monitor_e_ps TO monitor_eps;
-        END IF;
-    END IF;
-END $$;
+// monitorEPsMigrationPath is the on-disk migration these tests run. The file is
+// the artifact: restating its DDL in a constant here is how this guard went
+// hollow -- measured 2026-10-14, inverting the collapse UPDATE in this file left
+// both tests green, because they executed the copy rather than the migration.
+//
+// Relative to this package's directory, the way monitor_eps_column_test.go reads
+// the bootstrap it compares the model against.
+func monitorEPsMigrationPath() string {
+	return filepath.Join("..", "..", "..", "ops", "db", "init", "migrations",
+		"2026_10_08_002_reconcile_monitor_eps_column.sql")
+}
 
-COMMENT ON COLUMN monitored_artists.monitor_eps IS
-    'Whether this artist''s EPs are monitored; the Go model tags MonitorEPs with this name, so the two schema sources agree (DJI-618)';`
+// monitorEPsMigrationStatements reads the migration as it sits in the tree, so an
+// edit to its DO block changes what these tests execute. The file's text is
+// applied verbatim -- comment lines included -- and the statements then assert
+// themselves through their effects: the columns that survive, the value that
+// wins, and the COMMENT that landed.
+//
+// The two Contains checks tie the file to the spellings the Go side uses, so
+// renaming either the constants or the file's columns fails here rather than
+// leaving a test that exercises a migration which no longer repairs this column.
+func monitorEPsMigrationStatements(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(monitorEPsMigrationPath())
+	require.NoError(t, err, "the migration is the artifact under test: a move or a rename is a failure here, not a skip")
+	body := string(raw)
+	require.Contains(t, body, monitorEPsColumn, "the migration has to name the column the Go model resolves to")
+	require.Contains(t, body, monitorEPsLegacyColumn, "and the legacy spelling it repairs")
+	return body
+}
 
 // monitorEPsCanonical opens a transaction on the database the gate primed, with
 // monitored_artists in the canonical shape: monitor_eps and no monitor_e_ps.
@@ -105,6 +109,8 @@ func monitorEPsScratchArtist(t *testing.T, tx *gorm.DB, monitorEPs bool) uuid.UU
 func TestMonitorEPsMigration_Postgres(t *testing.T) {
 	tx := monitorEPsCanonical(t)
 
+	statements := monitorEPsMigrationStatements(t)
+
 	// The row GORM wrote: monitor_e_ps, the legacy column, is the live value. The
 	// bootstrap's monitor_eps is left at its NOT NULL DEFAULT TRUE, which is the
 	// stale copy an operator would otherwise keep reading.
@@ -116,7 +122,7 @@ func TestMonitorEPsMigration_Postgres(t *testing.T) {
 	// re-applying a migration by hand must not fail, and the block above is
 	// written to be a no-op the second time.
 	for i := 1; i <= 2; i++ {
-		require.NoError(t, tx.Exec(migrationMonitorEPsColumnSQL).Error,
+		require.NoError(t, tx.Exec(statements).Error,
 			"migration run %d failed on postgres", i)
 	}
 
@@ -156,6 +162,8 @@ func TestMonitorEPsMigration_Postgres(t *testing.T) {
 func TestMonitorEPsMigration_RenamesTheLegacyColumn(t *testing.T) {
 	tx := monitorEPsCanonical(t)
 
+	statements := monitorEPsMigrationStatements(t)
+
 	id := monitorEPsScratchArtist(t, tx, false)
 	// Take the canonical column away under the row, so the only spelling left is
 	// the legacy one, holding the value GORM wrote.
@@ -163,7 +171,7 @@ func TestMonitorEPsMigration_RenamesTheLegacyColumn(t *testing.T) {
 	require.False(t, tx.Migrator().HasColumn("monitored_artists", monitorEPsColumn))
 
 	for i := 1; i <= 2; i++ {
-		require.NoError(t, tx.Exec(migrationMonitorEPsColumnSQL).Error,
+		require.NoError(t, tx.Exec(statements).Error,
 			"migration run %d failed on postgres", i)
 	}
 
