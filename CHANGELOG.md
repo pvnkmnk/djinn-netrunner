@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A library can be scanned and enriched on a cron, not only by hand.**
+  `POST /api/libraries/:id/scan` was the only way to start one, and a schedule
+  could only ever be a watchlist sync. A schedule now names the job it runs
+  (`sync`, `scan`, `enrich`) and the job type names the scope: `sync` a
+  watchlist, `scan`/`enrich` a library. Exactly one of
+  `watchlist_id`/`library_id` is set, and a pair the job type cannot use is
+  refused with the column it wanted rather than ignored -- a row naming a
+  watchlist while queueing a library job would run against whatever the library
+  id happened to be. `watchlist_id` is no longer NOT NULL, which is the one
+  change AutoMigrate will not make on a deployed database: a migration drops it
+  in `database.Migrate` and in `ops/db/init/migrations/`, with a Postgres-gated
+  test that proves an insert with a NULL watchlist_id lands (and fails if the
+  NOT NULL comes back). The ownership filter no longer JOINs `watchlists`, so a
+  library schedule is visible to the account that owns the library and can be
+  toggled and deleted by it -- the JOIN could only ever see one scope. The
+  worker dispatches on the row's job type instead of hard-coding a sync, and a
+  row that names no scope is disabled with the reason in the log rather than
+  queueing an empty-scope job (every one of those contends on a single advisory
+  lock). The scheduler tick is now `runDueSchedules`, so tests drive the enqueue
+  path rather than re-implementing it. Toggle also stops calling
+  `Save(&sched)` on a preloaded row, which is what made it un-testable on
+  SQLite.
 - **`docs/SECRETS_MANIFEST.md` — every credential this project needs, its form,
   and the exact file (and key) it belongs in.** The repo's `.env` holds 36 keys
   but no `DATABASE_URL` (compose injects that), and the file reaches only the

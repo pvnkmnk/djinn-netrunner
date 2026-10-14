@@ -70,11 +70,17 @@ uses.
 applies wherever a watchlist or artist does not name its own. Creating a
 profile is optional: the seeded default is enough to start.
 
-### 5. Schedules — hands-off syncing
+### 5. Schedules — hands-off syncing and scanning
 
-`/schedules` attaches a cron expression to a watchlist. A fresh schedule shows
-`Next: not scheduled` until the scheduler computes the next run — that is
-expected, not a failure. **Disable** pauses it without deleting it.
+`/schedules` attaches a cron expression to a scope. The Job select names what
+runs and therefore which scope it needs: **Sync** runs against a watchlist,
+**Library scan** and **Enrich** against a library. Fill the select that belongs
+to the job you picked; leaving the other empty is the normal case, and filling
+the wrong one is refused with the column it wanted rather than ignored. The card
+reads `Library scan: Main Library`, so the job and the scope are both on screen.
+A fresh schedule shows `Next: not scheduled` until the scheduler computes the
+next run — that is expected, not a failure. **Disable** pauses it without
+deleting it.
 
 ### 6. Artists — watch a discography
 
@@ -117,8 +123,9 @@ see in your client is the library NetRunner verified.
 - **Preview is not enforced.** Nothing stops you from adding a source whose
   provider will always refuse for configuration reasons (a Spotify type with no
   `sp_dc` linked). Preview tells you before a sync does.
-- **Schedules need a watchlist.** With no watchlists, the schedule modal's
-  Watchlist select is empty and the save is refused; create a watchlist first.
+- **Schedules need a scope.** With no watchlists and no libraries, both selects
+  in the schedule modal are empty and the save is refused; create the watchlist
+  or library the schedule should run against first.
 - **`Last Scan: Never` is sticky** until a scan runs — adding an artist does not
   scan it immediately.
 - **Library paths are container paths.** A path that exists on your host but

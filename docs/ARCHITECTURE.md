@@ -39,7 +39,7 @@ The worker orchestrates multiple specialized services:
 - **acquisitions**: Provenance and final-path record for imported items.
 - **metadata_cache**: Persistent shadow cache for external API responses.
 - **watchlists**: Automated discovery source configurations.
-- **schedules**: Cron-based scheduling for watchlist syncs.
+- **schedules**: Cron-based scheduling for the job a scope needs — a watchlist's `sync`, or a library's `scan`/`enrich`. The job type names the scope (`sync` → watchlist, `scan`/`enrich` → library), so exactly one of `watchlist_id`/`library_id` is set and the other is NULL.
 - **monitored_artists**: Artist tracking configuration.
 - **tracks**: Indexed local library tracks.
 
@@ -56,9 +56,11 @@ The worker orchestrates multiple specialized services:
 - `DELETE /api/artists/:id` - Remove artist monitoring
 
 ### Schedules
+A schedule has no owner of its own: it inherits one from the watchlist or library it runs against, which is also what a non-admin's list, toggle, edit and delete are filtered by.
 - `GET /api/schedules` - List all schedules
-- `POST /api/schedules` - Create schedule
-- `PATCH /api/schedules/:id` - Update schedule
+- `POST /api/schedules` - Create schedule; `job_type` names the scope, so `sync` needs `watchlist_id` and `scan`/`enrich` need `library_id`. A pair the job type cannot use (a `scan` with a `watchlist_id`) is refused with the column it wanted rather than ignored.
+- `PATCH /api/schedules/:id` - Update schedule (cron, timezone, enabled; the job type and its scope are not editable)
+- `PATCH /api/schedules/:id/toggle` - Enable or disable, answering with the schedule card
 - `DELETE /api/schedules/:id` - Delete schedule
 
 ### Dashboard
