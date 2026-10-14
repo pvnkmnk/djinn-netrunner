@@ -101,8 +101,13 @@ func TestArtistsHandler_RepointResetsCountersAndKeepsFlags(t *testing.T) {
 	// MonitorEPs carries gorm:"default:true", so Create with false omits the
 	// column and the database default wins. Set it explicitly, or the flag
 	// this test claims to preserve was never the value it seeded.
+	//
+	// Named by field, not by column: this line used to spell the column
+	// "monitor_e_ps", which is the name GORM used to derive and the SQL
+	// bootstrap never used, so the test pinned the drift instead of detecting it
+	// (DJI-618).
 	require.NoError(t, db.Model(&database.MonitoredArtist{}).
-		Where("id = ?", artist.ID).Update("monitor_e_ps", false).Error)
+		Where("id = ?", artist.ID).Update("MonitorEPs", false).Error)
 
 	app, _ := repointFixture(t, db, owner, repointGet("new-mbid"))
 	require.Equal(t, 200, postRepoint(t, app, artist.ID.String(), "new-mbid"))

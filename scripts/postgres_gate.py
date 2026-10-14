@@ -50,8 +50,8 @@ PRIME_TEST_NAME = "TestMigrate_Postgres"
 
 # Tests that MUST report `pass` once a database is available. Derived, not
 # guessed: with DATABASE_URL unset each of these reports `skip`, and with a
-# Postgres it reports `pass` (internal/database: 18 of 181 tests, measured
-# 2026-10-14). A new test that needs a database and skips must be added here --
+# Postgres it reports `pass` (internal/database: 20 of its 126 top-level tests,
+# measured 2026-10-14). A new test that needs a database and skips must be added here --
 # if it skips without being listed, the undeclared-skip rule refuses the run.
 REQUIRED = {
     "./internal/database": [
@@ -65,6 +65,13 @@ REQUIRED = {
         "TestLockManager",
         "TestMigrate_Postgres",
         "TestMigrate_PostgresIdempotent",
+        # The monitor_eps reconciliation: the model tag, the pre-AutoMigrate repair
+        # in database.Migrate, and the DO block an operator applies by hand. Both
+        # shapes are required, because the two branches of the migration are
+        # different statements (collapse the pair vs rename the lone legacy
+        # column) and a SQLite-only run exercises neither.
+        "TestMonitorEPsMigration_Postgres",
+        "TestMonitorEPsMigration_RenamesTheLegacyColumn",
         "TestNewLockManager_Postgres",
         "TestPostgresLockManager_AcquireTryLock",
         "TestPostgresLockManager_AcquireTryLock_Duplicate",

@@ -8,7 +8,7 @@
 > triaged; no gofmt gate means committed violations are possible; the P-DJI-29
 > wave order now runs NR01-NR28.
 > Refreshed 2026-10-14: the toolchain is Go 1.27.2 on Fiber v3 and
-> `govulncheck` is pinned at v1.8.0; the Postgres gate is 22 required tests;
+> `govulncheck` is pinned at v1.8.0; the Postgres gate is 24 required tests;
 > the migrator installs the NOTIFY sender, the console attaches to a picked
 > job, and a schedule names a job type and a library scope; a
 > project-directory clean landed, so the checkout is master-only.
@@ -353,11 +353,11 @@ the e2e one.
      precedent `backend/internal/database/artist_provenance_migration_test.go`,
      followed by `bootstrap_enrolled_at_migration_test.go`. Reading the file
      proves it parses, not that its statements do what the comment claims.      `setupPostgresForMigration` must `t.Skip` when `DATABASE_URL` is empty,
-      unreachable or non-postgres: 18 tests in `internal/database` alone skip
-      cleanly (exit 0) with no database (181 in the package; measured
-      2026-10-14), and a skip is not a pass. CI enforces
+      unreachable or non-postgres: 20 tests in `internal/database` alone skip
+      cleanly (exit 0) with no database (106 top-level tests pass, 20 skip, 0
+      fail; measured 2026-10-14), and a skip is not a pass. CI enforces
       that now -- `scripts/postgres_gate.py` (the `postgres` job in
-      `.github/workflows/ci.yml`) runs the 22 required tests across four packages
+      `.github/workflows/ci.yml`) runs the 24 required tests across four packages
       against a real
       Postgres and refuses a run where one skipped, vanished or failed. Locally,
       start a database with
@@ -995,11 +995,21 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   and asserts the flip, and asserts a stranger's 404.)
 - **A migration's SQL and GORM's AutoMigrate can disagree on a column name.**
   `ops/db/init/migrations/2026_03_04_006_artist_tracking.sql` declares
-  `monitor_eps` while AutoMigrate creates `monitor_e_ps` for the same field
+  `monitor_eps` while AutoMigrate derived `monitor_e_ps` for the same field
   (`MonitorEPs` in `models.go`), so a database bootstrapped from the SQL file
-  gets one, the other, or both. Same class as the earlier column-naming trap,
-  and the reason the SQL file is the documented bootstrap path rather than a
-  live mirror of the schema — prove a schema change against a real database
+  got one, the other, or both: GORM wrote `monitor_e_ps` while `monitor_eps`
+  stayed at its NOT NULL DEFAULT TRUE, and anything reading the SQL name saw a
+  setting nobody chose. Reconciled 2026-10-14 (DJI-635, answering DJI-618):
+  the model now carries `gorm:"column:monitor_eps"`, `database.Migrate` calls
+  `reconcileMonitorEPsColumn` **before** AutoMigrate (it is additive, so it
+  would otherwise add a second column and keep the stale one's value -- where
+  both exist the GORM-written one wins, because that is where the writes were),
+  and `ops/db/init/migrations/2026_10_08_002_reconcile_monitor_eps_column.sql`
+  repairs an `ops/db/init/` bootstrap by hand. Held by a test that reads the
+  column name out of the SQL file rather than restating it, plus a
+  Postgres-gated migration test in the gate -- and by that test's inverse, which
+  is the lesson: the SQL file is the documented bootstrap path, not a live
+  mirror of the schema, so prove a schema change against a real database
   (Common tasks 3).
 - **`internal/services` can exceed go test's default 10m0s.** One ffprobe-backed
   download-probe test ran 9m46s on a loaded box while the package totals 177s
