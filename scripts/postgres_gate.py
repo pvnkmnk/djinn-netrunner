@@ -60,6 +60,8 @@ REQUIRED = {
         "TestBootstrapEnrolledAtMigration_Postgres",
         "TestBootstrapEnrolledAtMigration_PreservesExistingRows",
         "TestGetScopeLockKey",
+        "TestLibraryScheduleMigration_Postgres",
+        "TestLibraryScheduleMigration_RealTableAcceptsLibraryScope",
         "TestLockManager",
         "TestMigrate_Postgres",
         "TestMigrate_PostgresIdempotent",

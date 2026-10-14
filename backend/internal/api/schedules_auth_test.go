@@ -67,7 +67,7 @@ func TestSchedulesAuthorization(t *testing.T) {
 
 	// Setup schedule for user1's watchlist
 	sched1 := database.Schedule{
-		WatchlistID: wl1.ID,
+		WatchlistID: &wl1.ID,
 		CronExpr:    "0 0 * * *",
 		Timezone:    "UTC",
 		Enabled:     true,

@@ -323,10 +323,24 @@ type SpotifyToken struct {
 	User User `gorm:"foreignKey:UserID"`
 }
 
-// Schedule represents a recurring sync schedule
+// Schedule runs one job type against the scope that job type belongs to, on a
+// cron expression.
+//
+// It started as a watchlist-only sync and now also carries a library's scan and
+// enrich. The job type names the scope rather than a separate target column
+// doing it: sync runs against a watchlist, scan and enrich against a library
+// (see ScheduleJobTypes), so a row cannot claim one scope and queue work for
+// the other, and there is no second field to fall out of step with the first.
 type Schedule struct {
-	ID          uint64     `gorm:"primaryKey;autoIncrement"`
-	WatchlistID uuid.UUID  `gorm:"type:uuid;not null;index"`
+	ID uint64 `gorm:"primaryKey;autoIncrement"`
+	// JobType is what this schedule runs; it also names the scope below.
+	JobType string `gorm:"column:job_type;not null;default:'sync';index"`
+	// Exactly one of these is set, chosen by JobType. They are nullable
+	// because a NOT NULL watchlist_id cannot also carry a library's row; the
+	// foreign key tolerates NULL, and a migration drops the old NOT NULL for
+	// databases that predate library schedules.
+	WatchlistID *uuid.UUID `gorm:"type:uuid;index"`
+	LibraryID   *uuid.UUID `gorm:"type:uuid;index"`
 	CronExpr    string     `gorm:"not null"`
 	Timezone    string     `gorm:"not null;default:'UTC'"`
 	NextRunAt   *time.Time `gorm:"index"`
@@ -339,6 +353,7 @@ type Schedule struct {
 	UpdatedAt   time.Time
 
 	Watchlist Watchlist `gorm:"foreignKey:WatchlistID"`
+	Library   Library   `gorm:"foreignKey:LibraryID"`
 }
 
 // Job represents a background job

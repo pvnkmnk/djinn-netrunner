@@ -239,7 +239,7 @@ func TestSchedule_WithWatchlist(t *testing.T) {
 	require.NoError(t, err)
 
 	schedule := Schedule{
-		WatchlistID: watchlist.ID,
+		WatchlistID: &watchlist.ID,
 		CronExpr:    "0 0 * * *",
 		Timezone:    "America/New_York",
 		Enabled:     true,
@@ -267,7 +267,7 @@ func TestSchedule_ExplicitFalseEnabledIsPersisted(t *testing.T) {
 	require.NoError(t, db.Create(&watchlist).Error)
 
 	schedule := Schedule{
-		WatchlistID: watchlist.ID, CronExpr: "0 5 * * *", Timezone: "UTC",
+		WatchlistID: &watchlist.ID, CronExpr: "0 5 * * *", Timezone: "UTC",
 		Enabled: false,
 	}
 	require.NoError(t, db.Create(&schedule).Error)
