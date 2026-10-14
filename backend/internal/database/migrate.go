@@ -169,6 +169,35 @@ func Migrate(db *gorm.DB) error {
 		}
 	}
 
+	// Library schedules. A schedule used to be a watchlist sync and nothing
+	// else, so watchlist_id was NOT NULL and there was no job_type at all. The
+	// job type now names the scope (sync: watchlist, scan and enrich: library),
+	// which means the column has to be able to be NULL -- and relaxing NOT NULL
+	// is the one step AutoMigrate will not take on a deployed database. Without
+	// this a library schedule fails to insert with a constraint error that names
+	// a column the operator never set.
+	//
+	// The ALTER is Postgres-only and checked rather than discarded: SQLite has no
+	// ALTER COLUMN, and its AutoMigrate rebuilds the table for the change; if the
+	// Postgres ALTER fails, every library schedule stays un-insertable, which is
+	// the exact state this migration exists to leave behind.
+	if db.Migrator().HasTable("schedules") {
+		if db.Migrator().HasColumn("schedules", "job_type") {
+			if err := db.Exec(
+				`UPDATE schedules SET job_type = 'sync' WHERE job_type IS NULL OR job_type = ''`,
+			).Error; err != nil {
+				return fmt.Errorf("failed to backfill schedules.job_type: %w", err)
+			}
+		}
+		if db.Dialector.Name() == "postgres" {
+			if err := db.Exec(
+				`ALTER TABLE schedules ALTER COLUMN watchlist_id DROP NOT NULL`,
+			).Error; err != nil {
+				return fmt.Errorf("failed to relax schedules.watchlist_id: %w", err)
+			}
+		}
+	}
+
 	// Backfill the artist release counters.
 	//
 	// total_releases and acquired_releases were declared on MonitoredArtist but

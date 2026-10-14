@@ -893,7 +893,7 @@ func TestSchedulerLoop_CreatesSyncJobForDueSchedule(t *testing.T) {
 	// Create a schedule that is due (next_run_at in the past)
 	pastTime := time.Now().Add(-1 * time.Hour)
 	schedule := database.Schedule{
-		WatchlistID: wl.ID,
+		WatchlistID: &wl.ID,
 		CronExpr:    "0 * * * *", // hourly
 		Enabled:     true,
 		NextRunAt:   &pastTime,
@@ -957,7 +957,7 @@ func TestSchedulerLoop_SkipsDisabledSchedule(t *testing.T) {
 	// Create a disabled schedule with past due time (should be skipped)
 	pastTime := time.Now().Add(-1 * time.Hour)
 	schedule := database.Schedule{
-		WatchlistID: wl.ID,
+		WatchlistID: &wl.ID,
 		CronExpr:    "0 * * * *",
 		NextRunAt:   &pastTime,
 	}
@@ -1006,7 +1006,7 @@ func TestSchedulerLoop_SkipsFutureSchedule(t *testing.T) {
 	// Create a schedule with future next_run_at (should be skipped)
 	futureTime := time.Now().Add(1 * time.Hour)
 	schedule := database.Schedule{
-		WatchlistID: wl.ID,
+		WatchlistID: &wl.ID,
 		CronExpr:    "0 * * * *",
 		Enabled:     true,
 		NextRunAt:   &futureTime,
@@ -1053,7 +1053,7 @@ func TestSchedulerLoop_InitializesNullNextRunAt(t *testing.T) {
 
 	// Create a schedule with NULL next_run_at (the initialization query should set it)
 	schedule := database.Schedule{
-		WatchlistID: wl.ID,
+		WatchlistID: &wl.ID,
 		CronExpr:    "0 * * * *",
 		Enabled:     true,
 		NextRunAt:   nil, // NULL — should be initialized by scheduler

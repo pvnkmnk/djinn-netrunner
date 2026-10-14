@@ -6,11 +6,31 @@
         </div>
         <form hx-{% if ID %}patch="/api/schedules/{{ ID }}"{% else %}post="/api/schedules"{% endif %} hx-target="#schedules-region" hx-swap="innerHTML">
             {% if ID %}<input type="hidden" name="id" value="{{ ID }}">{% endif %}
+            {# The job type names the scope: both selects are always rendered (no script here to swap them), and the handler rejects a pair the job type cannot use, naming the column it wanted. #}
+            <div class="form-group">
+                <label for="job_type">Job</label>
+                <select id="job_type" name="job_type" required>
+                    {% for jt in JobTypes %}
+                    <option value="{{ jt.Value }}" {% if jt.Value == JobType %}selected{% endif %}>{{ jt.Label }}</option>
+                    {% endfor %}
+                </select>
+                <small class="text-secondary">Sync runs against a watchlist; Library scan and Enrich run against a library.</small>
+            </div>
             <div class="form-group">
                 <label for="watchlist_id">Watchlist</label>
-                <select id="watchlist_id" name="watchlist_id" required>
+                <select id="watchlist_id" name="watchlist_id">
+                    <option value="">-</option>
                     {% for watchlist in watchlists %}
                     <option value="{{ watchlist.ID }}" {% if watchlist.ID == WatchlistID %}selected{% endif %}>{{ watchlist.Name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="library_id">Library</label>
+                <select id="library_id" name="library_id">
+                    <option value="">-</option>
+                    {% for library in libraries %}
+                    <option value="{{ library.ID }}" {% if library.ID == LibraryID %}selected{% endif %}>{{ library.Name }}</option>
                     {% endfor %}
                 </select>
             </div>

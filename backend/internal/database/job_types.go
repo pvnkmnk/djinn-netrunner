@@ -40,6 +40,18 @@ func JobTypeValues() []string {
 	return values
 }
 
+// JobTypeLabel is the human label for a stored job type. An unknown value is
+// not an error -- rows outlive downgrades -- but printing nothing is worse than
+// printing what is stored, so it comes back unchanged.
+func JobTypeLabel(value string) string {
+	for _, jt := range JobTypes {
+		if jt.Value == value {
+			return jt.Label
+		}
+	}
+	return value
+}
+
 // IsKnownJobType reports whether a stored job type is one the app knows about.
 // An unknown value is not an error - rows from a newer build can outlive a
 // downgrade - but it is worth logging when one turns up.

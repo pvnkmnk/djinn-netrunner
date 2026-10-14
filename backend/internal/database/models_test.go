@@ -243,7 +243,7 @@ func TestSchedule_CreateAndQuery(t *testing.T) {
 	db.Create(&wl)
 
 	sched := Schedule{
-		WatchlistID: wl.ID,
+		WatchlistID: &wl.ID,
 		CronExpr:    "0 */4 * * *",
 		Timezone:    "UTC",
 		Enabled:     true,
@@ -255,7 +255,13 @@ func TestSchedule_CreateAndQuery(t *testing.T) {
 	err = db.Preload("Watchlist").First(&found, sched.ID).Error
 	require.NoError(t, err)
 	assert.Equal(t, "0 */4 * * *", found.CronExpr)
-	assert.Equal(t, wl.ID, found.WatchlistID)
+	require.NotNil(t, found.WatchlistID, "a sync schedule's scope is its watchlist")
+	assert.Equal(t, wl.ID, *found.WatchlistID)
+	// The job type identifies the scope, and a row that omits it is a sync: the
+	// column's default is what every schedule created before library
+	// scheduling existed reads back as.
+	assert.Equal(t, "sync", found.JobType)
+	assert.Nil(t, found.LibraryID, "a watchlist schedule must not also name a library")
 }
 
 func TestLibrary_CreateAndQuery(t *testing.T) {

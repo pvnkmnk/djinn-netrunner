@@ -488,4 +488,80 @@ test.describe('Schedules Feature (DJI-429)', () => {
       expect(createResponse.status()).toBeGreaterThanOrEqual(400);
     });
   });
+
+  test.describe('Library Schedules', () => {
+    // A schedule used to be a watchlist sync and nothing else; the job type now
+    // names the scope it runs against. This is the browser half of that: a
+    // library scan can be scheduled from the API, the card says which job and
+    // which scope it runs, and a scan that names a watchlist is refused with
+    // the column it wanted rather than re-pointed at whatever id it found.
+    async function createLibraryForSchedule(page: any, name: string) {
+      const csrfToken = await getCsrfToken(page);
+      const path = `/app/music/libschedule-${Date.now()}`;
+      await page.request.post('/api/test/create-dir', {
+        data: { path },
+        headers: { 'X-CSRF-Token': csrfToken },
+      }).catch(() => {});
+      const response = await page.request.post('/api/libraries', {
+        data: { name, path },
+        headers: { 'X-CSRF-Token': csrfToken },
+      });
+      expect(response.status()).toBeLessThan(300);
+      return await response.json();
+    }
+
+    test('22. A library scan can be scheduled, and the card names the job and the library', async ({ adminPage: page }) => {
+      const library = await createLibraryForSchedule(page, `Scan Library ${Date.now()}`);
+      const libraryId = library.ID || library.id;
+      const libraryName = library.Name || library.name;
+      expect(libraryId).toBeTruthy();
+
+      const csrfToken = await getCsrfToken(page);
+      const created = await page.request.post('/api/schedules', {
+        data: {
+          job_type: 'scan',
+          library_id: libraryId,
+          cron_expr: '0 4 * * *',
+          enabled: true,
+        },
+        headers: { 'X-CSRF-Token': csrfToken },
+      });
+      expect(created.status(), await created.text()).toBe(201);
+      const schedule = await created.json();
+      const scheduleId = schedule.ID || schedule.id;
+
+      await page.goto('/schedules');
+      const card = page.locator(`#schedule-${scheduleId}`);
+      await expect(card).toBeVisible();
+      await expect(card.locator('.name')).toContainText('Library scan:');
+      await expect(card.locator('.name')).toContainText(libraryName);
+      await expect(card.locator('.details')).toContainText('Cron: 0 4 * * *');
+
+      await page.request.delete(`/api/schedules/${scheduleId}`, {
+        headers: { 'X-CSRF-Token': csrfToken },
+      });
+      await page.request.delete(`/api/libraries/${libraryId}`, {
+        headers: { 'X-CSRF-Token': csrfToken },
+      });
+    });
+
+    test('23. A scan schedule that names a watchlist is refused', async ({ adminPage: page }) => {
+      const watchlistId = await createWatchlistViaAPI(page, `Scan Refusal ${Date.now()}`);
+      const csrfToken = await getCsrfToken(page);
+
+      const refused = await page.request.post('/api/schedules', {
+        data: {
+          job_type: 'scan',
+          watchlist_id: watchlistId.toString(),
+          cron_expr: '0 6 * * *',
+          enabled: true,
+        },
+        headers: { 'X-CSRF-Token': csrfToken },
+      });
+
+      expect(refused.status()).toBe(400);
+      expect(await refused.text()).toContain('runs against a library');
+    });
+  });
+
 });

@@ -435,52 +435,79 @@ func (w *WorkerOrchestrator) schedulerLoop() {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
-			var schedules []database.Schedule
-			// Initialize NextRunAt if NULL
-			w.db.Model(&database.Schedule{}).Where("enabled = ? AND next_run_at IS NULL", true).Update("next_run_at", time.Now())
-
-			// Find due schedules
-			err := w.db.Preload("Watchlist").Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
-			if err != nil {
-				slog.Error("Error fetching schedules", "worker_id", w.workerID, "error", err)
-				continue
-			}
-
-			for _, s := range schedules {
-				slog.Info("Executing schedule", "worker_id", w.workerID, "schedule_id", s.ID, "watchlist_id", s.WatchlistID)
-
-				// Enqueue sync job
-				job := database.Job{
-					Type:        "sync",
-					State:       "queued",
-					ScopeType:   "watchlist",
-					ScopeID:     s.WatchlistID.String(),
-					RequestedAt: time.Now(),
-					OwnerUserID: s.Watchlist.OwnerUserID,
-					CreatedBy:   "scheduler",
-				}
-
-				if err := w.db.Create(&job).Error; err != nil {
-					slog.Error("Error enqueuing scheduled job", "worker_id", w.workerID, "schedule_id", s.ID, "error", err)
-					continue
-				}
-
-				// Compute next run at
-				sched, err := cron.ParseStandard(s.CronExpr)
-				if err != nil {
-					slog.Error("Invalid cron expression", "worker_id", w.workerID, "schedule_id", s.ID, "cron", s.CronExpr, "error", err)
-					w.db.Model(&s).Update("enabled", false)
-					continue
-				}
-
-				nextRun := sched.Next(time.Now())
-				now := time.Now()
-				w.db.Model(&s).Updates(map[string]interface{}{
-					"last_run_at": &now,
-					"next_run_at": &nextRun,
-				})
-			}
+			w.runDueSchedules()
 		}
+	}
+}
+
+// runDueSchedules is one tick of the scheduler loop: everything the ticker
+// would otherwise hide behind a thirty-second wait.
+//
+// It is a method rather than a closure so a test can drive the enqueue path
+// itself. The tests that re-implemented this loop could not have caught a bug
+// inside it -- and the library scope is the case that proves it.
+func (w *WorkerOrchestrator) runDueSchedules() {
+	var schedules []database.Schedule
+	// Initialize NextRunAt if NULL
+	w.db.Model(&database.Schedule{}).Where("enabled = ? AND next_run_at IS NULL", true).Update("next_run_at", time.Now())
+
+	// Find due schedules. Both scopes are preloaded: a schedule's owner is
+	// the watchlist's or the library's, and the job it queues is
+	// attributed to that account.
+	err := w.db.Preload("Watchlist").Preload("Library").Where("enabled = ? AND next_run_at <= ?", true, time.Now()).Find(&schedules).Error
+	if err != nil {
+		// The tick is over; the next one retries. (This was a `continue` when the
+		// body lived inside the ticker's select.)
+		slog.Error("Error fetching schedules", "worker_id", w.workerID, "error", err)
+		return
+	}
+
+	for _, s := range schedules {
+		// The schedule's job type names its scope (sync: watchlist, scan and
+		// enrich: library). A row that names neither is broken -- queueing it
+		// would create a job with an empty scope id, and every empty-scope job
+		// contends on one advisory lock -- so it is disabled with the reason in
+		// the log rather than retried every thirty seconds forever.
+		scopeType, scopeID, ok := s.Scope()
+		if !ok {
+			slog.Error("Disabling schedule with no schedulable scope",
+				"worker_id", w.workerID, "schedule_id", s.ID, "job_type", s.JobType)
+			w.db.Model(&s).Update("enabled", false)
+			continue
+		}
+
+		slog.Info("Executing schedule", "worker_id", w.workerID, "schedule_id", s.ID,
+			"job_type", s.JobType, "scope_type", scopeType, "scope_id", scopeID)
+
+		job := database.Job{
+			Type:        s.JobType,
+			State:       "queued",
+			ScopeType:   scopeType,
+			ScopeID:     scopeID,
+			RequestedAt: time.Now(),
+			OwnerUserID: s.OwnerUserID(),
+			CreatedBy:   "scheduler",
+		}
+
+		if err := w.db.Create(&job).Error; err != nil {
+			slog.Error("Error enqueuing scheduled job", "worker_id", w.workerID, "schedule_id", s.ID, "error", err)
+			continue
+		}
+
+		// Compute next run at
+		sched, err := cron.ParseStandard(s.CronExpr)
+		if err != nil {
+			slog.Error("Invalid cron expression", "worker_id", w.workerID, "schedule_id", s.ID, "cron", s.CronExpr, "error", err)
+			w.db.Model(&s).Update("enabled", false)
+			continue
+		}
+
+		nextRun := sched.Next(time.Now())
+		now := time.Now()
+		w.db.Model(&s).Updates(map[string]interface{}{
+			"last_run_at": &now,
+			"next_run_at": &nextRun,
+		})
 	}
 }
 

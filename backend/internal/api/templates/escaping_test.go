@@ -127,8 +127,11 @@ var partialProbes = map[string]map[string]any{
 	"partials/profiles.html":      {"profiles": []map[string]any{probeProfile()}},
 	"partials/schedule-card.html": {"schedule": probeSchedule()},
 	"partials/schedule-form.html": {
-		"ID": "", "watchlists": []map[string]any{probeWatchlist()},
-		"WatchlistID": "watchlist-1", "CronExpr": escapingProbe, "Enabled": true,
+		"ID": "", "watchlists": []map[string]any{probeScheduleScopeOption()},
+		"libraries": []map[string]any{probeScheduleScopeOption()},
+		"JobTypes":  []map[string]any{{"Value": escapingProbe, "Label": escapingProbe}},
+		"JobType":   escapingProbe, "WatchlistID": "watchlist-1", "LibraryID": "library-1",
+		"CronExpr": escapingProbe, "Enabled": true,
 	},
 	"partials/schedules.html":      {"schedules": []map[string]any{probeSchedule()}},
 	"partials/stats.html":          {"StatsError": escapingProbe},
@@ -331,10 +334,20 @@ func probeProfile() map[string]any {
 }
 
 func probeSchedule() map[string]any {
+	// A schedule's scope is named by these two Go-side labels rather than by its
+	// association: pongo2 reads a nil pointer as true, so the card cannot reach
+	// through `Watchlist`/`Library` at all.
 	return map[string]any{
-		"ID": "schedule-1", "Watchlist": map[string]any{"Name": escapingProbe},
+		"ID": "schedule-1", "JobLabel": escapingProbe, "TargetLabel": escapingProbe,
 		"CronExpr": escapingProbe, "NextRunLabel": escapingProbe, "Enabled": true,
 	}
+}
+
+// probeScheduleScopeOption is one row of the schedule form's watchlist/library
+// dropdown. The handler passes ids that are already strings, so this is the
+// shape the template sees rather than a model with a uuid field.
+func probeScheduleScopeOption() map[string]any {
+	return map[string]any{"ID": escapingProbe, "Name": escapingProbe}
 }
 
 func probeTrack() map[string]any {

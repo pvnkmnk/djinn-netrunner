@@ -223,7 +223,12 @@ func TestScheduleCreate_FormEncodedBody(t *testing.T) {
 
 	var stored database.Schedule
 	require.NoError(t, db.Where("cron_expr = ?", "0 3 * * *").First(&stored).Error)
-	assert.Equal(t, watchlist.ID, stored.WatchlistID)
+	require.NotNil(t, stored.WatchlistID, "a form that posts only a watchlist creates a watchlist schedule")
+	assert.Equal(t, watchlist.ID, *stored.WatchlistID)
+	// The job type is what names that scope, and a form that omits it -- every
+	// form did before library schedules existed -- still means a sync.
+	assert.Equal(t, "sync", stored.JobType)
+	assert.Nil(t, stored.LibraryID)
 }
 
 // TestProfileUpdate_FormClearsUncheckedFlags covers the other half of form
@@ -271,7 +276,7 @@ func TestScheduleUpdate_FormClearsUncheckedEnabled(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&watchlist).Error)
 	schedule := database.Schedule{
-		WatchlistID: watchlist.ID, CronExpr: "0 1 * * *", Timezone: "UTC", Enabled: true,
+		WatchlistID: &watchlist.ID, CronExpr: "0 1 * * *", Timezone: "UTC", Enabled: true,
 	}
 	require.NoError(t, db.Create(&schedule).Error)
 

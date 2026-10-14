@@ -12,7 +12,8 @@ The main page is a server-rendered shell with:
 - A stats region updated via HTMX partial refresh.
 - A playlists/sources region updated via HTMX partial refresh.
 - An artists region (CRUD via modal).
-- A schedules region (cron editor + toggle).
+- A schedules region (job + scope + cron editor + toggle). Each card names the job and the scope it runs against;
+  both scope selects are always rendered (there is no inline script here to swap them), and the save needs the one the job names — Sync wants a watchlist, Library scan/Enrich want a library — with the other refused by name.
 - A libraries region.
 - A jobs history region.
 - A console region containing:

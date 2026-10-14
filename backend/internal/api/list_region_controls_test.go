@@ -186,7 +186,7 @@ func listRegionTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User, datab
 	require.NoError(t, db.Create(&playlist).Error)
 	library := database.Library{ID: uuid.New(), Name: "Contract Library", Path: filepath.Clean(t.TempDir()), OwnerUserID: &user.ID}
 	require.NoError(t, db.Create(&library).Error)
-	schedule := database.Schedule{WatchlistID: watchlist.ID, CronExpr: "0 0 * * *", Timezone: "UTC", Enabled: true}
+	schedule := database.Schedule{WatchlistID: &watchlist.ID, CronExpr: "0 0 * * *", Timezone: "UTC", Enabled: true}
 	require.NoError(t, db.Create(&schedule).Error)
 
 	engine := templates.NewPongo2(filepath.Join("..", "..", "..", "ops", "web", "templates"), ".html")
@@ -748,12 +748,41 @@ func testLibraryRegionControls(t *testing.T) {
 }
 
 func testScheduleRegionControls(t *testing.T) {
-	app, db, _, _, _, _, schedule := listRegionTestApp(t)
-	second := database.Schedule{WatchlistID: schedule.WatchlistID, CronExpr: "0 12 * * *", Timezone: "UTC", Enabled: true}
+	app, db, _, _, library, _, schedule := listRegionTestApp(t)
+	second := database.Schedule{JobType: "sync", WatchlistID: schedule.WatchlistID, CronExpr: "0 12 * * *", Timezone: "UTC", Enabled: true}
 	require.NoError(t, db.Create(&second).Error)
+
+	// A library schedule, created through the route the Add form posts to. This
+	// is the half of the contract a watchlist schedule cannot reach: the job type
+	// names the scope, so "scan" plus a library_id is what the worker will queue
+	// against.
+	issueRenderedControl(t, app, renderedHTMXControl{
+		method: "POST", path: "/api/schedules", label: "POST /api/schedules (library scan)",
+		values: map[string]string{
+			"job_type":   "scan",
+			"library_id": library.ID.String(),
+			"cron_expr":  "0 4 * * *",
+			"enabled":    "on",
+		},
+	})
+	var scan database.Schedule
+	require.NoError(t, db.Where("job_type = ?", "scan").First(&scan).Error)
+	require.NotNil(t, scan.LibraryID, "a scan schedule's scope is the library the form named")
+	assert.Equal(t, library.ID, *scan.LibraryID)
+	assert.Nil(t, scan.WatchlistID, "and it must not also carry a watchlist")
+
 	response, _ := issueRenderedControl(t, app, renderedHTMXControl{method: "GET", path: "/partials/schedules"})
 	controls := renderedControls(t, response)
-	assertRenderedControlSet(t, controls, "Add new schedule", "Disable schedule for Contract Watchlist", "Edit schedule for Contract Watchlist", "Delete schedule for Contract Watchlist")
+	assertRenderedControlSet(t, controls,
+		"Add new schedule",
+		"Disable schedule for Contract Watchlist", "Edit schedule for Contract Watchlist", "Delete schedule for Contract Watchlist",
+		"Disable schedule for Contract Library", "Edit schedule for Contract Library", "Delete schedule for Contract Library")
+	// The card names the job and the scope. It cannot read them off the
+	// association any more: pongo2 resolves a nil pointer as true, so a library
+	// schedule asked for its watchlist would render an empty card.
+	assert.Contains(t, response, "Sync: Contract Watchlist")
+	assert.Contains(t, response, "Library scan: "+library.Name)
+
 	for _, ctl := range controls {
 		body, requestURL := issueRenderedControl(t, app, ctl)
 		assertControlResponseTarget(t, ctl, body)
@@ -776,7 +805,20 @@ func testScheduleRegionControls(t *testing.T) {
 				var selectedSchedule database.Schedule
 				require.NoError(t, db.First(&selectedSchedule, "id = ?", scheduleID).Error)
 				assert.Contains(t, body, `value="`+selectedSchedule.CronExpr+`"`, "edit form must load the cron value for the schedule ID in the control URL")
-				assert.Contains(t, body, `value="`+selectedSchedule.WatchlistID.String()+`" selected`, "edit form must select that schedule's watchlist")
+				assert.Contains(t, body, `value="`+selectedSchedule.JobType+`" selected`,
+					"the job select must open on the job type the schedule actually runs")
+				// And the scope select it belongs to: a sync opens on its
+				// watchlist, a scan or enrich on its library.
+				switch selectedSchedule.JobType {
+				case "sync":
+					require.NotNil(t, selectedSchedule.WatchlistID)
+					assert.Contains(t, body, `value="`+selectedSchedule.WatchlistID.String()+`" selected`,
+						"edit form must select that schedule's watchlist")
+				case "scan", "enrich":
+					require.NotNil(t, selectedSchedule.LibraryID)
+					assert.Contains(t, body, `value="`+selectedSchedule.LibraryID.String()+`" selected`,
+						"edit form must select that schedule's library")
+				}
 			}
 		}
 		if ctl.method == "DELETE" && strings.Contains(requestURL, "/api/schedules/") {

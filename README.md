@@ -39,7 +39,7 @@ NetRunner is a security-hardened, performance-optimized music acquisition pipeli
 ### Core Pipeline
 - **Unified Watchlists**: Single paradigm for all monitoring sources (Spotify playlists/liked/discover, Last.fm loved/top, ListenBrainz, Discogs, Lidarr, RSS, local files).
 - **Artist Tracking**: Monitor specific artists for new releases via MusicBrainz integration.
-- **Scheduled Syncing**: Cron-based scheduling for automated watchlist and artist monitoring.
+- **Scheduled Syncing**: Cron-based scheduling for automated watchlist syncs and library scan/enrich runs.
 - **Intelligent Search**: Multi-variable quality ranking (bitrate, speed, queue depth).
 - **Smart Deduplication**: MD5 hash-based verification ensures you never download or import the same file twice.
 - **Enhanced Enrichment**: Automatic MusicBrainz and AcoustID integration for recording IDs and metadata.
