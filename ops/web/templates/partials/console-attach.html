@@ -1,0 +1,12 @@
+<!-- The attach reply, swapped into #console-socket with innerHTML by the Attach
+     button. Three things here are load-bearing. The status line says what is being
+     streamed, because "attached" with an empty pane cannot be told from a broken
+     one. #console-live carries the job-scoped socket URL the handler resolved: the
+     dashboard cannot build one, since the job id it needs is chosen a moment
+     earlier and ownership-checked on the way. #console-logs is cleared out of band
+     in the same response, so lines from the job being left behind cannot mix with
+     the new one in the pane below. An HTML comment because pongo2 comments cannot
+     span lines. -->
+<div class="console-entry">Attached to job #{{ JobID }} ({{ JobType }}, {{ JobState }}) - new lines append below.</div>
+<div id="console-live" hx-ws="connect:{{ WSURL }}"></div>
+<div id="console-logs" hx-swap-oob="innerHTML"></div>

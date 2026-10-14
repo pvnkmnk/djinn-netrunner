@@ -42,7 +42,7 @@ not merely that it happened to pass on SQLite.
 | Aggregate stats (`/api/stats/*`, CLI `stats`) | `SUM(CASE WHEN …)` aggregates, deliberately not `FILTER (WHERE …)` | identical, and measured working | **Same** |
 | Schema evolution | GORM `AutoMigrate` + `database.Migrate` backfills, portable SQL | identical | **Same** |
 | `netrunner-cli` and MCP tools (`cmd/agent`) | the same command and tool set: read-only probes plus stateful writes | identical | **Same** |
-| Live job-log / event streaming | backlog on connect, then live lines: the `opsevents` trigger fires on every `job_logs` insert | backlog on connect, then silence | **Postgres only** — the console socket that consumes it is miswired on both editions (a separate gap, below) |
+| Live job-log / event streaming | console attaches to a chosen job; backlog on connect, then live lines — the `opsevents` trigger fires on every `job_logs` insert, installed by `database.Migrate` | console attaches to a chosen job; backlog on connect, then silence | **Postgres only** |
 
 ## What NetrunnerLite does not promise
 
@@ -57,19 +57,12 @@ not merely that it happened to pass on SQLite.
    overwrites the first's row — so this is best-effort exclusion inside one process, not a
    guarantee. It is adequate for the single-worker deployment Lite promises and must not be relied
    on beyond that.
-3. **No live push.** PostgreSQL publishes wakeups and log lines now (see the matrix); Lite has no
-   `NOTIFY` and keeps polling. The console socket that would consume those lines is a separate,
-   non-edition gap recorded below.
+3. **No live push.** PostgreSQL publishes wakeups and log lines now (see the matrix); Lite has no `NOTIFY` and keeps polling.
 
 ## Gaps that are not edition differences
 
 Recorded here so the Lite story is not blamed for them, and so nobody "fixes Lite" by chasing them.
 
-- **The console socket is miswired.** `ops/web/templates/index.html:109` points htmx's `ws`
-  extension at `/ws/jobs`, while the registered route is `/ws/jobs/:job_id`
-  (`cmd/server/main.go:465`), and `/console/attach` answers "Not attached: no job is selected"
-  (DJI-562). Log viewing works on both editions through `GET /partials/job-logs?job_id=`; the
-  *live* console is wired on neither.
 - **The SQL bootstrap is documentation, not a live step.** `ops/db/init/01-schema.sql` defines
   five tables and no `users`. The live schema comes from `database.Migrate` + `AutoMigrate`. The
   Go tests that duplicate migration DDL exist precisely because reading the SQL file proves it

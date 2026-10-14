@@ -3,6 +3,7 @@ package api
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -168,6 +169,111 @@ func TestWakeupChannelsAreStillTheOnesTheDocNames(t *testing.T) {
 	}
 }
 
+// TestTheConcurrencyLimitWarnsInsteadOfClamping holds the matrix's easiest row
+// to falsify by accident. NetrunnerLite keeps whatever MAX_CONCURRENT_JOBS
+// says, warns that concurrent workers are unsafe without PostgreSQL advisory
+// locks, and runs anyway - so clamping the value to 1 would make the warning
+// true and the row ("one; MAX_CONCURRENT_JOBS > 1 warns, it does not clamp")
+// a lie in the same commit.
+func TestTheConcurrencyLimitWarnsInsteadOfClamping(t *testing.T) {
+	root := repoRoot(t)
+	doc := readRepoFile(t, netrunnerLiteDoc)
+	sources := nonTestGoSources(t, root)
+
+	const worker = "backend/cmd/worker/main.go"
+	src, ok := sources[worker]
+	require.True(t, ok, "%s is gone; the concurrency row in %s cites it", worker, netrunnerLiteDoc)
+
+	// The default the matrix states, and the wording the row quotes as its
+	// evidence: a reworded warning leaves the document asserting a log line
+	// nobody emits, and a changed default leaves the Postgres column wrong.
+	assert.Regexp(t, `DefaultMaxConcurrentJobs\s*=\s*5\b`, src,
+		"%s's matrix states \"MAX_CONCURRENT_JOBS (default 5)\"; the constant has moved", netrunnerLiteDoc)
+	assert.Contains(t, doc, "SQLite detected with MaxConcurrentJobs > 1",
+		"%s quotes the warning as its evidence", netrunnerLiteDoc)
+
+	// Both halves of the gate, because only the pair makes the row true: on
+	// SQLite AND with a cap above one.
+	lines := strings.Split(src, "\n")
+	gate := -1
+	for i, line := range lines {
+		if strings.Contains(line, "!database.IsPostgres(") && strings.Contains(line, "maxConcurrentJobs() > 1") {
+			gate = i
+			break
+		}
+	}
+	require.NotEqual(t, -1, gate,
+		"the concurrency warning is no longer gated on `!database.IsPostgres(...) && maxConcurrentJobs() > 1`; "+
+			"%s's matrix row and \"What NetrunnerLite does not promise\" both describe that gate", netrunnerLiteDoc)
+
+	warned := liteBlockBody(lines, gate)
+	assert.Contains(t, warned, "SQLite detected with MaxConcurrentJobs > 1",
+		"the gate no longer warns: it has to say why the configuration is unsafe, not just be a branch")
+	assert.NotRegexp(t, liteConcurrencyClampRE, warned,
+		"the SQLite branch narrows the job cap instead of warning about it. The warning is meant to be the "+
+			"edition's limit, not its enforcement, so %s needs its row and its \"not enforced\" note rewritten",
+		netrunnerLiteDoc)
+
+	// And nowhere else either: a clamp written in a different edition branch
+	// would keep the warning printing while the promise above it stopped being
+	// true, which is the one way this row can be false and still look honest.
+	for rel, source := range sources {
+		sourceLines := strings.Split(source, "\n")
+		for i, line := range sourceLines {
+			if !strings.Contains(line, "IsPostgres(") || !strings.HasSuffix(strings.TrimSpace(line), "{") {
+				continue
+			}
+			assert.NotRegexp(t, liteConcurrencyClampRE, liteBlockBody(sourceLines, i),
+				"%s lowers the job cap inside an IsPostgres branch (line %d): %s says the limit warns and does "+
+					"not clamp", rel, i+1, netrunnerLiteDoc)
+		}
+	}
+}
+
+// TestSubsonicIsGatedByConfigNotByEdition holds the row that keeps the Subsonic
+// surface out of the editions story: the whole /rest group hangs off
+// cfg.Subsonic.Enabled, so a Lite deployment that switches it on gets it -
+// and turning that gate into an edition check would make the row wrong while
+// looking like a tightening.
+func TestSubsonicIsGatedByConfigNotByEdition(t *testing.T) {
+	root := repoRoot(t)
+	doc := readRepoFile(t, netrunnerLiteDoc)
+	sources := nonTestGoSources(t, root)
+
+	const server = "backend/cmd/server/main.go"
+	src, ok := sources[server]
+	require.True(t, ok, "%s is gone; the Subsonic row in %s cites it", server, netrunnerLiteDoc)
+
+	assert.Contains(t, doc, "cfg.Subsonic.Enabled",
+		"%s no longer names the gate for the Subsonic surface", netrunnerLiteDoc)
+
+	lines := strings.Split(src, "\n")
+	gate := -1
+	for i, line := range lines {
+		if strings.Contains(line, "if cfg.Subsonic.Enabled {") {
+			gate = i
+			break
+		}
+	}
+	require.NotEqual(t, -1, gate,
+		"the Subsonic group is no longer registered inside `if cfg.Subsonic.Enabled {`; %s's row cites that gate",
+		netrunnerLiteDoc)
+
+	// The surface has to be inside the block, not merely after it: this is what
+	// makes \"gated by config\" a promise rather than a reading of the if.
+	gated := liteBlockBody(lines, gate)
+	assert.Contains(t, gated, `app.Group("/rest")`,
+		"the /rest group has to sit inside the config gate, or \"enabled\" only hides routes while the "+
+			"surface still answers requests")
+	assert.Contains(t, gated, `"/ping.view"`,
+		"the gated block no longer registers the Subsonic surface %s describes", netrunnerLiteDoc)
+
+	// And the gate itself has to stay a config check. An edition check here
+	// would make the row's \"identical\" cell false for Lite.
+	assert.NotContains(t, gated, "IsPostgres",
+		"the Subsonic group is now inside an edition check; %s's row has to say so instead", netrunnerLiteDoc)
+}
+
 // nonTestGoSources maps every non-test .go file under backend/ to its contents,
 // keyed by repo-relative slash path. The claims here are about sources the
 // tests cannot import, so they are read as text -- the same choice
@@ -263,4 +369,34 @@ func callsIsPostgres(src string) bool {
 		}
 	}
 	return false
+}
+
+// liteConcurrencyClampRE matches an assignment to the job cap, in either of the
+// two names it goes by: the config field (cfg.MaxConcurrentJobs) and the
+// orchestrator's resolved value (w.maxJobs). The trailing [^=] keeps a
+// comparison such as `maxJobs == 1` out of it.
+var liteConcurrencyClampRE = regexp.MustCompile(`(?i)\b(maxjobs|maxconcurrentjobs)\s*=[^=]`)
+
+// liteBlockBody returns the text between the brace that opens on line start and
+// the brace that closes it, so an assertion can be scoped to a gate instead of
+// to the whole file - "the registration is inside that if" is a claim about a
+// block, and a file-wide grep cannot tell it from "the registration comes
+// later". Braces are counted per line, which is enough for the branches this
+// file reads; a brace inside a string literal on those lines would throw the
+// count off, and the count ends at zero, so that shows up as an assertion
+// against a truncated or empty window rather than as a silent pass.
+func liteBlockBody(lines []string, start int) string {
+	depth := 0
+	var body strings.Builder
+	for i := start; i < len(lines); i++ {
+		depth += strings.Count(lines[i], "{") - strings.Count(lines[i], "}")
+		if i > start {
+			body.WriteString(lines[i])
+			body.WriteByte('\n')
+		}
+		if depth <= 0 && i > start {
+			break
+		}
+	}
+	return body.String()
 }

@@ -108,32 +108,72 @@ func (m *WebSocketManager) ListenForJobLogs(ctx context.Context, dbURL string, d
 			if event.Event == "job_log" {
 				var jobLog database.JobLog
 				if err := db.First(&jobLog, event.LogID).Error; err == nil {
-					// Format as HTML for HTMX compatibility
-					// ✅ SECURITY: Escape log message to prevent XSS
-					// ✅ ACCESSIBILITY: Use semantic time and ARIA labels
-					logHTML := fmt.Sprintf(
-						`<div class="log-line log-%s" id="log-%d" data-log-id="%d">`+
-							`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
-							`<span class="log-level" aria-label="Log Level %s">[%s]</span> `+
-							`<span class="log-msg">%s</span>`+
-							`</div>`,
-						stringsToLower(jobLog.Level),
-						jobLog.ID,
-						jobLog.ID,
-						jobLog.CreatedAt.Format(time.RFC3339),
-						jobLog.CreatedAt.Format(time.RFC3339),
-						jobLog.CreatedAt.Format("15:04:05"),
-						jobLog.Level,
-						jobLog.Level,
-						html.EscapeString(jobLog.Message),
-					)
-					m.Broadcast(strconv.FormatUint(event.JobID, 10), logHTML)
+					m.Broadcast(strconv.FormatUint(event.JobID, 10), logLineHTML(jobLog))
 				}
 			}
 		case <-time.After(1 * time.Minute):
 			go listener.Ping()
 		}
 	}
+}
+
+// logLineHTML renders one job log line as the console's socket sends it.
+//
+// The hx-swap-oob attribute is the whole destination. This app ships htmx's
+// in-core websocket support (hx-ws) rather than the ws extension, and in-core
+// ws swaps each top-level element of a message out of band - so a frame that
+// named nothing would be dropped with an oobErrorNoTarget and the console
+// would stay empty. "beforeend:#console-logs" appends instead of replacing,
+// which is what a log stream is, and it is why the log pane in
+// ops/web/templates/index.html has to keep that id.
+//
+// The outer element is the swap instruction and is consumed by it. htmx's
+// out-of-band swap inserts the *children* of the element carrying hx-swap-oob
+// into the target, not the element itself, so the line has to be a child here:
+// measured in the browser, a frame whose log-line div carried the attribute had
+// its wrapper dropped and only the time/level/message spans landed in the pane,
+// which left .log-line empty and the console's own filters and Copy Last 200
+// silently matching nothing.
+//
+// ✅ SECURITY: the message is a worker's text, not ours, so it is escaped.
+// ✅ ACCESSIBILITY: semantic <time> and an aria-labelled level.
+func logLineHTML(jobLog database.JobLog) string {
+	return fmt.Sprintf(
+		`<div hx-swap-oob="beforeend:#console-logs">`+
+			`<div class="log-line log-%s" id="log-%d" data-log-id="%d">`+
+			`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
+			`<span class="log-level" aria-label="Log Level %s">[%s]</span> `+
+			`<span class="log-msg">%s</span>`+
+			`</div>`+
+			`</div>`,
+		stringsToLower(jobLog.Level),
+		jobLog.ID,
+		jobLog.ID,
+		jobLog.CreatedAt.Format(time.RFC3339),
+		jobLog.CreatedAt.Format(time.RFC3339),
+		jobLog.CreatedAt.Format("15:04:05"),
+		jobLog.Level,
+		jobLog.Level,
+		html.EscapeString(jobLog.Message),
+	)
+}
+
+// consoleNoticeHTML is a refusal this socket has to report itself: the job was
+// deleted, or changed hands, between the attach that named it and this
+// connection. It lands in the same pane as a log line, because a refusal the
+// operator cannot see is indistinguishable from a console with nothing to say
+// yet - and the server closes the socket straight after, so the pane is where
+// the last word belongs.
+func consoleNoticeHTML(message string) string {
+	return fmt.Sprintf(
+		`<div hx-swap-oob="beforeend:#console-logs">`+
+			`<div class="log-line log-err">`+
+			`<span class="log-level" aria-label="Log Level ERR">[ERR]</span> `+
+			`<span class="log-msg">%s</span>`+
+			`</div>`+
+			`</div>`,
+		html.EscapeString(message),
+	)
 }
 
 func stringsToLower(s string) string {
@@ -174,13 +214,13 @@ func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 
 	var job database.Job
 	if err := db.First(&job, jobIDUint).Error; err != nil {
-		c.WriteMessage(websocket.TextMessage, []byte("Job not found"))
+		c.WriteMessage(websocket.TextMessage, []byte(consoleNoticeHTML("Job not found - it may have been cleared since you attached.")))
 		c.Close()
 		return
 	}
 
 	if user.Role != "admin" && (job.OwnerUserID == nil || *job.OwnerUserID != user.ID) {
-		c.WriteMessage(websocket.TextMessage, []byte("Access denied: You do not own this job"))
+		c.WriteMessage(websocket.TextMessage, []byte(consoleNoticeHTML("Access denied: you do not own this job.")))
 		c.Close()
 		return
 	}
@@ -214,25 +254,7 @@ func (m *WebSocketManager) HandleConsole(c *websocket.Conn, db *gorm.DB) {
 		}
 
 		for _, jobLog := range logs {
-			// ✅ SECURITY: Escape log message to prevent XSS
-			// ✅ ACCESSIBILITY: Use semantic time and ARIA labels
-			logHTML := fmt.Sprintf(
-				`<div class="log-line log-%s" id="log-%d" data-log-id="%d">`+
-					`<time class="log-ts" datetime="%s" title="%s">%s</time> `+
-					`<span class="log-level" aria-label="Log Level %s">[%s]</span> `+
-					`<span class="log-msg">%s</span>`+
-					`</div>`,
-				stringsToLower(jobLog.Level),
-				jobLog.ID,
-				jobLog.ID,
-				jobLog.CreatedAt.Format(time.RFC3339),
-				jobLog.CreatedAt.Format(time.RFC3339),
-				jobLog.CreatedAt.Format("15:04:05"),
-				jobLog.Level,
-				jobLog.Level,
-				html.EscapeString(jobLog.Message),
-			)
-			c.WriteMessage(websocket.TextMessage, []byte(logHTML))
+			c.WriteMessage(websocket.TextMessage, []byte(logLineHTML(jobLog)))
 		}
 	}
 
