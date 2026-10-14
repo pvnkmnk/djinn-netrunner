@@ -359,7 +359,14 @@ the e2e one.
       that now -- `scripts/postgres_gate.py` (the `postgres` job in
       `.github/workflows/ci.yml`) runs the 24 required tests across four packages
       against a real
-      Postgres and refuses a run where one skipped, vanished or failed. Locally,
+      Postgres and refuses a run where one skipped, vanished or failed. The count is
+     written in more than one place -- `REQUIRED` plus its own header comment in
+     `scripts/postgres_gate.py`, `AGENTS.md` (twice) and the CHANGELOG -- and the
+     figure can be stale in the file that owns the list ("18 of 181" until
+     2026-10-14, when the list held 20 of 106 pass + 20 skip). Derive it by parsing
+     `REQUIRED`, and use the *exact* test names: a probe with a guessed name
+     (`..._ReconcilesDriftedColumns` for `..._Postgres`) reports ABSENT and reads as
+     a gate the new test never joined. Locally,
       start a database with
       `docker compose -f docker-compose.integration.yml up -d integration-db`
       (publishes `15432`, db `netrunner_integration`, user/pass
@@ -760,6 +767,12 @@ automation. Two consequences: an **open** PR legitimately shows no attachment
 yet, and a manual `orca linear attach` would leave a *second* one once the merge
 lands. Check that the PR body names the identifier, and do not attach by hand.
 
+**The *state* moves earlier than the attachment -- at PR open, not at merge.**
+Naming the identifier in a PR title or body moved DJI-635 to Done when the PR was
+created (`createdAt` 06:51:44, ticket `completedAt` 06:51:49) and its merge was
+18 minutes later (`07:09:10`, measured 2026-10-14). A ticket reading `Done` is
+not evidence that anything merged -- read `gh pr view <n> --json state` first.
+
 - `orca linear` needs the Orca **app running** (`orca open`); without it every
   verb fails with `Could not connect to the running Orca app`. `scripts/linear.py`
   needs no app — `comment`, `state` and `issue-list` carried a full reconciliation
@@ -957,7 +970,20 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   golangci-lint support for the pinned Go line); `go vet ./...` is the gate,
   and `gofmt -w` would
   flip this repo's CRLF Go files to LF — format-check an LF copy instead
-  (`cp f .art/f.go`, then `gofmt -l` / `gofmt -d` on the copy).
+  (`cp f .art/f.go`, then `gofmt -l` / `gofmt -d` on the copy) -- and **strip the
+  CR first** (`tr -d '\r' < f > f.go`): a plain `cp` of a CRLF file leaves the
+  copy CRLF, and `gofmt -l` then reports *every* line as changed, which buries
+  the real hunks and makes a clean file look violated.
+- **The local Postgres gate refuses on this machine, and it is the NOTIFY tests,
+  not your diff.** `pq.Listener.Listen` never returns here (goroutine blocked in
+  `sync.Cond.Wait`, `lib/pq/notify.go:570`, reached from `newNotifyListener`), so
+  `./cmd/worker`'s `TestListenNotifyInterop` and both `./internal/api` sender tests
+  *hang* until the gate's per-package timeout -- which reads as "the api package is
+  slow" and costs 20 minutes before it fails. `pg_stat_activity` says which side is
+  stuck: one connection `idle` in `ClientRead` with the test binary at ~0 CPU means
+  the Go side, not the database. Attribute it in a detached worktree at master
+  (`git worktree add --detach /c/tmp/wt <sha>`); the PR's `postgres` job (~30s on a
+  runner) is the authority for tests that pass there and hang here.
 - **Because there is no gofmt gate, a committed file can carry a violation.**
   `main.go` held two (an unaligned `KeyLookup:` and a tab before a trailing
   comment) and `artist_card_actions_test.go` was missing its final newline until
