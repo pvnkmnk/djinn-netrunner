@@ -66,6 +66,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **A test fixture invented its own primary keys, so the bootstrap-admin tests
+  failed at random.** `makeUnprovenUser` built every account with
+  `ID: uint64(uuid.New()[0]) | 1` - a random odd value in 1..255 - so a test
+  that registered two accounts drew the same id about once in 128 runs and died
+  on `UNIQUE constraint failed: users.id` before reaching the assertion it
+  exists to make. Measured on the console branch: 1 failure in 40 runs of
+  `TestBootstrapAdmin`, in run 38207625423, where every other job was green.
+  The id now comes from the database, which is also what a real registration
+  produces, and `require.NotZero(t, u.ID)` pins that one was assigned: 40
+  consecutive runs green, against 1-in-40 before.
 - **The Playwright suite was dead, and the cause was a password one character too short.**
   `e2e/fixtures/auth.fixture.ts` declared its shared account with an 11-character password
   and its admin account with an 8-character one, while `POST /api/auth/register` enforces a

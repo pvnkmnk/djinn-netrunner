@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,13 +47,20 @@ func makeUser(t *testing.T, db *gorm.DB, email, role string) database.User {
 // account with no record of ever presenting the enrollment secret.
 func makeUnprovenUser(t *testing.T, db *gorm.DB, email, role string) database.User {
 	t.Helper()
+	// Let the database assign the primary key. This fixture used to invent
+	// one with `uint64(uuid.New()[0]) | 1` - a random odd value in 1..255 -
+	// so any test that built two accounts had about a one-in-128 chance of
+	// drawing the same id twice and dying on `UNIQUE constraint failed:
+	// users.id`, turning a green run red at random (measured 1 in 40
+	// runs of TestBootstrapAdmin, in run 38207625423).
+	// Sequential ids are also what a real registration produces.
 	u := database.User{
-		ID:           uint64(uuid.New()[0]) | 1,
 		Email:        email,
 		PasswordHash: "x",
 		Role:         role,
 	}
 	require.NoError(t, db.Create(&u).Error)
+	require.NotZero(t, u.ID, "the database must have assigned the id")
 	return u
 }
 
