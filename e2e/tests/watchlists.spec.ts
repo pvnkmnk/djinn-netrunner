@@ -527,6 +527,15 @@ test.describe('Watchlists Feature - DJI-426', () => {
 
     // Card should be removed
     await expect(page.locator(`#watchlist-${id}`)).not.toBeVisible();
+
+    // ...and the region it answered with has to replace the LIST, not the card's
+    // own slot. Delete answers with the whole region, so swapping it into a card
+    // nests a second region inside the first: a duplicate Add button, a duplicate
+    // `#watchlists-list`, and every remaining watchlist rendered twice. The
+    // assertion above passed on exactly that, because the deleted card was gone
+    // -- twice over.
+    await expect(page.locator('.watchlists-region')).toHaveCount(1);
+    await expect(page.locator('#watchlists-list')).toHaveCount(1);
   });
 
   test('18. Cancel delete - dismiss confirmation and verify watchlist still exists', async ({ authenticatedPage: page }) => {
@@ -584,12 +593,28 @@ test.describe('Watchlists Feature - DJI-426', () => {
 
   // ========== Preview Tests ==========
 
-  test('20. Preview button exists and triggers preview action', async ({ authenticatedPage: page }) => {
+  // The preview region is declared by the card, so it exists before anything is
+  // clicked -- asserting it is visible proved nothing about the button, and a
+  // preview that never answered passed this test. Assert the ANSWER instead: the
+  // count and the source badge below are rendered by partials/watchlist-preview
+  // and cannot be in the page before the click.
+  //
+  // local_directory is the one source type whose fetch needs neither the network
+  // nor a file on disk, which is what makes the assertion deterministic: an
+  // rss_feed watchlist would make the result depend on whether example.com
+  // resolved. The directory is empty, so the answer is "0 of 0 tracks" -- the
+  // track rows themselves are pinned in Go, where the provider's answer is
+  // deterministic (internal/api/list_region_controls_test.go).
+  test('20. Preview answers with the source preview, not the empty region the card shipped', async ({ authenticatedPage: page }) => {
+    const dir = `/app/music/preview-${Date.now()}`;
+    await createDirForLocalSource(page, dir);
+
     const { id } = await createWatchlistViaAPI(page, {
-      name: 'Preview Test',
-      source_type: 'rss_feed',
-      source_uri: 'https://example.com/feed.xml'
+      name: `Preview Test ${Date.now()}`,
+      source_type: 'local_directory',
+      source_uri: dir,
     });
+    expect(id).toBeTruthy();
 
     await page.goto('/watchlists');
     await waitForHtmx(page);
@@ -597,12 +622,13 @@ test.describe('Watchlists Feature - DJI-426', () => {
     const previewButton = page.locator(`#watchlist-${id} button:has-text("Preview")`);
     await expect(previewButton).toBeVisible();
 
-    // Click preview
-    await previewButton.click();
-    await waitForHtmx(page, 500);
+    const region = page.locator(`#watchlist-preview-${id}`);
+    await expect(region).toBeEmpty();
 
-    // Preview area should exist
-    await expect(page.locator(`#watchlist-preview-${id}`)).toBeVisible();
+    await previewButton.click();
+
+    await expect(region.locator('.preview-count')).toHaveText('0 of 0 tracks');
+    await expect(region.locator('.badge-source')).toHaveText('local_directory');
   });
 
   // ========== Quality Profile Tests ==========

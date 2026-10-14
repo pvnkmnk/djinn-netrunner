@@ -24,6 +24,19 @@ The main page is a server-rendered shell with:
 - `GET /partials/stats` - Job statistics (queued, running, succeeded, failed counts in last 24h). Uses conditional aggregation for efficient single-query stats.
 - `GET /partials/watchlists` - List of configured watchlists with status.
 
+## Region swap targets
+A control whose response is a whole region (`partials/watchlists`, `partials/playlists`) must swap that region, never its own slot:
+- `hx-target="closest .watchlists-region" hx-swap="outerHTML"` when the control lives inside the region (the watchlist card's Delete), or
+- `hx-target="#<region>-region" hx-swap="innerHTML"` when the page declares that slot.
+
+Swapping a region into a card nests a second region inside the first: a duplicate section header and Add button, a duplicate `#watchlists-list`, and every remaining card rendered twice with duplicated ids. The spec that asserts "the deleted card is gone" passes on exactly that, which is why `backend/internal/api/list_region_controls_test.go` derives each rendered control's required target and swap from the response the handler actually returns.
+
+## Watchlist preview region
+The card's Preview button is a read-only `hx-get="/api/watchlists/{id}/preview"` with `hx-target="#watchlist-preview-{id}"` and `hx-swap="innerHTML"`:
+- The card declares the region and ships it empty; the handler answers with `partials/watchlist-preview`, so anything an operator sees there is the source's own answer.
+- The answer is the source's tracks capped at ten ("10 of 412 tracks", "+ 402 more tracks"). A fetch that fails renders its failure in the region instead of staying silent, because htmx swaps only 2xx responses.
+- The provider's answer is the contract's business, not the template's: `internal/api/list_region_controls_test.go` issues this control against the production handler with a real `local_file` source and asserts the rendered body.
+
 ## Modal Pattern (Phase 6+)
 HTMX forms use server-side modal triggering:
 - Server sets `HX-Trigger: openModal` header in form load response

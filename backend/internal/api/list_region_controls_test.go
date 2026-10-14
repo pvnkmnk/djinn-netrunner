@@ -2,10 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,7 +18,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/api/templates"
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
+	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/html"
@@ -39,6 +44,100 @@ func TestListRegionControls_MatchTheirHandlersAndAppliedValues(t *testing.T) {
 	t.Run("jobs", testJobsRegionControls)
 	t.Run("libraries", testLibraryRegionControls)
 	t.Run("schedules", testScheduleRegionControls)
+	t.Run("watchlists", testWatchlistRegionControls)
+}
+
+// The Watchlists region joined this contract late, and it had already paid for
+// the gap. Delete carried hx-target="#watchlist-<id>" -- its own card -- while
+// DeleteWatchlist answers with the whole region. Swapping a region into a card's
+// slot nests a second one inside the first: one delete rendered a duplicate
+// region, a duplicate Add button and every remaining card twice, inside a page
+// whose ids were duplicated with it. No test noticed, because the specs asserted
+// the deleted card was gone, and it was -- twice over.
+//
+// The walker derives each control's required target and swap from the response
+// the handler actually returns, which is why adding this region is what caught
+// it. The preview is covered the same way, end to end: the control is issued
+// against the production handler, and the body asserted here is the provider's
+// tracks as the card would show them.
+func testWatchlistRegionControls(t *testing.T) {
+	app, db, _, watchlist, _, _, _ := listRegionTestApp(t)
+
+	region, _ := issueRenderedControl(t, app, renderedHTMXControl{method: "GET", path: "/partials/watchlists"})
+	controls := renderedControls(t, region)
+	assertRenderedControlSet(t, controls,
+		"Add new watchlist",
+		"Sync watchlist "+watchlist.Name,
+		"Preview tracks for "+watchlist.Name,
+		"Edit watchlist "+watchlist.Name,
+		"Delete watchlist "+watchlist.Name,
+		"Disable monitoring for "+watchlist.Name,
+	)
+
+	// Delete is issued last: it removes the row every other control in the card
+	// names, so a preview issued after it would answer 404 and the walker would
+	// report a missing handler instead of the contract it is here to check.
+	sort.SliceStable(controls, func(i, j int) bool {
+		if controls[i].method == "DELETE" {
+			return false
+		}
+		return controls[j].method == "DELETE"
+	})
+
+	for _, ctl := range controls {
+		body, requestURL := issueRenderedControl(t, app, ctl)
+		assertControlResponseTarget(t, ctl, body)
+		switch {
+		case strings.HasSuffix(requestURL, "/preview"):
+			resourceID := strings.TrimSuffix(strings.TrimPrefix(requestURL, "/api/watchlists/"), "/preview")
+			assert.Equal(t, watchlist.ID.String(), resourceID, "the preview URL must carry the watchlist ID its card rendered")
+			assert.Equal(t, "watchlist-"+resourceID, ctl.cardID, "the preview URL ID must belong to the card that rendered this control")
+			// The round trip, not the button: what lands in the region is the
+			// provider's tracks, capped, with a count of what is left out.
+			assert.Contains(t, body, fmt.Sprintf("%d of %d tracks", previewLimit, previewLimit+2),
+				"the preview must count every track the source returned")
+			assert.Contains(t, body, "Track 01", "the preview must render the tracks themselves")
+			assert.NotContains(t, body, fmt.Sprintf("Track %02d", previewLimit+1),
+				"the card preview must stop at the cap, or a large watchlist renders in full")
+			assert.NotContains(t, body, fmt.Sprintf("Track %02d", previewLimit+2))
+			assert.Contains(t, body, fmt.Sprintf("+ %d more tracks", 2), "and it must say how many it left out")
+		case strings.HasSuffix(requestURL, "/sync"):
+			assert.Contains(t, body, "Sync triggered for watchlist "+watchlist.Name,
+				"the Sync control reports the watchlist its own card rendered")
+			var count int64
+			require.NoError(t, db.Model(&database.Job{}).
+				Where("job_type = ? AND scope_type = ? AND scope_id = ?", "sync", "watchlist", watchlist.ID.String()).
+				Count(&count).Error)
+			assert.EqualValues(t, 1, count, "the Sync control must queue the sync job for its rendered watchlist ID")
+		case strings.HasSuffix(requestURL, "/toggle"):
+			resourceID := strings.TrimSuffix(strings.TrimPrefix(requestURL, "/api/watchlists/"), "/toggle")
+			assert.Equal(t, "watchlist-"+resourceID, ctl.cardID, "the toggle URL ID must belong to the card that rendered this control")
+			var after database.Watchlist
+			require.NoError(t, db.First(&after, "id = ?", resourceID).Error)
+			assert.False(t, after.Enabled, "toggle applies to the watchlist ID in the rendered control")
+			assert.Contains(t, body, "Enable monitoring", "the response card reflects the state the toggle applied")
+		case strings.HasSuffix(requestURL, "/form"):
+			assert.Contains(t, body, "modal-overlay")
+			if strings.Contains(requestURL, "?id=") {
+				parsed, err := url.Parse(requestURL)
+				require.NoError(t, err)
+				editID := parsed.Query().Get("id")
+				assert.Equal(t, "watchlist-"+editID, ctl.cardID, "the edit query ID must belong to the card that rendered this control")
+				assert.Contains(t, body, `value="`+editID+`"`, "the edit form must carry the watchlist ID from the control query")
+			}
+		case ctl.method == "DELETE":
+			resourceID := strings.TrimPrefix(requestURL, "/api/watchlists/")
+			assert.Equal(t, "watchlist-"+resourceID, ctl.cardID, "the delete URL ID must belong to the card that rendered this control")
+			assert.Equal(t, watchlist.ID.String(), resourceID, "the delete URL must carry the watchlist ID rendered on the card")
+			var count int64
+			require.NoError(t, db.Model(&database.Watchlist{}).Where("id = ?", resourceID).Count(&count).Error)
+			assert.Zero(t, count, "the delete control removes the watchlist its URL names")
+			// The response IS the region, so the target check above is what keeps
+			// it out of a card's slot; this is the other half of the same promise:
+			// the card it deleted must not come back inside that region.
+			assert.NotContains(t, body, `id="watchlist-`+resourceID+`"`, "the region must not re-render the card it deleted")
+		}
+	}
 }
 
 type renderedHTMXControl struct {
@@ -64,9 +163,21 @@ func listRegionTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User, datab
 	require.NoError(t, db.Create(&user).Error)
 	profile := database.QualityProfile{Name: "Region Contract", IsDefault: true}
 	require.NoError(t, db.Create(&profile).Error)
+	// The watchlist fixture reads a real file rather than a network source.
+	// local_file is the provider the production service registers, so the preview
+	// control below is answered by the production path with a source that needs
+	// nobody's availability. Two tracks over the preview cap make the cap and its
+	// "+ N more" line observable rather than assumed.
+	watchlistFile := filepath.Join(t.TempDir(), "region-contract.m3u")
+	var playlistBody strings.Builder
+	for i := 1; i <= previewLimit+2; i++ {
+		fmt.Fprintf(&playlistBody, "Contract Artist - Track %02d\n", i)
+	}
+	require.NoError(t, os.WriteFile(watchlistFile, []byte(playlistBody.String()), 0o644))
+
 	watchlist := database.Watchlist{
-		ID: uuid.New(), Name: "Contract Watchlist", SourceType: "local",
-		SourceURI: "region-contract:" + uuid.NewString(), QualityProfileID: profile.ID,
+		ID: uuid.New(), Name: "Contract Watchlist", SourceType: "local_file",
+		SourceURI: watchlistFile, QualityProfileID: profile.ID,
 		OwnerUserID: &user.ID,
 	}
 	require.NoError(t, db.Create(&watchlist).Error)
@@ -111,6 +222,16 @@ func listRegionTestApp(t *testing.T) (*fiber.App, *gorm.DB, database.User, datab
 	app.Post("/api/schedules", schedules.Create)
 	app.Patch("/api/schedules/:id/toggle", schedules.Toggle)
 	app.Delete("/api/schedules/:id", schedules.Delete)
+
+	watchlistService := services.NewWatchlistService(db, NewSpotifyAuthHandler(db), &config.Config{})
+	watchlists := NewWatchlistHandler(db, watchlistService)
+	preview := NewWatchlistPreviewHandler(db, watchlistService)
+	app.Get("/partials/watchlists", watchlists.RenderWatchlistsPartial)
+	app.Get("/api/watchlists/form", watchlists.GetForm)
+	app.Get("/api/watchlists/:id/preview", preview.GetPreview)
+	app.Post("/api/watchlists/:id/sync", watchlists.SyncWatchlist)
+	app.Patch("/api/watchlists/:id/toggle", watchlists.ToggleWatchlist)
+	app.Delete("/api/watchlists/:id", watchlists.DeleteWatchlist)
 
 	return app, db, user, watchlist, library, playlist, schedule
 }
@@ -171,6 +292,13 @@ func renderedControls(t *testing.T, source string) []renderedHTMXControl {
 						swap: attr(node, "hx-swap"), label: attr(node, "aria-label"),
 						cardID: enclosingCardID(node), include: attr(node, "hx-include"), params: url.Values{},
 					}
+					if ctl.swap == "" {
+						// htmx's default for an element target is innerHTML. A control that
+						// does not say otherwise is asking for that, and this contract has
+						// to compare what the browser will do rather than what the
+						// attribute happens to spell out.
+						ctl.swap = "innerHTML"
+					}
 					if ctl.label == "" {
 						ctl.label = text(node)
 					}
@@ -208,7 +336,7 @@ func renderedControls(t *testing.T, source string) []renderedHTMXControl {
 func enclosingCardID(node *html.Node) string {
 	for current := node.Parent; current != nil; current = current.Parent {
 		class := htmlAttr(current, "class")
-		if classHas(class, "playlist-card") || classHas(class, "job-card") || classHas(class, "library-card") || classHas(class, "schedule-card") {
+		if classHas(class, "playlist-card") || classHas(class, "job-card") || classHas(class, "library-card") || classHas(class, "schedule-card") || classHas(class, "watchlist-card") {
 			return htmlAttr(current, "id")
 		}
 	}
@@ -326,6 +454,18 @@ func assertControlResponseTarget(t *testing.T, ctl renderedHTMXControl, response
 		pairs["#job-logs-container"] = []string{"innerHTML"}
 	case classHas(class, "scan-status"):
 		pairs["#notice"] = []string{"innerHTML"}
+	case classHas(class, "console-entry"):
+		pairs["#notice"] = []string{"innerHTML"}
+	case classHas(class, "watchlists-region"):
+		pairs["#watchlists-region"] = []string{"innerHTML"}
+		pairs["closest .watchlists-region"] = []string{"outerHTML"}
+	case classHas(class, "watchlist-card") && id != "":
+		pairs["#"+id] = []string{"outerHTML"}
+	case classHas(class, "preview-header"):
+		// The preview answers the tracks, and the region it belongs to is named
+		// after the card that asked: derived from the rendered card, not a
+		// hard-coded watchlist ID.
+		pairs["#watchlist-preview-"+strings.TrimPrefix(ctl.cardID, "watchlist-")] = []string{"innerHTML"}
 	case classHas(class, "modal-overlay"):
 		pairs["#modal-container"] = []string{"innerHTML"}
 	case classHas(class, "schedule-card") && id != "":

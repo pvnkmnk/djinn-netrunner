@@ -66,6 +66,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **Deleting a watchlist rendered the list twice, inside itself.** The card's
+  Delete button nominated its own slot (`hx-target="#watchlist-<id>"`) while
+  `DeleteWatchlist` answers with the whole region partial, so htmx nested a
+  second region inside the first: a duplicate section header and Add button, a
+  duplicate `#watchlists-list`, and every remaining card rendered twice with
+  duplicated ids. The specs passed on exactly that, because they asserted the
+  deleted card was gone and it was - twice over. Delete now swaps
+  `closest .watchlists-region` with `outerHTML`, and
+  `internal/api/list_region_controls_test.go` derives every rendered control's
+  required target and swap from the body its handler actually returns, so a
+  control that answers with a region can no longer nominate a card's slot
+  (mutation-proved: restoring the card target, or pointing the preview at the
+  card, both fail the contract). The preview's browser spec was vacuous the same
+  way - it asserted that the region the card ships empty was *visible* - so it
+  now clicks and asserts the tracks the provider answered with.
 - **A test fixture invented its own primary keys, so the bootstrap-admin tests
   failed at random.** `makeUnprovenUser` built every account with
   `ID: uint64(uuid.New()[0]) | 1` - a random odd value in 1..255 - so a test
