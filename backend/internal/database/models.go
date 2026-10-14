@@ -141,8 +141,21 @@ type MonitoredArtist struct {
 	Monitored        bool      `gorm:"default:true"`
 	MonitorNew       bool      `gorm:"column:monitor_new_releases;default:true"`
 
-	MonitorAlbums       bool `gorm:"default:true"`
-	MonitorEPs          bool `gorm:"default:true"`
+	MonitorAlbums bool `gorm:"default:true"`
+
+	// MonitorEPs carries an explicit column name, and has to keep carrying it.
+	//
+	// GORM's naming strategy does not read "EP" as an initialism, so without the
+	// tag it derives monitor_e_ps -- while the SQL bootstrap in
+	// ops/db/init/migrations/2026_03_04_006_artist_tracking.sql creates
+	// monitor_eps. A database that ran both ended up with two boolean columns:
+	// every GORM write landed in monitor_e_ps, monitor_eps stayed at its NOT NULL
+	// DEFAULT TRUE, and anything reading the SQL name saw a setting nobody chose.
+	//
+	// The bootstrap's spelling is the canonical one (DJI-618/DJI-635). Removing
+	// this tag re-opens that split, and
+	// TestMonitoredArtist_MonitorEPsUsesTheBootstrapColumnName fails if it goes.
+	MonitorEPs          bool `gorm:"column:monitor_eps;default:true"`
 	MonitorSingles      bool `gorm:"default:false"`
 	MonitorCompilations bool `gorm:"default:false"`
 	MonitorLive         bool `gorm:"default:false"`

@@ -133,6 +133,16 @@ func Migrate(db *gorm.DB) error {
 		}
 	}
 
+	// Reconcile the two spellings of the monitor EPs column before AutoMigrate
+	// runs, and this is the only place that can: a database whose schema came
+	// from the SQL bootstrap plus an older binary can carry both monitor_eps and
+	// monitor_e_ps, and AutoMigrate is additive, so it would leave the pair in
+	// place with the stale column still holding the value the operator sees
+	// (DJI-618, DJI-635).
+	if err := reconcileMonitorEPsColumn(db); err != nil {
+		return err
+	}
+
 	// Auto-migrate all models
 	if err := db.AutoMigrate(
 		&User{},

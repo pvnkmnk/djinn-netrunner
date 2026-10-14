@@ -88,6 +88,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **A deployment could carry two spellings of the monitor-EPs column, and the one
+  the operator read was the stale one.** `MonitorEPs` carried no `column:` tag,
+  so GORM derived `monitor_e_ps` while the SQL bootstrap creates `monitor_eps`: a
+  database that ran both ended up with two boolean columns, every GORM write
+  landing in `monitor_e_ps` while `monitor_eps` sat at its `NOT NULL DEFAULT
+  TRUE`, which reads as "this deployment monitors EPs" no matter what was chosen.
+  The model now carries `gorm:"column:monitor_eps"`; `database.Migrate`
+  reconciles the pair **before** AutoMigrate, which is additive and would
+  otherwise keep both (the GORM-written value wins, because that is where the
+  writes had been going); and
+  `ops/db/init/migrations/2026_10_08_002_reconcile_monitor_eps_column.sql`
+  repairs a database bootstrapped from `ops/db/init/` by hand. Held by a test
+  that reads the column name out of the bootstrap SQL instead of restating it, a
+  Postgres-gated migration test for each drifted shape (collapse the pair, rename
+  the lone legacy column), and `internal/api/artist_repoint_test.go`, which had
+  been pinning the wrong spelling by updating `monitor_e_ps` directly (DJI-635,
+  answering DJI-618).
 - **Deleting a watchlist rendered the list twice, inside itself.** The card's
   Delete button nominated its own slot (`hx-target="#watchlist-<id>"`) while
   `DeleteWatchlist` answers with the whole region partial, so htmx nested a
@@ -275,7 +292,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `1.25.13` with `govulncheck@v1.7.0`; the tree pins **1.27.2** and `@v1.8.0` on **Fiber
   v3** (`backend/go.mod` is `go 1.27.0` → `fiber/v3 v3.5.0`), and `README.md`/`QUICKSTART.md`
   still asked for Go 1.25. Corrected, with each claim re-derived from the tree rather than
-  copied forward: the Postgres gate is **22 required tests across four packages** (the
+  copied forward: the Postgres gate is **22 required tests across four packages, 24 once this release's monitor-EPs migration tests land** (the
   `16 in internal/database` / `18 database-gated` counts in `AGENTS.md`, `ADR 0004`,
   `scripts/postgres_gate.py` and `.github/workflows/ci.yml` were stale), and
   `docs/ARCHITECTURE.md` claimed templates escape per-variable with `| escape` — pongo2
