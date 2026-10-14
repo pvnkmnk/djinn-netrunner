@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Docker and Docker Compose
-- Go 1.25+ (for local binary/CLI workflows)
+- Go 1.27+ (for local binary/CLI workflows)
 - Soulseek account (for slskd-backed acquisition)
 
 ## Setup

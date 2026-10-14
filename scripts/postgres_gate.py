@@ -50,8 +50,8 @@ PRIME_TEST_NAME = "TestMigrate_Postgres"
 
 # Tests that MUST report `pass` once a database is available. Derived, not
 # guessed: with DATABASE_URL unset each of these reports `skip`, and with a
-# Postgres it reports `pass` (internal/database: 16 of 179 tests, measured
-# 2026-10-09). A new test that needs a database and skips must be added here --
+# Postgres it reports `pass` (internal/database: 18 of 181 tests, measured
+# 2026-10-14). A new test that needs a database and skips must be added here --
 # if it skips without being listed, the undeclared-skip rule refuses the run.
 REQUIRED = {
     "./internal/database": [

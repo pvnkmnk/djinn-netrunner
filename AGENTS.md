@@ -7,6 +7,11 @@
 > comments, which `scripts/linear.py` cannot); secret-scan findings recorded and
 > triaged; no gofmt gate means committed violations are possible; the P-DJI-29
 > wave order now runs NR01-NR28.
+> Refreshed 2026-10-14: the toolchain is Go 1.27.2 on Fiber v3 and
+> `govulncheck` is pinned at v1.8.0; the Postgres gate is 22 required tests;
+> the migrator installs the NOTIFY sender, the console attaches to a picked
+> job, and a schedule names a job type and a library scope; a
+> project-directory clean landed, so the checkout is master-only.
 
 ## Orientation
 
@@ -63,7 +68,7 @@ docker compose up -d                # full stack; logs: docker compose logs -f n
 ./scripts/validate.sh            # (Windows PowerShell: ./scripts/validate.ps1)
 DATABASE_URL=postgres://... python scripts/postgres_gate.py  # the DB-gated tests vs Postgres; refuses a run where any skipped
 python scripts/test_postgres_gate.py  # the gate's own rules, offline (fixtures, no database)
-govulncheck ./...                   # CI fails on reachable CVEs; install the pinned version, not @latest
+govulncheck ./...                   # CI fails on reachable CVEs; install the pin (see "Go toolchain & dependencies"), never @latest
 ```
 
 Key env vars (full list in `.env.example`): `DATABASE_URL` (postgres:// or
@@ -254,6 +259,20 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   key set. WebSocket: `/ws/events`, `/ws/jobs/:job_id`. Subsonic `/rest/*`
   requires the `.view` suffix. Route assertions should read
   `app.GetRoutes()` (filter by method — middleware shows as `USE`).
+- **The console streams a job the caller picked (DJI-562).** `GET
+  /partials/console-jobs` fills `#console-job-picker` with the caller's
+  queued and running jobs (an admin sees everyone's, capped at 25), and `POST
+  /console/attach` resolves the picked job, checks ownership *before* any
+  socket URL is rendered, and answers with the console region. Every refusal
+  and every failure is a **200 that renders a partial**: htmx swaps only 2xx,
+  so a 4xx would leave the pane naming whatever job it was attached to
+  before.
+- **A schedule names the job it runs, and the job type names the scope.**
+  `POST /api/schedules` takes `job_type` (`sync`/`scan`/`enrich`) plus exactly
+  one of `watchlist_id` (for `sync`) or `library_id` (for `scan`/`enrich`); a
+  pair the type cannot use is refused 400 with the column it wanted. A
+  schedule has no owner of its own — it inherits one from that scope, which
+  is what a non-admin's list/toggle/edit/delete filter on.
 - CLI (`netrunner-cli`): `status`, `config list`, `watchlist
   list|add|sync|import`, `library list|add|scan|prune|rm`, `profile
   list|add|rm|set-default`, `stats summary|jobs|library`.
@@ -291,9 +310,16 @@ Driver auto-detects from `DATABASE_URL` (`.db` → SQLite WAL, `postgres://`
 locks expire after 15 min, not cross-process-safe), no `FILTER (WHERE ...)`
 (agent stats queries fail), GORM AutoMigrate only, `LiteFSGuard` checks
 `/litefs/.primary`. Postgres: pooling, real session-level advisory locks,
-`LISTEN/NOTIFY` job wakeup (the notify triggers are installed by
-`database.Migrate` on every boot — see `backend/internal/database/notify.go`),
-SQL bootstrap + AutoMigrate. The
+`LISTEN/NOTIFY` job wakeup and console fan-out: the sender is two plpgsql
+functions and their triggers, installed in one transaction by
+`database.Migrate` on every boot (see `backend/internal/database/notify.go`)
+— a job entering `queued` publishes on `opswakeup` for the worker's
+listener, a `job_logs` insert on `opsevents` for the console's fan-out. The
+`ops/db/init/02-functions.sql` bootstrap is documentation, not a live step:
+no compose file mounts it and it attaches to a `joblogs` table the runtime
+schema has not had for a long time. NetrunnerLite has no `NOTIFY` and keeps
+polling, so this is a real edition difference.
+Schema comes from the SQL bootstrap + AutoMigrate. The
 `WorkerOrchestrator` takes advisory locks per scope ID before processing;
 if `MaxConcurrentJobs > 1` with SQLite the worker warns at startup — use
 Postgres for concurrent production workloads.
@@ -327,10 +353,12 @@ the e2e one.
      precedent `backend/internal/database/artist_provenance_migration_test.go`,
      followed by `bootstrap_enrolled_at_migration_test.go`. Reading the file
      proves it parses, not that its statements do what the comment claims.      `setupPostgresForMigration` must `t.Skip` when `DATABASE_URL` is empty,
-      unreachable or non-postgres: 16 tests in `internal/database` alone skip
-      cleanly (exit 0) with no database, and a skip is not a pass. CI enforces
+      unreachable or non-postgres: 18 tests in `internal/database` alone skip
+      cleanly (exit 0) with no database (181 in the package; measured
+      2026-10-14), and a skip is not a pass. CI enforces
       that now -- `scripts/postgres_gate.py` (the `postgres` job in
-      `.github/workflows/ci.yml`) runs the 18 database-gated tests against a real
+      `.github/workflows/ci.yml`) runs the 22 required tests across four packages
+      against a real
       Postgres and refuses a run where one skipped, vanished or failed. Locally,
       start a database with
       `docker compose -f docker-compose.integration.yml up -d integration-db`
@@ -536,27 +564,37 @@ otherwise-good change are the thing to flag before anything else.
 
 ### Go toolchain & dependencies
 
-- CI pins `go 1.25.13` (setup-go) and the Docker builder uses
-  `GOTOOLCHAIN=local`; local Go is newer. Never let `go get`/`go mod tidy`
-  bump the `go` directive in `backend/go.mod` — check it LAST, after tidy
-  (any module requiring go ≥ 1.26 forces it back up, e.g. x/sync).
+- CI pins `go 1.27.2` (setup-go) and the Docker builder
+  (`golang:1.27.2-alpine`) agree, `backend/go.mod` is
+  `go 1.27.0`, and the framework is **Fiber v3**
+  (`github.com/gofiber/fiber/v3 v3.5.0`) — the v2→v3 move is what put
+  `c.Scheme()` and `middleware/static` + the `adaptor` package in
+  `cmd/server/main.go`, so a cookbook snippet written against v2 usually does
+  not compile. Never let `go get`/`go mod tidy` bump the `go` directive —
+  check it LAST, after tidy (any module requiring a newer Go forces it up).
 - The `test` workflow runs govulncheck and fails CI on reachable CVEs.
   Downgrading transitive deps to appease the directive reintroduces CVEs —
-  keep master's dep versions and add new libs at go-1.25-compatible
-  releases.
-- **A `@latest` install inside a pinned-Go workflow is a time bomb, and it
-  fails as a *phantom* scan.** `.github/workflows/ci.yml` pinned `go-version:
-  1.25.13` and then ran `go install
-  golang.org/x/vuln/cmd/govulncheck@latest`; v1.8.0 declares `go 1.26.0`, so
-  the runner fetched the `go1.26.9` toolchain and died verifying it --
-  `reading https://sum.golang.org/lookup/...: 404 Not Found`, exit 1, in the
-  *Vulnerability scan* step. Nothing was scanned and nothing in the diff was
-  involved (E2E and Integration were green on the same commit). Fixed by
-  pinning `@v1.7.0` -- the last release declaring `go 1.25.0` -- plus
-  `env: GOTOOLCHAIN: local`. The pin and `go-version` move together: read a
-  release's `go` directive before bumping it
-  (`curl -s https://proxy.golang.org/golang.org/x/vuln/@v/v1.8.0.mod`). Every
-  workflow step that installs a tool with `@latest` carries the same hazard.
+  keep master's dep versions and add new libs at releases the pinned Go
+  satisfies.
+- **A pinned tool's PATCH level matters as much as its minor, and a pin the
+  runner's Go cannot satisfy fails as a *phantom* scan.** Two measurements,
+  both from `.github/workflows/ci.yml` (2026-10-14):
+  * `govulncheck` is **pinned**, not `@latest` (`@v1.8.0`). The step that ran
+    `@latest` while `go-version: 1.25.13` was pinned fetched the `go1.26.9`
+    toolchain v1.8.0 requires and died verifying it (`reading
+    https://sum.golang.org/lookup/...: 404 Not Found`, exit 1) in the
+    *Vulnerability scan* step — nothing was scanned and nothing in the diff
+    was involved (E2E and Integration were green on the same commit).
+  * On Go **1.27.0** the scan reported 11 stdlib findings whose fix is
+    **go1.27.2** (`net/http`, `net/http/internal/http2`, `html/template`,
+    `crypto/tls`, `net/textproto`); the 1.27.2 pin clears them. The
+    `go-version` pin must be >= the newest `Fixed in: go1.x.y` the scan
+    reports for the standard library, or the job fails on findings the
+    toolchain itself carries.
+  Read a release's `go` directive before bumping a pin
+  (`curl -s https://proxy.golang.org/golang.org/x/vuln/@v/v1.8.0.mod`), move
+  the pin and `go-version` together, and treat every `@latest` install step
+  as the same hazard.
 - **Secret scanning is a habit here, not a gate.** No workflow runs `gitleaks`
   or `trufflehog`; the only reference is `gitleaks git --staged --redact` in
   `docs/superpowers/plans/2026-10-07-artist-provenance-and-repoint.md`, and a
@@ -916,7 +954,8 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   template or `app.js` change is invisible until
   `up -d --build`, and the running container's copy is what the browser gets.
 - CI has no `gofmt` gate (the lint job is disabled pending
-  golangci-lint+go1.25); `go vet ./...` is the gate, and `gofmt -w` would
+  golangci-lint support for the pinned Go line); `go vet ./...` is the gate,
+  and `gofmt -w` would
   flip this repo's CRLF Go files to LF — format-check an LF copy instead
   (`cp f .art/f.go`, then `gofmt -l` / `gofmt -d` on the copy).
 - **Because there is no gofmt gate, a committed file can carry a violation.**
@@ -935,6 +974,33 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   `ops/web/templates/**` off disk.** `go test ./internal/api`, and any `-run`
   filter that names a package, will not run it — that gap shipped a red `test`
   job while local filtered runs were green. Name the package, or run `./...`.
+- **`go test` caches a mutated template, because the template is not part of
+  the cache key.** The test binary is a function of the Go sources only; the
+  pongo2 templates are read off disk at runtime. A mutation harness that
+  breaks a template and omits `-count=1` gets
+  `ok .../internal/api/templates (cached)` on the broken tree — the most
+  expensive way to prove nothing (found proving the DJI-619 Sync-button fix).
+  Every template-mutating check runs with `-count=1`.
+- **`internal/api/acceptance_test.go` sits behind `//go:build integration`,
+  and no CI job passes that tag for `internal/api`** — the `test` job runs
+  `go test $(go list ./... | grep -v /integration/)` with no tags, and the
+  integration workflow runs `./internal/integration/...` only. Its five
+  `TestAcceptance_*` tests (library CRUD, artist CRUD, schedule CRUD, role
+  isolation, dashboard scoping) therefore never run in CI. Measured
+  2026-10-14: `go vet -tags integration ./...` exits 0 and
+  `go test -tags integration ./internal/api -run TestAcceptance` passes, so
+  they are live-but-unrun rather than broken — run them by hand when touching
+  ownership scoping. (The comment in that file saying Toggle is uncovered is
+  stale: `TestSchedulesOwnership_CoversLibraryScopes` toggles the owner's row
+  and asserts the flip, and asserts a stranger's 404.)
+- **A migration's SQL and GORM's AutoMigrate can disagree on a column name.**
+  `ops/db/init/migrations/2026_03_04_006_artist_tracking.sql` declares
+  `monitor_eps` while AutoMigrate creates `monitor_e_ps` for the same field
+  (`MonitorEPs` in `models.go`), so a database bootstrapped from the SQL file
+  gets one, the other, or both. Same class as the earlier column-naming trap,
+  and the reason the SQL file is the documented bootstrap path rather than a
+  live mirror of the schema — prove a schema change against a real database
+  (Common tasks 3).
 - **`internal/services` can exceed go test's default 10m0s.** One ffprobe-backed
   download-probe test ran 9m46s on a loaded box while the package totals 177s
   unloaded and CI's whole `test` job 5m24s, so `panic: test timed out` there is
@@ -943,7 +1009,12 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   `acquisition_pipeline.go` (among others) is LF. Detect the dominant ending
   before patch-scripting and preserve it — forcing CRLF onto an LF file
   corrupts it (CRCRLF), and str_replace anchors written with the wrong ending
-  silently match nothing.
+  silently match nothing. An editor-style rewrite is the trap that actually
+  bit: `artists.go` (pure LF) came back all-CRLF as a **916-line phantom
+  diff** whose only real change was 2 lines (2026-10-07 artist-provenance
+  plan; ledger in `.superpowers/`). Re-apply such an edit from the file's own
+  bytes, preserving its endings, and check the diff size — a phantom diff
+  hides the real one.
 - `py -c "print(...)"` with emoji/box-drawing output dies with cp1252
   `UnicodeEncodeError` (MSYS pipes it fine) — start such scripts with
   `sys.stdout.reconfigure(encoding='utf-8', errors='replace')`. Same for
@@ -1348,6 +1419,17 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   generated index files beside it — `.slim/codemap.json`,
   `.slim/cartography.json`, `.slim/clonedeps.json` — are **tracked** and
   rewritten in place.
+- **`.slim/clonedeps.json` pins `github.com/gofiber/fiber/v2` v2.52.13 while
+  `backend/go.mod` is `fiber/v3` v3.5.0** (measured 2026-10-14): the clone is
+  the wrong major for the framework the app actually runs, so read v3
+  behaviour from the module cache or the version's own docs, not this copy.
+- **A nested `.gitignore` can hide a whole tree from `git status`, so
+  *not listed* is not *not present*.** `.pytest_cache/.gitignore` and
+  `.ruff_cache/.gitignore` each contain a bare `*`, and `.codegraph/`'s
+  ignores everything but itself — which is how 166 untracked files read as
+  43 porcelain entries in the 2026-10-14 clean. Run
+  `find . -name .gitignore` before concluding a directory is clean or
+  absent.
 
 ## Product facts that cost time to rediscover
 

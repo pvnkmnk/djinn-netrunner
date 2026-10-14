@@ -68,6 +68,10 @@ A schedule has no owner of its own: it inherits one from the watchlist or librar
 - `GET /partials/stats` - Stats partial (HTMX)
 - `GET /partials/watchlists` - Watchlists partial (HTMX)
 
+### Console
+- `GET /partials/console-jobs` - Options for `#console-job-picker`: the caller's queued and running jobs (an admin sees everyone's, capped at 25)
+- `POST /console/attach` - Resolve the picked job, check ownership, and render the console region. Every refusal and every failure is a **200 that renders a partial** — htmx swaps only 2xx, so a 4xx would leave the pane naming whatever job it was attached to before.
+
 ## UI/UX Contract
 - Authenticated routes and HTMX partial endpoints rely on `AuthMiddleware`-populated `c.Locals("user")` for authorization context.
 - The UI remains server-rendered + HTMX-first; client JS is limited to modal flow, console controls, CSRF headers, and responsive nav toggling.
@@ -83,6 +87,7 @@ A schedule has no owner of its own: it inherits one from the watchlist or librar
 3. **Deterministic Work Plans**: `jobitems` are created before execution; retries resume without re-deriving metadata.
 4. **Fair Scheduling**: Round-robin task selection across active jobs to prevent starvation.
 5. **Authoritative Heartbeats**: Running jobs update `heartbeat_at` frequently; the reaper uses this to detect and recover from worker crashes.
+6. **Event-Driven Wakeup**: on PostgreSQL, `database.Migrate` installs the NOTIFY sender on every boot — a job entering `queued` publishes on `opswakeup` (the worker's `listenForWakeup`) and a `job_logs` insert on `opsevents` (the console's log fan-out). NetrunnerLite has no `NOTIFY` and polls on a 5-second loop. The `ops/db/init/02-functions.sql` bootstrap is documentation, not a live step.
 
 ## Agentic Interface (MCP)
 NetRunner implements an embedded **Model Context Protocol (MCP)** server at `backend/cmd/agent`. This allows AI agents to:
@@ -109,10 +114,10 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 - No server-rendered hidden CSRF input fields (forms rely entirely on JS header injection).
 
 ### XSS Prevention
-- **Pongo2 templates**: All user-supplied values rendered in templates use the `| escape` filter explicitly.
+- **Pongo2 templates**: the engine autoescapes. `templates.NewPongo2` never disarms it, and pongo2's autoescape path *is* the `escape` filter, so `{{ x | escape }}` is a redundant second pass (`&amp;amp;`) rather than the mechanism — no template uses it (`templates/escaping_test.go` is the guard). `| safe` and `truncatechars_html`/`truncatewords_html` suppress escaping and are banned.
 - **WebSocket log streaming**: Uses `html.EscapeString()` before broadcasting to clients.
 - **Scope**: Track metadata (title, artist, album, genre, composer, cover URLs), artist names, watchlist names, library names, profile names, schedule names, search strings, file paths, SourceType, and all aria-label/hx-confirm attributes that include user data are escaped.
-- **Not auto-escaped by default**: Pongo2 engine has no global autoescape — escaping is applied per-variable. Any new template variable rendering user data must use `| escape`.
+- **Escaping is on by default, so the defect to catch is its removal**: `{% autoescape off %}` (or `| safe`) is what turns a database row back into markup, which is why the escape guard asserts the *absence* of those spellings rather than the presence of `| escape`.
 
 ### Email Validation
 - Registration uses `net/mail.ParseAddress` for RFC 5322 validation.
