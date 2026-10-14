@@ -352,7 +352,13 @@ the e2e one.
    - **The migration file needs a Postgres test that duplicates its DDL** --
      precedent `backend/internal/database/artist_provenance_migration_test.go`,
      followed by `bootstrap_enrolled_at_migration_test.go`. Reading the file
-     proves it parses, not that its statements do what the comment claims.      `setupPostgresForMigration` must `t.Skip` when `DATABASE_URL` is empty,
+     proves it parses, not that its statements do what the comment claims.
+     The monitor-EPs migration went the other way on 2026-10-14:
+     `monitor_eps_migration_test.go` reads and applies
+     `ops/db/init/migrations/2026_10_08_002_reconcile_monitor_eps_column.sql`
+     itself, because a duplicated copy is a guard that cannot fail -- inverting
+     the collapse UPDATE in the file left both of its tests green (measured 2026-10-14).
+      `setupPostgresForMigration` must `t.Skip` when `DATABASE_URL` is empty,
       unreachable or non-postgres: 20 tests in `internal/database` alone skip
       cleanly (exit 0) with no database (106 top-level tests pass, 20 skip, 0
       fail; measured 2026-10-14), and a skip is not a pass. CI enforces
