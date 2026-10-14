@@ -175,12 +175,12 @@ func TestAcceptance_ScheduleCRUD(t *testing.T) {
 	require.NoError(t, db.Where("watchlist_id = ?", wl.ID).First(&schedule).Error)
 	scheduleID := fmt.Sprintf("%d", schedule.ID)
 
-	// Toggle is not exercised here. It always answers with the schedule card
-	// partial, and `acceptanceApp` builds a bare Fiber app with no view engine,
-	// so the render itself is the 500. The older note blamed `Preload("Watchlist")
-	// + Save` for that, which the handler no longer does. Covering the toggle
-	// needs a template engine here, in `internal/api/schedules_library_test.go`,
-	// or a non-HTMX JSON branch on the handler.
+	// Toggle is not exercised here, deliberately: it answers with the schedule
+	// card partial and `acceptanceApp` builds a bare Fiber app with no view
+	// engine, so the render itself would be the 500. It is covered where a view
+	// engine is loaded -- `TestSchedulesOwnership_CoversLibraryScopes` in
+	// `internal/api/schedules_library_test.go` toggles the owner's row, asserts
+	// the flip, and asserts a stranger's 404.
 
 	// Delete schedule
 	req = httptest.NewRequest("DELETE", "/api/schedules/"+scheduleID, nil)

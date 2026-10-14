@@ -118,6 +118,11 @@ describing behaviour, not metaphor.
    and the resulting skip read like a passing integration test. The gate's own rules are covered
    offline by `python scripts/test_postgres_gate.py` (23 cases, 11 of them rejections).
 
+   *(Measured 2026-10-14: the gate's required set is **22 tests across four packages** — 18 in
+   `internal/database`, the worker's interop test, two NOTIFY-sender proof tests in
+   `internal/api`, and one service test. The 2026-10-09 sentence above records the set as it
+   stood then.)*
+
 ## Consequences
 
 The backend we test most becomes the one we ship, and the concurrency/notify paths get exercised

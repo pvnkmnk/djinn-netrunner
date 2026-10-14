@@ -140,7 +140,7 @@ jobs:
 
   # ADR 0004: a green SQLite-only run is not evidence for a change that touches
   # claims, locks, wakeups or aggregate SQL. Every test that would prove those
-  # paths calls t.Skip when DATABASE_URL is absent -- 16 of them in
+  # paths calls t.Skip when DATABASE_URL is absent -- 18 of them in
   # internal/database alone -- and a skip is not a pass, so the `test` job above
   # cannot see a regression in any of them. This job hands them a real Postgres
   # and gates on them having RUN: scripts/postgres_gate.py refuses a run where a
@@ -186,7 +186,7 @@ jobs:
           CGO_ENABLED: 0
         run: python scripts/postgres_gate.py
 
-  # lint job disabled until golangci-lint supports go1.25
+  # lint job disabled until golangci-lint supports the pinned Go line (1.27)
   # lint:
   #   runs-on: ubuntu-latest
   #   steps:

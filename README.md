@@ -139,7 +139,7 @@ bash scripts/validate.sh
 
 ## 🏗️ Technical Architecture
 
-NetRunner 2.0 uses a unified Go 1.25 backend:
+NetRunner 2.0 uses a unified Go 1.27 backend:
 - **NetRunner API (Fiber)**: High-performance web server handling the UI and real-time event fanout.
 - **NetRunner Worker**: Multi-threaded orchestrator using native goroutines for discovery and acquisition.
 - **PostgreSQL**: The development and verification target (ADR 0004), and the database Djinn-Netrunner ships on. **SQLite (WAL)**: The zero-dependency alternative NetrunnerLite runs on — ACID-compliant with no external service, single-worker.
@@ -275,4 +275,4 @@ We welcome contributions that align with our "Console-First" and "Standalone" de
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
-**Architecture**: Go 1.25+, PostgreSQL (SQLite for NetrunnerLite), Fiber, HTMX
+**Architecture**: Go 1.27+, PostgreSQL (SQLite for NetrunnerLite), Fiber v3, HTMX

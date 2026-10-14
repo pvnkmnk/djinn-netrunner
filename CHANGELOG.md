@@ -271,6 +271,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/DEPLOYMENT.md` (renamed) presents dev and release as the only two paths, states
   the version each reports, and documents `NetRunner vdev` as the deliberate sentinel for
   an undeclared build rather than a defect (#287, #288).
+- **The docs stop teaching the retired toolchain.** `AGENTS.md` said CI pinned Go
+  `1.25.13` with `govulncheck@v1.7.0`; the tree pins **1.27.2** and `@v1.8.0` on **Fiber
+  v3** (`backend/go.mod` is `go 1.27.0` → `fiber/v3 v3.5.0`), and `README.md`/`QUICKSTART.md`
+  still asked for Go 1.25. Corrected, with each claim re-derived from the tree rather than
+  copied forward: the Postgres gate is **22 required tests across four packages** (the
+  `16 in internal/database` / `18 database-gated` counts in `AGENTS.md`, `ADR 0004`,
+  `scripts/postgres_gate.py` and `.github/workflows/ci.yml` were stale), and
+  `docs/ARCHITECTURE.md` claimed templates escape per-variable with `| escape` — pongo2
+  autoescapes by default, no template uses the filter, and what needs guarding is the
+  spellings that *disarm* it. The console's job picker and the migrator-installed NOTIFY
+  sender are now in `docs/ARCHITECTURE.md`, and three traps are recorded: `go test` caches a
+  mutated template unless run with `-count=1`, a `//go:build integration` file whose five
+  tests no CI job compiles, and a migration whose SQL says `monitor_eps` where AutoMigrate
+  says `monitor_e_ps`.
 
 ## [v0.1.1] - 2026-09-21
 
