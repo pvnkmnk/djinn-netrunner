@@ -27,6 +27,8 @@ The current protocol audit is pinned to OpenSubsonic **1.16.1**:
 - Matrix generator: [`scripts/opensubsonic_coverage.py`](../scripts/opensubsonic_coverage.py)
 - Route-table guard:
   [`backend/cmd/server/opensubsonic_coverage_test.go`](../backend/cmd/server/opensubsonic_coverage_test.go)
+- Management API baseline schema:
+  [`docs/api/client-contract.yaml`](api/client-contract.yaml), version `1.0.0`
 
 The matrix is generated from the pinned specification and cross-checked against
 the registered route table. This document explains how to consume the current
@@ -90,6 +92,14 @@ The management API uses the contracts documented in
 [`ARCHITECTURE.md`](ARCHITECTURE.md) and its handler/service tests. It is not a
 replacement for standard listening endpoints and should not be required by a
 generic Subsonic client just to browse or play music.
+
+The first versioned management baseline is published as an OpenAPI document at
+[`docs/api/client-contract.yaml`](api/client-contract.yaml). It covers the
+health, authentication, playlist, job-action and acquisition operations whose
+JSON shapes are currently stable and tested. Additional management resources
+must be added there before being treated as part of the versioned client
+contract; existing HTML/HTMX, CLI and MCP consumers remain supported while the
+catalogue expands.
 
 ## Authentication and authorization
 
@@ -247,3 +257,5 @@ does not establish conformance.
   current Subsonic handler implementation.
 - [`backend/cmd/server/main.go`](../backend/cmd/server/main.go) — route
   registration and configuration gating.
+- [`api/client-contract.yaml`](api/client-contract.yaml) — versioned
+  management API baseline.
