@@ -109,10 +109,10 @@ func safeNextPath(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	// Strip C0 control characters (\t, \n, \r, etc.) and space (<= 0x20, 0x7F) that
-	// browsers strip/ignore during URL parsing, which can obfuscate scheme-relative URLs.
+	// Strip C0 control characters (\t, \n, \r, etc.) and DEL that browsers
+	// strip/ignore during URL parsing, which can obfuscate scheme-relative URLs.
 	cleaned := strings.Map(func(r rune) rune {
-		if r <= 0x20 || r == 0x7f {
+		if r < 0x20 || r == 0x7f {
 			return -1
 		}
 		return r

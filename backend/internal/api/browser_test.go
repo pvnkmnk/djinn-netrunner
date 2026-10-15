@@ -472,11 +472,14 @@ func TestSafeNextPath(t *testing.T) {
 	for _, raw := range []string{"/", "/watchlists", "/watchlists?filter=recent", "/admin?section=users"} {
 		assert.Equal(t, raw, safeNextPath(raw), "a local path must survive")
 	}
+	for _, raw := range []string{"/artist name", "/ /evil.example"} {
+		assert.Equal(t, raw, safeNextPath(raw), "%q is a valid local path and must retain its spaces", raw)
+	}
 	for _, raw := range []string{
 		"", "//evil.example", "/\\evil.example", "https://evil.example",
 		"http://evil.example/x", "javascript:alert(1)", "watchlists", "\n//evil.example",
 		"/\t/evil.example", "/\n/evil.example", "/\r/evil.example", "/\t\\evil.example",
-		"/\x00/evil.example", "/\t//evil.example", "/ /evil.example", "/\r\\evil.example",
+		"/\x00/evil.example", "/\t//evil.example", "/\r\\evil.example",
 	} {
 		assert.Equal(t, "", safeNextPath(raw), "%q must be dropped", raw)
 	}
