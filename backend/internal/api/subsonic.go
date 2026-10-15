@@ -1740,7 +1740,9 @@ func (h *SubsonicHandler) CreatePlaylist(c *fiber.Ctx) error {
 		}
 		// Bolt Optimization: Batch insert playlist tracks in a single database call
 		if len(playlistTracks) > 0 {
-			h.db.Create(&playlistTracks)
+			if err := h.db.Create(&playlistTracks).Error; err != nil {
+				return h.respondError(c, 0, "Failed to create playlist tracks")
+			}
 		}
 	}
 
