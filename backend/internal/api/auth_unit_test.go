@@ -3,15 +3,18 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -233,4 +236,108 @@ func TestAuthMiddleware_InvalidSession(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "invalid-session-id"})
 	resp, _ := app.Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestAuthMiddleware_DisabledUserRejected(t *testing.T) {
+	db := setupInMemoryDB(t)
+	disabledAt := time.Now()
+	user := database.User{Email: "disabled@example.com", PasswordHash: "hash", Role: "user", DisabledAt: &disabledAt}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&database.Session{
+		SessionID: "disabled-session",
+		UserID:    user.ID,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}).Error)
+
+	app := fiber.New()
+	auth := NewAuthHandler(db)
+	app.Get("/protected", auth.AuthMiddleware, func(c fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	req := httptest.NewRequest("GET", "/protected", nil)
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "disabled-session"})
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestOptionalAuthMiddleware_DisabledUserNotLoaded(t *testing.T) {
+	db := setupInMemoryDB(t)
+	disabledAt := time.Now()
+	user := database.User{Email: "optional-disabled@example.com", PasswordHash: "hash", Role: "user", DisabledAt: &disabledAt}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&database.Session{
+		SessionID: "optional-disabled-session",
+		UserID:    user.ID,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}).Error)
+
+	app := fiber.New()
+	auth := NewAuthHandler(db)
+	app.Get("/optional", auth.OptionalAuthMiddleware, func(c fiber.Ctx) error {
+		if _, ok := c.Locals("user").(database.User); ok {
+			return c.SendString("loaded")
+		}
+		return c.SendString("anonymous")
+	})
+
+	req := httptest.NewRequest("GET", "/optional", nil)
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: "optional-disabled-session"})
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "anonymous", string(body))
+}
+
+func TestLogin_DisabledUserRejected(t *testing.T) {
+	db := setupInMemoryDB(t)
+	auth := NewAuthHandler(db)
+	app := fiber.New()
+	app.Post("/login", auth.Login)
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-horse-battery-staple"), BcryptCost)
+	require.NoError(t, err)
+	disabledAt := time.Now()
+	require.NoError(t, db.Create(&database.User{
+		Email:        "login-disabled@example.com",
+		PasswordHash: string(hash),
+		Role:         "user",
+		DisabledAt:   &disabledAt,
+	}).Error)
+
+	body := bytes.NewBufferString(`{"email":"login-disabled@example.com","password":"correct-horse-battery-staple"}`)
+	req := httptest.NewRequest("POST", "/login", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestLogout_RevokesOnlyPresentedSession(t *testing.T) {
+	db := setupInMemoryDB(t)
+	auth := NewAuthHandler(db)
+	app := fiber.New()
+	app.Post("/logout", auth.Logout)
+
+	user := database.User{Email: "logout-sessions@example.com", PasswordHash: "hash", Role: "user"}
+	require.NoError(t, db.Create(&user).Error)
+	first := database.Session{SessionID: "logout-first", UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour)}
+	second := database.Session{SessionID: "logout-second", UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour)}
+	require.NoError(t, db.Create(&first).Error)
+	require.NoError(t, db.Create(&second).Error)
+
+	req := httptest.NewRequest("POST", "/logout", nil)
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: first.SessionID})
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var remaining int64
+	db.Model(&database.Session{}).Where("session_id = ?", first.SessionID).Count(&remaining)
+	assert.Equal(t, int64(0), remaining)
+	db.Model(&database.Session{}).Where("session_id = ?", second.SessionID).Count(&remaining)
+	assert.Equal(t, int64(1), remaining)
 }

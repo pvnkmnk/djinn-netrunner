@@ -70,6 +70,10 @@ type User struct {
 	// account registration creates by default.
 	BootstrapEnrolledAt *time.Time
 
+	// DisabledAt records when the account was disabled. A non-nil value blocks
+	// new logins and invalidates every existing session for the account.
+	DisabledAt *time.Time
+
 	Sessions []Session `gorm:"foreignKey:UserID"`
 }
 

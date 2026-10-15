@@ -209,7 +209,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 
 	var user database.User
 	// Use case/whitespace-insensitive match for transitional safety with legacy non-normalized data.
-	if err := h.db.Where("LOWER(TRIM(email)) = ?", payload.Email).First(&user).Error; err != nil {
+	if err := h.db.Where("LOWER(TRIM(email)) = ? AND disabled_at IS NULL", payload.Email).First(&user).Error; err != nil {
 		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
 	}
 
@@ -299,11 +299,7 @@ func (h *AuthHandler) OptionalAuthMiddleware(c fiber.Ctx) error {
 		return c.Next()
 	}
 
-	var user database.User
-	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-		First(&user).Error
-	if err == nil {
+	if user, ok := h.authenticatedUser(sessionID); ok {
 		c.Locals("user", user)
 	}
 	return c.Next()
@@ -321,18 +317,25 @@ func (h *AuthHandler) AuthMiddleware(c fiber.Ctx) error {
 		return h.rejectUnauthenticated(c)
 	}
 
-	var user database.User
-	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-		First(&user).Error
-
-	if err != nil {
+	user, ok := h.authenticatedUser(sessionID)
+	if !ok {
 		return h.rejectUnauthenticated(c)
 	}
 
 	// Store user in context
 	c.Locals("user", user)
 	return c.Next()
+}
+
+// authenticatedUser resolves a live session to an enabled principal. A
+// disabled account invalidates all of its sessions without requiring a
+// cleanup sweep, so every request observes the account state immediately.
+func (h *AuthHandler) authenticatedUser(sessionID string) (database.User, bool) {
+	var user database.User
+	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+		Where("sessions.session_id = ? AND sessions.expires_at > ? AND users.disabled_at IS NULL", sessionID, time.Now()).
+		First(&user).Error
+	return user, err == nil
 }
 
 // rejectUnauthenticated answers a request that has no valid session.
