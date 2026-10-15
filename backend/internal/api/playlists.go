@@ -64,8 +64,11 @@ func (h *PlaylistHandler) Get(c fiber.Ctx) error {
 	}
 
 	// Load tracks ordered by position
+	// Bolt Optimization: Preload track with targeted column selection to avoid loading large unused fields (e.g. enrichment_provenance, fingerprint)
 	var playlistTracks []database.PlaylistTrack
-	if err := h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track").Find(&playlistTracks).Error; err != nil {
+	if err := h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track", func(db *gorm.DB) *gorm.DB {
+		return db.Select(trackBrowseColumns + ", cover_url")
+	}).Find(&playlistTracks).Error; err != nil {
 		return internalServerError(c, err)
 	}
 
