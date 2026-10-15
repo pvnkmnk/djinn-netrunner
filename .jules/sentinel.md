@@ -54,3 +54,8 @@
 **Vulnerability:** `safeNextPath` checked for protocol-relative paths (`//host` or `/\\host`) but failed to strip C0 control characters or spaces (such as `\t`, `\n`, `\r`). An attacker could supply `/\t/evil.example`, bypassing standard prefix checks while browsers stripped the control character during navigation, leading to open redirect.
 **Learning:** Standard library functions like `url.Parse` and string prefix matchers do not strip C0 control characters or spaces automatically. Browsers strictly conform to WHATWG URL parsing and strip ASCII control characters (`<= 0x20` and `0x7F`).
 **Prevention:** Always strip or sanitize C0 control characters and spaces from URL paths before performing security validations such as prefix or protocol checks.
+
+## 2026-10-15 - [Attribute Context XSS in Go String Formatted Partials]
+**Vulnerability:** Handlers constructing HTMX HTML strings directly using `fmt.Sprintf` placed URL-encoded values and `json.Marshal` JSON output directly into HTML attribute contexts (such as `id="..."` and `hx-vals='...'`) without HTML escaping. Unescaped quotes or HTML entities allowed breaking out of attribute contexts into HTML injection.
+**Learning:** `json.Marshal` outputs raw JSON string delimiters (`"`), and `url.QueryEscape` leaves single/double quotes unescaped unless explicitly converted. When interpolated directly into HTML attribute values, quotes break attribute syntax.
+**Prevention:** Always pass interpolated values intended for HTML attributes (including JSON strings and URL-encoded strings) through `html.EscapeString` when using Go string formatting for HTML partials.
