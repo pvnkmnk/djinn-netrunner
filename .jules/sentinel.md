@@ -49,3 +49,8 @@
 **Vulnerability:** Non-admin users could assign watchlists or monitored artists to another user's private quality profile by directly passing its ID in POST/PATCH request bodies.
 **Learning:** While GET endpoints and forms were filtered for BOLA, creation/update handlers accepted foreign key IDs (like `quality_profile_id`) without validating whether the user had permission to use the referenced profile.
 **Prevention:** When accepting foreign key IDs in write endpoints, always verify that non-admin users own the referenced resource or that it is public/default (`owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?`). Validate resource ownership before triggering external integrations like MusicBrainz search.
+
+## 2026-10-08 - [Open Redirect via C0 Control Character Injections]
+**Vulnerability:** `safeNextPath` checked for protocol-relative paths (`//host` or `/\\host`) but failed to strip C0 control characters or spaces (such as `\t`, `\n`, `\r`). An attacker could supply `/\t/evil.example`, bypassing standard prefix checks while browsers stripped the control character during navigation, leading to open redirect.
+**Learning:** Standard library functions like `url.Parse` and string prefix matchers do not strip C0 control characters or spaces automatically. Browsers strictly conform to WHATWG URL parsing and strip ASCII control characters (`<= 0x20` and `0x7F`).
+**Prevention:** Always strip or sanitize C0 control characters and spaces from URL paths before performing security validations such as prefix or protocol checks.
