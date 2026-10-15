@@ -333,11 +333,11 @@ func (h *AuthHandler) AuthMiddleware(c fiber.Ctx) error {
 func (h *AuthHandler) Me(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
 	}
 	var session database.Session
-	if err := h.db.Where("session_id = ? AND user_id = ?", c.Cookies(SessionCookie), user.ID).First(&session).Error; err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
+	if err := h.db.Where("session_id = ? AND user_id = ? AND expires_at > ?", c.Cookies(SessionCookie), user.ID, time.Now()).First(&session).Error; err != nil {
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
 	}
 	return c.JSON(fiber.Map{
 		"id":         user.ID,
@@ -363,7 +363,7 @@ func (h *AuthHandler) rejectUnauthenticated(c fiber.Ctx) error {
 	if shouldRenderPage(c) {
 		return redirectToSignIn(c)
 	}
-	return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
 }
 
 func generateSessionID() (string, error) {

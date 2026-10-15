@@ -143,7 +143,8 @@ HTMX partials and `/api/*` groups require a valid `session_id` cookie. Roles are
 checked at the handler/service boundary; `admin` grants administrative actions,
 while ordinary users remain owner-scoped.
 
-`POST /api/auth/register` and `POST /api/auth/login` establish a server-side
+`POST /api/auth/register` creates an account and does not issue a session.
+The client then uses `POST /api/auth/login` to establish a server-side
 session and issue the HttpOnly, SameSite=Strict `session_id` cookie (login is
 also allowed to return the browser redirect form). `GET /api/auth/me` is the
 management identity probe: with a live session it returns `id`, `email`, `role`

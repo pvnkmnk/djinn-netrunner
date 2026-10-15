@@ -80,6 +80,7 @@ func TestSetupRoutes_RegistersCriticalRoutes(t *testing.T) {
 	critical := []string{
 		"POST /api/auth/login",
 		"POST /api/auth/logout",
+		"GET /api/auth/me",
 		"GET /api/auth/spotify/callback",
 		"POST /api/auth/spotify/spdc",
 		"POST /api/acquire",

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,8 @@ func TestAuthMe_ReturnsPrincipalWithoutSecrets(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	require.Equal(t, "lifecycle@example.com", body["email"])
 	require.Equal(t, "admin", body["role"])
+	require.Equal(t, float64(session.UserID), body["id"])
+	require.NotEmpty(t, body["expires_at"])
 	require.NotContains(t, body, "PasswordHash")
 	require.NotContains(t, body, "SessionID")
 	require.NotContains(t, body, "password")
@@ -53,6 +56,10 @@ func TestAuthMe_RejectsMissingSession(t *testing.T) {
 	resp, err := app.Test(httptest.NewRequest("GET", "/api/auth/me", nil))
 	require.NoError(t, err)
 	require.Equal(t, 401, resp.StatusCode)
+	var body APIError
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Equal(t, "not authenticated", body.Error)
+	require.Equal(t, "unauthorized", body.Code)
 }
 
 func TestAuthLifecycle_LogoutRevokesSession(t *testing.T) {
@@ -62,9 +69,15 @@ func TestAuthLifecycle_LogoutRevokesSession(t *testing.T) {
 	resp, err := app.Test(logout)
 	require.NoError(t, err)
 	require.Equal(t, 200, resp.StatusCode)
+	require.Contains(t, strings.Join(resp.Header.Values("Set-Cookie"), ";"), SessionCookie+"=")
 	me := httptest.NewRequest("GET", "/api/auth/me", nil)
 	me.AddCookie(&http.Cookie{Name: SessionCookie, Value: session.SessionID})
 	resp, err = app.Test(me)
+	require.NoError(t, err)
+	require.Equal(t, 401, resp.StatusCode)
+	protected := httptest.NewRequest("GET", "/api/protected", nil)
+	protected.AddCookie(&http.Cookie{Name: SessionCookie, Value: session.SessionID})
+	resp, err = app.Test(protected)
 	require.NoError(t, err)
 	require.Equal(t, 401, resp.StatusCode)
 }
@@ -89,4 +102,29 @@ func TestAuthLifecycle_ConcurrentSessionsRemainIndependent(t *testing.T) {
 	resp, err := app.Test(me)
 	require.NoError(t, err)
 	require.Equal(t, 200, resp.StatusCode)
+	protected := httptest.NewRequest("GET", "/api/protected", nil)
+	protected.AddCookie(&http.Cookie{Name: SessionCookie, Value: second.SessionID})
+	resp, err = app.Test(protected)
+	require.NoError(t, err)
+	require.Equal(t, 204, resp.StatusCode)
+}
+
+func TestAuthLogin_SessionCookieSecurityAttributes(t *testing.T) {
+	db := setupInMemoryDB(t)
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-horse-battery-staple"), bcrypt.MinCost)
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&database.User{Email: "login@example.com", PasswordHash: string(hash), Role: "user"}).Error)
+	app := fiber.New()
+	app.Post("/api/auth/login", NewAuthHandler(db).Login)
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(`{"email":"login@example.com","password":"correct-horse-battery-staple"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+	cookie := strings.Join(resp.Header.Values("Set-Cookie"), ";")
+	require.Contains(t, cookie, SessionCookie+"=")
+	require.Contains(t, cookie, "HttpOnly")
+	require.Contains(t, cookie, "SameSite=Strict")
+	require.Contains(t, cookie, "expires=")
 }
