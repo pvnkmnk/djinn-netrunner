@@ -101,6 +101,53 @@ func TestPlaylistHandler_List_Unauthenticated(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
+func TestPlaylistHandler_List_BoundedPagination(t *testing.T) {
+	db := setupPlaylistTestDB(t)
+	user := createTestUser(t, db, "paged@example.com", "user")
+	createTestPlaylist(t, db, user.ID, "first")
+	createTestPlaylist(t, db, user.ID, "second")
+	createTestPlaylist(t, db, user.ID, "third")
+
+	app := fiber.New()
+	handler := NewPlaylistHandler(db)
+	app.Get("/api/playlists", func(c fiber.Ctx) error {
+		withAuthUser(c, user)
+		return handler.List(c)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/playlists?page=2&limit=2", nil))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/json; charset=utf-8", resp.Header.Get("Content-Type"))
+
+	var playlists []database.Playlist
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&playlists))
+	assert.Len(t, playlists, 1)
+}
+
+func TestPlaylistHandler_List_InvalidPaginationUsesAPIError(t *testing.T) {
+	db := setupPlaylistTestDB(t)
+	user := createTestUser(t, db, "invalid-page@example.com", "user")
+
+	app := fiber.New()
+	handler := NewPlaylistHandler(db)
+	app.Get("/api/playlists", func(c fiber.Ctx) error {
+		withAuthUser(c, user)
+		return handler.List(c)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/playlists?limit=101", nil))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	var body APIError
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "invalid_pagination", body.Code)
+	assert.Equal(t, "invalid pagination", body.Error)
+}
+
 func TestPlaylistHandler_Get_Unauthenticated(t *testing.T) {
 	db := setupPlaylistTestDB(t)
 	app := fiber.New()

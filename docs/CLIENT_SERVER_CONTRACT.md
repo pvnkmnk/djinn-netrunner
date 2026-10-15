@@ -101,6 +101,13 @@ must be added there before being treated as part of the versioned client
 contract; existing HTML/HTMX, CLI and MCP consumers remain supported while the
 catalogue expands.
 
+Management list endpoints use bounded offset pagination when they expose
+`page` and `limit`: page numbers start at 1, the default page size is 50, and
+the maximum page size is 100. Invalid or oversized values return the shared
+`invalid_pagination` JSON error. Resource identifiers remain opaque UUID strings
+or positive decimal job IDs according to the route; clients must not infer one
+identifier format from another.
+
 ## Authentication and authorization
 
 ### Subsonic clients

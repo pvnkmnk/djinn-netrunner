@@ -56,5 +56,5 @@ func requirePartialUser(c fiber.Ctx) (database.User, bool, error) {
 // The actual error detail is never sent to the client — only logged server-side.
 func internalServerError(c fiber.Ctx, err error) error {
 	slog.Error("Internal server error", "error", err)
-	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
+	return writeAPIError(c, fiber.StatusInternalServerError, "internal_error", "internal server error")
 }

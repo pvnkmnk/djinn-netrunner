@@ -388,6 +388,19 @@ components:
         CreatedAt:
           type: string
           format: date-time
+    Pagination:
+      type: object
+      required: [page, limit]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          default: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
         UpdatedAt:
           type: string
           format: date-time
