@@ -22,11 +22,15 @@ func NewPlaylistHandler(db *gorm.DB) *PlaylistHandler {
 func (h *PlaylistHandler) List(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
 	}
 
 	var playlists []database.Playlist
-	query := h.db.Select(playlistListColumns).Order("created_at DESC")
+	pagination, err := parsePagination(c)
+	if err != nil {
+		return writeAPIError(c, fiber.StatusBadRequest, "invalid_pagination", "invalid pagination")
+	}
+	query := h.db.Select(playlistListColumns).Order("created_at DESC").Limit(pagination.Limit).Offset(pagination.Offset)
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -42,12 +46,12 @@ func (h *PlaylistHandler) List(c fiber.Ctx) error {
 func (h *PlaylistHandler) Get(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
 	}
 
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid playlist ID"})
+		return writeAPIError(c, fiber.StatusBadRequest, "invalid_identifier", "invalid playlist ID")
 	}
 
 	var playlist database.Playlist
@@ -58,7 +62,7 @@ func (h *PlaylistHandler) Get(c fiber.Ctx) error {
 
 	if err := query.First(&playlist).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return c.Status(404).JSON(fiber.Map{"error": "playlist not found"})
+			return writeAPIError(c, fiber.StatusNotFound, "not_found", "playlist not found")
 		}
 		return internalServerError(c, err)
 	}
@@ -87,7 +91,7 @@ func (h *PlaylistHandler) Get(c fiber.Ctx) error {
 func (h *PlaylistHandler) Create(c fiber.Ctx) error {
 	user, ok := currentUserFromLocals(c)
 	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
 	}
 
 	var input struct {
