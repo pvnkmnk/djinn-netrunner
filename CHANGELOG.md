@@ -88,6 +88,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **Pressing Pause did not pause, and the only control that could turn monitoring
+  off sent nothing at all.** The card's Pause/Resume button carried no `hx-vals`
+  and no `hx-include`, so htmx sent an empty body; `PATCH /api/artists/:id` parsed
+  `monitored` as nil, skipped the write, reloaded the row and rendered it back --
+  a 200 that swapped the card for itself, leaving the artist monitored and the
+  label still reading "Pause". The route was covered and the control was not:
+  every Go test hands it a body it wrote itself, and no spec had ever clicked it.
+  It now declares the ABSOLUTE state to move to (`hx-vals='{"monitored":
+  "false"}'`, because the route sets rather than toggles), as a plain JSON
+  object -- the values-expression form htmx compiles with eval throws at the
+  click under this app's `script-src 'self'` and issues no request at all. Held
+  from both ends, because the failure was that nobody pressed the thing:
+  `e2e/tests/artist-monitor-toggle.spec.ts` clicks it and asserts the PATCH body,
+  the returned card, the monitored set `GET /api/artists` serves, and that a
+  bystander card is untouched; `internal/api/artist_card_toggle_test.go` reads the
+  value out of the rendered markup and issues that request against the real
+  handler, in both directions (DJI-640).
 - **A deployment could carry two spellings of the monitor-EPs column, and the one
   the operator read was the stale one.** `MonitorEPs` carried no `column:` tag,
   so GORM derived `monitor_e_ps` while the SQL bootstrap creates `monitor_eps`: a
