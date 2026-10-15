@@ -143,6 +143,23 @@ HTMX partials and `/api/*` groups require a valid `session_id` cookie. Roles are
 checked at the handler/service boundary; `admin` grants administrative actions,
 while ordinary users remain owner-scoped.
 
+`POST /api/auth/register` and `POST /api/auth/login` establish a server-side
+session and issue the HttpOnly, SameSite=Strict `session_id` cookie (login is
+also allowed to return the browser redirect form). `GET /api/auth/me` is the
+management identity probe: with a live session it returns `id`, `email`, `role`
+and `expires_at`, and never returns a password hash, raw session id, or device
+token. Missing, expired, revoked, or disabled sessions return the standard
+management JSON error (`401 {"error":"not authenticated"}`).
+
+`POST /api/auth/logout` revokes only the presented session in the database and
+clears the cookie. Reusing that cookie then fails for identity, management,
+media, and websocket requests; other concurrent sessions remain independent.
+Session expiry is server-enforced on every request. There is no separate device
+token or API-key management authentication surface; clients must use the
+session-cookie lifecycle. The readable `csrf_` cookie and `X-CSRF-Token` header
+remain required for browser/API mutations, while GET identity is not a CSRF
+mutation.
+
 Mutating browser/API requests use the double-submit CSRF contract: the readable
 `csrf_` cookie is echoed in `X-CSRF-Token`. A management client should obtain a
 fresh CSRF token and send it with every deliberate mutation. Subsonic requests

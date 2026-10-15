@@ -327,6 +327,26 @@ func (h *AuthHandler) AuthMiddleware(c fiber.Ctx) error {
 	return c.Next()
 }
 
+// Me returns the authenticated management principal and the expiry of the
+// session presented in the session cookie. Credentials and session material
+// are deliberately not part of this response.
+func (h *AuthHandler) Me(c fiber.Ctx) error {
+	user, ok := currentUserFromLocals(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
+	}
+	var session database.Session
+	if err := h.db.Where("session_id = ? AND user_id = ?", c.Cookies(SessionCookie), user.ID).First(&session).Error; err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "not authenticated"})
+	}
+	return c.JSON(fiber.Map{
+		"id":         user.ID,
+		"email":      user.Email,
+		"role":       user.Role,
+		"expires_at": session.ExpiresAt,
+	})
+}
+
 // authenticatedUser resolves a live session to an enabled principal. A
 // disabled account invalidates all of its sessions without requiring a
 // cleanup sweep, so every request observes the account state immediately.

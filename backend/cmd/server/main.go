@@ -305,6 +305,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	authRoutes.Post("/register", authLimiter, auth.Register)
 	authRoutes.Post("/login", authLimiter, auth.Login)
 	authRoutes.Post("/logout", auth.Logout)
+	authRoutes.Get("/me", auth.AuthMiddleware, auth.Me)
 
 	// Spotify Auth (OAuth Callback is public, but redirected to with user session)
 	authRoutes.Get("/spotify/login", auth.AuthMiddleware, spotifyAuth.Login)

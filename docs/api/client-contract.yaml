@@ -92,6 +92,22 @@ paths:
                 $ref: '#/components/schemas/StatusResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/auth/me:
+    get:
+      tags: [authentication]
+      summary: Return the authenticated management principal
+      operationId: getCurrentPrincipal
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Identity and server-enforced session expiry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthMeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/playlists:
     get:
       tags: [playlists]
@@ -321,6 +337,22 @@ components:
         status:
           type: string
           enum: [ok, created, updated, deleted]
+    AuthMeResponse:
+      type: object
+      required: [id, email, role, expires_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, admin]
+        expires_at:
+          type: string
+          format: date-time
     HealthCheck:
       type: object
       required: [status]
