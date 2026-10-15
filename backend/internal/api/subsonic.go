@@ -1622,8 +1622,11 @@ func (h *SubsonicHandler) GetPlaylist(c fiber.Ctx) error {
 	}
 
 	// Get ordered tracks
+	// Bolt Optimization: Preload track with targeted column selection to avoid loading large unused fields (e.g. enrichment_provenance, fingerprint)
 	var playlistTracks []database.PlaylistTrack
-	h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track").Find(&playlistTracks)
+	h.db.Where("playlist_id = ?", playlist.ID).Order("position ASC").Preload("Track", func(db *gorm.DB) *gorm.DB {
+		return db.Select(trackBrowseColumns + ", cover_url")
+	}).Find(&playlistTracks)
 
 	var ownerName string
 	if playlist.OwnerUserID != nil {
