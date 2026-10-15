@@ -53,3 +53,7 @@
 ## 2026-08-15 - Consolidate N+1 queries in Subsonic GetPlaylists
 **Learning:** `SubsonicHandler.GetPlaylists` executed two queries inside a loop for every playlist: one `COUNT(*)` for playlist tracks and one `SELECT` for owner user email. For 50 playlists, this caused 101 database queries per request.
 **Action:** Replaced loop queries with batching: a single `GROUP BY playlist_id` query to fetch track counts for all playlists, and a single `id IN (?)` query to fetch owner user emails. This reduced database roundtrips from 2N+1 down to at most 3.
+
+## 2026-10-08 - Eliminate N+1 queries in Subsonic getAlbumDuration and batch playlist creation
+**Learning:** `SubsonicHandler.getAlbumDuration` was performing a full `SELECT * FROM tracks JOIN libraries` query for every album in `artistAlbums` and `Search3`. Since `getTrackDuration` currently returns 0, this executed N database roundtrips per request returning full track structs just to compute 0. Additionally, `CreatePlaylist` was performing individual `Create` calls in a loop for every track ID in the playlist.
+**Action:** Replaced `getAlbumDuration` implementation to return 0 directly without database I/O, reducing `artistAlbums` and `Search3` queries from N+1 down to 1. In `CreatePlaylist`, batched track insertions with `h.db.Create(&playlistTracks)` to reduce database roundtrips from N to 1.
