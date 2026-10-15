@@ -27,7 +27,26 @@
                 aria-label="Re-point {{ Artist.Name }} at a different artist">
             Re-point
         </button>
-        <button class="btn btn-sm" hx-patch="/api/artists/{{ Artist.ID }}" hx-target="#artist-{{ Artist.ID }}" hx-swap="outerHTML" aria-label="{% if Artist.Monitored %}Pause monitoring for {{ Artist.Name }}{% else %}Resume monitoring for {{ Artist.Name }}{% endif %}">
+        <!-- Pause/Resume carries the state it wants in hx-vals: a plain JSON
+             object, never the values-expression form that htmx compiles with
+             eval. This app serves script-src 'self', so an expression throws at
+             the click and issues NO request at all. Until DJI-640 item 2 this
+             button carried no values, so htmx sent an empty body, Update parsed
+             `monitored` as nil, skipped the write and re-rendered the same card:
+             Pause left the artist monitored while the label still read "Pause",
+             and nothing caught it because every Go test hands that route a body
+             it wrote itself. The value is the ABSOLUTE state to move to, not a
+             toggle, which is what the route does; partials/admin_users.html's
+             role control is the same shape. Two guards read this:
+             e2e/tests/artist-monitor-toggle.spec.ts presses the control, and
+             artist_card_toggle_test.go reads the value out of the rendered
+             markup and issues it. -->
+        <button class="btn btn-sm"
+                hx-patch="/api/artists/{{ Artist.ID }}"
+                hx-vals='{"monitored": "{% if Artist.Monitored %}false{% else %}true{% endif %}"}'
+                hx-target="#artist-{{ Artist.ID }}"
+                hx-swap="outerHTML"
+                aria-label="{% if Artist.Monitored %}Pause monitoring for {{ Artist.Name }}{% else %}Resume monitoring for {{ Artist.Name }}{% endif %}">
             {% if Artist.Monitored %}Pause{% else %}Resume{% endif %}
         </button>
         <button class="btn btn-sm btn-danger" hx-delete="/api/artists/{{ Artist.ID }}" hx-target="#artist-{{ Artist.ID }}" hx-swap="outerHTML" hx-confirm="Are you sure you want to remove {{ Artist.Name }}?" aria-label="Remove {{ Artist.Name }} from monitoring">
