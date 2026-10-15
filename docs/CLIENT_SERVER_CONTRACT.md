@@ -120,9 +120,19 @@ address. A client authenticates with one of these forms:
 - shared-password token authentication: `u`, `t` and `s`, where `t` is the
   lowercase hexadecimal MD5 of `SUBSONIC_PASSWORD + s`.
 
+Exactly one mode is required: `p` cannot be combined with `t` or `s`, and
+token mode requires both `t` and `s`. Malformed digests, missing credentials,
+invalid credentials, disabled accounts, and expired credentials all fail with
+protocol status `failed`, error code `40`, and HTTP 200. These rules apply to
+both GET query parameters and POST form parameters; parameters are never
+combined across locations. Authentication diagnostics contain no username,
+password, token, salt, or shared-secret values.
+
 Token authentication is refused when `SUBSONIC_PASSWORD` is not configured;
 accepting `md5(s)` in that case would allow anyone to forge a valid token.
 Account-password authentication remains available without the shared password.
+The management API key (`SLSKD_API_KEY`) is unrelated to Subsonic auth and is
+never accepted as a Subsonic credential or exposed in protocol responses.
 Subsonic authentication failures are returned in the protocol response envelope
 with status `failed` and error code `40`, rather than as an HTML login page.
 
