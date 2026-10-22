@@ -7,7 +7,7 @@
 > comments, which `scripts/linear.py` cannot); secret-scan findings recorded and
 > triaged; no gofmt gate means committed violations are possible; the P-DJI-29
 > wave order now runs NR01-NR28.
-> Refreshed 2026-10-14: the toolchain is Go 1.27.2 on Fiber v3 and
+> Refreshed 2026-10-14: the toolchain is Go 1.27.3 on Fiber v3 and
 > `govulncheck` is pinned at v1.8.0; the Postgres gate is 24 required tests;
 > the migrator installs the NOTIFY sender, the console attaches to a picked
 > job, and a schedule names a job type and a library scope; a
@@ -577,8 +577,8 @@ otherwise-good change are the thing to flag before anything else.
 
 ### Go toolchain & dependencies
 
-- CI pins `go 1.27.2` (setup-go) and the Docker builder
-  (`golang:1.27.2-alpine`) agree, `backend/go.mod` is
+- CI pins `go 1.27.3` (setup-go) and the Docker builder
+  (`golang:1.27.3-alpine`) agree, `backend/go.mod` is
   `go 1.27.0`, and the framework is **Fiber v3**
   (`github.com/gofiber/fiber/v3 v3.5.0`) — the v2→v3 move is what put
   `c.Scheme()` and `middleware/static` + the `adaptor` package in
@@ -598,9 +598,8 @@ otherwise-good change are the thing to flag before anything else.
     https://sum.golang.org/lookup/...: 404 Not Found`, exit 1) in the
     *Vulnerability scan* step — nothing was scanned and nothing in the diff
     was involved (E2E and Integration were green on the same commit).
-  * On Go **1.27.0** the scan reported 11 stdlib findings whose fix is
-    **go1.27.2** (`net/http`, `net/http/internal/http2`, `html/template`,
-    `crypto/tls`, `net/textproto`); the 1.27.2 pin clears them. The
+  * On Go **1.27.2** the scan reported stdlib findings whose fix is
+    **go1.27.3** (`crypto/x509`); the 1.27.3 pin clears them. The
     `go-version` pin must be >= the newest `Fixed in: go1.x.y` the scan
     reports for the standard library, or the job fails on findings the
     toolchain itself carries.
