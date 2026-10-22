@@ -39,6 +39,19 @@ func setupAdminPageApp(t *testing.T, db *gorm.DB) *fiber.App {
 	return app
 }
 
+func TestAdminRenderConfigEditPartial_EscapesHTMXAttributes(t *testing.T) {
+	db := setupAdminTestDB(t)
+	keyWithQuotes := `special'key"with<script>`
+	db.Create(&database.Setting{Key: keyWithQuotes, Value: "testvalue"})
+
+	app := setupAdminPageApp(t, db)
+	body := getBody(t, app, "/partials/admin/config-edit?key=special'key%22with%3Cscript%3E")
+
+	// Single quote in key must be escaped to &#39; so it does not break out of hx-vals='...'
+	assert.Contains(t, body, `hx-vals='{"key": &#34;special&#39;key\&#34;with\u003cscript\u003e&#34;}'`)
+	assert.NotContains(t, body, `hx-vals='{"key": "special'`)
+}
+
 func getBody(t *testing.T, app *fiber.App, path string) string {
 	t.Helper()
 
