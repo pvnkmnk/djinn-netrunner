@@ -305,7 +305,8 @@ func (h *WatchlistHandler) GetForm(c fiber.Ctx) error {
 	}
 
 	var profiles []database.QualityProfile
-	query := h.db.Order("name")
+	// Bolt Optimization: Select only necessary columns for the dropdown.
+	query := h.db.Select("id, name").Order("name")
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ? OR owner_user_id IS NULL OR is_default = ?", user.ID, true)
 	}
@@ -374,7 +375,7 @@ func watchlistsRegionContext(db *gorm.DB, user database.User) fiber.Map {
 	// Check if user has linked Spotify sp_dc cookie
 	var spDcLinked bool
 	var spotifyToken database.SpotifyToken
-	if err := db.Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
+	if err := db.Select("sp_dc_cookie").Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
 		spDcLinked = spotifyToken.SpDcCookie != ""
 	}
 	ctx["spDcLinked"] = spDcLinked
