@@ -106,9 +106,15 @@ func TestPlaylistHandler_List_Unauthenticated(t *testing.T) {
 func TestPlaylistHandler_List_BoundedPagination(t *testing.T) {
 	db := setupPlaylistTestDB(t)
 	user := createTestUser(t, db, "paged@example.com", "user")
-	createTestPlaylist(t, db, user.ID, "first")
-	createTestPlaylist(t, db, user.ID, "second")
-	createTestPlaylist(t, db, user.ID, "third")
+	// Pin created_at instead of trusting time.Now(): three rows written in the
+	// same clock tick tie, and the id DESC tiebreak then decides the page
+	// boundary, so the expectation below would fail at random.
+	created := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for i, name := range []string{"first", "second", "third"} {
+		playlist := createTestPlaylist(t, db, user.ID, name)
+		require.NoError(t, db.Model(&database.Playlist{}).Where("id = ?", playlist.ID).
+			Update("created_at", created.Add(time.Duration(i)*time.Minute)).Error)
+	}
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
