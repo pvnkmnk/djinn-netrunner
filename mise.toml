@@ -1,0 +1,62 @@
+# djinn-netrunner -- mise en place for this checkout.
+#
+# Scope discipline: this file *declares* the surface the repo already documents
+# in AGENTS.md. It does not move logic here, and every task is a one-line wrapper
+# around a command that already exists. Nothing in this file is required to build
+# or test the project -- `go test` still works exactly as before.
+#
+# Two conventions worth knowing:
+#
+#   * `go -C backend <cmd>` instead of `cd backend && ...`. The `-C` flag needs no
+#     shell, so the same task text works from PowerShell, Git Bash and WSL.
+#   * Secrets are named here and resolved by fnox, never stored here. `fnox exec
+#     -- mise run <task>` puts them in the environment; the plain task still runs
+#     without them for everything that does not need a secret.
+
+[env]
+ENVIRONMENT = "development"
+CONFIG_ENV = "development"
+PORT = "8080"
+MUSIC_LIBRARY = "./music_library"
+TEMPLATES_PATH = "./ops/web/templates"
+STATIC_FILES_PATH = "./ops/web/static"
+SUBSONIC_ENABLED = "true"
+SLSKD_URL = "http://localhost:5030"
+
+[tools]
+# CI pins 1.27.3 (GO-2026-6809 in crypto/x509); `go.mod`'s `go` directive stays at
+# 1.27.0 on purpose, because raising the directive breaks local builds. The
+# toolchain requirement therefore lives here and in the workflow, not in go.mod.
+go = "1.27.3"
+
+[tasks.vet]
+description = "go vet over the whole module (run before every PR)"
+run = "go -C backend vet ./..."
+
+[tasks.test]
+description = "Core suite: the fast packages CI gates on"
+run = "go -C backend test ./cmd/... ./internal/config ./internal/database ./internal/services ./internal/agent"
+
+[tasks."test:all"]
+description = "Full non-tagged suite"
+run = "go -C backend test ./..."
+
+[tasks.build]
+description = "Build every command binary"
+run = "go -C backend build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent"
+
+[tasks.integration]
+description = "Integration suite (needs its own stack; see scripts/integration-tests.sh)"
+run = "go -C backend test ./internal/integration/... -tags=integration -v"
+
+[tasks.smoke]
+description = "Smoke gate against a running stack"
+run = "bash scripts/smoke.sh"
+
+[tasks.e2e]
+description = "Playwright end-to-end suite (Playwright owns the stack lifecycle)"
+run = "bash scripts/e2e.sh test"
+
+[tasks.validate]
+description = "Repo validation script (PowerShell wrapper on Windows: scripts/validate.ps1)"
+run = "bash scripts/validate.sh"

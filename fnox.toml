@@ -1,0 +1,23 @@
+# Committed by design: this file holds ciphertext only. The identity that
+# decrypts it is not in the repo.
+#
+# Run tasks that need these with `fnox exec -- mise run <task>`. mise's own
+# [env] block deliberately holds no secret values, and `.env` stays gitignored
+# and is materialised on demand, never committed.
+#
+# Deliberately absent:
+#   * DATABASE_URL -- mode-dependent (a Postgres URL under compose, `netrunner.db`
+#     for the single-binary dev server), so it belongs to the deploy path rather
+#     than to a secret store that would silently pick one.
+#   * SLSKD_USERNAME / SLSKD_PASSWORD -- the real Soulseek account, which no
+#     generator can invent. Acquisition-only; everything else runs without it.
+
+[providers.age]
+type = "age"
+recipients = ["age1846shjkjn76w4fy9azpq55jpfeu4un9jl7q4rj9a42fl37tpm3ss0j2c6y"]
+
+[secrets]
+JWT_SECRET= { provider = "age", value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA1Um9NVVhPWm16S0hBSnJPK0pybitpRWppSUxNUW5Lc01mcHFlVFRlUW40CmpGYjNaV29mcTRDMlk3L0d0UzZNQmh0SENKeFgzN045NE5SZGlMODRoejQKLT4gIy1ncmVhc2UgQFA0VXt6IGJnfGUgaF5XIDF8OmdAX1MKCi0tLSBvNXh1OGxmOFJHVExMVTBudHhkcTZNcVE0c2VVaUkwNHFOY1ZneStrSXJFCvqduvLCPaeGKeaKkrtcoZfHqqLqXsdOEiUzdySLiu5urLVnY7eGojtLSeHVCTPVwSJeG8zjkZzVkAaP1mdYOgSMp4ZHMd+SAILFQDk3RfgmX/2EjcbbMrtnkKsQXJ0L6Q==", description = "generated for the dev slice 2026-10-29" }
+SUBSONIC_PASSWORD= { provider = "age", value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBJTC9hKzRFdThtMDhhQWxwS1NhallHV2NCNHFiaGNvLzl5NDBNUUY5WnlvClpmMndKeXg0a3ZvK3RHSGlzWExOZFdvWEsrS0hvRUptR2xObVRhbVh0M1EKLT4gb2NOJ3xhLWdyZWFzZSB9MXlsIkggeGBZSCkoZgpGaU4xQkN4aTVpSlMvZndaQ2pqd1BiVWwzZlZWaGE1RGJaawotLS0geXZwUnZ6dUpURDhZWVg2c2tHNzl0TmdSSHpYR2ltQWdIZ1NDZmlGSjBVTQrUh+Fe/Jkp7Boc3XxmbMB1NAx3h/y53hBfS2DncxQe/2VEs18Ug1q+MVSfcnwNgOfj8CS/whEvSjVkrzNt3d8aBrVeYSyV8ODv7sHudonhxahSIb4uh0wb8Ex/tEKkXy0=", description = "generated for the dev slice 2026-10-29" }
+SLSKD_API_KEY= { provider = "age", value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxM1A0V0duNXF5bFdoRkoyeGp0MnVPYjA0RzgrQmZHaDJhdVJSSUI1THdzCmwrWGpoVnBrTjdXalBPU21kTTllWUhnYTFYUWt2bEdMVVVSMnplc2Z5a1UKLT4gXls9eG1PLWdyZWFzZSA4VG8pCmNGK3R5YTd6VFpGY0Q3WDFubkJBT0t2b21LQ2hDanpwMkRJTldWMTZnTWFYVUd4MmlKVzRFY3FRRWVPNTU3Ni8KL3U3ZnlrczUybWY0Ci0tLSBtcHVXdXBWb29EV0RUcER3aHBkb21ZVUF3aVZhSkxxcU5Nc2IrSkVzclFRCnd7YWrlB7CgqHJTV7zJRz2vQ38e7F+rD3w9ljbgETdFY4dxQY9K0L8Z0Snh/vrN0y13RwkmeG3DAyc4k8Dewy9SWX0LmnMXKTmgC+guVR1BxWzzfeV1XqJUJY3YaKRQbQ==", description = "generated for the dev slice 2026-10-29" }
+POSTGRES_PASSWORD= { provider = "age", value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBKTEFLTGJWbHRhUHFEZkhGeUlOQUpkZWhWR1FqaU9pN0xIbXhUUmgvd0Z3CjQ5M3lyd3pQRk9xRGE2cjdoM2VqcWZocEhDL3MrTTRIRlNrWHZtbnJIVWsKLT4gO1tER3JZSy1ncmVhc2UgK1FmTncKT3B0RXpkYTBWWlBkMEI3aWVvMGh6Ukxsd2tiNzlPK3RnM04xeFZIYkxCNjAybGZWdTdtTnorSlk2cjUybWF5aQp5MzZVa1dqbjlrblo2L3dRaGduK3RtNTlxZXdQNDluMzJZRVJGSjlmOW4vN3Q4UGkwcEdMb1E4OUpBdTRxMW8KLS0tIHFJYVIyUnNmYkpBRzA1QU84dGNkK0lPR3pFc3lwamxuUjZJcHMxdWg1aVEKcFTuXSeIPyC6wzNMIyRdGJ2cJ7vkv7iaG20GPRhhHnPXgiz2e7C6OIP9fWE2Q+QfUyMD7uBQoTIZGxPl+4uHAMLpb3jNl4TZwnvCXtsyRemtHeSuPi4VmiHCvEPseihV", description = "generated for the dev slice 2026-10-29" }
