@@ -99,15 +99,39 @@ paths:
       operationId: listPlaylists
       security:
         - sessionCookie: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: >-
+            1-based page number. Defaults to 1. The resulting offset,
+            (page-1)*limit, must not exceed 10000.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 50, maximum 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
       responses:
         '200':
-          description: Playlist resources, newest first.
+          description: >-
+            Playlist resources, newest first, ordered by created_at
+            descending with the playlist id as a stable tiebreaker.
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/Playlist'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
     post:

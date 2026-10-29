@@ -102,11 +102,17 @@ contract; existing HTML/HTMX, CLI and MCP consumers remain supported while the
 catalogue expands.
 
 Management list endpoints use bounded offset pagination when they expose
-`page` and `limit`: page numbers start at 1, the default page size is 50, and
-the maximum page size is 100. Invalid or oversized values return the shared
-`invalid_pagination` JSON error. Resource identifiers remain opaque UUID strings
-or positive decimal job IDs according to the route; clients must not infer one
-identifier format from another.
+`page` and `limit`: page numbers start at 1, the default page size is 50, the
+maximum page size is 100, and the offset `(page-1)*limit` may not exceed 10000
+-- without that bound a valid page number still forces the database to scan a
+caller's whole collection before returning an empty page. An absent parameter
+takes its default; a present but empty one (`?page=`) is an error, not a
+default. Invalid or oversized values return the shared `invalid_pagination`
+JSON error. Ordering is deterministic: lists sort by `created_at` descending
+with the row id as a tiebreaker, so offset pages neither repeat nor skip rows.
+Resource identifiers remain opaque UUID strings or positive decimal job IDs
+according to the route; clients must not infer one identifier format from
+another.
 
 ## Authentication and authorization
 
