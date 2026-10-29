@@ -11,7 +11,7 @@
         </div>
     </div>
     <div class="actions">
-        <button class="btn btn-sm" hx-patch="/api/schedules/{{ schedule.ID }}/toggle" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML" aria-label="{% if schedule.Enabled %}Disable{% else %}Enable{% endif %} schedule for {{ schedule.TargetLabel }}">
+        <button class="btn btn-sm" hx-patch="/api/schedules/{{ schedule.ID }}/toggle" hx-target="#schedule-{{ schedule.ID }}" hx-swap="outerHTML" hx-disabled-elt="this" aria-label="{% if schedule.Enabled %}Disable{% else %}Enable{% endif %} schedule for {{ schedule.TargetLabel }}">
             {% if schedule.Enabled %}Disable{% else %}Enable{% endif %}
         </button>
         <button class="btn btn-sm" hx-get="/api/schedules/form?id={{ schedule.ID }}" hx-target="#modal-container" hx-swap="innerHTML" aria-label="Edit schedule for {{ schedule.TargetLabel }}">
