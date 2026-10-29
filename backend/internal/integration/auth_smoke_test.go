@@ -173,8 +173,11 @@ func TestSmoke_Auth_IdentityAndRevocation(t *testing.T) {
 	if err := json.Unmarshal(raw, &identity); err != nil {
 		t.Fatalf("identity body is not JSON: %v — %s", err, string(raw))
 	}
-	if identity.Email != email {
-		t.Fatalf("identity email = %q, want %q", identity.Email, email)
+	// Registration normalises the address to lower case, so the identity
+	// surface returns the stored form; comparing against `email` verbatim
+	// failed only because t.Name() carries capitals.
+	if want := strings.ToLower(email); identity.Email != want {
+		t.Fatalf("identity email = %q, want %q", identity.Email, want)
 	}
 	if identity.ID == 0 || identity.Role == "" || identity.ExpiresAt == "" {
 		t.Fatalf("identity is missing stable fields: %s", string(raw))
