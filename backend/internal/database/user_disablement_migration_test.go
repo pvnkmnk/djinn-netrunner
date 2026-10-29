@@ -18,6 +18,16 @@ func TestUserDisablementMigration_Postgres(t *testing.T) {
 		t.Skip("users does not exist in this database")
 	}
 
+	// Postgres DDL is transactional, so running the drop inside a transaction
+	// that is rolled back returns the column *and its stored values*. The
+	// column holds the only record that an account is disabled: re-adding it
+	// outside the transaction leaves those rows NULL, which silently re-enables
+	// every disabled account in the target database.
+	tx := db.Begin()
+	require.NoError(t, tx.Error)
+	t.Cleanup(func() { tx.Rollback() })
+	db = tx
+
 	require.NoError(t, db.Exec("ALTER TABLE users DROP COLUMN IF EXISTS disabled_at").Error)
 	require.False(t, db.Migrator().HasColumn("users", "disabled_at"))
 	require.NoError(t, db.AutoMigrate(&User{}))

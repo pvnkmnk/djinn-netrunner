@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/mail"
 	"strings"
@@ -336,8 +337,16 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
 	}
 	var session database.Session
-	if err := h.db.Where("session_id = ? AND user_id = ? AND expires_at > ?", c.Cookies(SessionCookie), user.ID, time.Now()).First(&session).Error; err != nil {
+	err := h.db.Where("session_id = ? AND user_id = ? AND expires_at > ?", c.Cookies(SessionCookie), user.ID, time.Now()).First(&session).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
+	}
+	if err != nil {
+		// A connection or query fault is not a signed-out session: a 401 here
+		// tells a contract-following client to log in again while the account
+		// is fine and the database is not.
+		slog.Error("auth me: session lookup failed", "error", err)
+		return writeAPIError(c, fiber.StatusInternalServerError, "internal_error", "session lookup failed")
 	}
 	return c.JSON(fiber.Map{
 		"id":         user.ID,

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -224,4 +225,55 @@ func TestSubsonicAuth_CredentialParameters_GetAndPost(t *testing.T) {
 			assert.Contains(t, getBody, tt.wantText)
 		})
 	}
+}
+
+// TestSubsonic_GetSong_FormBodyMatchesQueryString pins the endpoint half of the
+// GET/POST parity: POST registers the same handler as GET, so any parameter the
+// handler reads only from the query string still authenticates and then fails
+// with "Missing parameter" - a 200 envelope that looks like a client bug.
+func TestSubsonic_GetSong_FormBodyMatchesQueryString(t *testing.T) {
+	db := setupSubsonicTestDB(t)
+	user := createTestUserForSubsonic(t, db, "formsong@example.com", "accountpass123")
+
+	library := database.Library{
+		ID:          uuid.New(),
+		Name:        "Form Library",
+		Path:        "/tmp/form-library",
+		OwnerUserID: &user.ID,
+	}
+	require.NoError(t, db.Create(&library).Error)
+	track := database.Track{
+		ID:        uuid.New(),
+		LibraryID: library.ID,
+		Title:     "Form Song",
+		Artist:    "Form Artist",
+		Album:     "Form Album",
+		Path:      "/tmp/form-library/form.mp3",
+		Format:    "MP3",
+		FileSize:  1024,
+	}
+	require.NoError(t, db.Create(&track).Error)
+
+	handler := newSubsonicLifecycleHandler(db, subsonicLifecycleSharedPassword)
+	app := fiber.New()
+	app.Get("/getSong.view", handler.AuthMiddleware, handler.GetSong)
+	app.Post("/getSong.view", handler.AuthMiddleware, handler.GetSong)
+
+	values := url.Values{
+		"u":  {"formsong@example.com"},
+		"p":  {"accountpass123"},
+		"id": {track.ID.String()},
+	}
+	getResp, err := app.Test(httptest.NewRequest("GET", "/getSong.view?"+values.Encode(), nil))
+	require.NoError(t, err)
+	getBody := string(subsonicGetRespBody(getResp))
+
+	form := httptest.NewRequest("POST", "/getSong.view", strings.NewReader(values.Encode()))
+	form.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postResp, err := app.Test(form)
+	require.NoError(t, err)
+	postBody := string(subsonicGetRespBody(postResp))
+
+	assert.Equal(t, getBody, postBody, "a form POST must return the same song as the GET form")
+	assert.Contains(t, getBody, `title="Form Song"`)
 }
