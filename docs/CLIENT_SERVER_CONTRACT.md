@@ -126,9 +126,19 @@ address. A client authenticates with one of these forms:
 - shared-password token authentication: `u`, `t` and `s`, where `t` is the
   lowercase hexadecimal MD5 of `SUBSONIC_PASSWORD + s`.
 
+Exactly one mode is required: `p` cannot be combined with `t` or `s`, and
+token mode requires both `t` and `s`. Malformed digests, missing credentials,
+invalid credentials, disabled accounts, and expired credentials all fail with
+protocol status `failed`, error code `40`, and HTTP 200. These rules apply to
+both GET query parameters and POST form parameters; parameters are never
+combined across locations. Authentication diagnostics contain no username,
+password, token, salt, or shared-secret values.
+
 Token authentication is refused when `SUBSONIC_PASSWORD` is not configured;
 accepting `md5(s)` in that case would allow anyone to forge a valid token.
 Account-password authentication remains available without the shared password.
+The management API key (`SLSKD_API_KEY`) is unrelated to Subsonic auth and is
+never accepted as a Subsonic credential or exposed in protocol responses.
 Subsonic authentication failures are returned in the protocol response envelope
 with status `failed` and error code `40`, rather than as an HTML login page.
 
@@ -148,6 +158,24 @@ The management surface uses session-cookie authentication. Protected pages,
 HTMX partials and `/api/*` groups require a valid `session_id` cookie. Roles are
 checked at the handler/service boundary; `admin` grants administrative actions,
 while ordinary users remain owner-scoped.
+
+`POST /api/auth/register` creates an account and does not issue a session.
+The client then uses `POST /api/auth/login` to establish a server-side
+session and issue the HttpOnly, SameSite=Strict `session_id` cookie (login is
+also allowed to return the browser redirect form). `GET /api/auth/me` is the
+management identity probe: with a live session it returns `id`, `email`, `role`
+and `expires_at`, and never returns a password hash, raw session id, or device
+token. Missing, expired, revoked, or disabled sessions return the standard
+management JSON error (`401 {"error":"not authenticated"}`).
+
+`POST /api/auth/logout` revokes only the presented session in the database and
+clears the cookie. Reusing that cookie then fails for identity, management,
+media, and websocket requests; other concurrent sessions remain independent.
+Session expiry is server-enforced on every request. There is no separate device
+token or API-key management authentication surface; clients must use the
+session-cookie lifecycle. The readable `csrf_` cookie and `X-CSRF-Token` header
+remain required for browser/API mutations, while GET identity is not a CSRF
+mutation.
 
 Mutating browser/API requests use the double-submit CSRF contract: the readable
 `csrf_` cookie is echoed in `X-CSRF-Token`. A management client should obtain a

@@ -5,7 +5,11 @@ info:
   description: >-
     The additive, session-authenticated management contract for an existing
     NETRUNNER appliance. Subsonic/OpenSubsonic /rest endpoints are a separate
-    protocol surface and are specified by docs/OPENSUBSONIC_COVERAGE.md.
+    protocol surface and are specified by docs/OPENSUBSONIC_COVERAGE.md. Its
+    supported authentication modes are exactly account password (u+p) or
+    configured shared token (u+t+s, double-MD5); conflicts, malformed or
+    disabled credentials return the HTTP-200 Subsonic code-40 envelope. The
+    management SLSKD_API_KEY is not a Subsonic credential and is never exposed.
 servers:
   - url: /
 tags:
@@ -90,6 +94,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/me:
+    get:
+      tags: [authentication]
+      summary: Return the authenticated management principal
+      operationId: getCurrentPrincipal
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Identity and server-enforced session expiry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthMeResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /api/playlists:
@@ -345,6 +365,22 @@ components:
         status:
           type: string
           enum: [ok, created, updated, deleted]
+    AuthMeResponse:
+      type: object
+      required: [id, email, role, expires_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, admin]
+        expires_at:
+          type: string
+          format: date-time
     HealthCheck:
       type: object
       required: [status]

@@ -913,3 +913,49 @@ test.describe('Auth & Navigation (DJI-423)', () => {
     });
   });
 });
+
+// NR03 closes the management authentication lifecycle. These tests exercise the
+// identity surface through a real browser session (cookie + CSRF round trip),
+// which the headless handler tests cannot cover.
+test.describe('Session lifecycle (NR03)', () => {
+  test('identity endpoint returns the principal without secret material', async ({ authenticatedPage }) => {
+    const response = await authenticatedPage.request.get('/api/auth/me');
+    expect(response.status()).toBe(200);
+
+    const body = await response.json();
+    expect(body.email).toBe(TEST_USER.email);
+    expect(typeof body.id).toBe('number');
+    expect(typeof body.role).toBe('string');
+    expect(body.role.length).toBeGreaterThan(0);
+    expect(typeof body.expires_at).toBe('string');
+    expect(body.expires_at.length).toBeGreaterThan(0);
+
+    // A session that leaks its own credential is worse than no endpoint.
+    const serialized = JSON.stringify(body).toLowerCase();
+    expect(serialized).not.toContain('password');
+    expect(serialized).not.toContain('session_id');
+    expect(serialized).not.toContain('hash');
+  });
+
+  test('logout revokes the session for identity requests', async ({ authenticatedPage }) => {
+    const csrfToken = await getCsrfToken(authenticatedPage);
+    expect(csrfToken).not.toBe('');
+
+    const logout = await authenticatedPage.request.post('/api/auth/logout', {
+      headers: { 'X-CSRF-Token': csrfToken },
+    });
+    expect(logout.ok()).toBeTruthy();
+
+    // The cookie jar still holds a session cookie; the server must refuse it.
+    const identity = await authenticatedPage.request.get('/api/auth/me');
+    expect(identity.status()).toBe(401);
+  });
+
+  test('a logout without the CSRF token does not end the session', async ({ authenticatedPage }) => {
+    const denied = await authenticatedPage.request.post('/api/auth/logout');
+    expect(denied.ok()).toBeFalsy();
+
+    const identity = await authenticatedPage.request.get('/api/auth/me');
+    expect(identity.status()).toBe(200);
+  });
+});

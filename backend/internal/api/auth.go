@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/mail"
 	"strings"
@@ -209,7 +210,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 
 	var user database.User
 	// Use case/whitespace-insensitive match for transitional safety with legacy non-normalized data.
-	if err := h.db.Where("LOWER(TRIM(email)) = ?", payload.Email).First(&user).Error; err != nil {
+	if err := h.db.Where("LOWER(TRIM(email)) = ? AND disabled_at IS NULL", payload.Email).First(&user).Error; err != nil {
 		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
 	}
 
@@ -299,11 +300,7 @@ func (h *AuthHandler) OptionalAuthMiddleware(c fiber.Ctx) error {
 		return c.Next()
 	}
 
-	var user database.User
-	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-		First(&user).Error
-	if err == nil {
+	if user, ok := h.authenticatedUser(sessionID); ok {
 		c.Locals("user", user)
 	}
 	return c.Next()
@@ -321,12 +318,8 @@ func (h *AuthHandler) AuthMiddleware(c fiber.Ctx) error {
 		return h.rejectUnauthenticated(c)
 	}
 
-	var user database.User
-	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
-		Where("sessions.session_id = ? AND sessions.expires_at > ?", sessionID, time.Now()).
-		First(&user).Error
-
-	if err != nil {
+	user, ok := h.authenticatedUser(sessionID)
+	if !ok {
 		return h.rejectUnauthenticated(c)
 	}
 
@@ -335,12 +328,51 @@ func (h *AuthHandler) AuthMiddleware(c fiber.Ctx) error {
 	return c.Next()
 }
 
+// Me returns the authenticated management principal and the expiry of the
+// session presented in the session cookie. Credentials and session material
+// are deliberately not part of this response.
+func (h *AuthHandler) Me(c fiber.Ctx) error {
+	user, ok := currentUserFromLocals(c)
+	if !ok {
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
+	}
+	var session database.Session
+	err := h.db.Where("session_id = ? AND user_id = ? AND expires_at > ?", c.Cookies(SessionCookie), user.ID, time.Now()).First(&session).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
+	}
+	if err != nil {
+		// A connection or query fault is not a signed-out session: a 401 here
+		// tells a contract-following client to log in again while the account
+		// is fine and the database is not.
+		slog.Error("auth me: session lookup failed", "error", err)
+		return writeAPIError(c, fiber.StatusInternalServerError, "internal_error", "session lookup failed")
+	}
+	return c.JSON(fiber.Map{
+		"id":         user.ID,
+		"email":      user.Email,
+		"role":       user.Role,
+		"expires_at": session.ExpiresAt,
+	})
+}
+
+// authenticatedUser resolves a live session to an enabled principal. A
+// disabled account invalidates all of its sessions without requiring a
+// cleanup sweep, so every request observes the account state immediately.
+func (h *AuthHandler) authenticatedUser(sessionID string) (database.User, bool) {
+	var user database.User
+	err := h.db.Joins("JOIN sessions ON sessions.user_id = users.id").
+		Where("sessions.session_id = ? AND sessions.expires_at > ? AND users.disabled_at IS NULL", sessionID, time.Now()).
+		First(&user).Error
+	return user, err == nil
+}
+
 // rejectUnauthenticated answers a request that has no valid session.
 func (h *AuthHandler) rejectUnauthenticated(c fiber.Ctx) error {
 	if shouldRenderPage(c) {
 		return redirectToSignIn(c)
 	}
-	return c.Status(401).JSON(fiber.Map{"error": "not authenticated"})
+	return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "not authenticated")
 }
 
 func generateSessionID() (string, error) {

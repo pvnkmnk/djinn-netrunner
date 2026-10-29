@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
@@ -67,7 +68,7 @@ type subsonicResponse struct {
 
 // respond formats and sends a Subsonic response as XML or JSON based on the f parameter
 func (h *SubsonicHandler) respond(c fiber.Ctx, resp *subsonicResponse) error {
-	if c.Query("f") == "json" {
+	if c.FormValue("f") == "json" {
 		return h.respondJSON(c, resp)
 	}
 	return h.respondXML(c, resp)
@@ -206,11 +207,15 @@ type subsonicChild struct {
 
 // AuthMiddleware validates Subsonic authentication parameters
 func (h *SubsonicHandler) AuthMiddleware(c fiber.Ctx) error {
-	// Parse query parameters
-	username := c.Query("u")
-	token := c.Query("t")
-	salt := c.Query("s")
-	password := c.Query("p")
+	// FormValue accepts both the query parameters used by GET clients and
+	// application/x-www-form-urlencoded parameters used by POST clients.
+	username := c.FormValue("u")
+	token := c.FormValue("t")
+	salt := c.FormValue("s")
+	password := c.FormValue("p")
+	hasPassword := subsonicParamPresent(c, "p")
+	hasToken := subsonicParamPresent(c, "t")
+	hasSalt := subsonicParamPresent(c, "s")
 
 	if username == "" {
 		return h.respondError(c, 40, "Missing parameter: u")
@@ -219,31 +224,44 @@ func (h *SubsonicHandler) AuthMiddleware(c fiber.Ctx) error {
 	// Look up user by email
 	var user database.User
 	if err := h.db.Where("LOWER(email) = ?", strings.ToLower(username)).First(&user).Error; err != nil {
-		slog.Warn("Subsonic auth failed: user not found", "username", username)
+		slog.Warn("Subsonic auth failed", "reason", "user_not_found", "protocol", "subsonic")
+		return h.respondError(c, 40, "Authentication failed")
+	}
+	if user.DisabledAt != nil {
+		slog.Warn("Subsonic auth failed", "reason", "disabled_user", "protocol", "subsonic")
 		return h.respondError(c, 40, "Authentication failed")
 	}
 
-	// Authentication check
-	if password != "" {
+	// Authentication check: exactly one complete credential mode is accepted.
+	if hasPassword && (hasToken || hasSalt) {
+		return h.respondError(c, 40, "Authentication failed")
+	}
+	if hasPassword {
 		// Password authentication
 		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-			slog.Warn("Subsonic auth failed: invalid password", "username", username)
+			slog.Warn("Subsonic auth failed", "reason", "invalid_password", "protocol", "subsonic")
 			return h.respondError(c, 40, "Authentication failed")
 		}
-	} else if token != "" && salt != "" {
+	} else if hasToken || hasSalt {
+		if !hasToken || !hasSalt || len(token) != md5.Size*2 || len(salt) == 0 {
+			return h.respondError(c, 40, "Authentication failed")
+		}
+		provided, err := hex.DecodeString(token)
+		if err != nil || len(provided) != md5.Size {
+			return h.respondError(c, 40, "Authentication failed")
+		}
 		// SECURITY: with no configured shared password, md5Password is empty and
 		// the expected token collapses to md5(salt) — computable by anyone who
 		// knows the salt they just sent. Refuse token auth instead of accepting
 		// a forgery; account-password (p=) auth still works.
 		if h.md5Password == "" {
-			slog.Warn("Subsonic auth failed: token authentication requires SUBSONIC_PASSWORD to be configured")
+			slog.Warn("Subsonic auth failed", "reason", "token_auth_unconfigured", "protocol", "subsonic")
 			return h.respondError(c, 40, "Authentication failed")
 		}
 		// Token authentication
 		hash := md5.Sum([]byte(h.md5Password + salt))
-		expected := hex.EncodeToString(hash[:])
-		if token != expected {
-			slog.Warn("Subsonic auth failed: invalid token", "username", username)
+		if subtle.ConstantTimeCompare(provided, hash[:]) != 1 {
+			slog.Warn("Subsonic auth failed", "reason", "invalid_token", "protocol", "subsonic")
 			return h.respondError(c, 40, "Authentication failed")
 		}
 	} else {
@@ -253,6 +271,19 @@ func (h *SubsonicHandler) AuthMiddleware(c fiber.Ctx) error {
 	// Set user in context
 	c.Locals("user", user)
 	return c.Next()
+}
+
+func subsonicParamPresent(c fiber.Ctx, name string) bool {
+	return c.Request().URI().QueryArgs().Has(name) || c.Request().PostArgs().Has(name)
+}
+
+// subsonicParam reads a Subsonic parameter from the query string first and the
+// urlencoded form body second. Fiber's FormValue has exactly those semantics,
+// which is what makes the POST alias of an endpoint accept the same parameters
+// as its GET form; the helper names that intent at each call site instead of
+// leaving a bare Query that silently ignores the body.
+func subsonicParam(c fiber.Ctx, name string) string {
+	return c.FormValue(name)
 }
 
 // respondXML returns an XML response
@@ -404,7 +435,7 @@ func (h *SubsonicHandler) GetMusicDirectory(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Authentication required")
 	}
 
-	id := c.Query("id")
+	id := subsonicParam(c, "id")
 	if id == "" {
 		return h.respondError(c, 10, "Missing parameter: id")
 	}
@@ -600,7 +631,7 @@ func (h *SubsonicHandler) GetSong(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Authentication required")
 	}
 
-	id := c.Query("id")
+	id := subsonicParam(c, "id")
 	if id == "" {
 		return h.respondError(c, 10, "Missing parameter: id")
 	}
@@ -665,7 +696,7 @@ func (h *SubsonicHandler) GetAlbum(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Authentication required")
 	}
 
-	id := c.Query("id")
+	id := subsonicParam(c, "id")
 	if id == "" {
 		return h.respondError(c, 10, "Missing parameter: id")
 	}
@@ -814,7 +845,7 @@ func (h *SubsonicHandler) GetArtist(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Authentication required")
 	}
 
-	id := c.Query("id")
+	id := subsonicParam(c, "id")
 	if id == "" {
 		return h.respondError(c, 10, "Missing parameter: id")
 	}
@@ -874,7 +905,7 @@ func (h *SubsonicHandler) Stream(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Authentication required")
 	}
 
-	id := c.Query("id")
+	id := subsonicParam(c, "id")
 	if id == "" {
 		return h.respondError(c, 10, "Missing parameter: id")
 	}
@@ -899,7 +930,7 @@ func (h *SubsonicHandler) Stream(c fiber.Ctx) error {
 	}
 
 	// Determine requested format
-	requestedFormat := c.Query("format")
+	requestedFormat := subsonicParam(c, "format")
 	if requestedFormat == "" {
 		// Try Accept header negotiation
 		requestedFormat = negotiateFormat(c.Get("Accept"))
@@ -920,7 +951,7 @@ func (h *SubsonicHandler) Stream(c fiber.Ctx) error {
 	if needsTranscode {
 		// Parse bitrate
 		bitrate := 0
-		if b := c.Query("bitrate"); b != "" {
+		if b := subsonicParam(c, "bitrate"); b != "" {
 			if parsed, err := strconv.Atoi(b); err == nil && parsed > 0 {
 				bitrate = parsed
 				if h.cfg.Transcode.MaxBitrate > 0 && bitrate > h.cfg.Transcode.MaxBitrate {
@@ -1073,7 +1104,7 @@ func (h *SubsonicHandler) GetCoverArt(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Authentication required")
 	}
 
-	id := c.Query("id")
+	id := subsonicParam(c, "id")
 	if id == "" {
 		return h.respondError(c, 10, "Missing parameter: id")
 	}
@@ -1142,27 +1173,27 @@ func (h *SubsonicHandler) Search3(c fiber.Ctx) error {
 	}
 
 	// Parse query parameters
-	query := c.Query("query")
+	query := subsonicParam(c, "query")
 	if query == "" {
 		return h.respondError(c, 10, "Missing parameter: query")
 	}
 
 	artistCount := 20
-	if count := c.Query("artistCount"); count != "" {
+	if count := subsonicParam(c, "artistCount"); count != "" {
 		if parsed, err := strconv.Atoi(count); err == nil && parsed > 0 {
 			artistCount = parsed
 		}
 	}
 
 	albumCount := 20
-	if count := c.Query("albumCount"); count != "" {
+	if count := subsonicParam(c, "albumCount"); count != "" {
 		if parsed, err := strconv.Atoi(count); err == nil && parsed > 0 {
 			albumCount = parsed
 		}
 	}
 
 	songCount := 20
-	if count := c.Query("songCount"); count != "" {
+	if count := subsonicParam(c, "songCount"); count != "" {
 		if parsed, err := strconv.Atoi(count); err == nil && parsed > 0 {
 			songCount = parsed
 		}
@@ -1334,20 +1365,20 @@ func (h *SubsonicHandler) GetAlbumList2(c fiber.Ctx) error {
 	}
 
 	// Parse query parameters
-	listType := c.Query("type")
+	listType := subsonicParam(c, "type")
 	if listType == "" {
 		listType = "random"
 	}
 
 	size := 50
-	if s := c.Query("size"); s != "" {
+	if s := subsonicParam(c, "size"); s != "" {
 		if parsed, err := strconv.Atoi(s); err == nil && parsed > 0 {
 			size = parsed
 		}
 	}
 
 	offset := 0
-	if o := c.Query("offset"); o != "" {
+	if o := subsonicParam(c, "offset"); o != "" {
 		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
 			offset = parsed
 		}
@@ -1424,7 +1455,7 @@ func (h *SubsonicHandler) GetRandomSongs(c fiber.Ctx) error {
 
 	// Parse query parameters
 	size := 10
-	if s := c.Query("size"); s != "" {
+	if s := subsonicParam(c, "size"); s != "" {
 		if parsed, err := strconv.Atoi(s); err == nil && parsed > 0 {
 			size = parsed
 		}
@@ -1601,7 +1632,7 @@ func (h *SubsonicHandler) GetPlaylist(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Not authenticated")
 	}
 
-	id := c.Query("id")
+	id := subsonicParam(c, "id")
 	if id == "" {
 		return h.respondError(c, 10, "Missing playlist id")
 	}
@@ -1676,8 +1707,8 @@ func (h *SubsonicHandler) CreatePlaylist(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Not authenticated")
 	}
 
-	playlistID := c.Query("playlistId")
-	name := c.Query("name")
+	playlistID := subsonicParam(c, "playlistId")
+	name := subsonicParam(c, "name")
 
 	if playlistID != "" {
 		// Update existing playlist name
@@ -1714,8 +1745,8 @@ func (h *SubsonicHandler) CreatePlaylist(c fiber.Ctx) error {
 
 	playlist := database.Playlist{
 		Name:        name,
-		Description: c.Query("comment", ""),
-		Public:      c.Query("public") == "true",
+		Description: subsonicParam(c, "comment"),
+		Public:      subsonicParam(c, "public") == "true",
 		OwnerUserID: &user.ID,
 	}
 	if err := h.db.Create(&playlist).Error; err != nil {
@@ -1723,7 +1754,7 @@ func (h *SubsonicHandler) CreatePlaylist(c fiber.Ctx) error {
 	}
 
 	// Add songs if provided
-	songIDs := c.Query("songId") // Subsonic allows multiple songId params
+	songIDs := subsonicParam(c, "songId") // Subsonic allows multiple songId params
 	// Note: fiber doesn't easily support repeated query params, so we handle comma-separated
 	if songIDs != "" {
 		var playlistTracks []database.PlaylistTrack
@@ -1764,7 +1795,7 @@ func (h *SubsonicHandler) DeletePlaylist(c fiber.Ctx) error {
 		return h.respondError(c, 40, "Not authenticated")
 	}
 
-	id := c.Query("id")
+	id := subsonicParam(c, "id")
 	if id == "" {
 		return h.respondError(c, 10, "Missing playlist id")
 	}

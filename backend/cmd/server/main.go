@@ -138,24 +138,7 @@ func main() {
 	// non-browser API clients (e.g. integration test harnesses). The browser
 	// UI must always run with CSRF enabled.
 	if cfg.CSRFEnabled {
-		app.Use(csrf.New(csrf.Config{
-			// A plain <form> cannot set a header, and the sign-out control
-			// is a plain form on purpose: ending a session must not depend
-			// on JavaScript having loaded. The header is tried first so every
-			// existing caller is unaffected, then the form body. Same token,
-			// same cookie-backed double-submit check - only the delivery
-			// differs. KeyLookup is a single string in this Fiber version,
-			// which is why this is an Extractor rather than a second lookup.
-			Extractor: extractors.Extractor{Extract: func(c fiber.Ctx) (string, error) {
-				if token := c.Get("X-CSRF-Token"); token != "" {
-					return token, nil
-				}
-				return c.FormValue("csrf_token"), nil
-			}},
-			CookieName:     "csrf_",
-			CookieSameSite: "Lax",
-			IdleTimeout:    24 * time.Hour,
-		}))
+		app.Use(csrfMiddleware())
 	}
 
 	// SECURITY: Add security headers to all responses
@@ -248,6 +231,38 @@ func main() {
 // returns -- compiles and then panics at Add time ("add: invalid handler #0").
 // Build and vet never see it, and it fires only when a real server starts, so
 // the route table is the only place a unit test can catch it.
+// csrfMiddleware is the app-wide double-submit guard for browser sessions.
+//
+// Subsonic clients are exempt. They carry no ambient cookie credential - every
+// request re-authenticates with u plus p or t/s - so a CSRF token has nothing
+// to bind to, and demanding one would reject every POST to the /rest aliases
+// this server publishes while the GET forms kept working. That asymmetry is
+// the failure this skip prevents: a protocol client cannot read a cookie, so
+// it can never satisfy the check.
+func csrfMiddleware() fiber.Handler {
+	return csrf.New(csrf.Config{
+		// A plain <form> cannot set a header, and the sign-out control
+		// is a plain form on purpose: ending a session must not depend
+		// on JavaScript having loaded. The header is tried first so every
+		// existing caller is unaffected, then the form body. Same token,
+		// same cookie-backed double-submit check - only the delivery
+		// differs. KeyLookup is a single string in this Fiber version,
+		// which is why this is an Extractor rather than a second lookup.
+		Extractor: extractors.Extractor{Extract: func(c fiber.Ctx) (string, error) {
+			if token := c.Get("X-CSRF-Token"); token != "" {
+				return token, nil
+			}
+			return c.FormValue("csrf_token"), nil
+		}},
+		CookieName:     "csrf_",
+		CookieSameSite: "Lax",
+		IdleTimeout:    24 * time.Hour,
+		Next: func(c fiber.Ctx) bool {
+			return strings.HasPrefix(c.Path(), "/rest/")
+		},
+	})
+}
+
 func registerMetrics(app *fiber.App) {
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 }
@@ -305,6 +320,7 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 	authRoutes.Post("/register", authLimiter, auth.Register)
 	authRoutes.Post("/login", authLimiter, auth.Login)
 	authRoutes.Post("/logout", auth.Logout)
+	authRoutes.Get("/me", auth.AuthMiddleware, auth.Me)
 
 	// Spotify Auth (OAuth Callback is public, but redirected to with user session)
 	authRoutes.Get("/spotify/login", auth.AuthMiddleware, spotifyAuth.Login)
@@ -524,6 +540,25 @@ func setupRoutes(app *fiber.App, db *gorm.DB, cfg *config.Config, auth *api.Auth
 		subsonic.Get("/getPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetPlaylist)
 		subsonic.Get("/createPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.CreatePlaylist)
 		subsonic.Get("/deletePlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.DeletePlaylist)
+		subsonic.Post("/ping.view", subsonicHandler.AuthMiddleware, subsonicHandler.Ping)
+		subsonic.Post("/getLicense.view", subsonicHandler.AuthMiddleware, subsonicHandler.License)
+		subsonic.Post("/license.view", subsonicHandler.AuthMiddleware, subsonicHandler.License)
+		subsonic.Post("/getIndexes.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetIndexes)
+		subsonic.Post("/getMusicDirectory.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetMusicDirectory)
+		subsonic.Post("/getSong.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetSong)
+		subsonic.Post("/getAlbum.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetAlbum)
+		subsonic.Post("/getArtist.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetArtist)
+		subsonic.Post("/stream.view", subsonicHandler.AuthMiddleware, subsonicHandler.Stream)
+		subsonic.Post("/getCoverArt.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetCoverArt)
+		subsonic.Post("/search3.view", subsonicHandler.AuthMiddleware, subsonicHandler.Search3)
+		subsonic.Post("/getAlbumList2.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetAlbumList2)
+		subsonic.Post("/getRandomSongs.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetRandomSongs)
+		subsonic.Post("/getScanStatus.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetScanStatus)
+		subsonic.Post("/startScan.view", subsonicHandler.AuthMiddleware, subsonicHandler.StartScan)
+		subsonic.Post("/getPlaylists.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetPlaylists)
+		subsonic.Post("/getPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.GetPlaylist)
+		subsonic.Post("/createPlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.CreatePlaylist)
+		subsonic.Post("/deletePlaylist.view", subsonicHandler.AuthMiddleware, subsonicHandler.DeletePlaylist)
 	}
 }
 

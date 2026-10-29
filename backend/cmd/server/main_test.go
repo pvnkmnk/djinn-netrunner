@@ -80,6 +80,7 @@ func TestSetupRoutes_RegistersCriticalRoutes(t *testing.T) {
 	critical := []string{
 		"POST /api/auth/login",
 		"POST /api/auth/logout",
+		"GET /api/auth/me",
 		"GET /api/auth/spotify/callback",
 		"POST /api/auth/spotify/spdc",
 		"POST /api/acquire",
@@ -181,4 +182,27 @@ func TestRegisterMetrics_RegistersTheScrapeRoute(t *testing.T) {
 	app := fiber.New()
 	registerMetrics(app) // panics here if the handler is not a Fiber v3 handler
 	assert.True(t, routeTable(app)["GET /metrics"], "GET /metrics must be registered")
+}
+
+// TestCSRFMiddleware_SkipsSubsonicProtocolRoutes pins the exemption that makes
+// the POST aliases usable. A Subsonic client cannot read or send the csrf_
+// cookie, so without the skip every POST to /rest answers 403 before the
+// credentials are even examined, while the GET forms keep working - a
+// difference no protocol test that skips the middleware can see.
+func TestCSRFMiddleware_SkipsSubsonicProtocolRoutes(t *testing.T) {
+	app := fiber.New()
+	app.Use(csrfMiddleware())
+	app.Post("/rest/ping.view", func(c fiber.Ctx) error { return c.SendStatus(200) })
+	app.Post("/api/auth/logout", func(c fiber.Ctx) error { return c.SendStatus(200) })
+
+	protocol := httptest.NewRequest("POST", "/rest/ping.view", strings.NewReader("u=user&p=pass"))
+	protocol.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := app.Test(protocol)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode, "a protocol POST must reach its handler without a CSRF token")
+
+	browser := httptest.NewRequest("POST", "/api/auth/logout", nil)
+	resp, err = app.Test(browser)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode, "browser routes keep the double-submit check")
 }
