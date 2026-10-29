@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -84,6 +85,45 @@ func TestSubsonic_safeDeref(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestSubsonic_Stream_InvalidFormat(t *testing.T) {
+	db, handler := setupSubsonicDBHandlerTest(t)
+
+	var library database.Library
+	err := db.First(&library).Error
+	require.NoError(t, err)
+
+	tmpFile, err := os.CreateTemp("", "song-*.mp3")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	track := database.Track{
+		ID:        uuid.New(),
+		Title:     "Test Song",
+		Artist:    "Test Artist",
+		Album:     "Test Album",
+		Path:      tmpFile.Name(),
+		LibraryID: library.ID,
+		Format:    "MP3",
+		FileSize:  1024000,
+	}
+	err = db.Create(&track).Error
+	require.NoError(t, err)
+
+	app := fiber.New()
+	app.Get("/stream", handler.AuthMiddleware, handler.Stream)
+
+	password := "testpass123"
+	req := httptest.NewRequest("GET", "/stream?id="+track.ID.String()+"&format=-invalid&u=test@example.com&p="+password, nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	body := subsonicGetRespBody(resp)
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `status="failed"`)
+	assert.Contains(t, bodyStr, `Unsupported format`)
 }
 
 func intPtr(i int) *int {
