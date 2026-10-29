@@ -14,6 +14,8 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - docs/ARCHITECTURE.md — worker model, locks, tables, and correctness contracts.
 - docs/UIIMPLEMENTATION.md — HTMX patterns, console streaming, attach modes, minimal JS contract.
 - docs/NETRUNNERLITE.md — the audited capability boundary of the reduced NetrunnerLite edition: per-feature verdicts, the limits it does not promise, and the gaps that are not edition differences.
+- docs/CLIENT_SERVER_CONTRACT.md — the client-facing contract separating standard Subsonic/OpenSubsonic listening from NETRUNNER management APIs, including authentication, supported journeys, compatibility boundaries and evidence rules.
+- docs/api/client-contract.yaml — versioned OpenAPI baseline for the stable JSON management operations.
 - docs/OPENSUBSONIC_COVERAGE.md — generated Subsonic/OpenSubsonic endpoint matrix, the pinned spec revision, and which gaps belong to which ticket.
 - docs/SECRET_SCAN_FINDINGS.md — a triaged full-history secret scan: what the 15 findings are, why 14 of them are not leaks, and whether to add a CI gate.
 - docs/SECRETS_MANIFEST.md — every credential the project needs, its form, and the exact file (and key) it belongs in; the checklist for supplying or rotating one.
@@ -35,6 +37,7 @@ Purpose: This file lists documentation in the Djinn NETRUNNER repository and exp
 - Understand architecture: docs/WHITEPAPER.md, docs/ARCHITECTURE.md
 - Modify UI: docs/UIIMPLEMENTATION.md
 - Change the Subsonic/OpenSubsonic surface: docs/OPENSUBSONIC_COVERAGE.md (regenerate it with `py scripts/opensubsonic_coverage.py <openapi.json> docs/OPENSUBSONIC_COVERAGE.md`, never hand-edit)
+- Change the client/server boundary or a client-visible listening contract: docs/CLIENT_SERVER_CONTRACT.md, then docs/OPENSUBSONIC_COVERAGE.md and docs/ARCHITECTURE.md as applicable
 - Investigate a secret-scan finding, or gate CI on one: docs/SECRET_SCAN_FINDINGS.md
 - Add or rotate a credential, or wire secrets into a new target: docs/SECRETS_MANIFEST.md, then docs/DEPLOYMENT.md
 - Add features/job types: AGENTS.md, docs/ARCHITECTURE.md

@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.27.2'
+          go-version: '1.27.3'
 
       - name: Download dependencies
         working-directory: backend
@@ -97,7 +97,7 @@ jobs:
           # fetch an unpublished toolchain and die as a phantom scan
           # (nothing scanned, exit 1, "404 Not Found" from sum.golang.org).
           # x/vuln v1.8.0 declares go 1.26.0 and the go-version pin above is
-          # 1.27.2, so v1.8.0 is the newest release the pin satisfies. Bump
+          # 1.27.3, so v1.8.0 is the newest release the pin satisfies. Bump
           # the two together, and check a release's go directive before
           # bumping it (curl proxy.golang.org/.../@v/vX.Y.Z.mod).
           #
@@ -106,7 +106,9 @@ jobs:
           # for the standard library, or the scan fails on findings the
           # toolchain itself carries. On 1.27.0 it reported 11 stdlib findings
           # whose fix is go1.27.2 (net/http, net/http/internal/http2,
-          # html/template, crypto/tls, net/textproto); 1.27.2 clears them.
+          # html/template, crypto/tls, net/textproto); 1.27.2 cleared those, and
+          # 1.27.3 clears the crypto/x509 finding GO-2026-6809. Bump the pin when a
+          # new stdlib finding lands; module findings are go.mod's job.
           GOTOOLCHAIN: local
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
@@ -175,7 +177,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.27.2'
+          go-version: '1.27.3'
 
       - name: Download dependencies
         working-directory: backend

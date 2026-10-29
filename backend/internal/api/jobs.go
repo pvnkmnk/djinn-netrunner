@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"log/slog"
-	"strconv"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/pvnkmnk/netrunner/backend/internal/agent"
@@ -25,7 +24,7 @@ func NewJobHandler(db *gorm.DB) *JobHandler {
 
 // jobIDParam parses the :id route parameter.
 func jobIDParam(c fiber.Ctx) (uint64, error) {
-	return strconv.ParseUint(c.Params("id"), 10, 64)
+	return parseUintPath(c, "id")
 }
 
 // mayActOnJob reports whether this user may cancel or retry the given job.
@@ -57,11 +56,11 @@ func mayActOnJob(user database.User, job database.Job) bool {
 func (h *JobHandler) Cancel(c fiber.Ctx) error {
 	jobID, err := jobIDParam(c)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
+		return writeAPIError(c, fiber.StatusBadRequest, "invalid_identifier", "invalid job ID")
 	}
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "unauthorized")
 	}
 
 	var job database.Job
@@ -70,18 +69,18 @@ func (h *JobHandler) Cancel(c fiber.Ctx) error {
 		// timeout reported as "job not found" tells the operator the job is gone
 		// when it is not, and it would otherwise go unlogged entirely.
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return c.Status(404).JSON(fiber.Map{"error": "job not found"})
+			return writeAPIError(c, fiber.StatusNotFound, "not_found", "job not found")
 		}
 		slog.Error("Failed to load job", "job_id", jobID, "user", user.Email, "error", err)
-		return c.Status(500).JSON(fiber.Map{"error": "failed to load job"})
+		return writeAPIError(c, fiber.StatusInternalServerError, "internal_error", "failed to load job")
 	}
 	if !mayActOnJob(user, job) {
-		return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+		return writeAPIError(c, fiber.StatusForbidden, "forbidden", "forbidden")
 	}
 
 	if err := agent.CancelJob(h.db, jobID); err != nil {
 		slog.Error("Failed to cancel job", "job_id", jobID, "error", err)
-		return c.Status(400).JSON(fiber.Map{"error": "failed to cancel job"})
+		return writeAPIError(c, fiber.StatusBadRequest, "job_action_failed", "failed to cancel job")
 	}
 
 	if isHTMXRequest(c) {
@@ -98,11 +97,11 @@ func (h *JobHandler) Cancel(c fiber.Ctx) error {
 func (h *JobHandler) Retry(c fiber.Ctx) error {
 	jobID, err := jobIDParam(c)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid job ID"})
+		return writeAPIError(c, fiber.StatusBadRequest, "invalid_identifier", "invalid job ID")
 	}
 	user, ok := c.Locals("user").(database.User)
 	if !ok {
-		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+		return writeAPIError(c, fiber.StatusUnauthorized, "unauthorized", "unauthorized")
 	}
 
 	var job database.Job
@@ -111,18 +110,18 @@ func (h *JobHandler) Retry(c fiber.Ctx) error {
 		// timeout reported as "job not found" tells the operator the job is gone
 		// when it is not, and it would otherwise go unlogged entirely.
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return c.Status(404).JSON(fiber.Map{"error": "job not found"})
+			return writeAPIError(c, fiber.StatusNotFound, "not_found", "job not found")
 		}
 		slog.Error("Failed to load job", "job_id", jobID, "user", user.Email, "error", err)
-		return c.Status(500).JSON(fiber.Map{"error": "failed to load job"})
+		return writeAPIError(c, fiber.StatusInternalServerError, "internal_error", "failed to load job")
 	}
 	if !mayActOnJob(user, job) {
-		return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+		return writeAPIError(c, fiber.StatusForbidden, "forbidden", "forbidden")
 	}
 
 	if err := agent.RetryJob(h.db, jobID); err != nil {
 		slog.Error("Failed to retry job", "job_id", jobID, "error", err)
-		return c.Status(400).JSON(fiber.Map{"error": "failed to retry job"})
+		return writeAPIError(c, fiber.StatusBadRequest, "job_action_failed", "failed to retry job")
 	}
 
 	if isHTMXRequest(c) {
