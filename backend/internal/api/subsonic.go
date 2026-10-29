@@ -908,6 +908,10 @@ func (h *SubsonicHandler) Stream(c fiber.Ctx) error {
 	// Normalize format to lowercase
 	requestedFormat = strings.ToLower(requestedFormat)
 
+	if requestedFormat != "" && formatToMIME(requestedFormat) == "" {
+		return h.respondError(c, 0, "Unsupported format")
+	}
+
 	// Get source format (stored uppercase in DB)
 	sourceFormat := strings.ToLower(track.Format)
 
