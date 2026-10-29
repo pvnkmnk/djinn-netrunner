@@ -3,10 +3,12 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v3"
@@ -104,9 +106,15 @@ func TestPlaylistHandler_List_Unauthenticated(t *testing.T) {
 func TestPlaylistHandler_List_BoundedPagination(t *testing.T) {
 	db := setupPlaylistTestDB(t)
 	user := createTestUser(t, db, "paged@example.com", "user")
-	createTestPlaylist(t, db, user.ID, "first")
-	createTestPlaylist(t, db, user.ID, "second")
-	createTestPlaylist(t, db, user.ID, "third")
+	// Pin created_at instead of trusting time.Now(): three rows written in the
+	// same clock tick tie, and the id DESC tiebreak then decides the page
+	// boundary, so the expectation below would fail at random.
+	created := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for i, name := range []string{"first", "second", "third"} {
+		playlist := createTestPlaylist(t, db, user.ID, name)
+		require.NoError(t, db.Model(&database.Playlist{}).Where("id = ?", playlist.ID).
+			Update("created_at", created.Add(time.Duration(i)*time.Minute)).Error)
+	}
 
 	app := fiber.New()
 	handler := NewPlaylistHandler(db)
@@ -123,7 +131,89 @@ func TestPlaylistHandler_List_BoundedPagination(t *testing.T) {
 
 	var playlists []database.Playlist
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&playlists))
-	assert.Len(t, playlists, 1)
+	require.Len(t, playlists, 1)
+	// "third" is newest and lands on page 1, so page 2 must be exactly "first".
+	// A length-only assertion passes even when the handler returns a row from
+	// the wrong page, which is what this pins.
+	assert.Equal(t, "first", playlists[0].Name)
+}
+
+func TestPlaylistHandler_List_StableOrderAcrossPages(t *testing.T) {
+	db := setupPlaylistTestDB(t)
+	user := createTestUser(t, db, "stable@example.com", "user")
+	created := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for i, name := range []string{"first", "second", "third"} {
+		playlist := createTestPlaylist(t, db, user.ID, name)
+		require.NoError(t, db.Model(&database.Playlist{}).Where("id = ?", playlist.ID).
+			Update("created_at", created.Add(time.Duration(i)*time.Minute)).Error)
+	}
+
+	app := fiber.New()
+	handler := NewPlaylistHandler(db)
+	app.Get("/api/playlists", func(c fiber.Ctx) error {
+		withAuthUser(c, user)
+		return handler.List(c)
+	})
+
+	names := func(query string) []string {
+		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/playlists"+query, nil))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var playlists []database.Playlist
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&playlists))
+		out := make([]string, 0, len(playlists))
+		for _, p := range playlists {
+			out = append(out, p.Name)
+		}
+		return out
+	}
+
+	assert.Equal(t, []string{"third", "second"}, names("?page=1&limit=2"))
+	assert.Equal(t, []string{"first"}, names("?page=2&limit=2"))
+	assert.Empty(t, names("?page=3&limit=2"))
+}
+
+func TestPlaylistHandler_List_TiedTimestampsKeepAStableBoundary(t *testing.T) {
+	db := setupPlaylistTestDB(t)
+	user := createTestUser(t, db, "tied@example.com", "user")
+	tied := time.Date(2026, 10, 2, 8, 0, 0, 0, time.UTC)
+	createdIDs := make([]uuid.UUID, 0, 4)
+	for _, name := range []string{"a", "b", "c", "d"} {
+		playlist := createTestPlaylist(t, db, user.ID, name)
+		require.NoError(t, db.Model(&database.Playlist{}).Where("id = ?", playlist.ID).
+			Update("created_at", tied).Error)
+		createdIDs = append(createdIDs, playlist.ID)
+	}
+
+	app := fiber.New()
+	handler := NewPlaylistHandler(db)
+	app.Get("/api/playlists", func(c fiber.Ctx) error {
+		withAuthUser(c, user)
+		return handler.List(c)
+	})
+
+	seen := map[uuid.UUID]int{}
+	for page := 1; page <= 2; page++ {
+		resp, err := app.Test(httptest.NewRequest(http.MethodGet,
+			fmt.Sprintf("/api/playlists?page=%d&limit=2", page), nil))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var playlists []database.Playlist
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&playlists))
+		require.Len(t, playlists, 2)
+		for _, p := range playlists {
+			seen[p.ID]++
+		}
+	}
+
+	// Every row appears exactly once across the two pages: ties must not
+	// duplicate or drop a playlist at the page boundary.
+	require.Len(t, seen, len(createdIDs))
+	for id, count := range seen {
+		assert.Equal(t, 1, count, "playlist %s appeared %d times across pages", id, count)
+	}
 }
 
 func TestPlaylistHandler_List_InvalidPaginationUsesAPIError(t *testing.T) {

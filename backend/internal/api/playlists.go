@@ -30,7 +30,9 @@ func (h *PlaylistHandler) List(c fiber.Ctx) error {
 	if err != nil {
 		return writeAPIError(c, fiber.StatusBadRequest, "invalid_pagination", "invalid pagination")
 	}
-	query := h.db.Select(playlistListColumns).Order("created_at DESC").Limit(pagination.Limit).Offset(pagination.Offset)
+	// created_at alone is not unique: ties at a page boundary repeat or
+	// skip rows under offset pagination, so id is the tiebreaker.
+	query := h.db.Select(playlistListColumns).Order("created_at DESC, id DESC").Limit(pagination.Limit).Offset(pagination.Offset)
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
 	}
@@ -419,7 +421,7 @@ func (h *PlaylistHandler) RenderPlaylistsPartial(c fiber.Ctx) error {
 	}
 
 	var playlists []database.Playlist
-	query := h.db.Select(playlistListColumns).Order("created_at DESC")
+	query := h.db.Select(playlistListColumns).Order("created_at DESC, id DESC")
 	user, _ := currentUserFromLocals(c)
 	if user.Role != "admin" {
 		query = query.Where("owner_user_id = ?", user.ID)
