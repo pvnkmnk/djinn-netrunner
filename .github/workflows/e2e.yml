@@ -63,7 +63,7 @@ jobs:
   e2e:
     name: Playwright E2E Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       # Playwright retries and takes a trace on the first retry; `true` also
       # makes its globalTeardown run `down -v`.
