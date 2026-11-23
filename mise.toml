@@ -1,0 +1,74 @@
+# djinn-netrunner -- mise en place for this checkout.
+#
+# Scope discipline: this file *declares* the surface the repo already documents
+# in AGENTS.md. It does not move logic here, and every task is a one-line wrapper
+# around a command that already exists. Nothing in this file is required to build
+# or test the project -- `go test` still works exactly as before.
+#
+# Two conventions worth knowing:
+#
+#   * `go -C backend <cmd>` instead of `cd backend && ...`. The `-C` flag needs no
+#     shell, so the same task text works from PowerShell, Git Bash and WSL.
+#   * Secrets are named here and resolved by fnox, never stored here. `fnox exec
+#     -- mise run <task>` puts them in the environment; the plain task still runs
+#     without them for everything that does not need a secret.
+
+[env]
+ENVIRONMENT = "development"
+# CONFIG_ENV is deliberately absent: config.Load falls back to ENVIRONMENT
+# when it is unset, and an unconditional value here would override that
+# fallback everywhere - including under `mise run test`, where
+# TestLoad_ConfigEnvDefaultsToEnvironment sets ENVIRONMENT=testenv and
+# expects ConfigEnv to follow it.
+PORT = "8080"
+# These paths are anchored at the repo root ({{ config_root }}): the server
+# runs from backend/, so repo-root-relative paths would resolve underneath
+# it instead.
+MUSIC_LIBRARY = "{{ config_root }}/music_library"
+TEMPLATES_PATH = "{{ config_root }}/ops/web/templates"
+STATIC_FILES_PATH = "{{ config_root }}/ops/web/static"
+SUBSONIC_ENABLED = "true"
+SLSKD_URL = "http://localhost:5030"
+
+[tools]
+# CI, Docker and go.mod pin 1.27.4 together; this pin agrees with them.
+go = "1.27.4"
+
+[tasks.vet]
+description = "go vet over the whole module (run before every PR)"
+run = "go -C backend vet ./..."
+
+[tasks.test]
+description = "CI test set: every package except the tagged integration suite"
+run = "go -C backend test ./cmd/... ./internal/agent ./internal/api/... ./internal/config ./internal/database ./internal/health ./internal/interfaces ./internal/metrics ./internal/services ./internal/testutil"
+
+[tasks."test:all"]
+description = "Full non-tagged suite"
+run = "go -C backend test ./..."
+
+[tasks.build]
+description = "Build every command binary"
+run = "go -C backend build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent"
+
+[tasks.integration]
+description = "Integration suite via scripts/integration-tests.sh, which starts the stack first"
+run = "bash scripts/integration-tests.sh test"
+
+[tasks.smoke]
+description = "Smoke gate against a running stack"
+run = "bash scripts/smoke.sh"
+
+[tasks.e2e]
+description = "Playwright end-to-end suite (Playwright owns the stack lifecycle)"
+# The E2E stack is self-contained: scripts/e2e.sh materialises .env.e2e from
+# the checked-in template, and the stack's credentials come from that file.
+# Strip the fnox secrets here so npm/Playwright and Compose subprocesses never
+# see the operator's real dev secrets even when run under `fnox exec --` --
+# and so the shell environment cannot override the throwaway template values
+# (compose prefers shell env over --env-file).
+run = "env -u JWT_SECRET -u SUBSONIC_PASSWORD -u SLSKD_API_KEY -u POSTGRES_PASSWORD bash scripts/e2e.sh test"
+
+[tasks.validate]
+description = "Repo validation script (PowerShell wrapper on Windows: scripts/validate.ps1)"
+run = "bash scripts/validate.sh"
+run_windows = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate.ps1"

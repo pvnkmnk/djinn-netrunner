@@ -39,9 +39,13 @@ WEB_CONTAINER="${SMOKE_WEB_CONTAINER:-ops-web}"
 WORKER_CONTAINER="${SMOKE_WORKER_CONTAINER:-ops-worker}"
 SLSKD_CONTAINER="${SMOKE_SLSKD_CONTAINER:-netrunner-slskd}"
 
-SMOKE_USER="smoke+$(date +%s)@smoke.test"
+# One run id for every fixture this run creates: two runs in the same second
+# used to share the user, the library path and the salt (all `date +%s`), so
+# one run's data read as the other's. The PID makes it unique per process.
+RUN_ID="$(date +%s)-$$"
+SMOKE_USER="smoke+${RUN_ID}@smoke.test"
 SMOKE_PASS="Netrunnersmoke123!"
-LIBRARY_PATH="/app/music/smoke-$(date +%s)"
+LIBRARY_PATH="/app/music/smoke-${RUN_ID}"
 COOKIE_FILE="$(mktemp)"
 BODY_FILE="$(mktemp)"
 STATUS_FILE="$(mktemp)"
@@ -375,7 +379,7 @@ fi
 if [ -n "$SUBSONIC_PASS" ]; then
     # The server compares against md5(md5(password_as_hex) + salt) — Subsonic's
     # documented token scheme, so the password is hashed before it is salted.
-    SALT="smoke$(date +%s)"
+    SALT="smoke${RUN_ID}"
     PASS_HASH="$(printf '%s' "$SUBSONIC_PASS" | md5sum | cut -d' ' -f1)"
     TOKEN="$(printf '%s' "${PASS_HASH}${SALT}" | md5sum | cut -d' ' -f1)"
     PING_TOKEN="$(curl -s "$BASE_URL/rest/ping.view?$QA&$SU_U&t=$TOKEN&s=$SALT")"
