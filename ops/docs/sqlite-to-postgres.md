@@ -9,7 +9,7 @@
 
 ## Prerequisites
 
-- PostgreSQL 16+ running (use the `docker-compose.yml` postgres service or external instance)
+- PostgreSQL 17+ running (use the `docker-compose.yml` postgres service or external instance)
 - `pgloader` installed on the migration host: `apt install pgloader` or `brew install pgloader`
 - NetRunner services stopped during migration
 

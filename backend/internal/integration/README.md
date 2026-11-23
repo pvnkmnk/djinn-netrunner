@@ -129,7 +129,7 @@ The `IntegrationHarness` struct provides:
 The `docker-compose.integration.yml` defines:
 
 - **slskd-integration**: Latest slskd/slskd image with configurable credentials
-- **integration-db**: PostgreSQL 16 for test isolation
+- **integration-db**: PostgreSQL 17 for test isolation
 - **Network**: Dedicated bridge network for service communication
 - **Volumes**: Persistent data for test continuity
 
