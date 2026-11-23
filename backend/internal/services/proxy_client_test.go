@@ -265,7 +265,7 @@ func TestNewSafeProxyAwareHTTPClient_Proxy(t *testing.T) {
 	_, err := client.Get(upstreamURL + "/ws/2/release?query=test")
 	require.Error(t, err, "requests to private IP targets should be rejected")
 	assert.Contains(t, err.Error(), "ssrf: target")
-	assert.Contains(t, err.Error(), "private IP")
+	assert.Contains(t, err.Error(), "non-global IP")
 
 	// The request should NOT have reached the proxy
 	assert.Equal(t, int64(0), proxiedRequests.Load(),

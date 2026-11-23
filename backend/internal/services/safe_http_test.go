@@ -14,10 +14,10 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 )
 
-func TestIsPrivateIP(t *testing.T) {
+func TestIsNonGlobalIP(t *testing.T) {
 	tests := []struct {
-		ip      string
-		private bool
+		ip        string
+		nonGlobal bool
 	}{
 		{"10.0.0.1", true},
 		{"10.255.255.255", true},
@@ -29,11 +29,34 @@ func TestIsPrivateIP(t *testing.T) {
 		{"0.0.0.0", true},
 		{"::1", true},
 		{"fc00::1", true},
+		// Shared / reserved / documentation space: IsGlobalUnicast admits
+		// these, so the hand list must catch them (Sourcery on #391).
+		{"100.64.0.1", true},       // CGNAT
+		{"100.127.255.255", true},  // CGNAT
+		{"192.0.2.1", true},        // TEST-NET-1
+		{"198.51.100.1", true},     // TEST-NET-2
+		{"203.0.113.1", true},      // TEST-NET-3
+		{"192.0.0.1", true},        // IETF protocol assignments
+		{"198.18.0.1", true},       // benchmarking
+		{"240.0.0.1", true},        // reserved
+		{"255.255.255.255", true},  // broadcast / reserved
+		{"224.0.0.1", true},        // multicast
+		{"2001:db8::1", true},      // documentation
+		{"2001::1", true},          // IETF special-purpose (Teredo range)
+		{"2002::1", true},          // 6to4
+		{"64:ff9b::8.8.8.8", true}, // NAT64 well-known prefix
+		{"100::1", true},           // discard-only
+		{"fec0::1", true},          // deprecated site-local
+		{"ff02::1", true},          // multicast
+		{"::", true},               // unspecified
 		{"8.8.8.8", false},
 		{"1.1.1.1", false},
 		{"142.250.80.46", false}, // google.com
+		{"2606:4700:4700::1111", false},
+		{"::ffff:8.8.8.8", false},
 		{"::ffff:127.0.0.1", true},
 		{"::ffff:192.168.1.1", true},
+		{"::ffff:100.64.0.1", true},
 		{"fe80::1", true},
 	}
 
@@ -42,9 +65,9 @@ func TestIsPrivateIP(t *testing.T) {
 		if ip == nil {
 			t.Fatalf("failed to parse IP: %s", tt.ip)
 		}
-		got := isPrivateIP(ip)
-		if got != tt.private {
-			t.Errorf("isPrivateIP(%s) = %v, want %v", tt.ip, got, tt.private)
+		got := isNonGlobalIP(ip)
+		if got != tt.nonGlobal {
+			t.Errorf("isNonGlobalIP(%s) = %v, want %v", tt.ip, got, tt.nonGlobal)
 		}
 	}
 }
@@ -240,5 +263,105 @@ func TestDialPublicIPs_AllPublicFail(t *testing.T) {
 	}
 	if len(d.tried) != 2 {
 		t.Errorf("tried %v, want both addresses attempted", d.tried)
+	}
+}
+
+// The Sourcery #391 finding: a DNS answer that mixes a reachable public IP
+// with CGNAT / documentation / reserved addresses must dial only the public
+// one — the non-global addresses are never attempted, even when they answer
+// first.
+func TestDialPublicIPs_SkipsNonGlobalIPs(t *testing.T) {
+	ips := []net.IP{
+		net.ParseIP("100.64.0.1"),       // CGNAT
+		net.ParseIP("192.0.2.1"),        // TEST-NET-1
+		net.ParseIP("1.1.1.1"),          // public IPv4, "reachable"
+		net.ParseIP("2001:db8::1"),      // documentation
+		net.ParseIP("240.0.0.1"),        // reserved
+		net.ParseIP("64:ff9b::8.8.8.8"), // NAT64 well-known prefix
+	}
+	d := &fakeDialer{}
+	d.closePeers(t)
+	conn, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if err != nil {
+		t.Fatalf("expected success via the public IP, got: %v", err)
+	}
+	defer conn.Close()
+	if len(d.tried) != 1 || d.tried[0] != "1.1.1.1:443" {
+		t.Errorf("tried %v, want only the public address dialed", d.tried)
+	}
+}
+
+// Only non-global addresses at all: the guard's refusal, not a dial error,
+// and nothing dialed — a CGNAT-only answer is a refusal, not a fallback.
+func TestDialPublicIPs_AllNonGlobalRefused(t *testing.T) {
+	ips := []net.IP{net.ParseIP("100.64.0.1"), net.ParseIP("192.0.2.1"), net.ParseIP("2001:db8::1")}
+	d := &fakeDialer{}
+	_, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if err == nil {
+		t.Fatal("expected refusal, got nil")
+	}
+	if !errors.Is(err, ErrDisallowedDestination) {
+		t.Errorf("expected ErrDisallowedDestination, got: %v", err)
+	}
+	if len(d.tried) != 0 {
+		t.Errorf("dialed %v, want nothing dialed", d.tried)
+	}
+}
+
+// blockingFirstDialer simulates a blackholed address: the dial for the
+// configured address waits until its context is cancelled, every other
+// address answers from an in-memory pipe.
+type blockingFirstDialer struct {
+	tried   []string
+	blocked string
+	peers   []net.Conn
+}
+
+func (d *blockingFirstDialer) dial(ctx context.Context, _ string, address string) (net.Conn, error) {
+	d.tried = append(d.tried, address)
+	if address == d.blocked {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	c1, c2 := net.Pipe()
+	d.peers = append(d.peers, c2)
+	return c1, nil
+}
+
+func (d *blockingFirstDialer) closePeers(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, c := range d.peers {
+			c.Close()
+		}
+	})
+}
+
+// The second Sourcery #391 finding: the old loop reused one request context
+// for every dial, so a blackholed first IP consumed the whole deadline and
+// the reachable second address was never tried. Each attempt now gets a fair
+// share of the remaining deadline, so the fallback still happens — well
+// inside the parent deadline.
+func TestDialPublicIPs_BlackholedFirstIPDoesNotStarveFallback(t *testing.T) {
+	ips := []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	d := &blockingFirstDialer{blocked: "1.1.1.1:443"}
+	d.closePeers(t)
+	start := time.Now()
+	conn, err := dialPublicIPs(ctx, "tcp", "example.com", "443", ips, d.dial)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("expected fallback to reach the second IP, got: %v", err)
+	}
+	defer conn.Close()
+	if len(d.tried) != 2 || d.tried[0] != "1.1.1.1:443" || d.tried[1] != "8.8.8.8:443" {
+		t.Errorf("tried %v, want both addresses attempted in DNS order", d.tried)
+	}
+	// The first attempt's share of a 1s deadline across 2 addresses is ~500ms;
+	// the whole fallback must finish well inside the parent deadline. The old
+	// code took the full second and failed.
+	if elapsed >= 900*time.Millisecond {
+		t.Errorf("fallback took %v, want it well inside the 1s parent deadline", elapsed)
 	}
 }

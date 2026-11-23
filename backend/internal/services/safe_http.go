@@ -13,8 +13,14 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/config"
 )
 
-// privateCIDRs contains CIDR ranges that should never be reachable via outbound HTTP.
-var privateCIDRs = []string{
+// nonGlobalCIDRs contains CIDR ranges that must never be dialed by outbound
+// HTTP: the private/loopback/link-local ranges, plus the shared, reserved and
+// documentation ranges net.IP.IsGlobalUnicast admits but no public service
+// should ever answer from. The list is the auditable record of what "global"
+// means here — a hand list is deliberate, so the guard fails closed on an
+// address it cannot classify as global unicast.
+var nonGlobalCIDRs = []string{
+	// Private / loopback / link-local (RFC 1918, RFC 3927, RFC 4291).
 	"10.0.0.0/8",
 	"172.16.0.0/12",
 	"192.168.0.0/16",
@@ -22,25 +28,50 @@ var privateCIDRs = []string{
 	"169.254.0.0/16",
 	"::1/128",
 	"fc00::/7",
-	"fe80::/10",      // IPv6 Link-Local
+	"fe80::/10", // IPv6 Link-Local
 	"0.0.0.0/8",
+	// Shared address space / CGNAT (RFC 6598). Reachable from the host's
+	// network, so a DNS answer here is an SSRF vector, not a public host.
+	"100.64.0.0/10",
+	// Documentation / TEST-NETs (RFC 5737, RFC 3849).
+	"192.0.2.0/24",
+	"198.51.100.0/24",
+	"203.0.113.0/24",
+	// IETF protocol assignments (RFC 6890) and benchmarking (RFC 2544).
+	"192.0.0.0/24",
+	"198.18.0.0/15",
+	// Reserved (RFC 1112, RFC 6890) and multicast.
+	"240.0.0.0/4",
+	"224.0.0.0/4",
+	// IPv6 specials: documentation, IETF special-purpose (Teredo, ORCHID,
+	// benchmarking), 6to4, the NAT64 well-known prefix (it translates to
+	// IPv4, so it can smuggle a private address past a v6-only check),
+	// discard-only, deprecated site-local, multicast, unspecified.
+	"2001:db8::/32",
+	"2001::/23",
+	"2002::/16",
+	"64:ff9b::/96",
+	"100::/64",
+	"fec0::/10",
+	"ff00::/8",
+	"::/128",
 }
 
-// parsedCIDRs is populated at init time.
-var parsedCIDRs []*net.IPNet
+// parsedNonGlobalCIDRs is populated at init time.
+var parsedNonGlobalCIDRs []*net.IPNet
 
 func init() {
-	for _, cidr := range privateCIDRs {
+	for _, cidr := range nonGlobalCIDRs {
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {
 			panic(fmt.Sprintf("invalid CIDR %s: %v", cidr, err))
 		}
-		parsedCIDRs = append(parsedCIDRs, network)
+		parsedNonGlobalCIDRs = append(parsedNonGlobalCIDRs, network)
 	}
 }
 
 // ErrDisallowedDestination marks a URL the guard refused: an address that
-// resolved into a private range. It is a permanent verdict about that URL, so
+// resolved into a non-global range. It is a permanent verdict about that URL, so
 // callers record it terminally instead of retrying the same address.
 var ErrDisallowedDestination = errors.New("ssrf: disallowed destination")
 
@@ -63,14 +94,21 @@ func refusedDestination(msg string) error {
 // what a guard cannot afford to follow.
 const redirectHopLimit = 10
 
-// isPrivateIP returns true if ip is in a private/loopback/link-local range.
-func isPrivateIP(ip net.IP) bool {
+// isNonGlobalIP returns true if ip is not a global unicast address: private,
+// loopback, link-local, multicast, unspecified, shared (CGNAT), reserved or
+// documentation space. Only global unicast is dialable. IsGlobalUnicast alone
+// is not enough — it admits CGNAT, the TEST-NETs, benchmarking and the
+// reserved range — so the hand list above covers those explicitly.
+func isNonGlobalIP(ip net.IP) bool {
 	// Normalize IPv4-mapped IPv6 (::ffff:x.x.x.x) to 4-byte IPv4.
 	// Prevents SSRF bypass using IPv6 representations of private IPv4 addresses.
 	if ip4 := ip.To4(); ip4 != nil {
 		ip = ip4
 	}
-	for _, network := range parsedCIDRs {
+	if !ip.IsGlobalUnicast() {
+		return true
+	}
+	for _, network := range parsedNonGlobalCIDRs {
 		if network.Contains(ip) {
 			return true
 		}
@@ -94,7 +132,7 @@ func (v *safeAddressValidator) RoundTrip(req *http.Request) (*http.Response, err
 	return v.next.RoundTrip(req)
 }
 
-// checkPublicHost resolves host and refuses it if it resolves to a private
+// checkPublicHost resolves host and refuses it if it resolves to a non-global
 // address. It is the one implementation of "is this destination allowed",
 // shared by the request-path guard above and by callers that hand a URL to
 // a tool which makes its own connections (see YtdlpService.DownloadAudio).
@@ -104,8 +142,8 @@ func checkPublicHost(host string) error {
 		return fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}
 	for _, ip := range ips {
-		if isPrivateIP(ip) {
-			return refusedDestination(fmt.Sprintf("ssrf: target %s resolves to private IP %s", host, ip.String()))
+		if isNonGlobalIP(ip) {
+			return refusedDestination(fmt.Sprintf("ssrf: target %s resolves to non-global IP %s", host, ip.String()))
 		}
 	}
 	return nil
@@ -120,22 +158,22 @@ func checkPublicHost(host string) error {
 // are disabled to prevent redirect-based SSRF.
 // See: https://owasp.org/www-community/attacks/Server_Side_Request_Forgery
 // safeTransport is a shared HTTP transport that validates all outbound
-// connections against private IP ranges to prevent SSRF.
+// connections against non-global IP ranges to prevent SSRF.
 var safeTransport = &http.Transport{
 	DialContext: safeDialContext,
 }
 
-// safeDialContext resolves DNS, verifies the resolved IP is not in a private
+// safeDialContext resolves DNS, verifies the resolved IP is not in a non-global
 // range, and dials directly. This prevents SSRF via DNS rebinding or direct
-// private IP access.
+// non-global IP access.
 //
-// It tries every resolved public IP in order until one dials: DNS can answer
+// It tries every resolved global-unicast IP in order until one dials: DNS can answer
 // an unreachable address first (notably IPv6 on a host with no IPv6 route),
 // and stopping at the first answer turns that into a hard failure for a host
 // that is otherwise reachable — which is exactly how the DJI-501 egress probe
-// failed in CI (see DJI-682). Private addresses are never dialed. If no
-// public IP exists the destination is refused (ErrDisallowedDestination); if
-// public IPs exist but none dials, the dial errors are returned joined,
+// failed in CI (see DJI-682). Non-global addresses are never dialed. If no
+// global-unicast IP exists the destination is refused (ErrDisallowedDestination); if
+// global-unicast IPs exist but none dials, the dial errors are returned joined,
 // which is a transient failure, not a refusal.
 func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
@@ -150,29 +188,57 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	return dialPublicIPs(ctx, network, host, port, ips, d.DialContext)
 }
 
-// dialPublicIPs dials the first reachable public IP in ips, trying each in
+// defaultPerDialTimeout bounds one dial attempt when the caller's context
+// carries no deadline. Every production caller sets a client timeout, so
+// this is a backstop, not the normal path.
+const defaultPerDialTimeout = 10 * time.Second
+
+// dialPublicIPs dials the first reachable global-unicast IP in ips, trying each in
 // order. Sequential, not parallel: the order is deterministic, which keeps
-// the guard auditable, and a dial to an unreachable address fails fast. The
-// dial function is a parameter (a net.Dialer's DialContext in production) so
-// the fallback loop is testable without a network.
+// the guard auditable, and a dial to an unreachable address fails fast.
+//
+// Each attempt is bounded to a fair share of the time left on the caller's
+// deadline (or defaultPerDialTimeout when there is none): a blackholed
+// address must not consume the whole request budget and starve the addresses
+// behind it. The dial function is a parameter (a net.Dialer's DialContext in
+// production) so the fallback loop is testable without a network.
 func dialPublicIPs(ctx context.Context, network, host, port string, ips []net.IP, dial func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
-	var errs []error
-	tried := 0
+	// Filter first, so the per-attempt budget divides over addresses that
+	// will actually be dialed.
+	var targets []net.IP
 	for _, ip := range ips {
-		if isPrivateIP(ip) {
+		if isNonGlobalIP(ip) {
 			continue
 		}
-		tried++
-		conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
+		targets = append(targets, ip)
+	}
+	if len(targets) == 0 {
+		return nil, refusedDestination(fmt.Sprintf("ssrf: no public IP found for %s", host))
+	}
+	var errs []error
+	for i, ip := range targets {
+		attemptCtx, cancel := context.WithTimeout(ctx, perAttemptTimeout(ctx, len(targets)-i))
+		conn, err := dial(attemptCtx, network, net.JoinHostPort(ip.String(), port))
+		cancel()
 		if err == nil {
 			return conn, nil
 		}
 		errs = append(errs, err)
 	}
-	if tried == 0 {
-		return nil, refusedDestination(fmt.Sprintf("ssrf: no public IP found for %s", host))
-	}
 	return nil, fmt.Errorf("ssrf: could not reach %s: %w", host, errors.Join(errs...))
+}
+
+// perAttemptTimeout is the budget for one dial attempt: an even share of the
+// time left on the caller's deadline across the attempts still to run, or
+// defaultPerDialTimeout when the caller set no deadline.
+func perAttemptTimeout(ctx context.Context, attemptsLeft int) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			return remaining / time.Duration(attemptsLeft)
+		}
+		return 0
+	}
+	return defaultPerDialTimeout
 }
 
 // NewSafeHTTPClient creates an *http.Client whose transport prevents
@@ -207,7 +273,7 @@ func NewProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *http.Cl
 // Default (cfg.AllowPrivateTargets == false): SSRF protection is applied in
 // all cases.
 //   - Without a proxy: uses safeTransport, which validates all outbound
-//     connections against private IP ranges at dial time (same as
+//     connections against non-global IP ranges at dial time (same as
 //     NewSafeHTTPClient).
 //   - With a proxy: validates that the target URL resolves to a public IP
 //     before sending the request through the proxy. The proxy server itself
@@ -277,7 +343,7 @@ func SafeGet(rawURL string) (*http.Response, error) {
 	// Find the first safe IP to connect to
 	var safeIP net.IP
 	for _, ip := range ips {
-		if isPrivateIP(ip) {
+		if isNonGlobalIP(ip) {
 			continue
 		}
 		safeIP = ip

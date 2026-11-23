@@ -138,7 +138,7 @@ func TestYtdlpService_DownloadAudio_RefusesPrivateTargets(t *testing.T) {
 			if err == nil {
 				t.Fatalf("DownloadAudio(%q) was handed to yt-dlp instead of refused", target)
 			}
-			if !strings.Contains(err.Error(), "refusing source URL") || !strings.Contains(err.Error(), "private IP") {
+			if !strings.Contains(err.Error(), "refusing source URL") || !strings.Contains(err.Error(), "non-global IP") {
 				t.Fatalf("DownloadAudio(%q) refused for the wrong reason: %v", target, err)
 			}
 			// The pipeline treats a guard refusal as terminal and an ordinary
@@ -153,10 +153,16 @@ func TestYtdlpService_DownloadAudio_RefusesPrivateTargets(t *testing.T) {
 // A name that will not resolve is not a refusal. It has to stay an ordinary
 // failure so a transient DNS outage retries — but the URL is still never handed
 // to the downloader unchecked.
+//
+// The vehicle is an empty host, not a `.invalid` name: this network's DNS
+// filter answers every NXDOMAIN with a 198.18.0.0/15 address, so a `.invalid`
+// name resolves here — and is then (correctly) refused as a non-global
+// destination. The empty host fails LookupIP before any query, which drives
+// the same transient branch a genuine NXDOMAIN takes on a normal network.
 func TestYtdlpService_DownloadAudio_UnresolvableHostIsNotARefusal(t *testing.T) {
 	s := NewYtdlpService()
 
-	_, err := s.DownloadAudio(context.Background(), "http://netrunner-nonexistent-host.invalid/track.mp3", t.TempDir(), "flac")
+	_, err := s.DownloadAudio(context.Background(), "http:///track.mp3", t.TempDir(), "flac")
 
 	require.Error(t, err)
 	if errors.Is(err, ErrDisallowedDestination) {
