@@ -860,7 +860,7 @@ func TestAcquisitionHandler_StageYtdlpFallback_RefusedDestinationIsSurfaced(t *t
 	ytdlpMock := &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
 		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
-			return "", fmt.Errorf("refusing source URL: %w: target internal.example resolves to private IP 10.0.0.5", ErrDisallowedDestination)
+			return "", fmt.Errorf("refusing source URL: %w: target internal.example resolves to non-global IP 10.0.0.5", ErrDisallowedDestination)
 		},
 	}
 
@@ -915,7 +915,7 @@ func TestAcquisitionHandler_ExecuteItem_RefusedDestinationAbandonsTheItem(t *tes
 	handler.ytdlp = &mockYtdlp{
 		IsYtdlpAvailableFunc: func() bool { return true },
 		DownloadAudioFunc: func(ctx context.Context, rawURL, outputDir, audioFormat string) (string, error) {
-			return "", fmt.Errorf("refusing source URL: %w: target internal.example resolves to private IP 10.0.0.5", ErrDisallowedDestination)
+			return "", fmt.Errorf("refusing source URL: %w: target internal.example resolves to non-global IP 10.0.0.5", ErrDisallowedDestination)
 		},
 	}
 
