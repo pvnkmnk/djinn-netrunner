@@ -374,7 +374,7 @@ func (h *AdminHandler) UpdateConfig(c fiber.Ctx) error {
 	if isHTMXRequest(c) {
 		escapedKey := html.EscapeString(payload.Key)
 		escapedValue := html.EscapeString(payload.Value)
-		encodedKey := url.QueryEscape(payload.Key)
+		encodedKey := html.EscapeString(url.QueryEscape(payload.Key))
 		return c.Type("html").SendString(fmt.Sprintf(`<tr>
 			<td><code>%s</code></td>
 			<td>%s</td>
@@ -452,9 +452,9 @@ func (h *AdminHandler) RenderConfigEditPartial(c fiber.Ctx) error {
 
 	escapedKey := html.EscapeString(setting.Key)
 	escapedValue := html.EscapeString(setting.Value)
-	safeID := url.QueryEscape(setting.Key)
+	safeID := html.EscapeString(url.QueryEscape(setting.Key))
 	jsonKeyBytes, _ := json.Marshal(setting.Key)
-	jsonKey := string(jsonKeyBytes)
+	jsonKey := html.EscapeString(string(jsonKeyBytes))
 	return c.Type("html").SendString(fmt.Sprintf(`<tr>
 		<td><code>%s</code></td>
 		<td><input type="text" name="value" value="%s" id="config-value-%s" /></td>

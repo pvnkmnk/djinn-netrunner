@@ -35,6 +35,7 @@ func setupAdminPageApp(t *testing.T, db *gorm.DB) *fiber.App {
 	app.Get("/partials/admin/users", injectUser, handler.AdminOnly, handler.RenderUsersPartial)
 	app.Get("/partials/admin/audit", injectUser, handler.AdminOnly, handler.RenderAuditPartial)
 	app.Get("/partials/admin/config", injectUser, handler.AdminOnly, handler.RenderConfigPartial)
+	app.Get("/partials/admin/config-edit", injectUser, handler.AdminOnly, handler.RenderConfigEditPartial)
 	return app
 }
 
@@ -94,6 +95,23 @@ func TestAdminPage_RendersSelectedSection(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAdminRenderConfigEditPartial_EscapesAttributeContextXSS(t *testing.T) {
+	db := setupAdminTestDB(t)
+	// Create setting with double quotes, single quotes, and angle brackets in key and value
+	hostileKey := `test"key'with<xss>`
+	hostileValue := `val"ue'with<xss>`
+	require.NoError(t, db.Create(&database.Setting{Key: hostileKey, Value: hostileValue}).Error)
+
+	app := setupAdminPageApp(t, db)
+	path := "/partials/admin/config-edit?key=" + strings.ReplaceAll(hostileKey, `"`, "%22")
+	body := getBody(t, app, path)
+
+	// Ensure attributes do not contain raw unescaped quotes or script injections
+	assert.NotContains(t, body, `id="config-value-test"key`, "un-escaped quotes in id attribute would break out of attribute context")
+	assert.NotContains(t, body, `<xss>`, "angle brackets must be HTML-escaped")
+	assert.Contains(t, body, `&#34;`, "quotes in JSON string or attributes must be escaped as &#34;")
 }
 
 // htmx swaps a partial into the panel; a reload renders the same section from the
