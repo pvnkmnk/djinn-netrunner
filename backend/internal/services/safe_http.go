@@ -188,12 +188,16 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: invalid address %q: %w", addr, err)
 	}
-	ips, err := net.LookupIP(host)
+	// Bound the whole sequence — including DNS — before resolving: the
+	// lookup is context-aware, so a stalled resolution or a caller
+	// cancellation ends the call instead of holding the request past the
+	// caller's deadline and the overall dial budget (Sourcery on #394).
+	ctx, cancel := withOverallDialDeadline(ctx)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}
-	ctx, cancel := withOverallDialDeadline(ctx)
-	defer cancel()
 	var d net.Dialer
 	return dialPublicIPs(ctx, network, host, port, ips, d.DialContext)
 }
@@ -218,10 +222,15 @@ const defaultPerDialTimeout = 10 * time.Second
 // keeps every realistic answer set whole while bounding the pathological one,
 // so a large set cannot shrink each attempt's share of the deadline to
 // nothing. It is a window, not a hard cap: distinct addresses past the window
-// still get an overflow attempt while the caller's deadline allows (below),
-// so a reachable address late in DNS order is tried instead of truncated
-// away (Sourcery on #393).
+// still get overflow attempts (below), so a reachable address late in DNS
+// order is tried instead of truncated away (Sourcery on #393).
 const maxDialAttempts = 8
+
+// maxOverflowAttempts bounds the overflow phase's candidate count as well as
+// its time budget: with fast failures, time alone does not bound how many
+// outbound dials one request makes. Eight matches the fair-share window, so
+// one request dials at most sixteen distinct addresses (Sourcery on #394).
+const maxOverflowAttempts = 8
 
 // overflowPerDialTimeout bounds one overflow dial attempt — a candidate past
 // the fair-share window. Small on purpose: the window already had the fair
@@ -244,15 +253,16 @@ const overallDialTimeout = defaultPerDialTimeout * maxDialAttempts
 // The first maxDialAttempts candidates each get a fair share of the time
 // left on the caller's deadline (or defaultPerDialTimeout when there is
 // none): a blackholed address must not consume the whole request budget and
-// starve the addresses behind it. Distinct addresses past that window get
-// one overflow attempt each, bounded to overflowPerDialTimeout and to the
-// time still left on the caller's deadline — so a reachable address late in
-// DNS order is still tried when the window's attempts failed fast, while a
-// blackholed window under a tight deadline still cannot spend time it does
-// not have. Repeated answers count once, so duplicates cannot eat the
-// budget before a distinct reachable address is tried. The dial function is
-// a parameter (a net.Dialer's DialContext in production) so the fallback
-// loop is testable without a network.
+// starve the addresses behind it. Up to maxOverflowAttempts distinct
+// addresses past that window get one overflow attempt each, bounded to
+// overflowPerDialTimeout and to the time still left on the caller's
+// deadline — so a reachable address late in DNS order is still tried when
+// the window's attempts failed fast, while a blackholed window under a tight
+// deadline still cannot spend time it does not have. Repeated answers count
+// once, so duplicates cannot eat the budget before a distinct reachable
+// address is tried. The dial function is a parameter (a net.Dialer's
+// DialContext in production) so the fallback loop is testable without a
+// network.
 func dialPublicIPs(ctx context.Context, network, host, port string, ips []net.IP, dial func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
 	// Filter to dialable addresses first, so the per-attempt budget divides
 	// over addresses that will actually be dialed.
@@ -291,7 +301,13 @@ func dialPublicIPs(ctx context.Context, network, host, port string, ips []net.IP
 	// each, only while the caller's deadline still has time left. A
 	// blackholed window under a tight deadline leaves nothing here, by
 	// design — the overflow spends leftover time, never a fresh slice.
-	for _, ip := range targets[window:] {
+	// The count is capped too: with fast failures, time alone does not
+	// bound how many outbound dials one request makes.
+	overflow := targets[window:]
+	if len(overflow) > maxOverflowAttempts {
+		overflow = overflow[:maxOverflowAttempts]
+	}
+	for _, ip := range overflow {
 		budget := overflowAttemptTimeout(ctx)
 		if budget <= 0 {
 			break

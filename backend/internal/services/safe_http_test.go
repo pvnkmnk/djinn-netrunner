@@ -219,6 +219,18 @@ func TestWithOverallDialDeadline(t *testing.T) {
 	}
 }
 
+// Sourcery on #394: the DNS lookup observes the caller's context — a
+// cancelled context ends the call before any dial is attempted.
+func TestSafeDialContext_CancelledContextAbortsLookup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := safeDialContext(ctx, "tcp", "example.com:443"); err == nil {
+		t.Fatal("expected an error from a cancelled context, got nil")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v, want an error wrapping context.Canceled", err)
+	}
+}
+
 // The DJI-682 regression: DNS answers an unreachable IPv6 address first and
 // a reachable IPv4 second. The old code dialed only the first public IP and
 // failed; the fallback must reach the second.
@@ -489,6 +501,32 @@ func TestDialPublicIPs_OverflowTriesLaterAddress(t *testing.T) {
 	defer conn.Close()
 	if len(d.tried) != 9 {
 		t.Errorf("tried %v, want the eight window attempts plus the ninth overflow attempt", d.tried)
+	}
+	// The ninth overflow attempt must be the ninth IP, not a later one: a
+	// loop that skipped the ninth and succeeded on the tenth would still
+	// try nine addresses (Sourcery on #394).
+	if got, want := d.tried[8], net.JoinHostPort(ips[8].String(), "443"); got != want {
+		t.Errorf("overflow first tried %v, want the ninth IP %v", got, want)
+	}
+}
+
+// Sourcery on #394: the overflow is count-capped as well as time-bounded —
+// with fast failures, time alone does not bound how many outbound dials one
+// request makes.
+func TestDialPublicIPs_OverflowCapped(t *testing.T) {
+	ips := make([]net.IP, 20)
+	fail := map[string]error{}
+	for i := range ips {
+		ips[i] = net.ParseIP(fmt.Sprintf("1.1.1.%d", i+1))
+		fail[net.JoinHostPort(ips[i].String(), "443")] = fmt.Errorf("connection refused")
+	}
+	d := &fakeDialer{fail: fail}
+	d.closePeers(t)
+	if _, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial); err == nil {
+		t.Fatal("expected all dials to fail")
+	}
+	if want := maxDialAttempts + maxOverflowAttempts; len(d.tried) != want {
+		t.Errorf("tried %d addresses, want %d (window plus capped overflow)", len(d.tried), want)
 	}
 }
 
