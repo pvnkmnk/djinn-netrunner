@@ -128,6 +128,15 @@ var safeTransport = &http.Transport{
 // safeDialContext resolves DNS, verifies the resolved IP is not in a private
 // range, and dials directly. This prevents SSRF via DNS rebinding or direct
 // private IP access.
+//
+// It tries every resolved public IP in order until one dials: DNS can answer
+// an unreachable address first (notably IPv6 on a host with no IPv6 route),
+// and stopping at the first answer turns that into a hard failure for a host
+// that is otherwise reachable — which is exactly how the DJI-501 egress probe
+// failed in CI (see DJI-682). Private addresses are never dialed. If no
+// public IP exists the destination is refused (ErrDisallowedDestination); if
+// public IPs exist but none dials, the dial errors are returned joined,
+// which is a transient failure, not a refusal.
 func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -137,19 +146,33 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}
-	var safeIP net.IP
+	var d net.Dialer
+	return dialPublicIPs(ctx, network, host, port, ips, d.DialContext)
+}
+
+// dialPublicIPs dials the first reachable public IP in ips, trying each in
+// order. Sequential, not parallel: the order is deterministic, which keeps
+// the guard auditable, and a dial to an unreachable address fails fast. The
+// dial function is a parameter (a net.Dialer's DialContext in production) so
+// the fallback loop is testable without a network.
+func dialPublicIPs(ctx context.Context, network, host, port string, ips []net.IP, dial func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
+	var errs []error
+	tried := 0
 	for _, ip := range ips {
 		if isPrivateIP(ip) {
 			continue
 		}
-		safeIP = ip
-		break
+		tried++
+		conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		errs = append(errs, err)
 	}
-	if safeIP == nil {
+	if tried == 0 {
 		return nil, refusedDestination(fmt.Sprintf("ssrf: no public IP found for %s", host))
 	}
-	var d net.Dialer
-	return d.DialContext(ctx, network, net.JoinHostPort(safeIP.String(), port))
+	return nil, fmt.Errorf("ssrf: could not reach %s: %w", host, errors.Join(errs...))
 }
 
 // NewSafeHTTPClient creates an *http.Client whose transport prevents

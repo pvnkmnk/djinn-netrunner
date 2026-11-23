@@ -1,6 +1,9 @@
 package services
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -133,4 +136,109 @@ func TestSafeClient_AllowPrivateTargetsDirectDial(t *testing.T) {
 		t.Fatalf("expected success, got: %v", err)
 	}
 	resp.Body.Close()
+}
+
+// fakeDialer records every address it is asked to dial and answers from a
+// per-address script: fail with the mapped error, or return one end of an
+// in-memory pipe as a successful "connection".
+type fakeDialer struct {
+	tried []string
+	fail  map[string]error
+	peers []net.Conn
+}
+
+func (f *fakeDialer) dial(_ context.Context, _ string, address string) (net.Conn, error) {
+	f.tried = append(f.tried, address)
+	if err, ok := f.fail[address]; ok {
+		return nil, err
+	}
+	c1, c2 := net.Pipe()
+	f.peers = append(f.peers, c2)
+	return c1, nil
+}
+
+func (f *fakeDialer) closePeers(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, c := range f.peers {
+			c.Close()
+		}
+	})
+}
+
+// The DJI-682 regression: DNS answers an unreachable IPv6 address first and
+// a reachable IPv4 second. The old code dialed only the first public IP and
+// failed; the fallback must reach the second.
+func TestDialPublicIPs_FallsBackToSecondIP(t *testing.T) {
+	ips := []net.IP{
+		net.ParseIP("2606:4700:4700::1111"), // public IPv6, "unreachable"
+		net.ParseIP("1.1.1.1"),              // public IPv4, "reachable"
+	}
+	d := &fakeDialer{fail: map[string]error{
+		"[2606:4700:4700::1111]:443": fmt.Errorf("network is unreachable"),
+	}}
+	d.closePeers(t)
+	conn, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if err != nil {
+		t.Fatalf("expected fallback to reach the second IP, got: %v", err)
+	}
+	defer conn.Close()
+	if len(d.tried) != 2 || d.tried[0] != "[2606:4700:4700::1111]:443" || d.tried[1] != "1.1.1.1:443" {
+		t.Errorf("tried %v, want both addresses in DNS order", d.tried)
+	}
+}
+
+// Private IPs are skipped, never dialed, even when interleaved with public ones.
+func TestDialPublicIPs_SkipsPrivateIPs(t *testing.T) {
+	ips := []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("1.1.1.1"), net.ParseIP("192.168.1.1")}
+	d := &fakeDialer{}
+	d.closePeers(t)
+	conn, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if err != nil {
+		t.Fatalf("expected success via the public IP, got: %v", err)
+	}
+	defer conn.Close()
+	if len(d.tried) != 1 || d.tried[0] != "1.1.1.1:443" {
+		t.Errorf("tried %v, want only the public address dialed", d.tried)
+	}
+}
+
+// No public IP at all: the guard's refusal, not a dial error, and nothing dialed.
+func TestDialPublicIPs_AllPrivateRefused(t *testing.T) {
+	ips := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("10.0.0.1"), net.ParseIP("::1")}
+	d := &fakeDialer{}
+	_, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if err == nil {
+		t.Fatal("expected refusal, got nil")
+	}
+	if !errors.Is(err, ErrDisallowedDestination) {
+		t.Errorf("expected ErrDisallowedDestination, got: %v", err)
+	}
+	if len(d.tried) != 0 {
+		t.Errorf("dialed %v, want nothing dialed", d.tried)
+	}
+}
+
+// Public IPs exist but none dials: a transient error carrying every attempt,
+// not a refusal — callers may retry a dial failure, but must not treat it as
+// a permanent verdict about the destination.
+func TestDialPublicIPs_AllPublicFail(t *testing.T) {
+	ips := []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}
+	d := &fakeDialer{fail: map[string]error{
+		"1.1.1.1:443": fmt.Errorf("connection refused"),
+		"8.8.8.8:443": fmt.Errorf("network is unreachable"),
+	}}
+	_, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrDisallowedDestination) {
+		t.Errorf("dial failure must not be a disallowed-destination refusal, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "connection refused") || !strings.Contains(err.Error(), "network is unreachable") {
+		t.Errorf("expected both dial errors joined, got: %v", err)
+	}
+	if len(d.tried) != 2 {
+		t.Errorf("tried %v, want both addresses attempted", d.tried)
+	}
 }
