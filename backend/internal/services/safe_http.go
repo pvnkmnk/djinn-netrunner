@@ -44,13 +44,15 @@ var nonGlobalCIDRs = []string{
 	"240.0.0.0/4",
 	"224.0.0.0/4",
 	// IPv6 specials: documentation, IETF special-purpose (Teredo, ORCHID,
-	// benchmarking), 6to4, the NAT64 well-known prefix (it translates to
-	// IPv4, so it can smuggle a private address past a v6-only check),
-	// discard-only, deprecated site-local, multicast, unspecified.
+	// benchmarking), 6to4, the NAT64 prefixes (well-known 64:ff9b::/96 and
+	// local-use 64:ff9b:1::/48 — both translate to IPv4, so either can smuggle
+	// a private address past a v6-only check), discard-only, deprecated
+	// site-local, multicast, unspecified.
 	"2001:db8::/32",
 	"2001::/23",
 	"2002::/16",
 	"64:ff9b::/96",
+	"64:ff9b:1::/48",
 	"100::/64",
 	"fec0::/10",
 	"ff00::/8",
@@ -193,6 +195,12 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 // this is a backstop, not the normal path.
 const defaultPerDialTimeout = 10 * time.Second
 
+// maxDialAttempts bounds the candidate set dialPublicIPs will try. DNS
+// rarely answers more than a handful of addresses; eight keeps every
+// realistic answer set whole while bounding the pathological one, so a
+// large set cannot shrink each attempt's share of the deadline to nothing.
+const maxDialAttempts = 8
+
 // dialPublicIPs dials the first reachable global-unicast IP in ips, trying each in
 // order. Sequential, not parallel: the order is deterministic, which keeps
 // the guard auditable, and a dial to an unreachable address fails fast.
@@ -200,17 +208,33 @@ const defaultPerDialTimeout = 10 * time.Second
 // Each attempt is bounded to a fair share of the time left on the caller's
 // deadline (or defaultPerDialTimeout when there is none): a blackholed
 // address must not consume the whole request budget and starve the addresses
-// behind it. The dial function is a parameter (a net.Dialer's DialContext in
-// production) so the fallback loop is testable without a network.
+// behind it. Repeated answers count once, and the set is capped at
+// maxDialAttempts, so neither duplicates nor a large answer set can eat the
+// budget before a distinct reachable address is tried. The dial function is
+// a parameter (a net.Dialer's DialContext in production) so the fallback
+// loop is testable without a network.
 func dialPublicIPs(ctx context.Context, network, host, port string, ips []net.IP, dial func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
-	// Filter first, so the per-attempt budget divides over addresses that
-	// will actually be dialed.
+	// Filter to dialable addresses first, so the per-attempt budget divides
+	// over addresses that will actually be dialed.
 	var targets []net.IP
+	seen := make(map[string]struct{}, len(ips))
 	for _, ip := range ips {
 		if isNonGlobalIP(ip) {
 			continue
 		}
+		// Normalize IPv4-mapped IPv6 (::ffff:1.1.1.1) to 4-byte IPv4 so the
+		// same address in two forms dedupes to one target.
+		if ip4 := ip.To4(); ip4 != nil {
+			ip = ip4
+		}
+		if _, ok := seen[ip.String()]; ok {
+			continue
+		}
+		seen[ip.String()] = struct{}{}
 		targets = append(targets, ip)
+		if len(targets) == maxDialAttempts {
+			break
+		}
 	}
 	if len(targets) == 0 {
 		return nil, refusedDestination(fmt.Sprintf("ssrf: no public IP found for %s", host))

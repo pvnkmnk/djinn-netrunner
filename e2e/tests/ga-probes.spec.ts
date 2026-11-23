@@ -22,13 +22,14 @@ import { test } from '../fixtures/auth.fixture';
 //     every download, so an allowlist mistake that blocked everything shows
 //     here as a failure before any gate runs.
 //
-//  3. Multi-hop post-handover refusal — the DJI-500 residual, driven live:
-//     /flip on the audio-probe server answers the pre-handover walk with a
-//     clean 200 and every LATER request with a 302 to an RFC1918 address.
-//     The redirect hop happens inside yt-dlp after handover, where no
-//     pre-flight check can see it; the egress boundary must refuse the hop
-//     (TCP_DENIED on a private CONNECT) and the item must fail without
-//     importing.
+//  3. Guard refusal of the multi-hop probe — was the DJI-500 residual,
+//     driven live: /flip on the audio-probe server answered the pre-handover
+//     walk with a clean 200 and every LATER request with a 302 to an RFC1918
+//     address, so the egress boundary refused the post-handover hop. #392
+//     (DJI-683) made the guard refuse the probe's documentation address
+//     before any walk, so this spec now proves the guard refusal instead.
+//     The post-handover boundary proof moved to the egress boundary spec
+//     (egress-refusal.spec.ts), which the boundary mutation now runs.
 // ---------------------------------------------------------------------------
 
 const SOULSEEK_DECOY = { artist: 'Wrong Work Probe', album: 'Unrelated Record' };
@@ -291,7 +292,7 @@ test.describe('GA gap closers', () => {
     expect(found, 'the imported track must be visible in a library').toBe(true);
   });
 
-  test('multi-hop: a post-handover redirect to a private address is refused by the boundary', async ({ adminPage }) => {
+  test('a flip probe on a documentation address is refused by the pre-handover guard', async ({ adminPage }) => {
     test.setTimeout(300_000);
     const page = adminPage;
     const csrf = await getCsrfToken(page);
@@ -302,10 +303,14 @@ test.describe('GA gap closers', () => {
       // schedule (~6 min, all the same denial) proves nothing extra. The
       // Soulseek probe watches the full 3-attempt path instead.
       max_attempts: 1,
-      // The audio-probe's flip endpoint: the guard's pre-handover walk
-      // (Range: bytes=0-0) always gets a clean 200, while yt-dlp's actual
-      // fetch after handover always gets the 302 -> RFC1918. The rule is
-      // request-shaped, not a counter, so worker retries see the same split.
+      // History: the audio-probe's flip endpoint answered the guard's
+      // pre-handover walk (Range: bytes=0-0) with a clean 200, while yt-dlp's
+      // actual fetch after handover got the 302 -> RFC1918 — the rule was
+      // request-shaped, not a counter, so worker retries saw the same split.
+      // #392 made the guard refuse the probe's documentation address before
+      // any walk, so the flip never happens: this spec now proves the guard
+      // refusal, and the post-handover boundary proof lives in the egress
+      // boundary spec instead.
       url: 'http://audio-probe.e2e.test:8081/flip',
     });
 
@@ -318,12 +323,11 @@ test.describe('GA gap closers', () => {
       await page.waitForTimeout(4000);
       const logs = await jobLogs(page, csrf, jobId);
       if (logs.includes('Trying yt-dlp fallback')) sawWalkClean = true;
-      // The post-handover denial's markers: the proxy denies the private
-      // hop (TCP_DENIED/403 in squid's log) and yt-dlp surfaces it as
-      // "HTTP Error 403: Forbidden" (plain HTTP) or "Tunnel connection
-      // failed"/"ProxyError" (CONNECT). A PRE-flight refusal instead says
-      // "refusing source URL" — the wording this probe must NOT see.
-      if (/Tunnel connection failed|ProxyError|HTTP Error 403/i.test(logs)) sawDenial = true;
+      // The guard's wording (safe_http.go): "ssrf: target <host> resolves
+      // to non-global IP <ip>". The boundary's markers ("Tunnel connection
+      // failed" / "ProxyError" / "HTTP Error 403") must NOT appear: the
+      // proxy never saw this URL, because the guard refused it first.
+      if (/resolves to non-global IP/i.test(logs)) sawDenial = true;
       const current = await jobState(page, csrf, jobId);
       if (['failed', 'succeeded', 'cancelled'].includes(current)) {
         state = current;
@@ -334,17 +338,18 @@ test.describe('GA gap closers', () => {
     expect(sawWalkClean, 'the fallback entrance must run for the flip URL').toBe(true);
     expect(
       sawDenial,
-      'the post-handover hop to the RFC1918 address must be refused by the egress boundary'
+      'the pre-handover guard must refuse the documentation address before yt-dlp runs'
     ).toBe(true);
-    expect(state, 'the job must fail after the boundary refusal').toBe('failed');
+    expect(state, 'the job must fail after the guard refusal').toBe('failed');
 
     const failureLine = (await jobLogs(page, csrf, jobId))
       .split('\n')
       .find(l => /yt-dlp fallback failed/i.test(l));
-    expect(failureLine, 'the item log must carry the failure the boundary caused').toBeTruthy();
+    expect(failureLine, 'the item log must carry the failure the guard caused').toBeTruthy();
+    expect(failureLine, 'the refusal must name the non-global destination').toMatch(/non-global/);
     expect(
       failureLine,
-      'the refusal must be the POST-handover denial, not the pre-flight walk (no "refusing source URL")'
-    ).not.toMatch(/refusing source URL/);
+      'the refusal must be the guard refusal, not the boundary (no proxy markers) and not the gate (nothing was downloaded)'
+    ).not.toMatch(/Tunnel connection failed|ProxyError|HTTP Error 403|does not match the request/);
   });
 });

@@ -9,11 +9,8 @@
 .ytimg.com
 .googlevideo.com
 
-# E2E-only: the wrong-work refusal probe's server (ops/audio-probe, mounted
-# by the e2e overlay). It resolves to a documentation-IPv6 address
-# (2001:db8:aa::/64, RFC 3849) that is unreachable from the internet, so
-# allowlisting it here costs nothing in beta -- but the entry exists only so
-# the e2e probe's download passes the BOUNDARY and is refused by the identity
-# gate, which is the layer that spec proves. No production feed should ever
-# name this host.
-audio-probe.e2e.test
+# NOTE (DJI-684): audio-probe.e2e.test used to be allowlisted here so the
+# wrong-work probe's download passed the boundary and reached the identity
+# gate. The guard now refuses the probe's documentation address before yt-dlp
+# runs, so the proxy never sees it and the entry was removed. No production
+# feed should ever name this host.

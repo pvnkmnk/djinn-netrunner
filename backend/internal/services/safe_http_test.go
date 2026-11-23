@@ -31,24 +31,26 @@ func TestIsNonGlobalIP(t *testing.T) {
 		{"fc00::1", true},
 		// Shared / reserved / documentation space: IsGlobalUnicast admits
 		// these, so the hand list must catch them (Sourcery on #391).
-		{"100.64.0.1", true},       // CGNAT
-		{"100.127.255.255", true},  // CGNAT
-		{"192.0.2.1", true},        // TEST-NET-1
-		{"198.51.100.1", true},     // TEST-NET-2
-		{"203.0.113.1", true},      // TEST-NET-3
-		{"192.0.0.1", true},        // IETF protocol assignments
-		{"198.18.0.1", true},       // benchmarking
-		{"240.0.0.1", true},        // reserved
-		{"255.255.255.255", true},  // broadcast / reserved
-		{"224.0.0.1", true},        // multicast
-		{"2001:db8::1", true},      // documentation
-		{"2001::1", true},          // IETF special-purpose (Teredo range)
-		{"2002::1", true},          // 6to4
-		{"64:ff9b::8.8.8.8", true}, // NAT64 well-known prefix
-		{"100::1", true},           // discard-only
-		{"fec0::1", true},          // deprecated site-local
-		{"ff02::1", true},          // multicast
-		{"::", true},               // unspecified
+		{"100.64.0.1", true},         // CGNAT
+		{"100.127.255.255", true},    // CGNAT
+		{"192.0.2.1", true},          // TEST-NET-1
+		{"198.51.100.1", true},       // TEST-NET-2
+		{"203.0.113.1", true},        // TEST-NET-3
+		{"192.0.0.1", true},          // IETF protocol assignments
+		{"198.18.0.1", true},         // benchmarking
+		{"240.0.0.1", true},          // reserved
+		{"255.255.255.255", true},    // broadcast / reserved
+		{"224.0.0.1", true},          // multicast
+		{"2001:db8::1", true},        // documentation
+		{"2001::1", true},            // IETF special-purpose (Teredo range)
+		{"2002::1", true},            // 6to4
+		{"64:ff9b::8.8.8.8", true},   // NAT64 well-known prefix
+		{"64:ff9b:1::1", true},       // NAT64 local-use prefix (Sourcery on #392)
+		{"64:ff9b:1::8.8.8.8", true}, // NAT64 local-use prefix, embedded IPv4
+		{"100::1", true},             // discard-only
+		{"fec0::1", true},            // deprecated site-local
+		{"ff02::1", true},            // multicast
+		{"::", true},                 // unspecified
 		{"8.8.8.8", false},
 		{"1.1.1.1", false},
 		{"142.250.80.46", false}, // google.com
@@ -308,18 +310,18 @@ func TestDialPublicIPs_AllNonGlobalRefused(t *testing.T) {
 	}
 }
 
-// blockingFirstDialer simulates a blackholed address: the dial for the
-// configured address waits until its context is cancelled, every other
+// blockingFirstDialer simulates blackholed addresses: the dial for any
+// address in the set waits until its context is cancelled, every other
 // address answers from an in-memory pipe.
 type blockingFirstDialer struct {
 	tried   []string
-	blocked string
+	blocked map[string]bool
 	peers   []net.Conn
 }
 
 func (d *blockingFirstDialer) dial(ctx context.Context, _ string, address string) (net.Conn, error) {
 	d.tried = append(d.tried, address)
-	if address == d.blocked {
+	if d.blocked[address] {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
@@ -346,7 +348,7 @@ func TestDialPublicIPs_BlackholedFirstIPDoesNotStarveFallback(t *testing.T) {
 	ips := []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	d := &blockingFirstDialer{blocked: "1.1.1.1:443"}
+	d := &blockingFirstDialer{blocked: map[string]bool{"1.1.1.1:443": true}}
 	d.closePeers(t)
 	start := time.Now()
 	conn, err := dialPublicIPs(ctx, "tcp", "example.com", "443", ips, d.dial)
@@ -363,5 +365,96 @@ func TestDialPublicIPs_BlackholedFirstIPDoesNotStarveFallback(t *testing.T) {
 	// code took the full second and failed.
 	if elapsed >= 900*time.Millisecond {
 		t.Errorf("fallback took %v, want it well inside the 1s parent deadline", elapsed)
+	}
+}
+
+// The third Sourcery #392 finding: DNS can repeat one address, and the old
+// loop counted each copy as a separate target, spending one budget share
+// timing out on each. Repeated answers — including the same IPv4 in plain
+// and IPv4-mapped form — count once.
+func TestDialPublicIPs_DeduplicatesRepeatedIPs(t *testing.T) {
+	ips := []net.IP{
+		net.ParseIP("1.1.1.1"),
+		net.ParseIP("1.1.1.1"),
+		net.ParseIP("::ffff:1.1.1.1"),
+		net.ParseIP("8.8.8.8"),
+		net.ParseIP("8.8.8.8"),
+	}
+	d := &fakeDialer{fail: map[string]error{
+		"1.1.1.1:443": fmt.Errorf("connection refused"),
+	}}
+	d.closePeers(t)
+	conn, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if err != nil {
+		t.Fatalf("expected fallback to reach the second distinct IP, got: %v", err)
+	}
+	defer conn.Close()
+	if len(d.tried) != 2 || d.tried[0] != "1.1.1.1:443" || d.tried[1] != "8.8.8.8:443" {
+		t.Errorf("tried %v, want each distinct address dialed exactly once", d.tried)
+	}
+}
+
+// The second Sourcery #392 finding, candidate-set half: a DNS answer with
+// more distinct addresses than the cap must not be tried in full — the
+// first maxDialAttempts are attempted and the rest never cost a share.
+func TestDialPublicIPs_CapsCandidates(t *testing.T) {
+	ips := []net.IP{
+		net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8"), net.ParseIP("9.9.9.9"),
+		net.ParseIP("1.0.0.1"), net.ParseIP("8.8.4.4"), net.ParseIP("149.112.112.112"),
+		net.ParseIP("208.67.222.222"), net.ParseIP("208.67.220.220"),
+		net.ParseIP("194.242.2.2"), net.ParseIP("91.239.100.100"),
+	}
+	fail := map[string]error{}
+	for _, ip := range ips {
+		fail[net.JoinHostPort(ip.String(), "443")] = fmt.Errorf("connection refused")
+	}
+	d := &fakeDialer{fail: fail}
+	conn, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if conn != nil {
+		conn.Close()
+	}
+	if err == nil {
+		t.Fatal("expected failure when every candidate refuses, got nil")
+	}
+	if errors.Is(err, ErrDisallowedDestination) {
+		t.Errorf("expected a dial error, not a refusal: %v", err)
+	}
+	if len(d.tried) != maxDialAttempts {
+		t.Errorf("tried %d addresses, want the %d-attempt cap", len(d.tried), maxDialAttempts)
+	}
+}
+
+// The second Sourcery #392 finding, budget half: seven blackholed addresses
+// ahead of a reachable one must not starve it. With the candidate set
+// capped, each of the eight attempts gets a fair share of the 2s deadline,
+// so the fallback still reaches the eighth address well inside it.
+func TestDialPublicIPs_BlackholedSetDoesNotStarveFallback(t *testing.T) {
+	ips := []net.IP{
+		net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8"), net.ParseIP("9.9.9.9"),
+		net.ParseIP("1.0.0.1"), net.ParseIP("8.8.4.4"), net.ParseIP("149.112.112.112"),
+		net.ParseIP("208.67.222.222"), net.ParseIP("208.67.220.220"),
+	}
+	blocked := map[string]bool{}
+	for _, ip := range ips[:7] {
+		blocked[net.JoinHostPort(ip.String(), "443")] = true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	d := &blockingFirstDialer{blocked: blocked}
+	d.closePeers(t)
+	start := time.Now()
+	conn, err := dialPublicIPs(ctx, "tcp", "example.com", "443", ips, d.dial)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("expected fallback to reach the eighth IP, got: %v", err)
+	}
+	defer conn.Close()
+	if len(d.tried) != 8 {
+		t.Errorf("tried %v, want all eight candidates attempted in DNS order", d.tried)
+	}
+	// Seven attempts at ~250ms each is ~1.75s; the fallback must finish
+	// inside the 2s parent deadline.
+	if elapsed >= 1950*time.Millisecond {
+		t.Errorf("fallback took %v, want it inside the 2s parent deadline", elapsed)
 	}
 }

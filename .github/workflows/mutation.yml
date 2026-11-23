@@ -48,7 +48,7 @@ jobs:
       - name: Gate mutation must turn the Soulseek probe red
         run: bash scripts/mutation-check.sh gate
 
-      - name: Boundary mutation must turn the multi-hop probe red
+      - name: Boundary mutation must turn the egress boundary probe red
         run: bash scripts/mutation-check.sh boundary
       - name: Success mutation must turn the success-path probe red
         run: bash scripts/mutation-check.sh success

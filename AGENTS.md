@@ -160,7 +160,9 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   ops-worker` (from `e2e/`) before trusting a run against new code.
 - **GA-gap probes** (`e2e/tests/ga-probes.spec.ts`, PR #259) drive three live
   clauses: Soulseek-entrance wrong-work refusal, success path → library, and
-  multi-hop post-handover refusal. `POST /api/test/seed-*` endpoints (gated
+  guard refusal of the documentation-address probe (was multi-hop
+  post-handover refusal; #392 made the guard refuse the probe's address, so
+  the post-handover boundary proof moved to `egress-refusal.spec.ts`). `POST /api/test/seed-*` endpoints (gated
   `E2E_ENABLE_TEST_API`) create the items and accept `max_attempts` so a
   deterministic probe skips the ~5-min retry ladder.
 - **`ops/fake-slskd`** replaces slskd in the e2e overlay — keep the container
@@ -175,7 +177,10 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   guard's pre-handover walk sends `Range: bytes=0-0` (yt-dlp sends none), so
   answer that with 200 and everything else with 302→RFC1918. A counter gets
   consumed by attempt 1 and attempt 2's walk records the *pre-flight* refusal
-  — the wrong layer, catchable only by asserting the wording.
+  — the wrong layer, catchable only by asserting the wording. (Since #392 the
+  guard refuses the probe's documentation address before any walk, so no spec
+  exercises the flip any more — the endpoint stays as the fixture, and the
+  post-handover boundary proof lives in `egress-refusal.spec.ts`.)
 - The e2e test endpoints live in `internal/api/testapi` (mounted only when
   `E2E_ENABLE_TEST_API`); **seeds self-declare their fixture artists to
   cleanup** (request artist + peer TAG artist), so cleanup needs no edits for
@@ -192,8 +197,10 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   codes through `tail` pipelines see tail's status, not playwright's.
 - Automated mutation proofs cover the **identity gate**
   (`scripts/mutation-check.sh gate` — mutates `download_gate.go`; the
-  Soulseek wrong-work probe must fail) and the **egress boundary**
-  (`boundary` — removes `YTDLP_PROXY`; the multi-hop probe must fail),
+  Soulseek wrong-work probe must fail; the yt-dlp entrance's gate proof is
+  the Go test `TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo`,
+  which fails when the gate call is removed) and the **egress boundary**
+  (`boundary` — removes `YTDLP_PROXY`; the egress boundary spec must fail),
   re-proven weekly by `.github/workflows/mutation.yml`. Browser behavior
   mutations (remove admin gate) still need an image rebuild + spec run
   (templates are baked into the image) — see Linear DJI-434.

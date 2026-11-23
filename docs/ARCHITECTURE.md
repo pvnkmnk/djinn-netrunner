@@ -134,7 +134,7 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 ### SSRF / Outbound HTTP
 - **Unified safe HTTP transport** (`safe_http.go`): All outbound HTTP clients (Spotify, MusicBrainz, Discogs, slskd, gonic, navidrome, cover art fetches) use a shared `http.Transport` with:
   - DNS rebinding protection (IP resolution before dial)
-  - Private IP range blocking (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `0.0.0.0/8`, `::1/128`, `fc00::/7`)
+  - Non-global destination blocking (`isNonGlobalIP` in `safe_http.go`): only global unicast is dialable. That is the private/loopback/link-local ranges plus the shared, reserved and documentation ranges `IsGlobalUnicast` admits — CGNAT `100.64.0.0/10`, the TEST-NETs, `192.0.0.0/24`, benchmarking `198.18.0.0/15`, `240.0.0.0/4`, multicast, and the IPv6 specials (documentation `2001:db8::/32`, IETF special-purpose `2001::/23`, 6to4 `2002::/16`, NAT64 `64:ff9b::/96` and `64:ff9b:1::/48`, discard-only `100::/64`, deprecated site-local `fec0::/10`). A hostname resolving only to non-global addresses is refused (`ErrDisallowedDestination`, terminal); when several global addresses answer, each is tried in DNS order with a fair share of the remaining request deadline (at most 8 distinct attempts, duplicates removed), so one blackholed address cannot starve the fallback.
 - `docker-compose.yml` no longer has `extra_hosts: ["host.docker.internal:host-gateway"]` (removed in Cycle 5).
 
 ### OOM Prevention
