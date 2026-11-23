@@ -454,7 +454,7 @@ func (h *AdminHandler) RenderConfigEditPartial(c fiber.Ctx) error {
 	escapedValue := html.EscapeString(setting.Value)
 	safeID := html.EscapeString(url.QueryEscape(setting.Key))
 	jsonKeyBytes, _ := json.Marshal(setting.Key)
-	jsonKey := html.EscapeString(string(jsonKeyBytes))
+	escapedJSONKey := html.EscapeString(string(jsonKeyBytes))
 	return c.Type("html").SendString(fmt.Sprintf(`<tr>
 		<td><code>%s</code></td>
 		<td><input type="text" name="value" value="%s" id="config-value-%s" /></td>
@@ -470,5 +470,5 @@ func (h *AdminHandler) RenderConfigEditPartial(c fiber.Ctx) error {
 					hx-target="#admin-content"
 					hx-swap="innerHTML">Cancel</button>
 		</td>
-	</tr>`, escapedKey, escapedValue, safeID, safeID, jsonKey))
+	</tr>`, escapedKey, escapedValue, safeID, safeID, escapedJSONKey))
 }
