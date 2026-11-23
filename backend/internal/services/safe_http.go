@@ -43,12 +43,14 @@ var nonGlobalCIDRs = []string{
 	// Reserved (RFC 1112, RFC 6890) and multicast.
 	"240.0.0.0/4",
 	"224.0.0.0/4",
-	// IPv6 specials: documentation, IETF special-purpose (Teredo, ORCHID,
+	// IPv6 specials: documentation (2001:db8::/32 and the RFC 9637
+	// documentation prefix 3fff::/20), IETF special-purpose (Teredo, ORCHID,
 	// benchmarking), 6to4, the NAT64 prefixes (well-known 64:ff9b::/96 and
 	// local-use 64:ff9b:1::/48 — both translate to IPv4, so either can smuggle
 	// a private address past a v6-only check), discard-only, deprecated
 	// site-local, multicast, unspecified.
 	"2001:db8::/32",
+	"3fff::/20",
 	"2001::/23",
 	"2002::/16",
 	"64:ff9b::/96",
@@ -99,8 +101,9 @@ const redirectHopLimit = 10
 // isNonGlobalIP returns true if ip is not a global unicast address: private,
 // loopback, link-local, multicast, unspecified, shared (CGNAT), reserved or
 // documentation space. Only global unicast is dialable. IsGlobalUnicast alone
-// is not enough — it admits CGNAT, the TEST-NETs, benchmarking and the
-// reserved range — so the hand list above covers those explicitly.
+// is not enough — it admits CGNAT, the TEST-NETs, benchmarking, the reserved
+// range and the documentation ranges — so the hand list above covers those
+// explicitly.
 func isNonGlobalIP(ip net.IP) bool {
 	// Normalize IPv4-mapped IPv6 (::ffff:x.x.x.x) to 4-byte IPv4.
 	// Prevents SSRF bypass using IPv6 representations of private IPv4 addresses.
@@ -176,13 +179,22 @@ var safeTransport = &http.Transport{
 // failed in CI (see DJI-682). Non-global addresses are never dialed. If no
 // global-unicast IP exists the destination is refused (ErrDisallowedDestination); if
 // global-unicast IPs exist but none dials, the dial errors are returned joined,
-// which is a transient failure, not a refusal.
+// which is a transient failure, not a refusal. When the caller's context
+// carries no deadline, the whole dial sequence is bounded by
+// overallDialTimeout (below) instead of granting each attempt a fresh
+// timeout with no total cap.
 func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: invalid address %q: %w", addr, err)
 	}
-	ips, err := net.LookupIP(host)
+	// Bound the whole sequence — including DNS — before resolving: the
+	// lookup is context-aware, so a stalled resolution or a caller
+	// cancellation ends the call instead of holding the request past the
+	// caller's deadline and the overall dial budget (Sourcery on #394).
+	ctx, cancel := withOverallDialDeadline(ctx)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}
@@ -190,29 +202,67 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	return dialPublicIPs(ctx, network, host, port, ips, d.DialContext)
 }
 
+// withOverallDialDeadline returns ctx bounded by the overall dial budget
+// when it carries no deadline yet. A ctx that already has a deadline is
+// returned unchanged with a no-op cancel, so callers can always defer it.
+func withOverallDialDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, overallDialTimeout)
+}
+
 // defaultPerDialTimeout bounds one dial attempt when the caller's context
 // carries no deadline. Every production caller sets a client timeout, so
 // this is a backstop, not the normal path.
 const defaultPerDialTimeout = 10 * time.Second
 
-// maxDialAttempts bounds the candidate set dialPublicIPs will try. DNS
-// rarely answers more than a handful of addresses; eight keeps every
-// realistic answer set whole while bounding the pathological one, so a
-// large set cannot shrink each attempt's share of the deadline to nothing.
+// maxDialAttempts bounds the fair-share window dialPublicIPs gives its first
+// candidates. DNS rarely answers more than a handful of addresses; eight
+// keeps every realistic answer set whole while bounding the pathological one,
+// so a large set cannot shrink each attempt's share of the deadline to
+// nothing. It is a window, not a hard cap: distinct addresses past the window
+// still get overflow attempts (below), so a reachable address late in DNS
+// order is tried instead of truncated away (Sourcery on #393).
 const maxDialAttempts = 8
+
+// maxOverflowAttempts bounds the overflow phase's candidate count as well as
+// its time budget: with fast failures, time alone does not bound how many
+// outbound dials one request makes. Eight matches the fair-share window, so
+// one request dials at most sixteen distinct addresses (Sourcery on #394).
+const maxOverflowAttempts = 8
+
+// overflowPerDialTimeout bounds one overflow dial attempt — a candidate past
+// the fair-share window. Small on purpose: the window already had the fair
+// share of the deadline, so overflow attempts only spend time the window
+// left over (fast refusals), never a fresh slice of it.
+const overflowPerDialTimeout = 1 * time.Second
+
+// overallDialTimeout bounds the whole dial sequence — fair-share window and
+// overflow alike — when the caller's context carries no deadline. It equals
+// the window's worst case (one backstop budget per window attempt), so the
+// per-attempt backstop is unchanged and the overflow only spends what the
+// window left over, instead of granting each overflow address a fresh
+// timeout with no total cap (CodeRabbit on #394).
+const overallDialTimeout = defaultPerDialTimeout * maxDialAttempts
 
 // dialPublicIPs dials the first reachable global-unicast IP in ips, trying each in
 // order. Sequential, not parallel: the order is deterministic, which keeps
 // the guard auditable, and a dial to an unreachable address fails fast.
 //
-// Each attempt is bounded to a fair share of the time left on the caller's
-// deadline (or defaultPerDialTimeout when there is none): a blackholed
-// address must not consume the whole request budget and starve the addresses
-// behind it. Repeated answers count once, and the set is capped at
-// maxDialAttempts, so neither duplicates nor a large answer set can eat the
-// budget before a distinct reachable address is tried. The dial function is
-// a parameter (a net.Dialer's DialContext in production) so the fallback
-// loop is testable without a network.
+// The first maxDialAttempts candidates each get a fair share of the time
+// left on the caller's deadline (or defaultPerDialTimeout when there is
+// none): a blackholed address must not consume the whole request budget and
+// starve the addresses behind it. Up to maxOverflowAttempts distinct
+// addresses past that window get one overflow attempt each, bounded to
+// overflowPerDialTimeout and to the time still left on the caller's
+// deadline — so a reachable address late in DNS order is still tried when
+// the window's attempts failed fast, while a blackholed window under a tight
+// deadline still cannot spend time it does not have. Repeated answers count
+// once, so duplicates cannot eat the budget before a distinct reachable
+// address is tried. The dial function is a parameter (a net.Dialer's
+// DialContext in production) so the fallback loop is testable without a
+// network.
 func dialPublicIPs(ctx context.Context, network, host, port string, ips []net.IP, dial func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
 	// Filter to dialable addresses first, so the per-attempt budget divides
 	// over addresses that will actually be dialed.
@@ -232,16 +282,37 @@ func dialPublicIPs(ctx context.Context, network, host, port string, ips []net.IP
 		}
 		seen[ip.String()] = struct{}{}
 		targets = append(targets, ip)
-		if len(targets) == maxDialAttempts {
-			break
-		}
 	}
 	if len(targets) == 0 {
 		return nil, refusedDestination(fmt.Sprintf("ssrf: no public IP found for %s", host))
 	}
+	window := min(len(targets), maxDialAttempts)
 	var errs []error
-	for i, ip := range targets {
-		attemptCtx, cancel := context.WithTimeout(ctx, perAttemptTimeout(ctx, len(targets)-i))
+	for i := 0; i < window; i++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, perAttemptTimeout(ctx, window-i))
+		conn, err := dial(attemptCtx, network, net.JoinHostPort(targets[i].String(), port))
+		cancel()
+		if err == nil {
+			return conn, nil
+		}
+		errs = append(errs, err)
+	}
+	// Overflow: candidates past the fair-share window, one small attempt
+	// each, only while the caller's deadline still has time left. A
+	// blackholed window under a tight deadline leaves nothing here, by
+	// design — the overflow spends leftover time, never a fresh slice.
+	// The count is capped too: with fast failures, time alone does not
+	// bound how many outbound dials one request makes.
+	overflow := targets[window:]
+	if len(overflow) > maxOverflowAttempts {
+		overflow = overflow[:maxOverflowAttempts]
+	}
+	for _, ip := range overflow {
+		budget := overflowAttemptTimeout(ctx)
+		if budget <= 0 {
+			break
+		}
+		attemptCtx, cancel := context.WithTimeout(ctx, budget)
 		conn, err := dial(attemptCtx, network, net.JoinHostPort(ip.String(), port))
 		cancel()
 		if err == nil {
@@ -250,6 +321,19 @@ func dialPublicIPs(ctx context.Context, network, host, port string, ips []net.IP
 		errs = append(errs, err)
 	}
 	return nil, fmt.Errorf("ssrf: could not reach %s: %w", host, errors.Join(errs...))
+}
+
+// overflowAttemptTimeout is the budget for one overflow dial attempt: at most
+// overflowPerDialTimeout, and never past the caller's deadline. Zero (or
+// negative) means no time is left, so the overflow loop stops.
+func overflowAttemptTimeout(ctx context.Context) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			return min(remaining, overflowPerDialTimeout)
+		}
+		return 0
+	}
+	return overflowPerDialTimeout
 }
 
 // perAttemptTimeout is the budget for one dial attempt: an even share of the
