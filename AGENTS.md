@@ -12,6 +12,9 @@
 > the migrator installs the NOTIFY sender, the console attaches to a picked
 > job, and a schedule names a job type and a library scope; a
 > project-directory clean landed, so the checkout is master-only.
+> Refreshed 2026-11-22: toolchain is Go 1.27.4 (CI, Docker and go.mod pins
+> agree), mcp-go v1.6.0, klauspost/compress v1.20.2; `govulncheck` stays
+> pinned at v1.8.0 and reports 0 reachable vulnerabilities.
 
 ## Orientation
 
@@ -577,9 +580,9 @@ otherwise-good change are the thing to flag before anything else.
 
 ### Go toolchain & dependencies
 
-- CI pins `go 1.27.2` (setup-go) and the Docker builder
-  (`golang:1.27.2-alpine`) agree, `backend/go.mod` is
-  `go 1.27.0`, and the framework is **Fiber v3**
+- CI pins `go 1.27.4` (setup-go) and the Docker builder
+  (`golang:1.27.4-alpine`) agree, `backend/go.mod` is
+  `go 1.27.4`, and the framework is **Fiber v3**
   (`github.com/gofiber/fiber/v3 v3.5.0`) — the v2→v3 move is what put
   `c.Scheme()` and `middleware/static` + the `adaptor` package in
   `cmd/server/main.go`, so a cookbook snippet written against v2 usually does
