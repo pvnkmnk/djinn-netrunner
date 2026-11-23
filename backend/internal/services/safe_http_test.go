@@ -194,6 +194,31 @@ func (f *fakeDialer) closePeers(t *testing.T) {
 	})
 }
 
+// CodeRabbit on #394: with no caller deadline, the whole dial sequence gets
+// one overall budget instead of a fresh timeout per attempt. A ctx that
+// already has a deadline passes through unchanged.
+func TestWithOverallDialDeadline(t *testing.T) {
+	// No deadline in: one comes out, set to the overall budget.
+	ctx, cancel := withOverallDialDeadline(context.Background())
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected an overall deadline on a deadline-less context, got none")
+	}
+	if remaining := time.Until(deadline); remaining < overallDialTimeout-2*time.Second || remaining > overallDialTimeout {
+		t.Errorf("overall deadline is %v out, want ~%v", remaining, overallDialTimeout)
+	}
+
+	// Deadline in: the same ctx comes back, untouched.
+	want, wantCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer wantCancel()
+	got, gotCancel := withOverallDialDeadline(want)
+	defer gotCancel()
+	if got != want {
+		t.Error("expected a deadline-bearing context to pass through unchanged")
+	}
+}
+
 // The DJI-682 regression: DNS answers an unreachable IPv6 address first and
 // a reachable IPv4 second. The old code dialed only the first public IP and
 // failed; the fallback must reach the second.

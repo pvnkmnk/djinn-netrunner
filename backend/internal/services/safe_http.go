@@ -179,7 +179,10 @@ var safeTransport = &http.Transport{
 // failed in CI (see DJI-682). Non-global addresses are never dialed. If no
 // global-unicast IP exists the destination is refused (ErrDisallowedDestination); if
 // global-unicast IPs exist but none dials, the dial errors are returned joined,
-// which is a transient failure, not a refusal.
+// which is a transient failure, not a refusal. When the caller's context
+// carries no deadline, the whole dial sequence is bounded by
+// overallDialTimeout (below) instead of granting each attempt a fresh
+// timeout with no total cap.
 func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -189,8 +192,20 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}
+	ctx, cancel := withOverallDialDeadline(ctx)
+	defer cancel()
 	var d net.Dialer
 	return dialPublicIPs(ctx, network, host, port, ips, d.DialContext)
+}
+
+// withOverallDialDeadline returns ctx bounded by the overall dial budget
+// when it carries no deadline yet. A ctx that already has a deadline is
+// returned unchanged with a no-op cancel, so callers can always defer it.
+func withOverallDialDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, overallDialTimeout)
 }
 
 // defaultPerDialTimeout bounds one dial attempt when the caller's context
@@ -213,6 +228,14 @@ const maxDialAttempts = 8
 // share of the deadline, so overflow attempts only spend time the window
 // left over (fast refusals), never a fresh slice of it.
 const overflowPerDialTimeout = 1 * time.Second
+
+// overallDialTimeout bounds the whole dial sequence — fair-share window and
+// overflow alike — when the caller's context carries no deadline. It equals
+// the window's worst case (one backstop budget per window attempt), so the
+// per-attempt backstop is unchanged and the overflow only spends what the
+// window left over, instead of granting each overflow address a fresh
+// timeout with no total cap (CodeRabbit on #394).
+const overallDialTimeout = defaultPerDialTimeout * maxDialAttempts
 
 // dialPublicIPs dials the first reachable global-unicast IP in ips, trying each in
 // order. Sequential, not parallel: the order is deterministic, which keeps
