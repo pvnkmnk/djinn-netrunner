@@ -132,6 +132,11 @@ The `docker-compose.integration.yml` defines:
 - **integration-db**: PostgreSQL 17 for test isolation
 - **Network**: Dedicated bridge network for service communication
 - **Volumes**: Persistent data for test continuity
+- **Major-version upgrades**: `integration-db-data` holds the previous
+  major version's data and cannot be reused by a newer PostgreSQL image.
+  If the test data can be discarded, reset it with
+  `docker compose -f docker-compose.integration.yml down -v`; otherwise
+  migrate it per `ops/docs/backup.md` (PostgreSQL major-version upgrade).
 
 ### Test Lifecycle
 
