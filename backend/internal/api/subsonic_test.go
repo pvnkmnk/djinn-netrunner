@@ -126,6 +126,113 @@ func TestSubsonic_Stream_InvalidFormat(t *testing.T) {
 	assert.Contains(t, bodyStr, `Unsupported format`)
 }
 
+// TestSubsonic_Stream_RawFormat: format=raw means "stream the original
+// file without transcoding" — the guard must not reject it, and the
+// handler must serve the original file with the source's content type.
+func TestSubsonic_Stream_RawFormat(t *testing.T) {
+	db, handler := setupSubsonicDBHandlerTest(t)
+
+	var library database.Library
+	err := db.First(&library).Error
+	require.NoError(t, err)
+
+	tmpFile, err := os.CreateTemp("", "song-*.mp3")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	track := database.Track{
+		ID:        uuid.New(),
+		Title:     "Test Song",
+		Artist:    "Test Artist",
+		Album:     "Test Album",
+		Path:      tmpFile.Name(),
+		LibraryID: library.ID,
+		Format:    "MP3",
+		FileSize:  1024000,
+	}
+	err = db.Create(&track).Error
+	require.NoError(t, err)
+
+	app := fiber.New()
+	app.Get("/stream", handler.AuthMiddleware, handler.Stream)
+
+	password := "testpass123"
+	req := httptest.NewRequest("GET", "/stream?id="+track.ID.String()+"&format=raw&u=test@example.com&p="+password, nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "audio/mpeg", resp.Header.Get("Content-Type"))
+	body := subsonicGetRespBody(resp)
+	assert.NotContains(t, string(body), `status="failed"`)
+}
+
+// TestSubsonic_Stream_FlvFormat: format=flv is a recognized Subsonic
+// format — the guard must not reject it. Transcoding is off in this
+// harness, so the handler serves the original file.
+func TestSubsonic_Stream_FlvFormat(t *testing.T) {
+	db, handler := setupSubsonicDBHandlerTest(t)
+
+	var library database.Library
+	err := db.First(&library).Error
+	require.NoError(t, err)
+
+	tmpFile, err := os.CreateTemp("", "song-*.mp3")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	track := database.Track{
+		ID:        uuid.New(),
+		Title:     "Test Song",
+		Artist:    "Test Artist",
+		Album:     "Test Album",
+		Path:      tmpFile.Name(),
+		LibraryID: library.ID,
+		Format:    "MP3",
+		FileSize:  1024000,
+	}
+	err = db.Create(&track).Error
+	require.NoError(t, err)
+
+	app := fiber.New()
+	app.Get("/stream", handler.AuthMiddleware, handler.Stream)
+
+	password := "testpass123"
+	req := httptest.NewRequest("GET", "/stream?id="+track.ID.String()+"&format=flv&u=test@example.com&p="+password, nil)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := subsonicGetRespBody(resp)
+	assert.NotContains(t, string(body), `Unsupported format`)
+}
+
+func TestSubsonic_formatToFFmpegMuxer(t *testing.T) {
+	tests := []struct {
+		format   string
+		expected string
+	}{
+		{format: "mp3", expected: "mp3"},
+		{format: "flac", expected: "flac"},
+		{format: "wav", expected: "wav"},
+		{format: "ogg", expected: "ogg"},
+		{format: "opus", expected: "opus"},
+		{format: "flv", expected: "flv"},
+		// m4a and aac have no FFmpeg muxer under their own name.
+		{format: "m4a", expected: "ipod"},
+		{format: "aac", expected: "adts"},
+		{format: "M4A", expected: "ipod"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			assert.Equal(t, tt.expected, formatToFFmpegMuxer(tt.format))
+		})
+	}
+}
+
 func intPtr(i int) *int {
 	return &i
 }

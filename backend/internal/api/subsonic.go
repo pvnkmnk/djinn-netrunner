@@ -939,6 +939,14 @@ func (h *SubsonicHandler) Stream(c fiber.Ctx) error {
 	// Normalize format to lowercase
 	requestedFormat = strings.ToLower(requestedFormat)
 
+	// "raw" is a valid Subsonic format meaning "stream the original file
+	// without transcoding" — it is not a transcode target, so it must not
+	// reach the guard below or the transcode path. Clearing it makes the
+	// handler serve the original file exactly as an absent format would.
+	if requestedFormat == "raw" {
+		requestedFormat = ""
+	}
+
 	if requestedFormat != "" && formatToMIME(requestedFormat) == "" {
 		return h.respondError(c, 0, "Unsupported format")
 	}
@@ -1017,7 +1025,7 @@ func (h *SubsonicHandler) streamTranscoded(c fiber.Ctx, inputPath, outputFormat 
 			ffmpegPath = "ffmpeg"
 		}
 
-		args := []string{"-i", inputPath, "-f", outputFormat}
+		args := []string{"-i", inputPath, "-f", formatToFFmpegMuxer(outputFormat)}
 		if bitrate > 0 && isLossyFormat(outputFormat) {
 			args = append(args, "-b:a", fmt.Sprintf("%dk", bitrate))
 		}
@@ -1087,15 +1095,34 @@ func formatToMIME(format string) string {
 		return "audio/opus"
 	case "aac", "m4a":
 		return "audio/mp4"
+	case "flv":
+		return "video/x-flv"
 	default:
 		return ""
+	}
+}
+
+// formatToFFmpegMuxer returns the FFmpeg muxer name for a requested output
+// format. Most formats share their name with their muxer; m4a needs the
+// ipod muxer (there is no m4a muxer) and aac the adts muxer (there is no
+// aac muxer) — the same mapping services.mapMuxer uses for tag writes, so
+// a transcode to either format failed with "Unable to find a suitable
+// output format" before this.
+func formatToFFmpegMuxer(format string) string {
+	switch strings.ToLower(format) {
+	case "m4a":
+		return "ipod"
+	case "aac":
+		return "adts"
+	default:
+		return format
 	}
 }
 
 // isLossyFormat returns true if the format is lossy (supports bitrate control)
 func isLossyFormat(format string) bool {
 	switch strings.ToLower(format) {
-	case "mp3", "aac", "ogg", "opus", "m4a":
+	case "mp3", "aac", "ogg", "opus", "m4a", "flv":
 		return true
 	}
 	return false
