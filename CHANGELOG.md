@@ -88,6 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **The Subsonic stream endpoint rejected `format=raw` and `format=flv`,
+  and transcoding to `m4a` could never work.** The new format guard validated
+  the requested format against `formatToMIME`, which knew neither `raw` (a
+  valid Subsonic value meaning "stream the original file without
+  transcoding") nor `flv` — so a client asking for either got `Unsupported
+  format`. `raw` now clears to an absent format, which serves the original
+  file, and `flv` is recognised as `video/x-flv`. Separately, the transcode
+  path passed the requested format straight to FFmpeg as `-f <format>`,
+  and there is no `m4a` muxer (or `aac` muxer): a transcode to `m4a`
+  failed with "Unable to find a suitable output format". The output
+  format is now mapped to its FFmpeg muxer (`m4a` → `ipod`, `aac` → `adts`,
+  the same mapping `services.mapMuxer` uses for tag writes). Held by
+  `TestSubsonic_Stream_RawFormat`, `TestSubsonic_Stream_FlvFormat` and
+  `TestSubsonic_formatToFFmpegMuxer`, and recorded in
+  `docs/OPENSUBSONIC_COVERAGE.md` (DJI-674).
 - **Pressing Pause did not pause, and the only control that could turn monitoring
   off sent nothing at all.** The card's Pause/Resume button carried no `hx-vals`
   and no `hx-include`, so htmx sent an empty body; `PATCH /api/artists/:id` parsed

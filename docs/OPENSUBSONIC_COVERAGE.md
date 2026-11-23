@@ -41,7 +41,7 @@ Fixed: `/rest/getLicense.view` is the spec name and `/rest/license.view` is
 kept as an alias, so nothing breaks for a client that learned the old one.
 The guard below fails if either half of that pair disappears.
 
-### 2. `/rest/stream.view` has no automated test
+### 2. `/rest/stream.view` has one automated test
 
 `SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the
 endpoint every client actually uses to listen to music. One check drives it —
@@ -52,6 +52,13 @@ content type, authorization or error shape, it needs a running stack, and
 draft of this document called the endpoint untested; it is not, and the
 distinction is the point: the check exists somewhere a CI failure cannot
 reach it.
+
+Since this finding was written, `TestSubsonic_Stream_InvalidFormat` (in
+`backend/internal/api/subsonic_test.go`) drives the handler and asserts an
+invalid `format` is rejected with `Unsupported format`, and
+`TestSubsonic_Stream_RawFormat` / `TestSubsonic_Stream_FlvFormat` cover the
+`raw` and `flv` formats. That is the error path and two format values; ranges,
+content type, authorization and the other error shapes are still untested.
 
 There are nine passing tests named `TestStreamTrack_*` in
 `backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,
@@ -179,7 +186,7 @@ endpoint out of base API when its text names no extension at all.
 | `setRating` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `star` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `startScan` | get+post | Media Library Scanning | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_StartScan |
-| `stream` | get+post | Addition, Clarification, Extension, Media Retrieval | `Extension` | Extension | impl | `backend/internal/api/subsonic.go:871`<br>smoke only: `scripts/smoke.sh:486-492` asserts >1000 bytes, manual, not in CI; no handler test — see Finding 2 |
+| `stream` | get+post | Addition, Clarification, Extension, Media Retrieval | `Extension` | Extension | impl | `backend/internal/api/subsonic.go:871`<br>TestSubsonic_Stream_{InvalidFormat,RawFormat,FlvFormat}, TestSubsonic_formatToFFmpegMuxer; smoke only: `scripts/smoke.sh:486-492` asserts >1000 bytes, manual, not in CI — see Finding 2 |
 | `tokenInfo` | get+post | Addition, Extension, System | apiKeyAuthentication | Extension | gap | not in the route table · **NR05** |
 | `unstar` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `updateInternetRadioStation` | get+post | Internet Radio | — | — | gap | not in the route table · **NR23** |
