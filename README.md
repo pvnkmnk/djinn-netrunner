@@ -176,7 +176,7 @@ NetRunner ships in two editions over one codebase, and **PostgreSQL is what the 
 
 | Edition / deployment | Database | Notes |
 |---|---|---|
-| **Djinn-Netrunner** (dev and production) | PostgreSQL 16 | Advisory locks, concurrent workers and the `LISTEN/NOTIFY` wakeup and log fast path; the dev stack runs it on a loopback publish |
+| **Djinn-Netrunner** (dev and production) | PostgreSQL 17 | Advisory locks, concurrent workers and the `LISTEN/NOTIFY` wakeup and log fast path; the dev stack runs it on a loopback publish |
 | **NetrunnerLite** (single user, zero config) | SQLite WAL | One worker, polling wakeups, no external service to run |
 | Multi-node / horizontal scaling | PostgreSQL | Multiple workers across hosts |
 | LiteFS + SQLite cluster | — | Not the recommended path; [ADR 0001](docs/decisions/0001-multi-node-sqlite-litefs.md) stays on record |

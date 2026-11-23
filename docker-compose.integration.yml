@@ -114,7 +114,7 @@ services:
   # 3. Use a test network with known peers
   
   integration-db:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: netrunner-integration-db
     environment:
       POSTGRES_DB: netrunner_integration
