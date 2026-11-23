@@ -232,3 +232,46 @@ func TestSchedulesOwnership_CoversLibraryScopes(t *testing.T) {
 	require.NoError(t, db.Model(&database.Schedule{}).Count(&remaining).Error)
 	assert.Zero(t, remaining)
 }
+
+// TestScheduleToggle_ExplicitEnabledIsIdempotent: the card sends the desired
+// state in hx-vals, so a retry after a lost response must re-apply the same
+// value, not flip the stored one back. A flip is not idempotent: the first
+// request disables the schedule and the retry would re-enable it (DJI-680).
+func TestScheduleToggle_ExplicitEnabledIsIdempotent(t *testing.T) {
+	db := setupAPITestDB(t)
+	owner := formUser(t, db)
+	_, library := scheduleFixture(t, db, owner)
+	app := scheduleTestApp(t, db, owner)
+
+	sched := database.Schedule{
+		JobType: "enrich", LibraryID: &library.ID,
+		CronExpr: "0 5 * * *", Timezone: "UTC", Enabled: true,
+	}
+	require.NoError(t, db.Create(&sched).Error)
+	id := strconv.FormatUint(sched.ID, 10)
+	path := "/api/schedules/" + id + "/toggle"
+
+	readEnabled := func(t *testing.T) bool {
+		t.Helper()
+		var row database.Schedule
+		require.NoError(t, db.First(&row, sched.ID).Error)
+		return row.Enabled
+	}
+
+	// The desired value applies, and the re-rendered card offers the opposite
+	// one next: a disabled schedule's button sends enabled=true.
+	disabled := submitForm(t, app, "PATCH", path, map[string]string{"enabled": "false"})
+	require.Equal(t, 200, disabled.StatusCode)
+	assert.False(t, readEnabled(t))
+	assert.Contains(t, respBody(t, disabled), `hx-vals='{"enabled": "true"}'`)
+
+	// A retry of the same desired value must not move it.
+	require.Equal(t, 200, submitForm(t, app, "PATCH", path, map[string]string{"enabled": "false"}).StatusCode)
+	assert.False(t, readEnabled(t), "a retry of the same desired value must not flip it back")
+	require.Equal(t, 200, submitForm(t, app, "PATCH", path, map[string]string{"enabled": "true"}).StatusCode)
+	assert.True(t, readEnabled(t))
+
+	// No body still flips, for callers that send none.
+	require.Equal(t, 200, submitForm(t, app, "PATCH", path, nil).StatusCode)
+	assert.False(t, readEnabled(t))
+}

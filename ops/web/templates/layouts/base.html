@@ -9,8 +9,16 @@
          violation and the rules never applied. The same rules are declared in
          styles.css instead, which 'self' allows - so the injection is turned
          off rather than permitted. Do not add 'unsafe-inline' to make it work:
-         that re-opens the hole the policy closes. -->
-    <meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+         that re-opens the hole the policy closes.
+         `timeout` is 30s for the same reason a request must end: htmx only
+         releases an `hx-disabled-elt` control on `htmx:afterRequest`, and
+         with no timeout a hung request never fires it, so the control stays
+         disabled for the rest of the session. A timeout ends the request,
+         which fires `htmx:timeout`, `htmx:responseError` (reported by app.js)
+         and `htmx:afterRequest` (which restores the control). 30s is far
+         above any legitimate request here - the slow work runs as jobs, not
+         XHRs - so it only ever catches a genuine hang (DJI-680). -->
+    <meta name="htmx-config" content='{"includeIndicatorStyles":false,"timeout":30000}'>
     <title>{% block title %}NETRUNNER{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/styles.css">
     <script src="/static/js/htmx.min.js"></script>
