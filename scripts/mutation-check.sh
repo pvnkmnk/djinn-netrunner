@@ -8,7 +8,7 @@
 #   gate      - make the identity gate accept everything (download_gate.go);
 #               the Soulseek wrong-work spec must fail.
 #   boundary  - unset YTDLP_PROXY so yt-dlp egress is unvalidated;
-#               the multi-hop post-handover spec must fail.
+#               the egress boundary spec must fail.
 #   success   - retag the success fixture's source (ops/fake-slskd's clean
 #               peer) so the downloaded file no longer matches the request;
 #               the success-path import spec must fail.
@@ -34,7 +34,21 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 MUTATION="${1:?usage: scripts/mutation-check.sh <gate|boundary|success>}"
-SPEC="e2e/tests/ga-probes.spec.ts"
+
+# The spec file that pins the mutated behavior. The boundary proof used to
+# live in the ga-probes flip test, but #392 made the guard refuse the flip
+# probe's documentation address before yt-dlp runs, so the boundary mutation
+# (no proxy) no longer turns it red — the guard refuses first either way.
+# The proof moved to the egress boundary spec, whose seeded URL is public
+# and resolvable: without the proxy, yt-dlp downloads it and the spec's
+# proxy-marker assertion fails.
+spec_for() {
+  case "$MUTATION" in
+    gate)     echo "ga-probes.spec.ts" ;;
+    boundary) echo "egress-refusal.spec.ts" ;;
+    success)  echo "ga-probes.spec.ts" ;;
+  esac
+}
 DOCKER="${DOCKER_BIN:-docker}"
 
 DOCKER="${DOCKER_BIN:-docker}"
@@ -146,7 +160,7 @@ wait_for_ready() {
 test_grep_for() {
   case "$MUTATION" in
     gate)     echo "Soulseek entrance" ;;
-    boundary) echo "multi-hop" ;;
+    boundary) echo "denied by the boundary" ;;
     success)  echo "success path" ;;
   esac
 }
@@ -256,7 +270,7 @@ run_probe() {
   # boundary phases ("port 8080 already used") and teardown.ts would destroy
   # it between phases. The probes must always run in reuse mode; CI's other
   # meanings (retries, forbidden .only) are not needed for a 1-test probe.
-  ( cd "$REPO_ROOT/e2e" && env -u CI npx playwright test "$(basename "$SPEC")" --grep "$(test_grep_for)" \
+  ( cd "$REPO_ROOT/e2e" && env -u CI npx playwright test "$(spec_for)" --grep "$(test_grep_for)" \
     --timeout=300000 --reporter=list --workers=1 )
 }
 

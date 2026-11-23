@@ -121,22 +121,22 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
     ).toBeTruthy();
   });
 
-  // The clause the acceptance record carries as "not driven live": a reachable
-  // URL serving PLAYABLE audio that is not the requested work must be refused
-  // by the identity gate (download_gate.go) — not by the guard in front of it
-  // (this URL passes DJI-500's walk: the host is pinned via /etc/hosts to a
-  // documentation-IPv6 address, 2001:db8:aa::/64, which no layer treats as
-  // private) and not by the proxy (the allowlist... the host is not on it, so
-  // squid must ALLOW it — it does, via dstdomain... no: the allowlist DENIES
-  // unlisted domains. The e2e overlay therefore allowlists
-  // audio-probe.e2e.test in allowed-domains.txt; see that file's e2e note).
-  // yt-dlp downloads the FLAC through the proxy successfully; the gate reads
-  // its tags, finds artist/album disagree with the request, and the item is
-  // abandoned terminally with "does not match the request". Mutation: deleting
-  // the gate call in stageYtdlpFallback (acquisition_pipeline.go) makes this
-  // spec import the file and go green-failing — the spec asserts zero
-  // acquisitions for the probe job.
-  test('a reachable but wrong-work download is refused by the identity gate, not the boundary', async ({ adminPage }) => {
+  // History: this probe used to drive the identity gate live — a reachable
+  // URL serving PLAYABLE audio that is not the requested work, refused by the
+  // gate (download_gate.go) after yt-dlp downloaded it through the proxy.
+  // That worked because the host was pinned via /etc/hosts to a
+  // documentation-IPv6 address, 2001:db8:aa::/64, which no layer treated as
+  // private. #392 (DJI-683) closed that hole: the guard now refuses every
+  // non-global destination, documentation space included, so the guard
+  // refuses this URL before yt-dlp runs and the gate never sees the file.
+  // The E2E spec now proves the guard refusal; the gate proof is the Go
+  // test TestAcquisitionHandler_ExecuteItem_YtdlpFallbackIsGatedToo, which
+  // already drove the same wrong-work file through the same pipeline with a
+  // canned downloader and fails when the gate call is removed. The fixture (audio-probe container, doc network,
+  // extra_hosts pin) stays: the guard must SEE a resolvable documentation
+  // address to refuse it — an unresolvable name would prove nothing, a
+  // LookupIP error is not a refusal.
+  test('a documentation-address probe is refused by the pre-handover guard, not the boundary', async ({ adminPage }) => {
     const page = adminPage;
     const csrf = await getCsrfToken(page);
 
@@ -145,10 +145,10 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
         artist: 'Wrong Work Probe',
         album: 'DJI Gate Proof',
         // Served by the audio-probe container (docker-compose.e2e.yml): a
-        // real 20s FLAC tagged "Totally Different Band / Unrelated Record" —
-        // playable, plausible-sized, and sharing NO word with this request
-        // (the gate folds names to words; one shared word reads as a legit
-        // name variant and passes — the first live run proved exactly that).
+        // real 20s FLAC tagged "Totally Different Band / Unrelated Record".
+        // The download never happens now — the guard refuses the host first —
+        // but the URL must stay this one: the host is what the guard refuses,
+        // and it must resolve to the documentation address to prove it.
         url: 'http://audio-probe.e2e.test:8080/wrong-work.flac',
       },
       headers: { 'X-CSRF-Token': csrf },
@@ -157,12 +157,13 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
     const { job_id: jobId } = await seed.json();
     expect(jobId).toBeGreaterThan(0);
 
-    // No retry loop here: the gate's rejection is terminal on the first
-    // attempt (DJI-497), so this lifecycle is minutes shorter than the
-    // boundary probe's — download, ffprobe, tag compare, abandon.
+    // No retry loop here: the guard's refusal is terminal on the first
+    // attempt (DJI-497's abandonment), so this lifecycle is minutes shorter
+    // than the boundary probe's — walk, refusal, abandon.
     const deadline = Date.now() + 180_000;
+    let sawFallbackAttempt = false;
+    let sawGuardRefusal = false;
     let sawDownload = false;
-    let sawGateRefusal = false;
     let jobState = '';
 
     while (Date.now() < deadline) {
@@ -172,18 +173,20 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
         .then(r => r.text());
 
       if (logsText.includes('Trying yt-dlp fallback')) {
-        sawDownload = true;
+        sawFallbackAttempt = true;
       }
 
-      // The gate's wording (download_gate.go): "<source> delivered a file that
-      // does not match the request". The discriminator between the gate and
-      // every earlier layer: the download SUCCEEDED first ("yt-dlp downloaded"),
-      // so any refusal the guard or proxy produced would never reach this line.
+      // The guard's wording (safe_http.go): "ssrf: target <host> resolves
+      // to non-global IP <ip>". The discriminator between the guard and the
+      // layers behind it: the download must NOT have happened, so a refusal
+      // naming the gate ("does not match the request") or the proxy
+      // ("Tunnel connection failed" / "ProxyError") would mean a layer the
+      // guard was supposed to stop ran instead.
+      if (/resolves to non-global IP/.test(logsText)) {
+        sawGuardRefusal = true;
+      }
       if (/yt-dlp downloaded/.test(logsText)) {
         sawDownload = true;
-      }
-      if (/does not match the request/.test(logsText)) {
-        sawGateRefusal = true;
       }
 
       const jobsRes = await page.request.get('/api/jobs/', { headers: { 'X-CSRF-Token': csrf } });
@@ -198,27 +201,33 @@ test.describe('yt-dlp egress boundary (DJI-501)', () => {
       }
     }
 
-    expect(sawDownload, 'yt-dlp must have downloaded the probe FLAC (every layer before the gate passed)').toBe(true);
+    expect(sawFallbackAttempt, 'the fallback entrance must run for the probe URL').toBe(true);
     expect(
-      sawGateRefusal,
-      'the identity gate must refuse the file: tags name a different work than the request'
+      sawGuardRefusal,
+      'the pre-handover guard must refuse the documentation address before yt-dlp runs'
     ).toBe(true);
+    expect(sawDownload, 'yt-dlp must NOT have downloaded anything — the guard refused first').toBe(false);
     expect(jobState, 'the job must fail — the only item was refused').toBe('failed');
 
-    // The refusal must be the gate's, with its own wording, and nothing may
+    // The refusal must be the guard's, with its own wording, and nothing may
     // have reached the library.
     const failureLine = await page.request
       .get(`/partials/job-logs?job_id=${jobId}`, { headers: { 'X-CSRF-Token': csrf } })
       .then(r => r.text())
-      .then(t => t.split('\n').find(l => /does not match the request/.test(l)));
-    expect(failureLine, 'the refusal line must name yt-dlp as the source').toMatch(/yt-dlp/);    // Nothing may have reached the library. The import stage writes below
+      .then(t => t.split('\n').find(l => /yt-dlp fallback failed/i.test(l)));
+    expect(failureLine, 'the item log must carry the fallback failure the guard caused').toBeTruthy();
+    expect(failureLine, 'the refusal must name the non-global destination').toMatch(/non-global/);
+    expect(
+      failureLine,
+      'the gate must not have run: nothing was downloaded, so no tag comparison happened'
+    ).not.toMatch(/does not match the request/);    // Nothing may have reached the library. The import stage writes below
     // MUSIC_LIBRARY (the worker's libraryRoot), so the assertion must scan
     // THAT directory — a random /tmp path would always be empty and the
     // assertion would pass vacuously. The container's own music root is
     // mounted into ops-web too, so registering it as a library and scanning
     // it exercises the same flow a Subsonic client's view is built from.
     // The scan target is empty in a fresh DB; a seed could only have filled
-    // it if the gate had let the file import.
+    // it if the guard had let the file through.
     const libPath = '/app/music';
     const libRes = await page.request.post('/api/libraries', {
       data: { name: 'Wrong Work Probe', path: libPath },
