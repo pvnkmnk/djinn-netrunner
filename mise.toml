@@ -60,8 +60,15 @@ run = "bash scripts/smoke.sh"
 
 [tasks.e2e]
 description = "Playwright end-to-end suite (Playwright owns the stack lifecycle)"
-run = "bash scripts/e2e.sh test"
+# The E2E stack is self-contained: scripts/e2e.sh materialises .env.e2e from
+# the checked-in template, and the stack's credentials come from that file.
+# Strip the fnox secrets here so npm/Playwright and Compose subprocesses never
+# see the operator's real dev secrets even when run under `fnox exec --` --
+# and so the shell environment cannot override the throwaway template values
+# (compose prefers shell env over --env-file).
+run = "env -u JWT_SECRET -u SUBSONIC_PASSWORD -u SLSKD_API_KEY -u POSTGRES_PASSWORD bash scripts/e2e.sh test"
 
 [tasks.validate]
 description = "Repo validation script (PowerShell wrapper on Windows: scripts/validate.ps1)"
 run = "bash scripts/validate.sh"
+run_windows = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate.ps1"
