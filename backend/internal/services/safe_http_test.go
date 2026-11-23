@@ -42,6 +42,9 @@ func TestIsNonGlobalIP(t *testing.T) {
 		{"255.255.255.255", true},    // broadcast / reserved
 		{"224.0.0.1", true},          // multicast
 		{"2001:db8::1", true},        // documentation
+		{"3fff::1", true},            // documentation, RFC 9637 prefix (Sourcery on #393)
+		{"3fff:0fff::1", true},       // top of the 3fff::/20 documentation prefix
+		{"3fff:1000::1", false},      // just outside 3fff::/20 — stays dialable
 		{"2001::1", true},            // IETF special-purpose (Teredo range)
 		{"2002::1", true},            // 6to4
 		{"64:ff9b::8.8.8.8", true},   // NAT64 well-known prefix
@@ -395,8 +398,12 @@ func TestDialPublicIPs_DeduplicatesRepeatedIPs(t *testing.T) {
 }
 
 // The second Sourcery #392 finding, candidate-set half: a DNS answer with
-// more distinct addresses than the cap must not be tried in full — the
-// first maxDialAttempts are attempted and the rest never cost a share.
+// more distinct addresses than the fair-share window must not get the whole
+// window's budget — when the window's attempts are slow (blackholed), the
+// deadline is spent inside the window and the overflow never runs, so
+// exactly eight addresses are tried. The literal 8 below is deliberate:
+// asserting the intended window size, not the maxDialAttempts constant, so
+// raising the constant cannot silently pass this test (Sourcery on #393).
 func TestDialPublicIPs_CapsCandidates(t *testing.T) {
 	ips := []net.IP{
 		net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8"), net.ParseIP("9.9.9.9"),
@@ -404,23 +411,59 @@ func TestDialPublicIPs_CapsCandidates(t *testing.T) {
 		net.ParseIP("208.67.222.222"), net.ParseIP("208.67.220.220"),
 		net.ParseIP("194.242.2.2"), net.ParseIP("91.239.100.100"),
 	}
-	fail := map[string]error{}
+	blocked := map[string]bool{}
 	for _, ip := range ips {
-		fail[net.JoinHostPort(ip.String(), "443")] = fmt.Errorf("connection refused")
+		blocked[net.JoinHostPort(ip.String(), "443")] = true
 	}
-	d := &fakeDialer{fail: fail}
-	conn, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	d := &blockingFirstDialer{blocked: blocked}
+	d.closePeers(t)
+	start := time.Now()
+	conn, err := dialPublicIPs(ctx, "tcp", "example.com", "443", ips, d.dial)
+	elapsed := time.Since(start)
 	if conn != nil {
 		conn.Close()
 	}
 	if err == nil {
-		t.Fatal("expected failure when every candidate refuses, got nil")
+		t.Fatal("expected failure when every candidate is blackholed, got nil")
 	}
 	if errors.Is(err, ErrDisallowedDestination) {
 		t.Errorf("expected a dial error, not a refusal: %v", err)
 	}
-	if len(d.tried) != maxDialAttempts {
-		t.Errorf("tried %d addresses, want the %d-attempt cap", len(d.tried), maxDialAttempts)
+	if len(d.tried) != 8 {
+		t.Errorf("tried %d addresses, want the 8-attempt fair-share window", len(d.tried))
+	}
+	// Eight attempts at ~250ms each is ~2s; the loop must finish inside
+	// the parent deadline with time to spare for the check, not past it.
+	if elapsed >= 2500*time.Millisecond {
+		t.Errorf("fallback took %v, want it inside the 2s parent deadline", elapsed)
+	}
+}
+
+// The Sourcery #393 finding, reachable-later-address half: the window is a
+// fair-share window, not a hard cap — when its attempts fail fast and leave
+// time on the deadline, a reachable address past the first eight is tried.
+func TestDialPublicIPs_OverflowTriesLaterAddress(t *testing.T) {
+	ips := []net.IP{
+		net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8"), net.ParseIP("9.9.9.9"),
+		net.ParseIP("1.0.0.1"), net.ParseIP("8.8.4.4"), net.ParseIP("149.112.112.112"),
+		net.ParseIP("208.67.222.222"), net.ParseIP("208.67.220.220"),
+		net.ParseIP("194.242.2.2"), net.ParseIP("91.239.100.100"),
+	}
+	fail := map[string]error{}
+	for _, ip := range ips[:8] {
+		fail[net.JoinHostPort(ip.String(), "443")] = fmt.Errorf("connection refused")
+	}
+	d := &fakeDialer{fail: fail}
+	d.closePeers(t)
+	conn, err := dialPublicIPs(context.Background(), "tcp", "example.com", "443", ips, d.dial)
+	if err != nil {
+		t.Fatalf("expected overflow to reach the ninth IP, got: %v", err)
+	}
+	defer conn.Close()
+	if len(d.tried) != 9 {
+		t.Errorf("tried %v, want the eight window attempts plus the ninth overflow attempt", d.tried)
 	}
 }
 
