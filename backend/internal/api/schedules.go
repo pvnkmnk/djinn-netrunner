@@ -306,11 +306,22 @@ func (h *SchedulesHandler) Toggle(c fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "not found"})
 	}
 
-	// Flip the one column. `Save(&sched)` used to do this, and it carried
-	// whatever had been preloaded back into the database with the row, so the
-	// write-back could collide on a UNIQUE index that had nothing to do with the
-	// toggle. Updating the column and re-reading the scope keeps the two apart.
+	// Set the value the caller asked for, or flip it when none was sent.
+	// The card sends the desired state in `hx-vals` (see schedule-card.html),
+	// so a retry after a lost response re-applies the same value instead of
+	// flipping the stored one back: a flip is not idempotent, and a retry
+	// that lands after the first request succeeded would undo it. The flip
+	// stays as the fallback for callers that send no body (DJI-680).
+	var payload struct {
+		Enabled *bool `json:"enabled" form:"enabled"`
+	}
+	if err := c.Bind().Body(&payload); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
 	enabled := !sched.Enabled
+	if payload.Enabled != nil {
+		enabled = *payload.Enabled
+	}
 	if err := h.db.Model(&database.Schedule{}).Where("id = ?", id).
 		Update("enabled", enabled).Error; err != nil {
 		return internalServerError(c, err)
