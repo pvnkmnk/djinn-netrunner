@@ -375,7 +375,7 @@ func watchlistsRegionContext(db *gorm.DB, user database.User) fiber.Map {
 	// Check if user has linked Spotify sp_dc cookie
 	var spDcLinked bool
 	var spotifyToken database.SpotifyToken
-	if err := db.Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
+	if err := db.Select("sp_dc_cookie").Where("user_id = ?", user.ID).First(&spotifyToken).Error; err == nil {
 		spDcLinked = spotifyToken.SpDcCookie != ""
 	}
 	ctx["spDcLinked"] = spDcLinked
