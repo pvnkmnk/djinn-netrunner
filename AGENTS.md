@@ -12,6 +12,9 @@
 > the migrator installs the NOTIFY sender, the console attaches to a picked
 > job, and a schedule names a job type and a library scope; a
 > project-directory clean landed, so the checkout is master-only.
+> Refreshed 2026-11-22: toolchain is Go 1.27.4 (CI, Docker and go.mod pins
+> agree), mcp-go v1.6.0, klauspost/compress v1.20.2; `govulncheck` stays
+> pinned at v1.8.0 and reports 0 reachable vulnerabilities.
 
 ## Orientation
 
