@@ -284,7 +284,7 @@ textarea:focus-visible,
 }
 
 .stat-card, .watchlist-card, .library-card, .profile-card, 
-.schedule-card, .artist-card, .job-card {
+.schedule-card, .artist-card, .job-card, .playlist-card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 0;
@@ -299,7 +299,8 @@ textarea:focus-visible,
 
 .stat-card::before,
 .watchlist-card::before,
-.library-card::before {
+.library-card::before,
+.playlist-card::before {
     content: '';
     position: absolute;
     left: 0;
@@ -317,7 +318,8 @@ textarea:focus-visible,
 .profile-card:hover, .profile-card:focus-within,
 .schedule-card:hover, .schedule-card:focus-within,
 .artist-card:hover, .artist-card:focus-within,
-.job-card:hover, .job-card:focus-within {
+.job-card:hover, .job-card:focus-within,
+.playlist-card:hover, .playlist-card:focus-within {
     border-color: var(--accent-cyan);
     transform: translateX(4px);
     box-shadow: 0 0 20px rgba(0, 255, 245, 0.15);
@@ -325,7 +327,8 @@ textarea:focus-visible,
 
 .stat-card:hover::before, .stat-card:focus-within::before,
 .watchlist-card:hover::before, .watchlist-card:focus-within::before,
-.library-card:hover::before, .library-card:focus-within::before {
+.library-card:hover::before, .library-card:focus-within::before,
+.playlist-card:hover::before, .playlist-card:focus-within::before {
     opacity: 1;
 }
 
@@ -333,6 +336,12 @@ textarea:focus-visible,
 .stat-card .stat-label { color: var(--text-secondary); font-size: 0.875rem; }
 .stat-card.success .stat-value { color: var(--accent-success); }
 .stat-card.error .stat-value { color: var(--accent-error); }
+
+/* Playlists */
+.playlists-region { margin-bottom: 2rem; }
+.playlist-info .name { font-weight: 600; }
+.playlist-info .description { color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.25rem; }
+.playlist-info .meta { color: var(--text-muted); font-size: 0.75rem; margin-top: 0.25rem; }
 
 /* Watchlists */
 .watchlists-region { margin-bottom: 2rem; }

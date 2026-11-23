@@ -71,12 +71,6 @@ var intentionallyUnstyled = map[string]string{
 	"track-artist": "watchlist preview row, never styled (P-DJI-28)",
 	"track-album":  "watchlist preview row, never styled (P-DJI-28)",
 
-	// Playlists.
-	"playlist-card":    "playlists card, never styled (P-DJI-28)",
-	"playlist-info":    "playlists card, never styled (P-DJI-28)",
-	"playlists-region": "playlists region wrapper, never styled (P-DJI-28)",
-	"meta":             "playlists meta line, never styled (P-DJI-28)",
-
 	// htmx region wrappers and page furniture.
 	"artists-region":   "htmx region wrapper, never styled (P-DJI-28)",
 	"libraries-region": "htmx region wrapper, never styled (P-DJI-28)",
