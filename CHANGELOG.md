@@ -88,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot pick up a release image (#287).
 
 ### Fixed
+- **The outbound HTTP guard refused private ranges only, and one blackholed address could starve the fallback.** `safe_http.go` now classifies by global unicast (`isNonGlobalIP`): CGNAT `100.64.0.0/10`, the TEST-NETs, `192.0.0.0/24`, benchmarking `198.18.0.0/15`, `240.0.0.0/4`, multicast, and the IPv6 specials (documentation `2001:db8::/32`, IETF special-purpose `2001::/23`, 6to4 `2002::/16`, both NAT64 prefixes `64:ff9b::/96` and `64:ff9b:1::/48`, discard-only `100::/64`, deprecated site-local `fec0::/10`) are refused before dialing, and a hostname resolving only to non-global addresses is refused terminally. When several global addresses answer, each is tried in DNS order with a fair share of the remaining request deadline — at most 8 distinct attempts, duplicates removed — so neither a large answer set nor a repeated blackholed address can eat the budget before a reachable address is tried. Held by `TestIsNonGlobalIP` (38-case table), `TestDialPublicIPs_DeduplicatesRepeatedIPs`, `TestDialPublicIPs_CapsCandidates` and `TestDialPublicIPs_BlackholedSetDoesNotStarveFallback` (DJI-683, DJI-684).
 - **The Subsonic stream endpoint rejected `format=raw` and `format=flv`,
   and transcoding to `m4a` could never work.** The new format guard validated
   the requested format against `formatToMIME`, which knew neither `raw` (a
