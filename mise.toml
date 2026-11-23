@@ -15,27 +15,32 @@
 
 [env]
 ENVIRONMENT = "development"
-CONFIG_ENV = "development"
+# CONFIG_ENV is deliberately absent: config.Load falls back to ENVIRONMENT
+# when it is unset, and an unconditional value here would override that
+# fallback everywhere - including under `mise run test`, where
+# TestLoad_ConfigEnvDefaultsToEnvironment sets ENVIRONMENT=testenv and
+# expects ConfigEnv to follow it.
 PORT = "8080"
-MUSIC_LIBRARY = "./music_library"
-TEMPLATES_PATH = "./ops/web/templates"
-STATIC_FILES_PATH = "./ops/web/static"
+# These paths are anchored at the repo root ({{ config_root }}): the server
+# runs from backend/, so repo-root-relative paths would resolve underneath
+# it instead.
+MUSIC_LIBRARY = "{{ config_root }}/music_library"
+TEMPLATES_PATH = "{{ config_root }}/ops/web/templates"
+STATIC_FILES_PATH = "{{ config_root }}/ops/web/static"
 SUBSONIC_ENABLED = "true"
 SLSKD_URL = "http://localhost:5030"
 
 [tools]
-# CI pins 1.27.3 (GO-2026-6809 in crypto/x509); `go.mod`'s `go` directive stays at
-# 1.27.0 on purpose, because raising the directive breaks local builds. The
-# toolchain requirement therefore lives here and in the workflow, not in go.mod.
-go = "1.27.3"
+# CI, Docker and go.mod pin 1.27.4 together; this pin agrees with them.
+go = "1.27.4"
 
 [tasks.vet]
 description = "go vet over the whole module (run before every PR)"
 run = "go -C backend vet ./..."
 
 [tasks.test]
-description = "Core suite: the fast packages CI gates on"
-run = "go -C backend test ./cmd/... ./internal/config ./internal/database ./internal/services ./internal/agent"
+description = "CI test set: every package except the tagged integration suite"
+run = "go -C backend test ./cmd/... ./internal/agent ./internal/api/... ./internal/config ./internal/database ./internal/health ./internal/interfaces ./internal/metrics ./internal/services ./internal/testutil"
 
 [tasks."test:all"]
 description = "Full non-tagged suite"
@@ -46,8 +51,8 @@ description = "Build every command binary"
 run = "go -C backend build ./cmd/server ./cmd/worker ./cmd/cli ./cmd/agent"
 
 [tasks.integration]
-description = "Integration suite (needs its own stack; see scripts/integration-tests.sh)"
-run = "go -C backend test ./internal/integration/... -tags=integration -v"
+description = "Integration suite via scripts/integration-tests.sh, which starts the stack first"
+run = "bash scripts/integration-tests.sh test"
 
 [tasks.smoke]
 description = "Smoke gate against a running stack"

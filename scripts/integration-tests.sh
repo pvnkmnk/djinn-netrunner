@@ -37,6 +37,8 @@ show_help() {
     echo "  -h          Show this help"
     echo ""
     echo "Environment Variables:"
+    echo "  INTEGRATION_BASE_URL        app URL under test (default: http://localhost:18080, the"
+    echo "                              port the integration stack publishes the app on)"
     echo "  INTEGRATION_SLSKD_URL       slskd API URL (default: http://localhost:15030)"
     echo "  INTEGRATION_SLSKD_API_KEY   slskd API key (default: test-api-key-for-integration)"
     echo "  INTEGRATION_SLSKD_USERNAME  Soulseek username (optional, for download tests)"
@@ -165,6 +167,11 @@ run_tests() {
     echo -e "${YELLOW}Running integration tests...${NC}"
     echo ""
     
+    # The smoke tests default INTEGRATION_BASE_URL to :8080, but this stack
+    # publishes the app on :18080 (docker-compose.integration.yml), so the
+    # default here is the stack's port; an explicit value still wins.
+    export INTEGRATION_BASE_URL="${INTEGRATION_BASE_URL:-http://localhost:18080}"
+
     test_args=(-v -tags=integration -timeout "$TIMEOUT")
     if [ -n "$VERBOSE" ]; then
         test_args+=(-v)
