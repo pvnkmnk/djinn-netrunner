@@ -30,7 +30,7 @@ from pathlib import Path
 
 # --- the pin -----------------------------------------------------------------
 SPEC_VERSION = "1.16.1"
-SPEC_SHA256 = "cb54c03c33835d132c555863e9771e30dfaa2930312853ca27dfece2ed46bfb6"
+SPEC_SHA256 = "fe32e867ac61b0c3d3223dfbdf8d8319070b4cdabd08d964fec7882ccdac9463"
 SPEC_URL = "https://opensubsonic.netlify.app/docs/openapi/openapi.json"
 SPEC_DOCS_REPO = "https://github.com/opensubsonic/open-subsonic-api"
 
@@ -65,9 +65,12 @@ IMPLEMENTED = {
     "getAlbumList2": ("backend/internal/api/subsonic.go", "TestSubsonic_GetAlbumList2_{Random,Newest,AlphabeticalByName,AlphabeticalByArtist,Empty,WithPagination,JSON}"),
     "getRandomSongs": ("backend/internal/api/subsonic.go", "TestSubsonic_GetRandomSongs_{Normal,Empty,WithSize}"),
     "getCoverArt": ("backend/internal/api/subsonic.go", "TestSubsonic_GetCoverArt_{SSRBlocked,MissingID,InvalidID,NotFound}"),
-    "stream": ("backend/internal/api/subsonic.go:871",
-                "smoke only: `scripts/smoke.sh:486-492` asserts >1000 bytes, "
-                "manual, not in CI; no handler test — see Finding 2"),
+    "stream": (
+        "backend/internal/api/subsonic.go:902",
+        "TestSubsonic_Stream_{InvalidFormat,RawFormat,FlvFormat}, "
+        "TestSubsonic_formatToFFmpegMuxer; media-delivery check: "
+        "`scripts/smoke.sh:490-497` asserts >1000 bytes, manual, not in CI — see Finding 2",
+    ),
     "getScanStatus": ("backend/internal/api/subsonic.go", "TestSubsonic_GetScanStatus"),
     "startScan": ("backend/internal/api/subsonic.go", "TestSubsonic_StartScan"),
     "getPlaylists": ("backend/internal/api/subsonic.go", "TestSubsonic_GetPlaylists_{Empty,WithPlaylists,Public}"),
@@ -107,7 +110,8 @@ GAPS = {
     "getStarred": "NR06", "getStarred2": "NR06",
     "search": "NR06", "search2": "NR06",
     # NR07 — streaming and seeking (DJI-567)
-    "download": "NR07", "hls.m3u8": "NR07", "getAvatar": "NR07",
+    "download": "NR07 + NR19",  # NR07 owns the endpoint; NR19 verifies delivery semantics.
+    "hls.m3u8": "NR07", "getAvatar": "NR07",
     # NR08 — metadata and artwork (DJI-568)
     "getCaptions": "NR08",
     # NR09 — playlist operations (DJI-569)
@@ -295,19 +299,22 @@ def main() -> int:
     w("kept as an alias, so nothing breaks for a client that learned the old one.")
     w("The guard below fails if either half of that pair disappears.")
     w("")
-    w("### 2. `/rest/stream.view` has no automated test")
+    w("### 2. `/rest/stream.view` has only narrow automated coverage")
     w("")
-    w("`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the")
-    w("endpoint every client actually uses to listen to music. One check drives it —")
-    w("`scripts/smoke.sh:486-492`, which fetches a track and fails unless more than")
-    w("1,000 bytes come back. That is a happy path with no assertion about ranges,")
-    w("content type, authorization or error shape, it needs a running stack, and")
-    w("**no workflow invokes `smoke.sh`**, so nothing runs it on a change. An earlier")
-    w("draft of this document called the endpoint untested; it is not, and the")
-    w("distinction is the point: the check exists somewhere a CI failure cannot")
-    w("reach it.")
+    w("`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:902`) is the")
+    w("endpoint every client actually uses to listen to music. The stack-level")
+    w("media-delivery check is `scripts/smoke.sh:490-497`: it fetches a track and")
+    w("fails unless more than 1,000 bytes come back. The E2E suite separately")
+    w("probes a nonexistent ID (`e2e/tests/subsonic.spec.ts:355-359`), but accepts")
+    w("200, 400 or 404 and checks no audio bytes. The smoke check does not assert")
+    w("ranges, content type, authorization or error shape; it needs a running stack,")
+    w("and **no workflow invokes it**, so it is not a PR gate.")
+    w("Focused handler tests cover `InvalidFormat`, `RawFormat` and `FlvFormat`;")
+    w("`RawFormat` asserts `Content-Type: audio/mpeg`. A separate unit test covers")
+    w("the format-to-muxer helper. These tests do not cover ranges or authorization failures,")
+    w("and the remaining protocol delivery/error shapes remain unverified.")
     w("")
-    w("There are nine passing tests named `TestStreamTrack_*` in")
+    w("There are eight passing tests named `TestStreamTrack_*` in")
     w("`backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,")
     w("`206` range and the error paths. They test a **different handler** —")
     w("`LibraryHandler.StreamTrack`, registered at `/tracks/:id/stream` — so a name")

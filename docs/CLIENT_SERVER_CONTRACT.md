@@ -21,7 +21,7 @@ The current protocol audit is pinned to OpenSubsonic **1.16.1**:
 
 - Specification: <https://opensubsonic.netlify.app/docs/openapi/openapi.json>
 - Specification SHA-256:
-  `cb54c03c33835d132c555863e9771e30dfaa2930312853ca27dfece2ed46bfb6`
+  `fe32e867ac61b0c3d3223dfbdf8d8319070b4cdabd08d964fec7882ccdac9463`
 - Complete endpoint and extension matrix:
   [`OPENSUBSONIC_COVERAGE.md`](OPENSUBSONIC_COVERAGE.md)
 - Matrix generator: [`scripts/opensubsonic_coverage.py`](../scripts/opensubsonic_coverage.py)
