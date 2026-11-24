@@ -44,15 +44,17 @@ The guard below fails if either half of that pair disappears.
 ### 2. `/rest/stream.view` has only narrow automated coverage
 
 `SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the
-endpoint every client actually uses to listen to music. One check drives it —
-`scripts/smoke.sh:486-492`, which fetches a track and fails unless more than
-1,000 bytes come back. That is a happy path with no assertion about ranges,
-content type, authorization or error shape, it needs a running stack, and
-**no workflow invokes `smoke.sh`**, so the stack-level check is not a PR gate.
-Focused handler tests cover `InvalidFormat`, `RawFormat` and `FlvFormat`,
-plus the format-to-muxer helper. They do not assert ranges, content type,
-authorization or the other error shapes; the protocol delivery contract
-remains unverified beyond these focused branches.
+endpoint every client actually uses to listen to music. The stack-level
+media-delivery check is `scripts/smoke.sh:490-497`: it fetches a track and
+fails unless more than 1,000 bytes come back. The E2E suite separately
+probes a nonexistent ID (`e2e/tests/subsonic.spec.ts:355-359`), but accepts
+200, 400 or 404 and checks no audio bytes. The smoke check does not assert
+ranges, content type, authorization or error shape; it needs a running stack,
+and **no workflow invokes it**, so it is not a PR gate.
+Focused handler tests cover `InvalidFormat`, `RawFormat` and `FlvFormat`;
+`RawFormat` asserts `Content-Type: audio/mpeg`. A separate unit test covers
+the format-to-muxer helper. These tests do not cover ranges or authorization failures,
+and the remaining protocol delivery/error shapes remain unverified.
 
 There are eight passing tests named `TestStreamTrack_*` in
 `backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,
@@ -180,7 +182,7 @@ endpoint out of base API when its text names no extension at all.
 | `setRating` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `star` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `startScan` | get+post | Media Library Scanning | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_StartScan |
-| `stream` | get+post | Addition, Clarification, Extension, Media Retrieval | `Extension` | Extension | impl | `backend/internal/api/subsonic.go:871`<br>TestSubsonic_Stream_{InvalidFormat,RawFormat,FlvFormat}, TestSubsonic_formatToFFmpegMuxer; smoke only: `scripts/smoke.sh:486-492` asserts >1000 bytes, manual, not in CI — see Finding 2 |
+| `stream` | get+post | Addition, Clarification, Extension, Media Retrieval | `Extension` | Extension | impl | `backend/internal/api/subsonic.go:871`<br>TestSubsonic_Stream_{InvalidFormat,RawFormat,FlvFormat}, TestSubsonic_formatToFFmpegMuxer; media-delivery check: `scripts/smoke.sh:490-497` asserts >1000 bytes, manual, not in CI — see Finding 2 |
 | `tokenInfo` | get+post | Addition, Extension, System | apiKeyAuthentication | Extension | gap | not in the route table · **NR05** |
 | `unstar` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `updateInternetRadioStation` | get+post | Internet Radio | — | — | gap | not in the route table · **NR23** |

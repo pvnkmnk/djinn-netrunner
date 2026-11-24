@@ -68,8 +68,8 @@ IMPLEMENTED = {
     "stream": (
         "backend/internal/api/subsonic.go:871",
         "TestSubsonic_Stream_{InvalidFormat,RawFormat,FlvFormat}, "
-        "TestSubsonic_formatToFFmpegMuxer; smoke only: "
-        "`scripts/smoke.sh:486-492` asserts >1000 bytes, manual, not in CI — see Finding 2",
+        "TestSubsonic_formatToFFmpegMuxer; media-delivery check: "
+        "`scripts/smoke.sh:490-497` asserts >1000 bytes, manual, not in CI — see Finding 2",
     ),
     "getScanStatus": ("backend/internal/api/subsonic.go", "TestSubsonic_GetScanStatus"),
     "startScan": ("backend/internal/api/subsonic.go", "TestSubsonic_StartScan"),
@@ -302,15 +302,17 @@ def main() -> int:
     w("### 2. `/rest/stream.view` has only narrow automated coverage")
     w("")
     w("`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the")
-    w("endpoint every client actually uses to listen to music. One check drives it —")
-    w("`scripts/smoke.sh:486-492`, which fetches a track and fails unless more than")
-    w("1,000 bytes come back. That is a happy path with no assertion about ranges,")
-    w("content type, authorization or error shape, it needs a running stack, and")
-    w("**no workflow invokes `smoke.sh`**, so the stack-level check is not a PR gate.")
-    w("Focused handler tests cover `InvalidFormat`, `RawFormat` and `FlvFormat`,")
-    w("plus the format-to-muxer helper. They do not assert ranges, content type,")
-    w("authorization or the other error shapes; the protocol delivery contract")
-    w("remains unverified beyond these focused branches.")
+    w("endpoint every client actually uses to listen to music. The stack-level")
+    w("media-delivery check is `scripts/smoke.sh:490-497`: it fetches a track and")
+    w("fails unless more than 1,000 bytes come back. The E2E suite separately")
+    w("probes a nonexistent ID (`e2e/tests/subsonic.spec.ts:355-359`), but accepts")
+    w("200, 400 or 404 and checks no audio bytes. The smoke check does not assert")
+    w("ranges, content type, authorization or error shape; it needs a running stack,")
+    w("and **no workflow invokes it**, so it is not a PR gate.")
+    w("Focused handler tests cover `InvalidFormat`, `RawFormat` and `FlvFormat`;")
+    w("`RawFormat` asserts `Content-Type: audio/mpeg`. A separate unit test covers")
+    w("the format-to-muxer helper. These tests do not cover ranges or authorization failures,")
+    w("and the remaining protocol delivery/error shapes remain unverified.")
     w("")
     w("There are eight passing tests named `TestStreamTrack_*` in")
     w("`backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,")
