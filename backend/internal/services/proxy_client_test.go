@@ -295,3 +295,22 @@ func TestNewSafeProxyAwareHTTPClient_ProxyConstructed(t *testing.T) {
 	assert.NotNil(t, fallback)
 	assert.Equal(t, 5*time.Second, fallback.Timeout)
 }
+
+func TestNewSafeProxyAwareHTTPClient_AllowPrivateTargetsUsesConfiguredProxy(t *testing.T) {
+	proxyRequests := make(chan string, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyRequests <- r.URL.String()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer proxy.Close()
+
+	client := NewSafeProxyAwareHTTPClient(&config.Config{
+		AllowPrivateTargets: true,
+		ProxyURL:            proxy.URL,
+	}, 5*time.Second)
+	resp, err := client.Get("http://127.0.0.1:1/internal/health")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.Equal(t, "http://127.0.0.1:1/internal/health", <-proxyRequests)
+}

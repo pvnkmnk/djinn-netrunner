@@ -405,7 +405,7 @@ func NewSafeProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *htt
 			} else {
 				slog.Warn("Invalid PROXY_URL, running without proxy", "error", err)
 			}
-			return &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), Timeout: timeout}
+			return &http.Client{Transport: transport, Timeout: timeout}
 		}
 		return &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), Timeout: timeout}
 	}
