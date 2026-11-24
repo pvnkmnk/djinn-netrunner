@@ -48,12 +48,15 @@ metadata outage degrades rather than destroys.
 The appliance is self-hosted and privacy-first, and the Subsonic endpoint
 authenticates per request rather than through the browser session.
 
-Egress confinement is real but **path-dependent, and the difference matters**:
+Egress controls are **path-dependent, and the difference matters**:
 `docker-compose.release.yml` and `docker-compose.e2e.yml` run a `squid` sidecar
-(`ubuntu/squid`) whose `allowed-domains.txt` decides what may be fetched, while
-plain `docker-compose.yml` — the dev path — runs **no proxy service at all** and
-only passes `PROXY_URL` through. So the boundary is enforced in production and
-in CI, and absent while developing. Do not describe it as unconditional.
+(`ubuntu/squid`) whose `allowed-domains.txt` allow-lists traffic routed through
+`PROXY_URL`. User-controlled RSS/Bandcamp feeds are an explicit exception: they
+bypass `PROXY_URL`, so Squid does not govern them; they fetch directly under
+Go-level strict public-destination checks on the initial URL and every redirect.
+Plain `docker-compose.yml` — the dev path — runs **no proxy service at all** and
+only passes `PROXY_URL` through. Do not describe Squid as an unconditional egress
+boundary.
 
 ## Operating Context
 
