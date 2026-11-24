@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -156,7 +157,12 @@ type Config struct {
 	MaxConcurrentJobs int
 
 	// Subsonic
-	Subsonic struct {
+	// SubsonicTrustedProxyCIDRs is a separate, explicit allowlist for proxies
+	// that terminate TLS before forwarding Subsonic requests. Empty disables
+	// trust in forwarded scheme headers, independently of Fiber's broader proxy
+	// trust configuration.
+	SubsonicTrustedProxyCIDRs string
+	Subsonic                  struct {
 		Enabled  bool   `envconfig:"SUBSONIC_ENABLED" default:"false"`
 		Password string `envconfig:"SUBSONIC_PASSWORD"`
 	}
@@ -255,6 +261,9 @@ func applyOverlay(cfg *Config, overlay map[string]interface{}) {
 		cfg.NotificationWebhookURL = v
 	}
 	// Subsonic
+	if v, ok := overlay["subsonic_trusted_proxy_cidrs"].(string); ok {
+		cfg.SubsonicTrustedProxyCIDRs = v
+	}
 	if v, ok := overlay["subsonic_enabled"].(bool); ok {
 		cfg.Subsonic.Enabled = v
 	}
@@ -396,6 +405,7 @@ func Load(filenames ...string) (*Config, error) {
 		MaxConcurrentJobs: getEnvAsInt("MAX_CONCURRENT_JOBS", 5),
 
 		// Subsonic
+		SubsonicTrustedProxyCIDRs: getEnv("SUBSONIC_TRUSTED_PROXY_CIDRS", ""),
 		Subsonic: struct {
 			Enabled  bool   `envconfig:"SUBSONIC_ENABLED" default:"false"`
 			Password string `envconfig:"SUBSONIC_PASSWORD"`
@@ -427,6 +437,14 @@ func Load(filenames ...string) (*Config, error) {
 	cfg.DownloadStagingPath = getEnv("DOWNLOAD_STAGING", cfg.DownloadStagingPath)
 	cfg.StagingReclaimEnabled = getEnvBool("STAGING_RECLAIM_ENABLED", cfg.StagingReclaimEnabled)
 	cfg.StagingReclaimOrphans = getEnvBool("STAGING_RECLAIM_ORPHANS", cfg.StagingReclaimOrphans)
+	if value, ok := os.LookupEnv("SUBSONIC_TRUSTED_PROXY_CIDRS"); ok {
+		// An explicitly empty value clears any YAML allowlist and restores the
+		// default-deny behavior for forwarded scheme headers.
+		cfg.SubsonicTrustedProxyCIDRs = value
+	}
+	if err := validateSubsonicTrustedProxyCIDRs(cfg.SubsonicTrustedProxyCIDRs); err != nil {
+		return nil, err
+	}
 
 	// Production fail-fast, evaluated against the FINAL environment. Env vars
 	// win over YAML, so cfg.Environment is authoritative at this point and a
@@ -505,6 +523,28 @@ func Load(filenames ...string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// validateSubsonicTrustedProxyCIDRs rejects malformed proxy allowlist entries
+// rather than silently accepting a partially configured trust boundary.
+func validateSubsonicTrustedProxyCIDRs(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			return fmt.Errorf("SUBSONIC_TRUSTED_PROXY_CIDRS contains an empty entry")
+		}
+		prefix, err := netip.ParsePrefix(entry)
+		if err != nil {
+			return fmt.Errorf("SUBSONIC_TRUSTED_PROXY_CIDRS entry %q must be a valid CIDR", entry)
+		}
+		if prefix.Addr().Is4In6() && prefix.Bits() < 96 {
+			return fmt.Errorf("SUBSONIC_TRUSTED_PROXY_CIDRS entry %q includes addresses outside the IPv4-mapped range", entry)
+		}
+	}
+	return nil
 }
 
 // getEnvInt reads an integer environment variable, falling back to def

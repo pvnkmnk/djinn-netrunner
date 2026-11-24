@@ -112,7 +112,7 @@ func TestSubsonic_Stream_InvalidFormat(t *testing.T) {
 	err = db.Create(&track).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/stream", handler.AuthMiddleware, handler.Stream)
 
 	password := "testpass123"
@@ -154,7 +154,7 @@ func TestSubsonic_Stream_RawFormat(t *testing.T) {
 	err = db.Create(&track).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/stream", handler.AuthMiddleware, handler.Stream)
 
 	password := "testpass123"
@@ -196,7 +196,7 @@ func TestSubsonic_Stream_FlvFormat(t *testing.T) {
 	err = db.Create(&track).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/stream", handler.AuthMiddleware, handler.Stream)
 
 	password := "testpass123"
@@ -450,7 +450,7 @@ func TestSubsonic_isLossyFormat(t *testing.T) {
 func TestSubsonic_getTrackDuration(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
 	// getTrackDuration is a stub that returns 0
 	result := handler.getTrackDuration("/some/path.mp3")
@@ -464,9 +464,9 @@ func TestSubsonic_getTrackDuration(t *testing.T) {
 func TestSubsonic_respond_XML(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		resp := &subsonicResponse{
 			Status:  "ok",
@@ -493,9 +493,9 @@ func TestSubsonic_respond_XML(t *testing.T) {
 func TestSubsonic_respond_JSON(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		resp := &subsonicResponse{
 			Status:  "ok",
@@ -522,9 +522,9 @@ func TestSubsonic_respond_JSON(t *testing.T) {
 func TestSubsonic_respondXML(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		resp := &subsonicResponse{
 			Status:  "ok",
@@ -553,9 +553,9 @@ func TestSubsonic_respondXML(t *testing.T) {
 func TestSubsonic_respondJSON(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		resp := &subsonicResponse{
 			Status:  "ok",
@@ -581,9 +581,9 @@ func TestSubsonic_respondJSON(t *testing.T) {
 func TestSubsonic_respondError(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 40, "Test error message")
 	})
@@ -604,9 +604,9 @@ func TestSubsonic_respondError(t *testing.T) {
 func TestSubsonic_respondError_JSON(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 40, "Test error message")
 	})
@@ -631,9 +631,9 @@ func TestSubsonic_respondError_JSON(t *testing.T) {
 func TestSubsonic_Ping(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/ping", handler.Ping)
 
 	req := httptest.NewRequest("GET", "/ping", nil)
@@ -652,9 +652,9 @@ func TestSubsonic_Ping(t *testing.T) {
 func TestSubsonic_Ping_JSON(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/ping", handler.Ping)
 
 	req := httptest.NewRequest("GET", "/ping?f=json", nil)
@@ -673,9 +673,9 @@ func TestSubsonic_Ping_JSON(t *testing.T) {
 func TestSubsonic_License(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/license", handler.License)
 
 	req := httptest.NewRequest("GET", "/license", nil)
@@ -694,9 +694,9 @@ func TestSubsonic_License(t *testing.T) {
 func TestSubsonic_GetScanStatus(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getScanStatus", handler.GetScanStatus)
 
 	req := httptest.NewRequest("GET", "/getScanStatus", nil)
@@ -714,9 +714,9 @@ func TestSubsonic_GetScanStatus(t *testing.T) {
 func TestSubsonic_StartScan(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/startScan", handler.StartScan)
 
 	req := httptest.NewRequest("GET", "/startScan", nil)
@@ -739,9 +739,9 @@ func TestSubsonic_StartScan(t *testing.T) {
 func TestSubsonic_AuthMiddleware_MissingUsername(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
@@ -762,12 +762,12 @@ func TestSubsonic_AuthMiddleware_MissingUsername(t *testing.T) {
 func TestSubsonic_AuthMiddleware_ValidPassword(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
 	password := "testpass123"
 	user := createTestUserForSubsonic(t, db, "test@example.com", password)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		u, ok := c.Locals("user").(database.User)
 		if !ok {
@@ -792,11 +792,11 @@ func TestSubsonic_AuthMiddleware_ValidPassword(t *testing.T) {
 func TestSubsonic_AuthMiddleware_InvalidPassword(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
 	createTestUserForSubsonic(t, db, "test@example.com", "correctpassword")
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
@@ -825,7 +825,7 @@ func TestSubsonic_AuthMiddleware_ValidToken(t *testing.T) {
 			Password: subsonicPassword,
 		},
 	}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
 	// Create user (password doesn't matter for token auth)
 	user := createTestUserForSubsonic(t, db, "test@example.com", "dummy")
@@ -837,7 +837,7 @@ func TestSubsonic_AuthMiddleware_ValidToken(t *testing.T) {
 	hash := md5.Sum([]byte(md5PasswordHex + salt))
 	token := hex.EncodeToString(hash[:])
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		u, ok := c.Locals("user").(database.User)
 		if !ok {
@@ -871,11 +871,11 @@ func TestSubsonic_AuthMiddleware_InvalidToken(t *testing.T) {
 			Password: subsonicPassword,
 		},
 	}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
 	createTestUserForSubsonic(t, db, "test@example.com", "dummy")
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
@@ -895,11 +895,11 @@ func TestSubsonic_AuthMiddleware_InvalidToken(t *testing.T) {
 func TestSubsonic_AuthMiddleware_MissingBothPasswordAndToken(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
 	createTestUserForSubsonic(t, db, "test@example.com", "dummy")
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
@@ -920,9 +920,9 @@ func TestSubsonic_AuthMiddleware_MissingBothPasswordAndToken(t *testing.T) {
 func TestSubsonic_AuthMiddleware_UserNotFound(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
@@ -946,7 +946,7 @@ func TestSubsonic_AuthMiddleware_UserNotFound(t *testing.T) {
 func setupSubsonicDBHandlerTest(t *testing.T) (*gorm.DB, *SubsonicHandler) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
 	password := "testpass123"
 	_ = createTestUserForSubsonic(t, db, "test@example.com", password)
@@ -990,7 +990,7 @@ func TestSubsonic_GetSong_Found(t *testing.T) {
 	err = db.Create(&track).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getSong", handler.AuthMiddleware, handler.GetSong)
 
 	password := "testpass123"
@@ -1012,7 +1012,7 @@ func TestSubsonic_GetSong_Found(t *testing.T) {
 func TestSubsonic_GetSong_NotFound(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getSong", handler.AuthMiddleware, handler.GetSong)
 
 	password := "testpass123"
@@ -1031,7 +1031,7 @@ func TestSubsonic_GetSong_NotFound(t *testing.T) {
 func TestSubsonic_GetSong_BadUUID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getSong", handler.AuthMiddleware, handler.GetSong)
 
 	password := "testpass123"
@@ -1050,7 +1050,7 @@ func TestSubsonic_GetSong_BadUUID(t *testing.T) {
 func TestSubsonic_GetSong_MissingID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getSong", handler.AuthMiddleware, handler.GetSong)
 
 	password := "testpass123"
@@ -1093,7 +1093,7 @@ func TestSubsonic_GetCoverArt_SSRFBlocked(t *testing.T) {
 	err = db.Create(&track).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getCoverArt", handler.AuthMiddleware, handler.GetCoverArt)
 
 	password := "testpass123"
@@ -1114,7 +1114,7 @@ func TestSubsonic_GetCoverArt_SSRFBlocked(t *testing.T) {
 func TestSubsonic_GetCoverArt_MissingID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getCoverArt", handler.AuthMiddleware, handler.GetCoverArt)
 
 	password := "testpass123"
@@ -1133,7 +1133,7 @@ func TestSubsonic_GetCoverArt_MissingID(t *testing.T) {
 func TestSubsonic_GetCoverArt_InvalidID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getCoverArt", handler.AuthMiddleware, handler.GetCoverArt)
 
 	password := "testpass123"
@@ -1152,7 +1152,7 @@ func TestSubsonic_GetCoverArt_InvalidID(t *testing.T) {
 func TestSubsonic_GetCoverArt_NotFound(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getCoverArt", handler.AuthMiddleware, handler.GetCoverArt)
 
 	password := "testpass123"
@@ -1218,7 +1218,7 @@ func TestSubsonic_GetAlbum_Found(t *testing.T) {
 	tracks := createSubsonicTestAlbumTracks(t, db)
 	_ = tracks
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
 
 	password := "testpass123"
@@ -1241,7 +1241,7 @@ func TestSubsonic_GetAlbum_Found(t *testing.T) {
 func TestSubsonic_GetAlbum_MalformedID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
 
 	password := "testpass123"
@@ -1260,7 +1260,7 @@ func TestSubsonic_GetAlbum_MalformedID(t *testing.T) {
 func TestSubsonic_GetAlbum_NotFound(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
 
 	password := "testpass123"
@@ -1285,7 +1285,7 @@ func TestSubsonic_GetArtist_Found(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getArtist", handler.AuthMiddleware, handler.GetArtist)
 
 	password := "testpass123"
@@ -1306,7 +1306,7 @@ func TestSubsonic_GetArtist_Found(t *testing.T) {
 func TestSubsonic_GetArtist_MalformedID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getArtist", handler.AuthMiddleware, handler.GetArtist)
 
 	password := "testpass123"
@@ -1325,7 +1325,7 @@ func TestSubsonic_GetArtist_MalformedID(t *testing.T) {
 func TestSubsonic_GetArtist_NotFound(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getArtist", handler.AuthMiddleware, handler.GetArtist)
 
 	password := "testpass123"
@@ -1350,7 +1350,7 @@ func TestSubsonic_GetRandomSongs_Normal(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getRandomSongs", handler.AuthMiddleware, handler.GetRandomSongs)
 
 	password := "testpass123"
@@ -1369,7 +1369,7 @@ func TestSubsonic_GetRandomSongs_Normal(t *testing.T) {
 func TestSubsonic_GetRandomSongs_Empty(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getRandomSongs", handler.AuthMiddleware, handler.GetRandomSongs)
 
 	password := "testpass123"
@@ -1390,7 +1390,7 @@ func TestSubsonic_GetRandomSongs_WithSize(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getRandomSongs", handler.AuthMiddleware, handler.GetRandomSongs)
 
 	password := "testpass123"
@@ -1408,7 +1408,7 @@ func TestSubsonic_GetRandomSongs_WithSize(t *testing.T) {
 func TestSubsonic_GetMusicDirectory_MissingID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getMusicDirectory", handler.AuthMiddleware, handler.GetMusicDirectory)
 
 	password := "testpass123"
@@ -1428,7 +1428,7 @@ func TestSubsonic_GetMusicDirectory_ArtistDirectory(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getMusicDirectory", handler.AuthMiddleware, handler.GetMusicDirectory)
 
 	password := "testpass123"
@@ -1453,7 +1453,7 @@ func TestSubsonic_GetMusicDirectory_AlbumDirectory(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getMusicDirectory", handler.AuthMiddleware, handler.GetMusicDirectory)
 
 	password := "testpass123"
@@ -1478,7 +1478,7 @@ func TestSubsonic_GetMusicDirectory_TrackDirectory(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	tracks := createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getMusicDirectory", handler.AuthMiddleware, handler.GetMusicDirectory)
 
 	password := "testpass123"
@@ -1499,7 +1499,7 @@ func TestSubsonic_GetMusicDirectory_TrackDirectory(t *testing.T) {
 func TestSubsonic_GetMusicDirectory_NotFound(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getMusicDirectory", handler.AuthMiddleware, handler.GetMusicDirectory)
 
 	password := "testpass123"
@@ -1542,7 +1542,7 @@ func TestSubsonic_GetSong_JSON(t *testing.T) {
 	err = db.Create(&track).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getSong", handler.AuthMiddleware, handler.GetSong)
 
 	password := "testpass123"
@@ -1569,7 +1569,7 @@ func TestNewSubsonicHandler(t *testing.T) {
 
 	// Without password
 	cfg1 := &config.Config{}
-	handler1 := NewSubsonicHandler(db, cfg1)
+	handler1 := newSubsonicTestHandler(db, cfg1)
 	assert.Empty(t, handler1.md5Password)
 
 	// With password
@@ -1582,7 +1582,7 @@ func TestNewSubsonicHandler(t *testing.T) {
 			Password: "testpassword",
 		},
 	}
-	handler2 := NewSubsonicHandler(db, cfg2)
+	handler2 := newSubsonicTestHandler(db, cfg2)
 	assert.NotEmpty(t, handler2.md5Password)
 	// Verify md5 of password
 	md5Hash := md5.Sum([]byte("testpassword"))
@@ -1597,9 +1597,9 @@ func TestNewSubsonicHandler(t *testing.T) {
 func TestSubsonic_ErrorResponse_XMLStructure(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 10, "Test error")
 	})
@@ -1624,9 +1624,9 @@ func TestSubsonic_ErrorResponse_XMLStructure(t *testing.T) {
 func TestSubsonic_ErrorResponse_Code40(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 40, "Authentication failed")
 	})
@@ -1644,9 +1644,9 @@ func TestSubsonic_ErrorResponse_Code40(t *testing.T) {
 func TestSubsonic_ErrorResponse_Code70(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	cfg := &config.Config{}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", func(c fiber.Ctx) error {
 		return handler.respondError(c, 70, "Not found")
 	})
@@ -1668,7 +1668,7 @@ func TestSubsonic_ErrorResponse_Code70(t *testing.T) {
 func TestSubsonic_Search3_MissingQuery(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/search3", handler.AuthMiddleware, handler.Search3)
 
 	password := "testpass123"
@@ -1687,7 +1687,7 @@ func TestSubsonic_Search3_MissingQuery(t *testing.T) {
 func TestSubsonic_Search3_EmptyResults(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/search3", handler.AuthMiddleware, handler.Search3)
 
 	password := "testpass123"
@@ -1706,7 +1706,7 @@ func TestSubsonic_Search3_WithResults(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/search3", handler.AuthMiddleware, handler.Search3)
 
 	password := "testpass123"
@@ -1726,7 +1726,7 @@ func TestSubsonic_Search3_WithPagination(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/search3", handler.AuthMiddleware, handler.Search3)
 
 	password := "testpass123"
@@ -1744,7 +1744,7 @@ func TestSubsonic_Search3_JSON(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/search3", handler.AuthMiddleware, handler.Search3)
 
 	password := "testpass123"
@@ -1768,7 +1768,7 @@ func TestSubsonic_GetAlbumList2_Random(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbumList2", handler.AuthMiddleware, handler.GetAlbumList2)
 
 	password := "testpass123"
@@ -1790,7 +1790,7 @@ func TestSubsonic_GetAlbumList2_Newest(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbumList2", handler.AuthMiddleware, handler.GetAlbumList2)
 
 	password := "testpass123"
@@ -1809,7 +1809,7 @@ func TestSubsonic_GetAlbumList2_AlphabeticalByName(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbumList2", handler.AuthMiddleware, handler.GetAlbumList2)
 
 	password := "testpass123"
@@ -1828,7 +1828,7 @@ func TestSubsonic_GetAlbumList2_AlphabeticalByArtist(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbumList2", handler.AuthMiddleware, handler.GetAlbumList2)
 
 	password := "testpass123"
@@ -1846,7 +1846,7 @@ func TestSubsonic_GetAlbumList2_AlphabeticalByArtist(t *testing.T) {
 func TestSubsonic_GetAlbumList2_Empty(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbumList2", handler.AuthMiddleware, handler.GetAlbumList2)
 
 	password := "testpass123"
@@ -1865,7 +1865,7 @@ func TestSubsonic_GetAlbumList2_WithPagination(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbumList2", handler.AuthMiddleware, handler.GetAlbumList2)
 
 	password := "testpass123"
@@ -1883,7 +1883,7 @@ func TestSubsonic_GetAlbumList2_JSON(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbumList2", handler.AuthMiddleware, handler.GetAlbumList2)
 
 	password := "testpass123"
@@ -1906,7 +1906,7 @@ func TestSubsonic_GetAlbumList2_JSON(t *testing.T) {
 func TestSubsonic_GetIndexes_Empty(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getIndexes", handler.AuthMiddleware, handler.GetIndexes)
 
 	password := "testpass123"
@@ -1925,7 +1925,7 @@ func TestSubsonic_GetIndexes_WithArtists(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getIndexes", handler.AuthMiddleware, handler.GetIndexes)
 
 	password := "testpass123"
@@ -1968,7 +1968,7 @@ func TestSubsonic_GetIndexes_ArtistsAZ(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getIndexes", handler.AuthMiddleware, handler.GetIndexes)
 
 	password := "testpass123"
@@ -1988,7 +1988,7 @@ func TestSubsonic_GetIndexes_JSON(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	_ = createSubsonicTestAlbumTracks(t, db)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getIndexes", handler.AuthMiddleware, handler.GetIndexes)
 
 	password := "testpass123"
@@ -2011,7 +2011,7 @@ func TestSubsonic_GetIndexes_JSON(t *testing.T) {
 func TestSubsonic_GetPlaylists_Empty(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getPlaylists", handler.AuthMiddleware, handler.GetPlaylists)
 
 	password := "testpass123"
@@ -2044,7 +2044,7 @@ func TestSubsonic_GetPlaylists_WithPlaylists(t *testing.T) {
 	err = db.Create(&playlist).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getPlaylists", handler.AuthMiddleware, handler.GetPlaylists)
 
 	password := "testpass123"
@@ -2083,7 +2083,7 @@ func TestSubsonic_GetPlaylists_Public(t *testing.T) {
 	err = db.Create(&playlist).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getPlaylists", handler.AuthMiddleware, handler.GetPlaylists)
 
 	password := "testpass123"
@@ -2105,7 +2105,7 @@ func TestSubsonic_GetPlaylists_Public(t *testing.T) {
 func TestSubsonic_GetPlaylist_MissingID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getPlaylist", handler.AuthMiddleware, handler.GetPlaylist)
 
 	password := "testpass123"
@@ -2124,7 +2124,7 @@ func TestSubsonic_GetPlaylist_MissingID(t *testing.T) {
 func TestSubsonic_GetPlaylist_NotFound(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getPlaylist", handler.AuthMiddleware, handler.GetPlaylist)
 
 	password := "testpass123"
@@ -2144,7 +2144,7 @@ func TestSubsonic_GetPlaylist_NotFound(t *testing.T) {
 func TestSubsonic_GetPlaylist_InvalidUUID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getPlaylist", handler.AuthMiddleware, handler.GetPlaylist)
 
 	password := "testpass123"
@@ -2205,7 +2205,7 @@ func TestSubsonic_GetPlaylist_Found(t *testing.T) {
 	err = db.Create(&playlistTrack).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getPlaylist", handler.AuthMiddleware, handler.GetPlaylist)
 
 	password := "testpass123"
@@ -2246,7 +2246,7 @@ func TestSubsonic_GetPlaylist_AccessDenied(t *testing.T) {
 	err = db.Create(&playlist).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getPlaylist", handler.AuthMiddleware, handler.GetPlaylist)
 
 	password := "testpass123"
@@ -2269,7 +2269,7 @@ func TestSubsonic_GetPlaylist_AccessDenied(t *testing.T) {
 func TestSubsonic_CreatePlaylist_MissingName(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/createPlaylist", handler.AuthMiddleware, handler.CreatePlaylist)
 
 	password := "testpass123"
@@ -2288,7 +2288,7 @@ func TestSubsonic_CreatePlaylist_MissingName(t *testing.T) {
 func TestSubsonic_CreatePlaylist_New(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/createPlaylist", handler.AuthMiddleware, handler.CreatePlaylist)
 
 	password := "testpass123"
@@ -2307,7 +2307,7 @@ func TestSubsonic_CreatePlaylist_New(t *testing.T) {
 func TestSubsonic_CreatePlaylist_WithComment(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/createPlaylist", handler.AuthMiddleware, handler.CreatePlaylist)
 
 	password := "testpass123"
@@ -2325,7 +2325,7 @@ func TestSubsonic_CreatePlaylist_WithComment(t *testing.T) {
 func TestSubsonic_CreatePlaylist_Public(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/createPlaylist", handler.AuthMiddleware, handler.CreatePlaylist)
 
 	password := "testpass123"
@@ -2358,7 +2358,7 @@ func TestSubsonic_CreatePlaylist_UpdateExisting(t *testing.T) {
 	err = db.Create(&playlist).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/createPlaylist", handler.AuthMiddleware, handler.CreatePlaylist)
 
 	password := "testpass123"
@@ -2376,7 +2376,7 @@ func TestSubsonic_CreatePlaylist_UpdateExisting(t *testing.T) {
 func TestSubsonic_CreatePlaylist_UpdateNotFound(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/createPlaylist", handler.AuthMiddleware, handler.CreatePlaylist)
 
 	password := "testpass123"
@@ -2400,7 +2400,7 @@ func TestSubsonic_CreatePlaylist_UpdateNotFound(t *testing.T) {
 func TestSubsonic_DeletePlaylist_MissingID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/deletePlaylist", handler.AuthMiddleware, handler.DeletePlaylist)
 
 	password := "testpass123"
@@ -2419,7 +2419,7 @@ func TestSubsonic_DeletePlaylist_MissingID(t *testing.T) {
 func TestSubsonic_DeletePlaylist_InvalidUUID(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/deletePlaylist", handler.AuthMiddleware, handler.DeletePlaylist)
 
 	password := "testpass123"
@@ -2438,7 +2438,7 @@ func TestSubsonic_DeletePlaylist_InvalidUUID(t *testing.T) {
 func TestSubsonic_DeletePlaylist_NotFound(t *testing.T) {
 	_, handler := setupSubsonicDBHandlerTest(t)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/deletePlaylist", handler.AuthMiddleware, handler.DeletePlaylist)
 
 	password := "testpass123"
@@ -2473,7 +2473,7 @@ func TestSubsonic_DeletePlaylist_Success(t *testing.T) {
 	err = db.Create(&playlist).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/deletePlaylist", handler.AuthMiddleware, handler.DeletePlaylist)
 
 	password := "testpass123"
@@ -2514,7 +2514,7 @@ func TestSubsonic_DeletePlaylist_AccessDenied(t *testing.T) {
 	err = db.Create(&playlist).Error
 	require.NoError(t, err)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Post("/deletePlaylist", handler.AuthMiddleware, handler.DeletePlaylist)
 
 	password := "testpass123"

@@ -111,6 +111,9 @@ services:
       DATABASE_URL: postgresql://musicops:${POSTGRES_PASSWORD}@postgres:5432/musicops_test?sslmode=disable
       # Enable Subsonic API for E2E tests
       SUBSONIC_ENABLED: "true"
+      # Subsonic E2E requests use the existing throwaway shared token secret;
+      # never make the suite fall back to reusable `p=` credentials over HTTP.
+      SUBSONIC_PASSWORD: ${SUBSONIC_PASSWORD}
       # Enable E2E test helper API (create-dir, etc.)
       E2E_ENABLE_TEST_API: "true"
       # The base file already pins development; repeated so the suite's mode is

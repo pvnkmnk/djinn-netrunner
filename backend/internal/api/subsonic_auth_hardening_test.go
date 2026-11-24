@@ -33,7 +33,7 @@ func TestSubsonic_AuthMiddleware_TokenRejectedWhenNoPasswordConfigured(t *testin
 			Password: "",
 		},
 	}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 	createTestUserForSubsonic(t, db, "nopass@example.com", "accountpass")
 
 	// The exact forgery an attacker can build when no shared password is
@@ -43,7 +43,7 @@ func TestSubsonic_AuthMiddleware_TokenRejectedWhenNoPasswordConfigured(t *testin
 	hash := md5.Sum([]byte(salt))
 	token := hex.EncodeToString(hash[:])
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})
@@ -74,10 +74,10 @@ func TestSubsonic_AuthMiddleware_PasswordAuthStillWorksWhenNoSharedPassword(t *t
 			Password: "",
 		},
 	}
-	handler := NewSubsonicHandler(db, cfg)
+	handler := newSubsonicTestHandler(db, cfg)
 	createTestUserForSubsonic(t, db, "pwonly@example.com", "accountpass")
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/test", handler.AuthMiddleware, func(c fiber.Ctx) error {
 		return c.SendString("OK")
 	})

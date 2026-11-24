@@ -33,7 +33,7 @@ func newSubsonicLifecycleHandler(db *gorm.DB, sharedPassword string) *SubsonicHa
 			Password: sharedPassword,
 		},
 	}
-	return NewSubsonicHandler(db, cfg)
+	return newSubsonicTestHandler(db, cfg)
 }
 
 // subsonicLifecycleToken reproduces the client-side token derivation:
@@ -45,7 +45,7 @@ func subsonicLifecycleToken(sharedPassword string) string {
 }
 
 func subsonicLifecycleApp(handler *SubsonicHandler) *fiber.App {
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	identity := func(c fiber.Ctx) error {
 		user, ok := c.Locals("user").(database.User)
 		if !ok {
@@ -255,7 +255,7 @@ func TestSubsonic_GetSong_FormBodyMatchesQueryString(t *testing.T) {
 	require.NoError(t, db.Create(&track).Error)
 
 	handler := newSubsonicLifecycleHandler(db, subsonicLifecycleSharedPassword)
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getSong.view", handler.AuthMiddleware, handler.GetSong)
 	app.Post("/getSong.view", handler.AuthMiddleware, handler.GetSong)
 

@@ -178,7 +178,7 @@ Optional external Subsonic server over the same music volume:
 ## 3. Verify
 
 The fastest health check is the smoke script. It asserts the container
-configuration, Subsonic auth (both schemes), session persistence across a
+configuration, Subsonic token/salt auth, session persistence across a
 restart, library scanning, Subsonic visibility and real audio bytes, and exits
 non-zero listing every failing check:
 
@@ -333,15 +333,44 @@ docker compose -f docker-compose.yml -f docker-compose.release.yml restart ops-w
 curl -s -b $JAR -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/watchlists   # still 200
 ```
 
-Streaming, both authentication styles:
+Streaming (token/salt preferred; reusable legacy `p=` auth requires HTTPS):
 
 ```bash
-# account password (u = your NetRunner email)
-curl -s 'http://localhost:8080/rest/ping.view?u=you@example.com&p=change-this&v=1.16.1&c=smoke'
+# Preferred shared-password token/salt authentication over HTTPS.
+curl -s 'https://music.example.com/rest/ping.view?u=you@example.com&t=TOKEN&s=SALT&v=1.16.1&c=smoke'
+# Legacy account-password authentication, if needed: HTTPS only.
+curl -s 'https://music.example.com/rest/ping.view?u=you@example.com&p=change-this&v=1.16.1&c=smoke'
 # <subsonicResponse status="ok" version="1.16.1" type="netrunner"></subsonicResponse>
 
-# shared-password token auth: t = md5(md5(SUBSONIC_PASSWORD) + salt)
+# shared-password token auth: t = MD5(hex(MD5(SUBSONIC_PASSWORD)) + salt)
 ```
+
+The handler can reject a `p=` request received over `http://` only after the
+password has already crossed that HTTP hop; rejection is not transit protection.
+Use HTTPS from the client to the TLS edge. In the checked-in Compose topology,
+Caddy terminates TLS and forwards plain HTTP to the app, so keep that network
+controlled. The Caddyfile overwrites `X-Forwarded-Proto` with the external
+scheme, but legacy `p=` is accepted through a proxy only when its raw source peer
+is explicitly listed in `SUBSONIC_TRUSTED_PROXY_CIDRS`.
+
+For a peer in that allowlist, the app requires exactly one
+`X-Forwarded-Proto: https` value to prove the client-facing scheme. This remains
+true if the proxy-to-origin connection itself uses TLS: that socket secures only
+the proxy hop and does not establish whether the client used HTTPS. The proxy
+must overwrite, not append to, `X-Forwarded-Proto`; untrusted peers cannot make a
+cleartext request acceptable by supplying that header.
+
+The checked-in base/release Compose network does not reserve a stable Caddy IP.
+For a TLS-terminating Caddy deployment, inspect and reserve the actual source
+peer on your own network, then set
+`SUBSONIC_TRUSTED_PROXY_CIDRS=<CADDY_PEER_CIDR>` with only that exact CIDR; the
+placeholder is not a literal value. Do not guess or allowlist broad RFC1918/ULA
+ranges. An empty allowlist is safe only when clients connect directly to the
+app's TLS endpoint. For a TLS-terminating proxy, configure its exact peer CIDR
+before using legacy `p=`, even when the proxy-to-origin hop uses TLS; if that
+peer is not confirmed and configured, use token/salt instead. With TLS to
+origin, an unlisted proxy is indistinguishable from a direct-TLS client to the
+app.
 
 ## 4. Acquire your first artist
 
@@ -456,14 +485,16 @@ Wait for the scan job to finish, then walk artist → album → track and play t
 last one. Note the `.view` suffix — see the troubleshooting table for why:
 
 ```bash
-# artists, with stable resolvable ids
-curl -s "http://localhost:8080/rest/getIndexes.view?u=you@example.com&p=change-this&v=1.16.1&c=netrunner"
+# Local HTTP smoke checks use token/salt only. Replace TOKEN and SALT with
+# values supplied by a compatible Subsonic client; do not put the account
+# password in `p=` on this HTTP listener.
+curl -s "http://localhost:8080/rest/getIndexes.view?u=you@example.com&t=TOKEN&s=SALT&v=1.16.1&c=netrunner"
 
 # that artist and its albums
-curl -s "http://localhost:8080/rest/getArtist.view?u=you@example.com&p=change-this&v=1.16.1&c=netrunner&id=artist-PUP"
+curl -s "http://localhost:8080/rest/getArtist.view?u=you@example.com&t=TOKEN&s=SALT&v=1.16.1&c=netrunner&id=artist-PUP"
 
 # one track's audio
-curl -s -o /tmp/track.m4a -w '%{http_code} %{size_download} bytes %{content_type}\n' "http://localhost:8080/rest/stream.view?u=you@example.com&p=change-this&v=1.16.1&c=netrunner&id=<track id>"
+curl -s -o /tmp/track.m4a -w '%{http_code} %{size_download} bytes %{content_type}\n' "http://localhost:8080/rest/stream.view?u=you@example.com&t=TOKEN&s=SALT&v=1.16.1&c=netrunner&id=<track id>"
 # 200 29087926 bytes audio/m4a
 ```
 
@@ -474,14 +505,20 @@ type is the point of the whole exercise: real audio, not an error document.
 
 | Field | Value |
 |---|---|
-| Server URL | `http://<host>:8080/rest` |
+| Server URL | `https://<tls-host>/rest` |
 | Username | your NetRunner **email address** |
-| Password | your account password (works with `p=` auth) |
+| Password | your account password (legacy `p=` auth; HTTPS only) |
 
-If the client does not support token auth, the password field works as-is. If it
-does, the shared `SUBSONIC_PASSWORD` is the password used for `t=`/`s=` token
-auth; without a configured `SUBSONIC_PASSWORD` token requests are refused and
-only the account password is accepted.
+If the client does not support token auth, it must use HTTPS: reusable account
+passwords are accepted only over verified external HTTPS. Direct HTTP and
+untrusted or unconfigured proxy forwarding are rejected after the request
+arrives, so rejection does not protect a password already sent over cleartext.
+If the client supports token auth, configure the shared `SUBSONIC_PASSWORD` for
+`t=`/`s=` authentication; enter `hex(MD5(SUBSONIC_PASSWORD))` in a standard
+token client's password field, not the raw shared secret. Without the server
+secret, token requests are refused. For the checked-in release topology, use
+Caddy's HTTPS endpoint; its hop to the app is plain HTTP, so keep that
+proxy-to-app network controlled.
 
 ## 6. Operate
 
@@ -493,7 +530,7 @@ only the account password is accepted.
 | Back up | see `ops/docs/backup.md` — back up the Postgres volume *and* the music volume together |
 | Deduplicate a pre-existing library | `ops/docs/library-dedup-runbook.md` |
 | Worker concurrency | `MAX_CONCURRENT_JOBS` in `.env` caps how many jobs one worker runs at once (default 5). Each running job holds peer connections and a download pipeline — raise only with the RAM to match. With SQLite the worker runs one at a time regardless (no advisory locks). Apply with the usual `up -d` to recreate the worker. |
-| Reach it from another host | The app port binds to `127.0.0.1` because it serves plain HTTP with session cookies and Subsonic credentials. Put the `edge` profile's Caddy in front, or set `APP_BIND_ADDR=0.0.0.0` behind your own TLS terminator. `NAVIDROME_BIND_ADDR` works the same way for the optional media server. |
+| Reach it from another host | Keep the app port loopback-only and use the `edge` profile's Caddy. If using another TLS terminator, bind only as required inside your network and set `SUBSONIC_TRUSTED_PROXY_CIDRS` to its exact, operator-reserved source CIDR after confirming it; the checked-in Compose network does not pin Caddy's IP. The handler rejects cleartext `p=` only after the password crossed that HTTP hop, so use HTTPS from the client and keep the proxy-to-app network controlled. `NAVIDROME_BIND_ADDR` works the same way for the optional media server. |
 | Cancel a running job | `POST /api/jobs/:id/cancel` (CSRF header required). The worker aborts within one item and finishes the job as `cancelled`, keeping what it had already imported. |
 | yt-dlp egress boundary | The overlay runs an `egress-proxy` sidecar (squid) that denies private/loopback ranges at connect time for every hop yt-dlp takes — including redirects the downloader follows on its own after handover (proven live: a source on a public address that 302s to an RFC1918 host is denied at the hop, `TCP_DENIED/403` in squid's log, and the item fails with the refusal in its log). The worker points yt-dlp at it via `YTDLP_PROXY`. **The allowlist is a feature, not a bug:** extraction sites live in `ops/squid/allowed-domains.txt`, and a host not on it is refused even when public — that is the boundary's default-deny posture, so add every site you acquire from. After editing it, apply with `docker compose -f docker-compose.yml -f docker-compose.release.yml restart egress-proxy` (a plain `up -d` leaves the running squid on its old in-memory allowlist). |
 | Tear down (keep data) | `docker compose ... down` |

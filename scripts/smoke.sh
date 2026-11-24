@@ -364,30 +364,35 @@ else
     pass "session survived a $WEB_CONTAINER restart"
 fi
 
-# ── 8. Subsonic ping, both auth styles ──────────────────────────────────────
+# ── 8. Subsonic ping with token/salt auth only ───────────────────────────────
 SUBSONIC_PASS="$(docker exec "$WEB_CONTAINER" printenv SUBSONIC_PASSWORD 2>/dev/null || true)"
 QA="v=1.16.1&c=netrunner-smoke&f=json"
 SU_U="u=$(urlencode "$SMOKE_USER")"
+SUBSONIC_AUTH=""
+SUBSONIC_TRACK_ID=""
 
-PING_ACCOUNT="$(curl -s "$BASE_URL/rest/ping.view?$QA&$SU_U&p=$SMOKE_PASS")"
-if printf '%s' "$PING_ACCOUNT" | grep -q '"status":"ok"'; then
-    pass "Subsonic ping accepted the account password"
-else
-    fail "Subsonic ping (account password) failed: $PING_ACCOUNT"
-fi
+subsonic_get() {
+    local endpoint="$1" extra="${2:-}" query
+    query="$QA&$SU_U&$SUBSONIC_AUTH"
+    [ -n "$extra" ] && query+="&$extra"
+    curl -s "$BASE_URL/rest/${endpoint}.view?$query"
+}
 
-if [ -n "$SUBSONIC_PASS" ]; then
-    # The server compares against md5(md5(password_as_hex) + salt) — Subsonic's
-    # documented token scheme, so the password is hashed before it is salted.
+if [ -n "$SUBSONIC_PASS" ] && ! is_template_secret "$SUBSONIC_PASS"; then
+    # Match the handler's token scheme: md5(hex(md5(SUBSONIC_PASSWORD)) + salt).
+    # Do not fall back to reusable p= credentials, including for local HTTP.
     SALT="smoke${RUN_ID}"
     PASS_HASH="$(printf '%s' "$SUBSONIC_PASS" | md5sum | cut -d' ' -f1)"
     TOKEN="$(printf '%s' "${PASS_HASH}${SALT}" | md5sum | cut -d' ' -f1)"
-    PING_TOKEN="$(curl -s "$BASE_URL/rest/ping.view?$QA&$SU_U&t=$TOKEN&s=$SALT")"
+    SUBSONIC_AUTH="t=$TOKEN&s=$SALT"
+    PING_TOKEN="$(subsonic_get ping)"
     if printf '%s' "$PING_TOKEN" | grep -q '"status":"ok"'; then
         pass "Subsonic ping accepted token auth"
     else
         fail "Subsonic ping (token) failed: $PING_TOKEN"
     fi
+else
+    info "No usable shared SUBSONIC_PASSWORD; skipping Subsonic auth checks without sending credentials"
 fi
 
 # ── 9. Owned library + audio fixtures + scan ────────────────────────────────
@@ -471,31 +476,32 @@ else
 fi
 
 # ── 10. Subsonic sees the library it owns ───────────────────────────────────
-SU="$SU_U&p=$SMOKE_PASS"
-INDEXES="$(curl -s "$BASE_URL/rest/getIndexes.view?$QA&$SU")"
-if printf '%s' "$INDEXES" | grep -q 'Every Time I Die'; then
-    pass "Subsonic getIndexes lists the library artist"
-else
-    fail "Subsonic getIndexes does not list the library artist: $INDEXES"
-fi
+if [ -n "$SUBSONIC_AUTH" ]; then
+    INDEXES="$(subsonic_get getIndexes)"
+    if printf '%s' "$INDEXES" | grep -q 'Every Time I Die'; then
+        pass "Subsonic getIndexes lists the library artist"
+    else
+        fail "Subsonic getIndexes does not list the library artist: $INDEXES"
+    fi
 
-SEARCH="$(curl -s "$BASE_URL/rest/search3.view?$QA&$SU&query=Smoke")"
-TRACK_ID="$(json_field "$SEARCH" id)"
-if [ -n "$TRACK_ID" ]; then
-    pass "Subsonic search3 returned track $TRACK_ID"
-else
-    fail "Subsonic search3 returned no tracks: $SEARCH"
+    SEARCH="$(subsonic_get search3 'query=Smoke')"
+    SUBSONIC_TRACK_ID="$(json_field "$SEARCH" id)"
+    if [ -n "$SUBSONIC_TRACK_ID" ]; then
+        pass "Subsonic search3 returned track $SUBSONIC_TRACK_ID"
+    else
+        fail "Subsonic search3 returned no tracks: $SEARCH"
+    fi
 fi
 
 # ── 11. Streaming returns real audio ────────────────────────────────────────
-if [ -n "$TRACK_ID" ]; then
-    STREAM_BYTES="$(curl -s "$BASE_URL/rest/stream.view?$QA&$SU&id=$TRACK_ID" | wc -c | tr -d ' ')"
+if [ -n "$SUBSONIC_AUTH" ] && [ -n "$SUBSONIC_TRACK_ID" ]; then
+    STREAM_BYTES="$(subsonic_get stream "id=$SUBSONIC_TRACK_ID" | wc -c | tr -d ' ')"
     if [ "$STREAM_BYTES" -gt 1000 ]; then
         pass "stream.view returned $STREAM_BYTES bytes of audio"
     else
         fail "stream.view returned $STREAM_BYTES bytes — expected real audio"
     fi
-else
+elif [ -n "$SUBSONIC_AUTH" ]; then
     fail "skipping stream check: no track id from search3"
 fi
 

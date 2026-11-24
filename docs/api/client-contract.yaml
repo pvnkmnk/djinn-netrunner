@@ -6,10 +6,11 @@ info:
     The additive, session-authenticated management contract for an existing
     NETRUNNER appliance. Subsonic/OpenSubsonic /rest endpoints are a separate
     protocol surface and are specified by docs/OPENSUBSONIC_COVERAGE.md. Its
-    supported authentication modes are exactly account password (u+p) or
-    configured shared token (u+t+s, double-MD5); conflicts, malformed or
-    disabled credentials return the HTTP-200 Subsonic code-40 envelope. The
-    management SLSKD_API_KEY is not a Subsonic credential and is never exposed.
+    supported authentication modes are exactly legacy account password (u+p,
+    verified HTTPS only) or configured shared token (u+t+s, double-MD5), which
+    clients should prefer; conflicts, malformed or disabled credentials return
+    the HTTP-200 Subsonic code-40 envelope. The management SLSKD_API_KEY is not
+    a Subsonic credential and is never exposed.
 servers:
   - url: /
 tags:

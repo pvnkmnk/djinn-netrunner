@@ -1,6 +1,8 @@
 # Djinn NETRUNNER Caddy Configuration
 # Edge proxy with TLS termination and WebSocket support
 
+import ./access-log-format.caddy
+
 {$DOMAIN:localhost} {
 # All requests to netrunner (including WebSocket)
 handle {
@@ -29,6 +31,6 @@ handle {
     # Logging
     log {
         output stdout
-        format json
+        import subsonic_access_log_format
     }
 }

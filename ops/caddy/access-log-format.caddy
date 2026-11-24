@@ -1,0 +1,14 @@
+# Keep Subsonic credential query fields out of the edge access log while
+# retaining the rest of the request URI and its safe metadata.
+(subsonic_access_log_format) {
+	format filter {
+		wrap json
+		fields {
+			request>uri query {
+				delete p
+				delete t
+				delete s
+			}
+		}
+	}
+}

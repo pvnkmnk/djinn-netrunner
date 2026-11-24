@@ -9,9 +9,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // NR03 asks for the protocol credential matrix to be proven against a running
@@ -27,19 +29,31 @@ func subsonicToken(sharedPassword string) string {
 }
 
 // subsonicDo issues GET (query) or POST (form) against a /rest endpoint and
-// returns the XML body. It fails only on transport errors: Subsonic protocol
-// failures are 200 responses carrying an error envelope.
+// returns the XML body. Subsonic protocol failures are HTTP 200 envelopes;
+// redirects are not followed, and unexpected non-200 statuses fail (404 skips
+// when the API is disabled).
 func subsonicDo(t *testing.T, baseURL, endpoint string, values url.Values, post bool) string {
 	t.Helper()
 	var (
 		resp *http.Response
 		err  error
 	)
+	method := http.MethodGet
+	requestURL := baseURL + endpoint + "?" + values.Encode()
+	var requestBody io.Reader
 	if post {
-		resp, err = http.Post(baseURL+endpoint, "application/x-www-form-urlencoded", strings.NewReader(values.Encode()))
-	} else {
-		resp, err = http.Get(baseURL + endpoint + "?" + values.Encode())
+		method = http.MethodPost
+		requestURL = baseURL + endpoint
+		requestBody = strings.NewReader(values.Encode())
 	}
+	request, requestErr := http.NewRequest(method, requestURL, requestBody)
+	if requestErr != nil {
+		t.Fatalf("%s request construction failed: %v", endpoint, requestErr)
+	}
+	if post {
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	resp, err = newSubsonicSmokeHTTPClient().Do(request)
 	if err != nil {
 		t.Fatalf("%s request failed: %v", endpoint, err)
 	}
@@ -57,6 +71,46 @@ func subsonicDo(t *testing.T, baseURL, endpoint string, values url.Values, post 
 	return string(body)
 }
 
+// newSubsonicSmokeHTTPClient keeps HTTP rejection assertions on the original
+// request: the default redirect policy could silently retry p= over HTTPS.
+// The default transport verifies TLS certificates for HTTPS success cases.
+func newSubsonicSmokeHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func TestSubsonicSmokeClientDoesNotFollowRedirects(t *testing.T) {
+	finalHit := make(chan struct{}, 1)
+	final := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		finalHit <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer final.Close()
+
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, final.URL, http.StatusFound)
+	}))
+	defer redirect.Close()
+
+	response, err := newSubsonicSmokeHTTPClient().Get(redirect.URL)
+	if err != nil {
+		t.Fatalf("redirect probe failed: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusFound {
+		t.Fatalf("expected original 302 response, got %d", response.StatusCode)
+	}
+	select {
+	case <-finalHit:
+		t.Fatal("client followed the redirect")
+	default:
+	}
+}
+
 func subsonicLogin(t *testing.T, baseURL string) (email, password string) {
 	t.Helper()
 	email = fmt.Sprintf("smoke-nr03-subsonic-%d@test.com", len(t.Name()))
@@ -66,7 +120,8 @@ func subsonicLogin(t *testing.T, baseURL string) (email, password string) {
 	if err != nil {
 		t.Fatalf("cookiejar: %v", err)
 	}
-	client := &http.Client{Jar: jar}
+	client := newSubsonicSmokeHTTPClient()
+	client.Jar = jar
 	body := `{"email":"` + email + `","password":"` + password + `"}`
 	for _, path := range []string{"/api/auth/register", "/api/auth/login"} {
 		req, reqErr := http.NewRequest(http.MethodPost, baseURL+path, strings.NewReader(body))
@@ -93,12 +148,21 @@ func TestSmoke_Subsonic_Auth_CredentialModes(t *testing.T) {
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
 	email, password := subsonicLogin(t, baseURL)
 
-	t.Run("password mode is accepted over GET and POST", func(t *testing.T) {
+	t.Run("legacy password mode requires HTTPS", func(t *testing.T) {
 		values := url.Values{"u": {email}, "p": {password}}
 		for _, post := range []bool{false, true} {
 			body := subsonicDo(t, baseURL, "/rest/ping.view", values, post)
-			if !strings.Contains(body, `status="ok"`) {
-				t.Fatalf("post=%v: expected status ok, got %s", post, body)
+			if strings.HasPrefix(strings.ToLower(baseURL), "http://") {
+				if !strings.Contains(body, `status="failed"`) || !strings.Contains(body, "Password authentication requires HTTPS") {
+					t.Fatalf("post=%v: expected cleartext p= rejection, got %s", post, body)
+				}
+			} else if strings.HasPrefix(strings.ToLower(baseURL), "https://") && !strings.Contains(body, `status="ok"`) {
+				t.Fatalf("post=%v: expected verified HTTPS password auth, got %s", post, body)
+			} else if !strings.HasPrefix(strings.ToLower(baseURL), "https://") {
+				t.Fatalf("INTEGRATION_BASE_URL must use http or verified https, got %q", baseURL)
+			}
+			if strings.Contains(body, password) {
+				t.Fatalf("post=%v: response leaked the account password", post)
 			}
 		}
 	})
@@ -128,10 +192,14 @@ func TestSmoke_Subsonic_Auth_CredentialModes(t *testing.T) {
 		}
 	})
 
-	t.Run("missing username reports the protocol parameter name", func(t *testing.T) {
+	t.Run("cleartext password is rejected before username validation", func(t *testing.T) {
 		body := subsonicDo(t, baseURL, "/rest/ping.view", url.Values{"p": {password}}, false)
-		if !strings.Contains(body, "Missing parameter: u") {
-			t.Fatalf("expected the missing-u envelope, got %s", body)
+		if strings.HasPrefix(strings.ToLower(baseURL), "http://") {
+			if !strings.Contains(body, "Password authentication requires HTTPS") {
+				t.Fatalf("expected transport rejection before user validation, got %s", body)
+			}
+		} else if !strings.Contains(body, "Missing parameter: u") {
+			t.Fatalf("expected the missing-u envelope over verified HTTPS, got %s", body)
 		}
 	})
 

@@ -30,6 +30,11 @@ jobs:
         env:
           CGO_ENABLED: 0
 
+      # Exercise the same Caddy 2 access-log filter used by the edge profile;
+      # credentials must disappear while non-secret request metadata remains.
+      - name: Caddy Subsonic access-log redaction test
+        run: bash scripts/test_caddy_access_log_redaction.sh
+
       # The e2e suite's completeness gate decides whether a run counts as
       # having covered everything, so the gate itself needs a test that runs on
       # every PR -- otherwise a change to count_category() could break it
