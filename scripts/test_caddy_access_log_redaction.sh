@@ -5,8 +5,9 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 2; }
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 2; }
 
-if ! rg -q 'import ./access-log-format\.caddy' "$repo_root/ops/caddy/Caddyfile" || \
-   ! rg -q 'import subsonic_access_log_format' "$repo_root/ops/caddy/Caddyfile"; then
+caddyfile_contents="$(<"$repo_root/ops/caddy/Caddyfile")"
+if [[ "$caddyfile_contents" != *'import ./access-log-format.caddy'* || \
+      "$caddyfile_contents" != *'import subsonic_access_log_format'* ]]; then
     echo "Production Caddyfile is not using the tested access-log filter snippet" >&2
     exit 1
 fi
