@@ -8,7 +8,7 @@ is the script's data table so it can be reviewed as a diff.
 |---|---|
 | Spec | OpenSubsonic 1.16.1 |
 | Source | `https://opensubsonic.netlify.app/docs/openapi/openapi.json` |
-| sha256 | `cb54c03c33835d132c555863e9771e30dfaa2930312853ca27dfece2ed46bfb6` |
+| sha256 | `fe32e867ac61b0c3d3223dfbdf8d8319070b4cdabd08d964fec7882ccdac9463` |
 | Docs | https://github.com/opensubsonic/open-subsonic-api |
 | Endpoints | 87 paths — 82 reachable by plain GET, 5 provided by an extension |
 | Re-point the pin | change `SPEC_VERSION` and `SPEC_SHA256` together |
@@ -41,24 +41,18 @@ Fixed: `/rest/getLicense.view` is the spec name and `/rest/license.view` is
 kept as an alias, so nothing breaks for a client that learned the old one.
 The guard below fails if either half of that pair disappears.
 
-### 2. `/rest/stream.view` has one automated test
+### 2. `/rest/stream.view` has only narrow automated coverage
 
 `SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the
 endpoint every client actually uses to listen to music. One check drives it —
 `scripts/smoke.sh:486-492`, which fetches a track and fails unless more than
 1,000 bytes come back. That is a happy path with no assertion about ranges,
 content type, authorization or error shape, it needs a running stack, and
-**no workflow invokes `smoke.sh`**, so nothing runs it on a change. An earlier
-draft of this document called the endpoint untested; it is not, and the
-distinction is the point: the check exists somewhere a CI failure cannot
-reach it.
-
-Since this finding was written, `TestSubsonic_Stream_InvalidFormat` (in
-`backend/internal/api/subsonic_test.go`) drives the handler and asserts an
-invalid `format` is rejected with `Unsupported format`, and
-`TestSubsonic_Stream_RawFormat` / `TestSubsonic_Stream_FlvFormat` cover the
-`raw` and `flv` formats. That is the error path and two format values; ranges,
-content type, authorization and the other error shapes are still untested.
+**no workflow invokes `smoke.sh`**, so the stack-level check is not a PR gate.
+Focused handler tests cover `InvalidFormat`, `RawFormat` and `FlvFormat`,
+plus the format-to-muxer helper. They do not assert ranges, content type,
+authorization or the other error shapes; the protocol delivery contract
+remains unverified beyond these focused branches.
 
 There are nine passing tests named `TestStreamTrack_*` in
 `backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,
@@ -121,7 +115,7 @@ endpoint out of base API when its text names no extension at all.
 | `deletePodcastEpisode` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
 | `deleteShare` | get+post | Sharing | — | — | gap | not in the route table · **NR24** |
 | `deleteUser` | get+post | User Management | — | — | gap | not in the route table · **NR04** |
-| `download` | get+post | Media Retrieval | — | — | gap | not in the route table · **NR07** |
+| `download` | get+post | Media Retrieval | — | — | gap | not in the route table · **NR07 + NR19** |
 | `downloadPodcastEpisode` | get+post | Podcast | — | — | gap | not in the route table · **NR26** |
 | `findSonicPath` | get+post | Addition, Browsing | — | — | gap | not in the route table · **NR06** |
 | `getAlbum` | get+post | Browsing | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_GetAlbum_{Found,MalformedID,NotFound} |
