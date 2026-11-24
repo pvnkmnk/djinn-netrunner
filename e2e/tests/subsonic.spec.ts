@@ -1,9 +1,16 @@
+import { createHash } from 'crypto';
 import { expect } from '@playwright/test';
 import { test, TEST_USER } from '../fixtures/auth.fixture';
 
-// Test user credentials come from the fixture rather than being restated here.
-// Subsonic's `p=` parameter compares the *account* password, so a copy that
-// drifts from auth.fixture.ts authenticates against nothing.
+// Keep this value aligned with SUBSONIC_PASSWORD in .env.e2e.example.
+const SUBSONIC_SHARED_PASSWORD = 'e2e_subsonic_password';
+const SUBSONIC_SALT = 'netrunner-e2e-salt';
+
+function subsonicAuthParams(username = TEST_USER.email): Record<string, string> {
+  const passwordHash = createHash('md5').update(SUBSONIC_SHARED_PASSWORD).digest('hex');
+  const token = createHash('md5').update(passwordHash + SUBSONIC_SALT).digest('hex');
+  return { u: username, t: token, s: SUBSONIC_SALT };
+}
 
 /**
  * Helper to make Subsonic API GET requests with Subsonic auth params.
@@ -11,8 +18,7 @@ import { test, TEST_USER } from '../fixtures/auth.fixture';
  */
 async function subsonicGet(page: any, endpoint: string, params: Record<string, string> = {}) {
   const query = new URLSearchParams({
-    u: TEST_USER.email,
-    p: TEST_USER.password,
+    ...subsonicAuthParams(),
     v: '1.16.1',
     c: 'netrunner-test',
     f: 'json',
@@ -26,8 +32,7 @@ async function subsonicGet(page: any, endpoint: string, params: Record<string, s
  */
 async function subsonicPost(page: any, endpoint: string, params: Record<string, string> = {}) {
   const query = new URLSearchParams({
-    u: TEST_USER.email,
-    p: TEST_USER.password,
+    ...subsonicAuthParams(),
     v: '1.16.1',
     c: 'netrunner-test',
     f: 'json',
@@ -65,10 +70,10 @@ test.describe('Subsonic API (DJI-433)', () => {
       expect(data['subsonic-response'].error.code).toBe(40);
     });
 
-    test('Ping fails with wrong password', async ({ authenticatedPage: page }) => {
+    test('Legacy p authentication is rejected over cleartext even with a correct password', async ({ authenticatedPage: page }) => {
       const query = new URLSearchParams({
         u: TEST_USER.email,
-        p: 'wrongpassword',
+        p: TEST_USER.password,
         v: '1.16.1',
         c: 'netrunner-test',
         f: 'json'
@@ -76,15 +81,17 @@ test.describe('Subsonic API (DJI-433)', () => {
       const response = await page.request.get(`/rest/ping.view?${query}`);
       expect(response.status()).toBe(200);
 
-      const data = await parseSubsonicResponse(response);
+      const body = await response.text();
+      expect(body).not.toContain(TEST_USER.password);
+      const data = JSON.parse(body);
       expect(data['subsonic-response'].status).toBe('failed');
       expect(data['subsonic-response'].error.code).toBe(40);
+      expect(data['subsonic-response'].error.message).toContain('Password authentication requires HTTPS');
     });
 
     test('Ping fails with wrong username', async ({ authenticatedPage: page }) => {
       const query = new URLSearchParams({
-        u: 'nonexistent@netrunner.dev',
-        p: TEST_USER.password,
+        ...subsonicAuthParams('nonexistent@netrunner.dev'),
         v: '1.16.1',
         c: 'netrunner-test',
         f: 'json'
@@ -292,8 +299,7 @@ test.describe('Subsonic API (DJI-433)', () => {
     test('Missing version parameter - graceful handling', async ({ authenticatedPage: page }) => {
       // Some implementations may require version, others may default
       const query = new URLSearchParams({
-        u: TEST_USER.email,
-        p: TEST_USER.password,
+        ...subsonicAuthParams(),
         c: 'netrunner-test',
         f: 'json'
         // v is intentionally missing

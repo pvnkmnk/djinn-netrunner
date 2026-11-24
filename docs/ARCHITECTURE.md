@@ -143,8 +143,9 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 - File size limits on upload/scan paths where applicable.
 
 ### Credential Leakage
-- Subsonic clients (gonic, navidrome) use **token-based auth** (`t` + `s` params) instead of password in query string (`p` param).
-- No credentials in URLs, logs, or error messages returned to clients.
+- Subsonic clients (gonic, navidrome) use **token-based auth** (`t` + `s` params) instead of password in query string (`p` param); clients should prefer this mode and use HTTPS for all Subsonic traffic.
+- Legacy account-password `p` authentication is accepted only over verified external HTTPS: direct TLS, or one exact `X-Forwarded-Proto: https` from a raw socket peer in the separate `SUBSONIC_TRUSTED_PROXY_CIDRS` allowlist. The allowlist defaults empty and must not be inferred from Fiber's broader proxy trust ranges.
+- Application logs and authentication error responses must not contain credential values. Optional Caddy access-log URI redaction is tracked separately under DJI-697.
 
 ### Vulnerability Scanning
 - `govulncheck ./...` reports **no reachable vulnerabilities**.

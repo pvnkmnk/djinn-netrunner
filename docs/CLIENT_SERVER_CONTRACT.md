@@ -122,9 +122,10 @@ Every enabled `/rest/*.view` endpoint runs the Subsonic authentication
 middleware. Requests identify the account with `u`, which is the user's email
 address. A client authenticates with one of these forms:
 
-- account-password authentication: `u` plus `p`;
+- legacy account-password authentication: `u` plus `p`, accepted only when
+  external HTTPS is verified;
 - shared-password token authentication: `u`, `t` and `s`, where `t` is the
-  lowercase hexadecimal MD5 of `SUBSONIC_PASSWORD + s`.
+  lowercase hexadecimal `MD5(hex(MD5(SUBSONIC_PASSWORD)) + s)`.
 
 Exactly one mode is required: `p` cannot be combined with `t` or `s`, and
 token mode requires both `t` and `s`. Malformed digests, missing credentials,
@@ -136,7 +137,18 @@ password, token, salt, or shared-secret values.
 
 Token authentication is refused when `SUBSONIC_PASSWORD` is not configured;
 accepting `md5(s)` in that case would allow anyone to forge a valid token.
-Account-password authentication remains available without the shared password.
+Clients should prefer token/salt authentication and use HTTPS for all Subsonic
+traffic. The legacy `p` form is rejected unless the request is directly received
+over TLS or its TLS-terminating proxy is explicitly listed in
+`SUBSONIC_TRUSTED_PROXY_CIDRS` and supplies exactly one
+`X-Forwarded-Proto: https` header. The allowlist accepts comma-separated CIDRs,
+defaults to empty, and is independent of Fiber's broader proxy-trust ranges; a
+private or loopback peer is not trusted for scheme decisions merely because
+other forwarded headers are trusted from it. A TLS-terminating proxy must
+overwrite the forwarded-proto header and operators must list only that proxy's
+peer CIDR. Account-password authentication remains available without the shared
+password, but only over verified HTTPS. Authentication diagnostics and protocol
+responses contain no submitted password, token, salt, username, or shared secret.
 The management API key (`SLSKD_API_KEY`) is unrelated to Subsonic auth and is
 never accepted as a Subsonic credential or exposed in protocol responses.
 Subsonic authentication failures are returned in the protocol response envelope

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -25,19 +26,24 @@ import (
 	"github.com/pvnkmnk/netrunner/backend/internal/services"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 // SubsonicHandler handles Subsonic API endpoints
 type SubsonicHandler struct {
-	db          *gorm.DB
-	cfg         *config.Config
-	md5Password string // hex(md5(SubsonicPassword)) for token verification
+	db                   *gorm.DB
+	cfg                  *config.Config
+	md5Password          string // hex(md5(SubsonicPassword)) for token verification
+	trustedProxyPrefixes []netip.Prefix
 }
 
 // NewSubsonicHandler creates a new SubsonicHandler
 func NewSubsonicHandler(db *gorm.DB, cfg *config.Config) *SubsonicHandler {
 	h := &SubsonicHandler{db: db, cfg: cfg}
-	if cfg.Subsonic.Password != "" {
+	if cfg != nil {
+		h.trustedProxyPrefixes = parseSubsonicTrustedProxyCIDRs(cfg.SubsonicTrustedProxyCIDRs)
+	}
+	if cfg != nil && cfg.Subsonic.Password != "" {
 		// Compute md5 hash of the password for token verification
 		md5Hash := md5.Sum([]byte(cfg.Subsonic.Password))
 		h.md5Password = hex.EncodeToString(md5Hash[:])
@@ -207,13 +213,20 @@ type subsonicChild struct {
 
 // AuthMiddleware validates Subsonic authentication parameters
 func (h *SubsonicHandler) AuthMiddleware(c fiber.Ctx) error {
+	// Legacy account-password auth sends the reusable password as `p`. Reject it
+	// before looking up the account or validating any credential unless the
+	// external connection is demonstrably HTTPS.
+	hasPassword := subsonicParamPresent(c, "p")
+	if hasPassword && !h.isExternalHTTPS(c) {
+		return h.respondError(c, 40, "Password authentication requires HTTPS")
+	}
+
 	// FormValue accepts both the query parameters used by GET clients and
 	// application/x-www-form-urlencoded parameters used by POST clients.
 	username := c.FormValue("u")
 	token := c.FormValue("t")
 	salt := c.FormValue("s")
 	password := c.FormValue("p")
-	hasPassword := subsonicParamPresent(c, "p")
 	hasToken := subsonicParamPresent(c, "t")
 	hasSalt := subsonicParamPresent(c, "s")
 
@@ -223,7 +236,11 @@ func (h *SubsonicHandler) AuthMiddleware(c fiber.Ctx) error {
 
 	// Look up user by email
 	var user database.User
-	if err := h.db.Where("LOWER(email) = ?", strings.ToLower(username)).First(&user).Error; err != nil {
+	// GORM's Info logger interpolates query parameters, including the Subsonic
+	// username. Keep authentication queries silent; the structured diagnostics
+	// below record only a fixed reason and protocol name.
+	authDB := h.db.Session(&gorm.Session{Logger: h.db.Logger.LogMode(gormlogger.Silent)})
+	if err := authDB.Where("LOWER(email) = ?", strings.ToLower(username)).First(&user).Error; err != nil {
 		slog.Warn("Subsonic auth failed", "reason", "user_not_found", "protocol", "subsonic")
 		return h.respondError(c, 40, "Authentication failed")
 	}
@@ -271,6 +288,54 @@ func (h *SubsonicHandler) AuthMiddleware(c fiber.Ctx) error {
 	// Set user in context
 	c.Locals("user", user)
 	return c.Next()
+}
+
+func parseSubsonicTrustedProxyCIDRs(raw string) []netip.Prefix {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	entries := strings.Split(raw, ",")
+	prefixes := make([]netip.Prefix, 0, len(entries))
+	for _, entry := range entries {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(entry))
+		if err != nil {
+			// Config.Load validates this list and fails closed. Directly
+			// constructed configs must also fail closed rather than trusting a
+			// valid subset after one malformed entry.
+			return nil
+		}
+		prefixes = append(prefixes, prefix.Masked())
+	}
+	return prefixes
+}
+
+func (h *SubsonicHandler) isExternalHTTPS(c fiber.Ctx) bool {
+	if c.RequestCtx().IsTLS() {
+		return true
+	}
+
+	remote, err := netip.ParseAddrPort(c.RequestCtx().RemoteAddr().String())
+	if err != nil {
+		return false
+	}
+	peer := remote.Addr().Unmap()
+	trustedPeer := false
+	for _, prefix := range h.trustedProxyPrefixes {
+		if prefix.Contains(peer) {
+			trustedPeer = true
+			break
+		}
+	}
+	if !trustedPeer {
+		return false
+	}
+
+	// Do not use Fiber's Scheme(): its forwarded-header trust is intentionally
+	// broader for other app features. Only one unambiguous X-Forwarded-Proto
+	// value from the explicitly allowlisted raw socket peer is authoritative here.
+	forwardedProto := c.Request().Header.PeekAll("X-Forwarded-Proto")
+	return len(forwardedProto) == 1 && strings.EqualFold(string(forwardedProto[0]), "https")
 }
 
 func subsonicParamPresent(c fiber.Ctx, name string) bool {

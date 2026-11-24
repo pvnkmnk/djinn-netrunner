@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
@@ -79,7 +78,7 @@ func TestSubsonic_Search3_ReturnsNamedArtistsWithResolvableIDs(t *testing.T) {
 	createBrowseTestTracks(t, db, "Test Artist", "Test Album One", 2)
 	createBrowseTestTracks(t, db, "Test Artist", "Test Album Two", 1)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/search3", handler.AuthMiddleware, handler.Search3)
 
 	req := httptest.NewRequest("GET", "/search3?query=Test&f=json&u=test@example.com&p=testpass123", nil)
@@ -115,7 +114,7 @@ func TestSubsonic_GetIndexes_ArtistsCarryResolvableIDsAndAlbumCounts(t *testing.
 	// rune, or every lowercase artist lands under "#".
 	createBrowseTestTracks(t, db, "kexp", "Live Set", 1)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getIndexes", handler.AuthMiddleware, handler.GetIndexes)
 
 	req := httptest.NewRequest("GET", "/getIndexes?f=json&u=test@example.com&p=testpass123", nil)
@@ -149,7 +148,7 @@ func TestSubsonic_GetArtist_ReturnsTopLevelArtistWithAlbums(t *testing.T) {
 	createBrowseTestTracks(t, db, "Test Artist", "First Album", 2)
 	createBrowseTestTracks(t, db, "Test Artist", "Second Album", 1)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getArtist", handler.AuthMiddleware, handler.GetArtist)
 
 	artistID := "artist-" + url.PathEscape("Test Artist")
@@ -183,7 +182,7 @@ func TestSubsonic_AlbumCountsMatchGetArtistForUntaggedTracks(t *testing.T) {
 	createBrowseTestTracks(t, db, "Mix Artist", "Named Album", 1)
 	createUntaggedAlbumTrack(t, db, "Mix Artist")
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getIndexes", handler.AuthMiddleware, handler.GetIndexes)
 	app.Get("/getArtist", handler.AuthMiddleware, handler.GetArtist)
 
@@ -217,7 +216,7 @@ func TestSubsonic_GetArtist_WithOnlyUntaggedTracksIsNotEmpty(t *testing.T) {
 	db, handler := setupSubsonicDBHandlerTest(t)
 	createUntaggedAlbumTrack(t, db, "Untagged Only")
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getArtist", handler.AuthMiddleware, handler.GetArtist)
 
 	resp, err := app.Test(httptest.NewRequest("GET",
@@ -236,7 +235,7 @@ func TestSubsonic_GetAlbum_ReturnsResolvableArtistID(t *testing.T) {
 	createBrowseTestTracks(t, db, "Test Artist", "Test Album", 2)
 	createBrowseTestTracks(t, db, "Test Artist", "Live-Set", 1)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
 
 	follow := func(album, artist string) string {
@@ -339,7 +338,7 @@ func TestSubsonic_GetAlbum_ReturnsStreamableSongs(t *testing.T) {
 	require.NoError(t, db.Where("album = ? AND artist = ?", "Test Album", "Test Artist").
 		Order("track_num").First(&track).Error)
 
-	app := fiber.New()
+	app := newSubsonicTestFiberApp()
 	app.Get("/getAlbum", handler.AuthMiddleware, handler.GetAlbum)
 
 	resp, err := app.Test(httptest.NewRequest("GET",

@@ -93,12 +93,19 @@ func TestSmoke_Subsonic_Auth_CredentialModes(t *testing.T) {
 	baseURL := GetEnvOrDefault("INTEGRATION_BASE_URL", "http://localhost:8080")
 	email, password := subsonicLogin(t, baseURL)
 
-	t.Run("password mode is accepted over GET and POST", func(t *testing.T) {
+	t.Run("legacy password mode requires HTTPS", func(t *testing.T) {
 		values := url.Values{"u": {email}, "p": {password}}
 		for _, post := range []bool{false, true} {
 			body := subsonicDo(t, baseURL, "/rest/ping.view", values, post)
-			if !strings.Contains(body, `status="ok"`) {
-				t.Fatalf("post=%v: expected status ok, got %s", post, body)
+			if strings.HasPrefix(strings.ToLower(baseURL), "http://") {
+				if !strings.Contains(body, `status="failed"`) || !strings.Contains(body, "Password authentication requires HTTPS") {
+					t.Fatalf("post=%v: expected cleartext p= rejection, got %s", post, body)
+				}
+			} else if !strings.Contains(body, `status="ok"`) {
+				t.Fatalf("post=%v: expected verified HTTPS password auth, got %s", post, body)
+			}
+			if strings.Contains(body, password) {
+				t.Fatalf("post=%v: response leaked the account password", post)
 			}
 		}
 	})
@@ -128,10 +135,14 @@ func TestSmoke_Subsonic_Auth_CredentialModes(t *testing.T) {
 		}
 	})
 
-	t.Run("missing username reports the protocol parameter name", func(t *testing.T) {
+	t.Run("cleartext password is rejected before username validation", func(t *testing.T) {
 		body := subsonicDo(t, baseURL, "/rest/ping.view", url.Values{"p": {password}}, false)
-		if !strings.Contains(body, "Missing parameter: u") {
-			t.Fatalf("expected the missing-u envelope, got %s", body)
+		if strings.HasPrefix(strings.ToLower(baseURL), "http://") {
+			if !strings.Contains(body, "Password authentication requires HTTPS") {
+				t.Fatalf("expected transport rejection before user validation, got %s", body)
+			}
+		} else if !strings.Contains(body, "Missing parameter: u") {
+			t.Fatalf("expected the missing-u envelope over verified HTTPS, got %s", body)
 		}
 	})
 
