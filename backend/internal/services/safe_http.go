@@ -354,7 +354,7 @@ func perAttemptTimeout(ctx context.Context, attemptsLeft int) time.Duration {
 // HTTP clients to guard against SSRF.
 func NewSafeHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout:    timeout,
+		Timeout:   timeout,
 		Transport: safeTransport,
 	}
 }
@@ -429,6 +429,30 @@ func NewSafeProxyAwareHTTPClient(cfg *config.Config, timeout time.Duration) *htt
 	}
 
 	return NewSafeHTTPClient(timeout)
+}
+
+// newStrictRSSHTTPClient is for user-controlled RSS SourceURI values. RSS does
+// not inherit ALLOW_PRIVATE_TARGETS or PROXY_URL: destination enforcement at a
+// proxy's actual resolution/connection point is not assured, so RSS fetches
+// directly through safeTransport, which checks the IP it actually dials.
+func newStrictRSSHTTPClient(timeout time.Duration) *http.Client {
+	return newStrictRSSHTTPClientWithTransport(timeout, safeTransport)
+}
+
+func newStrictRSSHTTPClientWithTransport(timeout time.Duration, next http.RoundTripper) *http.Client {
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: &safeAddressValidator{next: next},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if err := hopBoundCheck(req, via); err != nil {
+				return err
+			}
+			if err := checkPublicHost(req.URL.Hostname()); err != nil {
+				return fmt.Errorf("redirect target %s: %w", req.URL.Host, err)
+			}
+			return nil
+		},
+	}
 }
 
 func SafeGet(rawURL string) (*http.Response, error) {

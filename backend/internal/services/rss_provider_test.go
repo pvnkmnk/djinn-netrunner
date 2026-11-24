@@ -2,10 +2,15 @@ package services
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/pvnkmnk/netrunner/backend/internal/config"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,6 +68,71 @@ func TestRSSProvider_NilClientStillWorks(t *testing.T) {
 	tracks, _, err := p.FetchTracks(context.Background(), wl)
 	require.NoError(t, err)
 	assert.Len(t, tracks, 2)
+}
+
+type rssRoundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f rssRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestWatchlistService_RSSSourceIgnoresPrivateTargetBypassAndProxy(t *testing.T) {
+	var proxyRequests atomic.Int64
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyRequests.Add(1)
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(testRSSFeed))
+	}))
+	defer proxy.Close()
+
+	var feedRequests atomic.Int64
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		feedRequests.Add(1)
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(testRSSFeed))
+	}))
+	defer feed.Close()
+
+	service := NewWatchlistService(nil, nil, &config.Config{
+		AllowPrivateTargets: true,
+		ProxyURL:            proxy.URL,
+	})
+	_, _, err := service.FetchWatchlistTracks(context.Background(), &database.Watchlist{
+		SourceType: "rss_feed",
+		SourceURI:  feed.URL,
+	})
+
+	require.Error(t, err, "RSS must remain guarded even when the global bypass and proxy are configured")
+	assert.Contains(t, err.Error(), "ssrf: target")
+	assert.Zero(t, feedRequests.Load(), "the private RSS source must not be dialed")
+	assert.Zero(t, proxyRequests.Load(), "the private RSS URL must never reach the proxy")
+}
+
+func TestRSSProvider_PublicToPrivateRedirectNeverProxiesPrivateTarget(t *testing.T) {
+	const publicFeedURL = "http://8.8.8.8/feed.xml"
+	const privateRedirectURL = "http://127.0.0.1:8080/internal"
+	var proxiedURLs []string
+	proxy := rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		proxiedURLs = append(proxiedURLs, req.URL.String())
+		response := &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}
+		response.Header.Set("Location", privateRedirectURL)
+		return response, nil
+	})
+	provider := NewRSSProvider(newStrictRSSHTTPClientWithTransport(5*time.Second, proxy))
+	_, _, err := provider.FetchTracks(context.Background(), &database.Watchlist{
+		SourceType: "rss_feed",
+		SourceURI:  publicFeedURL,
+	})
+
+	require.Error(t, err, "a public RSS URL must not redirect to a private destination")
+	assert.Contains(t, err.Error(), "redirect target 127.0.0.1")
+	assert.Equal(t, []string{publicFeedURL}, proxiedURLs,
+		"the proxy may receive the public feed request but must never receive the private redirect")
 }
 
 func TestRSSProvider_ValidateConfig(t *testing.T) {
