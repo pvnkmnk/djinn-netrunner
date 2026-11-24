@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log"
 	"log/slog"
@@ -70,26 +71,34 @@ func startSubsonicHTTPTestServer(t *testing.T, handler *SubsonicHandler, tlsEnab
 		base = "https://" + listener.Addr().String()
 	}
 
-	serveDone := make(chan struct{})
+	serveResult := make(chan error, 1)
 	go func() {
-		defer close(serveDone)
-		_ = app.Listener(listener)
+		serveResult <- app.Listener(listener)
 	}()
 	t.Cleanup(func() {
-		_ = app.ShutdownWithTimeout(time.Second)
+		if err := app.ShutdownWithTimeout(time.Second); err != nil {
+			t.Errorf("Fiber test server shutdown failed: %v", err)
+		}
 		_ = listener.Close()
 		transport.CloseIdleConnections()
 		select {
-		case <-serveDone:
+		case err := <-serveResult:
+			if err != nil && !errors.Is(err, net.ErrClosed) {
+				t.Errorf("Fiber test listener returned unexpected error: %v", err)
+			}
 		case <-time.After(2 * time.Second):
 			t.Error("Fiber test listener did not stop")
 		}
 	})
 
 	return &subsonicHTTPTestServer{
-		app:    app,
-		client: &http.Client{Transport: transport},
-		base:   base,
+		app: app,
+		client: &http.Client{
+			Transport:     transport,
+			Timeout:       10 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+		base: base,
 	}
 }
 

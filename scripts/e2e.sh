@@ -26,6 +26,10 @@
 
 set -euo pipefail
 
+# Compose gives exported shell variables precedence over --env-file. The E2E
+# ops-web password must come from .env.e2e, not an unrelated inherited value.
+unset SUBSONIC_PASSWORD
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

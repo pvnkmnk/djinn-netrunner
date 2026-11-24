@@ -132,15 +132,18 @@ token mode requires both `t` and `s`. Malformed digests, missing credentials,
 invalid credentials, disabled accounts, and expired credentials all fail with
 protocol status `failed`, error code `40`, and HTTP 200. These rules apply to
 both GET query parameters and POST form parameters; parameters are never
-combined across locations. Authentication diagnostics contain no username,
-password, token, salt, or shared-secret values.
+combined across locations. Authentication-failure diagnostics contain no
+submitted username or credential values.
 
 Token authentication is refused when `SUBSONIC_PASSWORD` is not configured;
 accepting `md5(s)` in that case would allow anyone to forge a valid token.
-Clients should prefer token/salt authentication and use HTTPS for all Subsonic
-traffic. The legacy `p` form is rejected unless the request is directly received
-over TLS or its TLS-terminating proxy is explicitly listed in
-`SUBSONIC_TRUSTED_PROXY_CIDRS` and supplies exactly one
+In production, enabling Subsonic requires a non-empty `SUBSONIC_PASSWORD` and
+startup fails if it is missing. In development, leaving it unset disables token
+authentication; the legacy account-password `p` form remains available only
+over verified HTTPS. Clients should prefer token/salt authentication and use
+HTTPS for all Subsonic traffic. The legacy `p` form is rejected unless the
+request is directly received over TLS or its TLS-terminating proxy is explicitly
+listed in `SUBSONIC_TRUSTED_PROXY_CIDRS` and supplies exactly one
 `X-Forwarded-Proto: https` header. The allowlist accepts comma-separated CIDRs,
 defaults to empty, and is independent of Fiber's broader proxy-trust ranges; a
 private or loopback peer is not trusted for scheme decisions merely because
@@ -156,8 +159,10 @@ check runs only after the handler receives the request, so the password has
 already crossed that cleartext hop before the server can reject it. Rejection is
 not transit protection. In the checked-in Compose topology, Caddy-to-app traffic
 is plain HTTP, so keep that proxy-to-app network controlled. Authentication
-diagnostics and protocol responses contain no submitted password, token, salt,
-username, or shared secret.
+failure diagnostics and error envelopes must not echo a submitted username or
+credential value. Successful protocol responses may include protocol-defined
+account metadata, including a playlist owner's email; treat it as personal data,
+not an authentication secret.
 The management API key (`SLSKD_API_KEY`) is unrelated to Subsonic auth and is
 never accepted as a Subsonic credential or exposed in protocol responses.
 Subsonic authentication failures are returned in the protocol response envelope

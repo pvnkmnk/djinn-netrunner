@@ -437,7 +437,11 @@ func Load(filenames ...string) (*Config, error) {
 	cfg.DownloadStagingPath = getEnv("DOWNLOAD_STAGING", cfg.DownloadStagingPath)
 	cfg.StagingReclaimEnabled = getEnvBool("STAGING_RECLAIM_ENABLED", cfg.StagingReclaimEnabled)
 	cfg.StagingReclaimOrphans = getEnvBool("STAGING_RECLAIM_ORPHANS", cfg.StagingReclaimOrphans)
-	cfg.SubsonicTrustedProxyCIDRs = getEnv("SUBSONIC_TRUSTED_PROXY_CIDRS", cfg.SubsonicTrustedProxyCIDRs)
+	if value, ok := os.LookupEnv("SUBSONIC_TRUSTED_PROXY_CIDRS"); ok {
+		// An explicitly empty value clears any YAML allowlist and restores the
+		// default-deny behavior for forwarded scheme headers.
+		cfg.SubsonicTrustedProxyCIDRs = value
+	}
 	if err := validateSubsonicTrustedProxyCIDRs(cfg.SubsonicTrustedProxyCIDRs); err != nil {
 		return nil, err
 	}
@@ -532,8 +536,12 @@ func validateSubsonicTrustedProxyCIDRs(raw string) error {
 		if entry == "" {
 			return fmt.Errorf("SUBSONIC_TRUSTED_PROXY_CIDRS contains an empty entry")
 		}
-		if _, err := netip.ParsePrefix(entry); err != nil {
+		prefix, err := netip.ParsePrefix(entry)
+		if err != nil {
 			return fmt.Errorf("SUBSONIC_TRUSTED_PROXY_CIDRS entry %q must be a valid CIDR", entry)
+		}
+		if prefix.Addr().Is4In6() && prefix.Bits() < 96 {
+			return fmt.Errorf("SUBSONIC_TRUSTED_PROXY_CIDRS entry %q includes addresses outside the IPv4-mapped range", entry)
 		}
 	}
 	return nil
