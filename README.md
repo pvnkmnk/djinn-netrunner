@@ -21,7 +21,7 @@ NetRunner is a security-hardened, performance-optimized music acquisition pipeli
 - 🏗️ **Two editions, one codebase**: **Djinn-Netrunner** runs on PostgreSQL (advisory locks, `LISTEN/NOTIFY`, concurrent workers); **NetrunnerLite** runs on a single CGO-free SQLite (WAL) file.
 - 🏷️ **Metadata Resilience**: Persistent "Shadow Cache" for MusicBrainz & Spotify.
 - ⚡ **High-Performance**: Concurrent worker pools and round-robin task orchestration.
-- 🛡️ **Privacy-First**: Native SOCKS5/HTTP proxy support for all P2P and API traffic.
+- 🛡️ **Privacy-First**: SOCKS5/HTTP proxy support for proxy-aware provider APIs; RSS/Bandcamp feeds use strict direct-fetch destination checks.
 - 🛡️ **Multi-User Security**: Broken Object Level Authorization (BOLA) protection across all endpoints with per-user data isolation.
 - 🖥️ **Cyberpunk UI**: A modern, interactive Bento Grid dashboard powered by HTMX and Fiber.
 - 🤖 **Agent-Native**: Built-in MCP (Model Context Protocol) server and CLI for autonomous management.
