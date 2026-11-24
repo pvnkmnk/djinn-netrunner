@@ -43,7 +43,7 @@ The guard below fails if either half of that pair disappears.
 
 ### 2. `/rest/stream.view` has only narrow automated coverage
 
-`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the
+`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:902`) is the
 endpoint every client actually uses to listen to music. The stack-level
 media-delivery check is `scripts/smoke.sh:490-497`: it fetches a track and
 fails unless more than 1,000 bytes come back. The E2E suite separately
@@ -182,7 +182,7 @@ endpoint out of base API when its text names no extension at all.
 | `setRating` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `star` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `startScan` | get+post | Media Library Scanning | — | — | impl | `backend/internal/api/subsonic.go`<br>TestSubsonic_StartScan |
-| `stream` | get+post | Addition, Clarification, Extension, Media Retrieval | `Extension` | Extension | impl | `backend/internal/api/subsonic.go:871`<br>TestSubsonic_Stream_{InvalidFormat,RawFormat,FlvFormat}, TestSubsonic_formatToFFmpegMuxer; media-delivery check: `scripts/smoke.sh:490-497` asserts >1000 bytes, manual, not in CI — see Finding 2 |
+| `stream` | get+post | Addition, Clarification, Extension, Media Retrieval | `Extension` | Extension | impl | `backend/internal/api/subsonic.go:902`<br>TestSubsonic_Stream_{InvalidFormat,RawFormat,FlvFormat}, TestSubsonic_formatToFFmpegMuxer; media-delivery check: `scripts/smoke.sh:490-497` asserts >1000 bytes, manual, not in CI — see Finding 2 |
 | `tokenInfo` | get+post | Addition, Extension, System | apiKeyAuthentication | Extension | gap | not in the route table · **NR05** |
 | `unstar` | get+post | Media Annotation | — | — | gap | not in the route table · **NR10** |
 | `updateInternetRadioStation` | get+post | Internet Radio | — | — | gap | not in the route table · **NR23** |

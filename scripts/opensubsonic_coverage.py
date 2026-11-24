@@ -66,7 +66,7 @@ IMPLEMENTED = {
     "getRandomSongs": ("backend/internal/api/subsonic.go", "TestSubsonic_GetRandomSongs_{Normal,Empty,WithSize}"),
     "getCoverArt": ("backend/internal/api/subsonic.go", "TestSubsonic_GetCoverArt_{SSRBlocked,MissingID,InvalidID,NotFound}"),
     "stream": (
-        "backend/internal/api/subsonic.go:871",
+        "backend/internal/api/subsonic.go:902",
         "TestSubsonic_Stream_{InvalidFormat,RawFormat,FlvFormat}, "
         "TestSubsonic_formatToFFmpegMuxer; media-delivery check: "
         "`scripts/smoke.sh:490-497` asserts >1000 bytes, manual, not in CI — see Finding 2",
@@ -301,7 +301,7 @@ def main() -> int:
     w("")
     w("### 2. `/rest/stream.view` has only narrow automated coverage")
     w("")
-    w("`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:871`) is the")
+    w("`SubsonicHandler.Stream` (`backend/internal/api/subsonic.go:902`) is the")
     w("endpoint every client actually uses to listen to music. The stack-level")
     w("media-delivery check is `scripts/smoke.sh:490-497`: it fetches a track and")
     w("fails unless more than 1,000 bytes come back. The E2E suite separately")
