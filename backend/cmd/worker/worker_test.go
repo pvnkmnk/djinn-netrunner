@@ -29,14 +29,19 @@ func setupWorkerTestDB(t *testing.T) *WorkerOrchestrator {
 	if err := database.Migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	// Close before the temp dir is removed: Windows refuses to delete a
-	// directory that still has the database file open.
+	w := NewWorkerOrchestrator(cfg, db)
+	// Tests using this fixture must not start the worker's producer loops unless
+	// they stop/quiesce those producers before cleanup. Wait is only safe after
+	// no producer can add more work to the group; it joins finite work already
+	// tracked by the worker (such as the post-acquisition refresh) before the DB
+	// is closed and t.TempDir removes the SQLite file.
 	t.Cleanup(func() {
+		w.wg.Wait()
 		if sqlDB, err := db.DB(); err == nil {
 			_ = sqlDB.Close()
 		}
 	})
-	return NewWorkerOrchestrator(cfg, db)
+	return w
 }
 
 // TestUpdateHeartbeats tests that updateHeartbeats batch-updates heartbeat_at
@@ -296,6 +301,9 @@ func TestFinishJob_NotInActiveJobs(t *testing.T) {
 // acquisition job triggers a library scan in the background.
 func TestFinishJob_AcquisitionTriggersLibraryScan(t *testing.T) {
 	w := setupWorkerTestDB(t)
+	w.cfg.MusicLibraryPath = t.TempDir()
+	lib := database.Library{Name: "Music", Path: w.cfg.MusicLibraryPath}
+	require.NoError(t, w.db.Create(&lib).Error)
 
 	// Create an acquisition job in DB with state "running", with one imported
 	// item so the honest finalization reports "succeeded" — only then is the
@@ -321,20 +329,27 @@ func TestFinishJob_AcquisitionTriggersLibraryScan(t *testing.T) {
 	}
 	w.jobMutex.Unlock()
 
-	// Ensure no library client is set so triggerLibraryScan returns an error
-	// (we just want to verify it was called; the error is expected)
+	// With no external library client configured, the refresh is queued locally
+	// for the library row above.
 	w.library = nil
 
 	// Call finishJob with no error (success)
-	// The goroutine for library scan may or may not complete before we check,
-	// but the job should still be marked succeeded
 	w.finishJob(job.ID, nil)
+	w.wg.Wait()
 
-	// Verify job state is "succeeded" (the scan is triggered async)
+	// Verify job state is "succeeded" and the asynchronous refresh queued exactly
+	// one scan for this library.
 	var dbJob database.Job
 	require.NoError(t, w.db.First(&dbJob, job.ID).Error)
 	require.Equal(t, "succeeded", dbJob.State)
 	require.NotNil(t, dbJob.FinishedAt)
+
+	var scans []database.Job
+	require.NoError(t, w.db.Where("job_type = ?", "scan").Find(&scans).Error)
+	require.Len(t, scans, 1)
+	assert.Equal(t, "queued", scans[0].State)
+	assert.Equal(t, "library", scans[0].ScopeType)
+	assert.Equal(t, lib.ID.String(), scans[0].ScopeID)
 }
 
 // TestFinishJob_MissingLockManager tests that finishJob handles a nil or
