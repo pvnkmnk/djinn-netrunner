@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -241,7 +242,12 @@ func (h *SubsonicHandler) AuthMiddleware(c fiber.Ctx) error {
 	// below record only a fixed reason and protocol name.
 	authDB := h.db.Session(&gorm.Session{Logger: h.db.Logger.LogMode(gormlogger.Silent)})
 	if err := authDB.Where("LOWER(email) = ?", strings.ToLower(username)).First(&user).Error; err != nil {
-		slog.Warn("Subsonic auth failed", "reason", "user_not_found", "protocol", "subsonic")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.Warn("Subsonic auth failed", "reason", "user_not_found", "protocol", "subsonic")
+		} else {
+			// Do not log err: database driver errors may contain query details.
+			slog.Error("Subsonic auth failed", "reason", "user_lookup_failed", "protocol", "subsonic")
+		}
 		return h.respondError(c, 40, "Authentication failed")
 	}
 	if user.DisabledAt != nil {
@@ -304,6 +310,14 @@ func parseSubsonicTrustedProxyCIDRs(raw string) []netip.Prefix {
 			// constructed configs must also fail closed rather than trusting a
 			// valid subset after one malformed entry.
 			return nil
+		}
+		if prefix.Addr().Is4In6() {
+			// An IPv4-mapped IPv6 prefix narrower than /96 includes addresses
+			// outside the mapped IPv4 range, so it cannot be safely unmapped.
+			if prefix.Bits() < 96 {
+				return nil
+			}
+			prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-96)
 		}
 		prefixes = append(prefixes, prefix.Masked())
 	}

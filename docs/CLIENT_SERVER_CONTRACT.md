@@ -147,8 +147,17 @@ private or loopback peer is not trusted for scheme decisions merely because
 other forwarded headers are trusted from it. A TLS-terminating proxy must
 overwrite the forwarded-proto header and operators must list only that proxy's
 peer CIDR. Account-password authentication remains available without the shared
-password, but only over verified HTTPS. Authentication diagnostics and protocol
-responses contain no submitted password, token, salt, username, or shared secret.
+password, but only over verified HTTPS.
+
+A legacy account-password request must target HTTPS, for example:
+`https://music.example.com/rest/ping.view?u=you%40example.com&p=REDACTED&v=1.16.1&c=client`
+(`REDACTED` is a placeholder). Do not send `p` to an `http://` URL: the transport
+check runs only after the handler receives the request, so the password has
+already crossed that cleartext hop before the server can reject it. Rejection is
+not transit protection. In the checked-in Compose topology, Caddy-to-app traffic
+is plain HTTP, so keep that proxy-to-app network controlled. Authentication
+diagnostics and protocol responses contain no submitted password, token, salt,
+username, or shared secret.
 The management API key (`SLSKD_API_KEY`) is unrelated to Subsonic auth and is
 never accepted as a Subsonic credential or exposed in protocol responses.
 Subsonic authentication failures are returned in the protocol response envelope

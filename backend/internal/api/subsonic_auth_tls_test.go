@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"io"
 	"log"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -152,6 +153,15 @@ func md5Hex(value string) string {
 	return hex.EncodeToString(digest[:])
 }
 
+func captureSubsonicAuthLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &logs
+}
+
 func TestSubsonicLegacyPasswordRequiresVerifiedHTTPS(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	createTestUserForSubsonic(t, db, subsonicTLSUser, subsonicTLSPassword)
@@ -216,6 +226,66 @@ func TestSubsonicAuthenticationDoesNotLogCredentialValues(t *testing.T) {
 	}
 }
 
+func TestSubsonicUserLookupFailuresLogFixedReasonsWithoutValues(t *testing.T) {
+	cases := []struct {
+		name   string
+		dbDown bool
+		reason string
+	}{
+		{name: "unknown account", reason: "user_not_found"},
+		{name: "database unavailable", dbDown: true, reason: "user_lookup_failed"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupSubsonicTestDB(t)
+			if tt.dbDown {
+				sqlDB, err := db.DB()
+				require.NoError(t, err)
+				require.NoError(t, sqlDB.Close())
+			}
+
+			var dbLogs bytes.Buffer
+			db.Config.Logger = gormlogger.New(log.New(&dbLogs, "", 0), gormlogger.Config{
+				LogLevel: gormlogger.Info,
+				Colorful: false,
+			})
+			slogLogs := captureSubsonicAuthLogs(t)
+			var appLogs bytes.Buffer
+			handler := NewSubsonicHandler(db, &config.Config{})
+			server := startSubsonicHTTPTestServer(t, handler, true, &appLogs)
+
+			username := "lookup-user-secret@example.invalid"
+			password := "lookup-password-secret"
+			clientMarker := "query-value-secret"
+			values := url.Values{
+				"u": {username},
+				"p": {password},
+				"c": {clientMarker},
+				"f": {"json"},
+			}
+			status, body := subsonicHTTPAuthRequest(t, server, http.MethodGet, values)
+			require.Equal(t, http.StatusOK, status)
+			require.Contains(t, body, `"status":"failed"`)
+
+			structured := slogLogs.String()
+			require.Contains(t, structured, "reason="+tt.reason)
+			if tt.dbDown {
+				require.Contains(t, structured, "level=ERROR")
+				require.NotContains(t, structured, "reason=user_not_found")
+				require.NotContains(t, structured, "database is closed")
+			} else {
+				require.Contains(t, structured, "level=WARN")
+				require.NotContains(t, structured, "reason=user_lookup_failed")
+			}
+
+			allLogs := structured + dbLogs.String() + appLogs.String()
+			for _, value := range []string{username, password, clientMarker} {
+				require.NotContains(t, allLogs, value)
+			}
+		})
+	}
+}
+
 func TestSubsonicLegacyPasswordAcceptsDirectTLS(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	createTestUserForSubsonic(t, db, subsonicTLSUser, subsonicTLSPassword)
@@ -253,6 +323,23 @@ func TestSubsonicLegacyPasswordAcceptsExplicitTrustedProxyHTTPS(t *testing.T) {
 		require.Equal(t, http.StatusOK, status)
 		require.Contains(t, body, `"status":"failed"`)
 	}
+}
+
+func TestSubsonicLegacyPasswordAcceptsIPv4MappedTrustedProxyCIDR(t *testing.T) {
+	db := setupSubsonicTestDB(t)
+	createTestUserForSubsonic(t, db, subsonicTLSUser, subsonicTLSPassword)
+	cfg := &config.Config{SubsonicTrustedProxyCIDRs: "::ffff:127.0.0.1/128"}
+	handler := NewSubsonicHandler(db, cfg)
+	server := startSubsonicHTTPTestServer(t, handler, false, nil)
+
+	values := url.Values{"u": {subsonicTLSUser}, "p": {subsonicTLSPassword}, "f": {"json"}}
+	status, body := subsonicHTTPAuthRequest(t, server, http.MethodGet, values, "https")
+	require.Equal(t, http.StatusOK, status)
+	require.Contains(t, body, `"status":"ok"`)
+}
+
+func TestParseSubsonicTrustedProxyCIDRsRejectsMappedPrefixBroaderThanIPv4(t *testing.T) {
+	require.Empty(t, parseSubsonicTrustedProxyCIDRs("::ffff:127.0.0.1/95"))
 }
 
 func TestSubsonicTokenAuthRemainsAvailableOverCleartext(t *testing.T) {
