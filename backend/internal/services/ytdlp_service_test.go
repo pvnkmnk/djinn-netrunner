@@ -105,7 +105,7 @@ func TestCheckPublicHost(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkPublicHost(tt.host)
+			err := checkPublicHost(context.Background(), tt.host)
 			if tt.refused && err == nil {
 				t.Fatalf("checkPublicHost(%q) allowed a private destination", tt.host)
 			}

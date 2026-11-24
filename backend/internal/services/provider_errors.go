@@ -24,6 +24,7 @@ const (
 	ErrKindNetwork                            // transient network failure
 	ErrKindConfig                             // invalid configuration
 	ErrKindUpstream                           // upstream API error (non-transient)
+	ErrKindRefused                            // permanent policy refusal (for example, an SSRF destination block)
 )
 
 func (e *ProviderError) Error() string {
@@ -59,6 +60,11 @@ func classifyHTTPStatus(statusCode int, provider string) *ProviderError {
 
 // classifyNetworkError wraps a transport-level error as a ProviderError.
 func classifyNetworkError(err error, provider string) *ProviderError {
+	if errors.Is(err, ErrDisallowedDestination) {
+		return NewProviderError(ErrKindRefused,
+			fmt.Sprintf("%s destination refused by policy", provider), err)
+	}
+
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		return NewProviderError(ErrKindNetwork,

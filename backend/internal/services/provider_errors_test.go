@@ -55,6 +55,12 @@ func TestClassifyNetworkError(t *testing.T) {
 		err := classifyNetworkError(errors.New("something broke"), "test")
 		assert.Equal(t, ErrKindNetwork, err.Kind)
 	})
+
+	t.Run("destination refusal", func(t *testing.T) {
+		err := classifyNetworkError(refusedDestination("ssrf: target refused"), "test")
+		assert.Equal(t, ErrKindRefused, err.Kind)
+		assert.ErrorIs(t, err, ErrDisallowedDestination)
+	})
 }
 
 func TestProviderError_Unwrap(t *testing.T) {

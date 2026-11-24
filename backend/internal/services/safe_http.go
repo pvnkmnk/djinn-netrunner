@@ -131,7 +131,7 @@ type safeAddressValidator struct {
 }
 
 func (v *safeAddressValidator) RoundTrip(req *http.Request) (*http.Response, error) {
-	if err := checkPublicHost(req.URL.Hostname()); err != nil {
+	if err := checkPublicHost(req.Context(), req.URL.Hostname()); err != nil {
 		return nil, err
 	}
 	return v.next.RoundTrip(req)
@@ -141,8 +141,8 @@ func (v *safeAddressValidator) RoundTrip(req *http.Request) (*http.Response, err
 // address. It is the one implementation of "is this destination allowed",
 // shared by the request-path guard above and by callers that hand a URL to
 // a tool which makes its own connections (see YtdlpService.DownloadAudio).
-func checkPublicHost(host string) error {
-	ips, err := net.LookupIP(host)
+func checkPublicHost(ctx context.Context, host string) error {
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil {
 		return fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}
@@ -447,7 +447,7 @@ func newStrictRSSHTTPClientWithTransport(timeout time.Duration, next http.RoundT
 			if err := hopBoundCheck(req, via); err != nil {
 				return err
 			}
-			if err := checkPublicHost(req.URL.Hostname()); err != nil {
+			if err := checkPublicHost(req.Context(), req.URL.Hostname()); err != nil {
 				return fmt.Errorf("redirect target %s: %w", req.URL.Host, err)
 			}
 			return nil
@@ -560,7 +560,7 @@ func resolveRedirectTarget(ctx context.Context, client *http.Client, rawURL stri
 	}
 	// The chain's last hop was dialed, not necessarily re-resolved; check the
 	// name it ended on for the same reason the first host is checked.
-	if err := checkPublicHost(final.Hostname()); err != nil {
+	if err := checkPublicHost(ctx, final.Hostname()); err != nil {
 		return "", fmt.Errorf("redirect target %s: %w", final.Host, err)
 	}
 	return final.String(), nil

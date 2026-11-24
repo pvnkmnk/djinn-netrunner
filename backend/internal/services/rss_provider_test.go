@@ -103,6 +103,10 @@ func TestWatchlistService_RSSSourceIgnoresPrivateTargetBypassAndProxy(t *testing
 	})
 
 	require.Error(t, err, "RSS must remain guarded even when the global bypass and proxy are configured")
+	var providerErr *ProviderError
+	require.ErrorAs(t, err, &providerErr)
+	assert.Equal(t, ErrKindRefused, providerErr.Kind)
+	assert.ErrorIs(t, err, ErrDisallowedDestination)
 	assert.Contains(t, err.Error(), "ssrf: target")
 	assert.Zero(t, feedRequests.Load(), "the private RSS source must not be dialed")
 	assert.Zero(t, proxyRequests.Load(), "the private RSS URL must never reach the proxy")

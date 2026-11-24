@@ -231,6 +231,35 @@ func TestSafeDialContext_CancelledContextAbortsLookup(t *testing.T) {
 	}
 }
 
+func TestSafeAddressValidator_CancelledRequestContextAbortsLookup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com/feed", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = (&safeAddressValidator{next: http.DefaultTransport}).RoundTrip(req)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, want an error wrapping context.Canceled", err)
+	}
+}
+
+func TestStrictRSSRedirectCheck_CancelledRequestContextAbortsLookup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com/redirect", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client := newStrictRSSHTTPClient(time.Second)
+	err = client.CheckRedirect(req, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, want an error wrapping context.Canceled", err)
+	}
+}
+
 // The DJI-682 regression: DNS answers an unreachable IPv6 address first and
 // a reachable IPv4 second. The old code dialed only the first public IP and
 // failed; the fallback must reach the second.
