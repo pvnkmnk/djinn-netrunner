@@ -427,6 +427,56 @@ func TestWatchlistService_RSSSourceIgnoresPrivateTargetBypassAndProxy(t *testing
 	assert.Zero(t, proxyRequests.Load(), "the private RSS URL must never reach the proxy")
 }
 
+func TestWatchlistService_PublicRSSFetchBypassesConfiguredProxy(t *testing.T) {
+	var proxyRequests atomic.Int64
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyRequests.Add(1)
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(testRSSFeed))
+	}))
+	defer proxy.Close()
+
+	var feedRequests atomic.Int64
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		feedRequests.Add(1)
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(testRSSFeed))
+	}))
+	defer feed.Close()
+
+	service := NewWatchlistService(nil, nil, &config.Config{ProxyURL: proxy.URL})
+	provider, ok := service.providers["rss_feed"].(*RSSProvider)
+	require.True(t, ok, "watchlist service should register the strict RSS provider")
+	limitTransport, ok := provider.httpClient.Transport.(*rssFeedSizeLimitTransport)
+	require.True(t, ok, "RSS responses should pass through the size limiter")
+	validator, ok := limitTransport.next.(*safeAddressValidator)
+	require.True(t, ok, "RSS requests should pass through destination validation")
+	configuredTransport, ok := validator.next.(*http.Transport)
+	require.True(t, ok, "RSS provider should use the direct HTTP transport")
+	assert.Nil(t, configuredTransport.Proxy, "RSS must not inherit the configured PROXY_URL")
+
+	// Route the otherwise-public IP to the local fixture through a real HTTP
+	// transport so this successful production-wiring path stays deterministic.
+	localTransport := http.DefaultTransport.(*http.Transport).Clone()
+	localTransport.Proxy = nil
+	localAddress := feed.Listener.Addr().String()
+	dialer := &net.Dialer{}
+	localTransport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, localAddress)
+	}
+	defer localTransport.CloseIdleConnections()
+	validator.next = localTransport
+
+	tracks, _, err := service.FetchWatchlistTracks(context.Background(), &database.Watchlist{
+		SourceType: "rss_feed",
+		SourceURI:  "http://8.8.8.8/feed.xml",
+	})
+	require.NoError(t, err)
+	assert.Len(t, tracks, 2)
+	assert.Equal(t, int64(1), feedRequests.Load(), "the direct test transport should fetch the public feed")
+	assert.Zero(t, proxyRequests.Load(), "a public RSS URL must not reach the configured proxy")
+}
+
 func TestRSSProvider_PublicToPrivateRedirectNeverProxiesPrivateTarget(t *testing.T) {
 	const publicFeedURL = "http://8.8.8.8/feed.xml"
 	var privateRequests atomic.Int64
