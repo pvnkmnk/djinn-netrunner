@@ -245,6 +245,43 @@ func TestSafeAddressValidator_CancelledRequestContextAbortsLookup(t *testing.T) 
 	}
 }
 
+func TestCheckPublicHost_CancellationStopsInflightDNSLookup(t *testing.T) {
+	dialStarted := make(chan struct{}, 1)
+	resolver := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			select {
+			case dialStarted <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- checkPublicHostWithResolver(ctx, "stalled.example.test", resolver)
+	}()
+
+	select {
+	case <-dialStarted:
+		cancel()
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("DNS resolver did not enter its stalled Dial")
+	}
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("got %v, want an error wrapping context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("DNS lookup did not stop after its context was canceled")
+	}
+}
+
 func TestStrictRSSRedirectCheck_CancelledRequestContextAbortsLookup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

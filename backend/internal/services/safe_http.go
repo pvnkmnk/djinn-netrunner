@@ -142,7 +142,13 @@ func (v *safeAddressValidator) RoundTrip(req *http.Request) (*http.Response, err
 // shared by the request-path guard above and by callers that hand a URL to
 // a tool which makes its own connections (see YtdlpService.DownloadAudio).
 func checkPublicHost(ctx context.Context, host string) error {
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	return checkPublicHostWithResolver(ctx, host, net.DefaultResolver)
+}
+
+// checkPublicHostWithResolver keeps DNS injectable so tests can cancel an
+// in-flight lookup deterministically; production uses net.DefaultResolver.
+func checkPublicHostWithResolver(ctx context.Context, host string, resolver *net.Resolver) error {
+	ips, err := resolver.LookupIP(ctx, "ip", host)
 	if err != nil {
 		return fmt.Errorf("ssrf: DNS lookup failed for %s: %w", host, err)
 	}

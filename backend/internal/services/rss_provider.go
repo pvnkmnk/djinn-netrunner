@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -22,16 +23,27 @@ func NewRSSProvider(httpClient *http.Client) *RSSProvider {
 	if httpClient == nil {
 		httpClient = newStrictRSSHTTPClient(30 * time.Second)
 	}
-	return &RSSProvider{httpClient: httpClient}
+	return &RSSProvider{httpClient: withRSSFeedSizeLimit(httpClient)}
 }
 
 func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
 	fp := gofeed.NewParser()
-	if p.httpClient != nil {
-		fp.Client = p.httpClient
+	var client *http.Client
+	if p != nil {
+		client = p.httpClient
 	}
+	if client == nil {
+		client = NewRSSProvider(nil).httpClient
+	}
+	fp.Client = client
 	feed, err := fp.ParseURLWithContext(watchlist.SourceURI, ctx)
 	if err != nil {
+		if errors.Is(err, errRSSFeedTooLarge) {
+			if ctx.Err() != nil {
+				return nil, "", classifyRequestError(ctx, ctx.Err(), "rss")
+			}
+			return nil, "", NewProviderError(ErrKindUpstream, "rss feed exceeds maximum response size", err)
+		}
 		return nil, "", classifyRequestError(ctx, err, "rss")
 	}
 
