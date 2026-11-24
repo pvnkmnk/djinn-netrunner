@@ -82,7 +82,7 @@ func (s *YtdlpService) DownloadAudio(ctx context.Context, rawURL, outputDir, aud
 	// URL here comes from a watchlist feed (jobitems.source_url), so it is
 	// attacker-influenced, which is why the destination is checked twice: the
 	// host the URL names, and then the chain that host answers with.
-	if err := checkPublicHost(parsed.Hostname()); err != nil {
+	if err := checkPublicHost(ctx, parsed.Hostname()); err != nil {
 		if errors.Is(err, ErrDisallowedDestination) {
 			return "", fmt.Errorf("refusing source URL: %w", err)
 		}

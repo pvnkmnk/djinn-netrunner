@@ -55,6 +55,40 @@ func TestClassifyNetworkError(t *testing.T) {
 		err := classifyNetworkError(errors.New("something broke"), "test")
 		assert.Equal(t, ErrKindNetwork, err.Kind)
 	})
+
+	t.Run("destination refusal", func(t *testing.T) {
+		err := classifyNetworkError(refusedDestination("ssrf: target refused"), "test")
+		assert.Equal(t, ErrKindRefused, err.Kind)
+		assert.ErrorIs(t, err, ErrDisallowedDestination)
+	})
+
+	t.Run("canceled request", func(t *testing.T) {
+		err := classifyNetworkError(context.Canceled, "test")
+		assert.Equal(t, ErrKindCanceled, err.Kind)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+func TestClassifyRequestError_ContextEnd(t *testing.T) {
+	t.Run("caller canceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := classifyRequestError(ctx, context.Canceled, "test")
+		assert.Equal(t, ErrKindCanceled, err.Kind)
+		assert.NotEqual(t, ErrKindNetwork, err.Kind)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("caller deadline", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 0)
+		defer cancel()
+
+		err := classifyRequestError(ctx, context.DeadlineExceeded, "test")
+		assert.Equal(t, ErrKindDeadline, err.Kind)
+		assert.NotEqual(t, ErrKindNetwork, err.Kind)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+	})
 }
 
 func TestProviderError_Unwrap(t *testing.T) {

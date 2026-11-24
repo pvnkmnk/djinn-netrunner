@@ -138,7 +138,8 @@ NetRunner implements an embedded **Model Context Protocol (MCP)** server at `bac
 - `docker-compose.yml` no longer has `extra_hosts: ["host.docker.internal:host-gateway"]` (removed in Cycle 5).
 
 ### OOM Prevention
-- Cover art responses limited to **10MB** via `io.LimitReader`.
+- Cover art and RSS response bodies are capped at **10 MiB** before processing.
+- Cover art uses `io.LimitReader`; RSS uses a bounded HTTP response reader.
 - File size limits on upload/scan paths where applicable.
 
 ### Credential Leakage
@@ -157,4 +158,3 @@ PostgreSQL is the development and production target; that connection is pooled a
 - **WAL Mode**: Enabled for high-concurrency read/write operations.
 - **Busy Timeout**: Configured to 5000ms to prevent locking issues.
 - **Synchronous**: Set to `NORMAL` for performance while maintaining crash-safety.
-

@@ -21,7 +21,7 @@ NetRunner is a security-hardened, performance-optimized music acquisition pipeli
 - 🏗️ **Two editions, one codebase**: **Djinn-Netrunner** runs on PostgreSQL (advisory locks, `LISTEN/NOTIFY`, concurrent workers); **NetrunnerLite** runs on a single CGO-free SQLite (WAL) file.
 - 🏷️ **Metadata Resilience**: Persistent "Shadow Cache" for MusicBrainz & Spotify.
 - ⚡ **High-Performance**: Concurrent worker pools and round-robin task orchestration.
-- 🛡️ **Privacy-First**: Native SOCKS5/HTTP proxy support for all P2P and API traffic.
+- 🛡️ **Privacy-First**: SOCKS5/HTTP proxy support for proxy-aware provider APIs; RSS/Bandcamp feeds use strict direct-fetch destination checks.
 - 🛡️ **Multi-User Security**: Broken Object Level Authorization (BOLA) protection across all endpoints with per-user data isolation.
 - 🖥️ **Cyberpunk UI**: A modern, interactive Bento Grid dashboard powered by HTMX and Fiber.
 - 🤖 **Agent-Native**: Built-in MCP (Model Context Protocol) server and CLI for autonomous management.
@@ -204,19 +204,20 @@ For operational runbooks (backup, upgrade, migration), see [`docs/RUNBOOK.md`](d
 
 ## 🔒 Privacy & Proxy
 
-All outbound HTTP traffic from provider API clients is routed through a centralized proxy-aware client factory (`NewProxyAwareHTTPClient`). Set the `PROXY_URL` environment variable to route traffic through an HTTP or SOCKS5 proxy.
+Most external provider API traffic uses the centralized proxy-aware client factory (`NewProxyAwareHTTPClient`). When `PROXY_URL` is set, proxy-aware clients route those requests through an HTTP or SOCKS5 proxy; user-controlled RSS/Bandcamp feed URLs are a deliberate exception.
 
 **Proxied** (when `PROXY_URL` is set):
 - MusicBrainz, AcoustID, Discogs, Last.fm, ListenBrainz, Lidarr, LRCLIB lyrics
 - Gonic/Navidrome/Plex/Jellyfin library server API calls
 - slskd API calls and webhook notifications
 
-**Not proxied by NetRunner** (handle at the network/VPN layer):
+**Not proxied by NetRunner** (configure the network/VPN layer separately where needed):
+- User-controlled RSS/Bandcamp feed URLs: fetched directly with strict public-destination checks on the initial URL and every redirect. RSS ignores `PROXY_URL` and `ALLOW_PRIVATE_TARGETS` because enforcement at a proxy's actual resolution/connection point is not assured.
 - Spotify OAuth transport (uses `oauth2.Config.Client()` which manages its own HTTP transport)
 - slskd Soulseek P2P traffic (managed by slskd's own network config)
 
 ```bash
-# Example: route all provider traffic through a SOCKS5 proxy
+# Example: route proxy-aware provider traffic through a SOCKS5 proxy (RSS is direct)
 PROXY_URL=socks5://127.0.0.1:1080
 
 # Example: HTTP proxy

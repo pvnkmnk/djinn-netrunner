@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mmcdole/gofeed"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -15,19 +17,30 @@ type RSSProvider struct {
 	httpClient *http.Client
 }
 
-// NewRSSProvider creates a new RSS provider with the given HTTP client.
-func NewRSSProvider(httpClient *http.Client) *RSSProvider {
-	return &RSSProvider{httpClient: httpClient}
+// NewRSSProvider creates an RSS provider with a strict direct-fetch client.
+func NewRSSProvider() *RSSProvider {
+	return &RSSProvider{httpClient: withRSSFeedSizeLimit(newStrictRSSHTTPClient(30 * time.Second))}
 }
 
 func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
 	fp := gofeed.NewParser()
-	if p.httpClient != nil {
-		fp.Client = p.httpClient
+	var client *http.Client
+	if p != nil {
+		client = p.httpClient
 	}
+	if client == nil {
+		client = NewRSSProvider().httpClient
+	}
+	fp.Client = client
 	feed, err := fp.ParseURLWithContext(watchlist.SourceURI, ctx)
 	if err != nil {
-		return nil, "", classifyNetworkError(err, "rss")
+		if errors.Is(err, errRSSFeedTooLarge) {
+			if ctx.Err() != nil {
+				return nil, "", classifyRequestError(ctx, ctx.Err(), "rss")
+			}
+			return nil, "", NewProviderError(ErrKindUpstream, "rss feed exceeds maximum response size", err)
+		}
+		return nil, "", classifyRequestError(ctx, err, "rss")
 	}
 
 	var allTracks []map[string]string
@@ -37,7 +50,7 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 		// Try to parse "Artist - Title" from item title
 		artist := ""
 		title := item.Title
-		
+
 		parts := strings.SplitN(item.Title, " - ", 2)
 		if len(parts) == 2 {
 			artist = strings.TrimSpace(parts[0])
@@ -54,7 +67,7 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 				coverURL = content[0].Attrs["url"]
 			}
 		}
-		
+
 		// Fallback to item.Image or feed.Image
 		if coverURL == "" && item.Image != nil {
 			coverURL = item.Image.URL

@@ -38,7 +38,7 @@ The ordered work queue lives in Linear as the *NetRunner Beta Readiness* project
 #### Watchlist providers
 - [x] Spotify (sp_dc cookie + OAuth, GraphQL Partner API)
 - [x] Last.fm, ListenBrainz, Discogs (paginated, validated)
-- [x] RSS/Bandcamp (proxy-aware, channel-title fallback)
+- [x] RSS/Bandcamp (strict direct fetch; ignores `PROXY_URL` and `ALLOW_PRIVATE_TARGETS`, validates redirects; channel-title fallback)
 - [x] Local files and directories
 - [x] Lidarr (wired, config fields added)
 
