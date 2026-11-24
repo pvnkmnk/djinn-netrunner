@@ -41,7 +41,7 @@ paths:
   /api/auth/register:
     post:
       tags: [authentication]
-      summary: Register an account and establish a session
+      summary: Register an account
       operationId: register
       security: []
       requestBody:
@@ -52,7 +52,10 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '201':
-          description: Account created and session cookie issued.
+          description: >-
+            The same 201 acknowledgement is returned for new and already-registered
+            emails, so it does not confirm whether an account was created. No
+            session cookie is issued; use /api/auth/login to establish a session.
           content:
             application/json:
               schema:
