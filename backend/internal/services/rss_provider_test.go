@@ -427,7 +427,7 @@ func TestWatchlistService_RSSSourceIgnoresPrivateTargetBypassAndProxy(t *testing
 	assert.Zero(t, proxyRequests.Load(), "the private RSS URL must never reach the proxy")
 }
 
-func TestWatchlistService_PublicRSSFetchBypassesConfiguredProxy(t *testing.T) {
+func TestWatchlistService_PublicRSSWiringExcludesConfiguredProxy(t *testing.T) {
 	var proxyRequests atomic.Int64
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxyRequests.Add(1)
@@ -455,8 +455,9 @@ func TestWatchlistService_PublicRSSFetchBypassesConfiguredProxy(t *testing.T) {
 	require.True(t, ok, "RSS provider should use the direct HTTP transport")
 	assert.Nil(t, configuredTransport.Proxy, "RSS must not inherit the configured PROXY_URL")
 
-	// Route the otherwise-public IP to the local fixture through a real HTTP
-	// transport so this successful production-wiring path stays deterministic.
+	// This checks the registered production client excludes PROXY_URL. Replace
+	// only its inner transport to keep the public-IP fixture local; this is a
+	// wiring test, not a test of the production safe dialer.
 	localTransport := http.DefaultTransport.(*http.Transport).Clone()
 	localTransport.Proxy = nil
 	localAddress := feed.Listener.Addr().String()
