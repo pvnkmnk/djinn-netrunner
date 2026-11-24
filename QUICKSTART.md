@@ -80,9 +80,14 @@ go run ./cmd/cli watchlist sync <watchlist-uuid>
 
 NetRunner serves its own Subsonic-compatible API — set `SUBSONIC_ENABLED=true`
 and `SUBSONIC_PASSWORD` in `.env`, then point any Subsonic client at
-`http://<host>:8080/rest` with your account email as the username. Production
-refuses to start with `SUBSONIC_ENABLED=true` and no password, because the token
-path would be forgeable.
+`https://<tls-host>/rest` with your account email as the username. For a standard
+token client, enter `hex(MD5(SUBSONIC_PASSWORD))` in the client's password field,
+not the raw shared secret. Legacy account-password `p=` is accepted only over
+verified external HTTPS; if TLS terminates at a proxy, configure its exact
+`SUBSONIC_TRUSTED_PROXY_CIDRS` value before using `p=`. If the exact peer is not
+configured, use token/salt authentication instead. Production refuses to start
+with `SUBSONIC_ENABLED=true` and no password, because the token path would be
+forgeable. See `docs/DEPLOYMENT.md` for the proxy setup details.
 
 ## Run Validation
 ```bash

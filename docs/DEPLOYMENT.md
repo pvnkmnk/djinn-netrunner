@@ -178,7 +178,7 @@ Optional external Subsonic server over the same music volume:
 ## 3. Verify
 
 The fastest health check is the smoke script. It asserts the container
-configuration, Subsonic auth (both schemes), session persistence across a
+configuration, Subsonic token/salt auth, session persistence across a
 restart, library scanning, Subsonic visibility and real audio bytes, and exits
 non-zero listing every failing check:
 
@@ -365,8 +365,12 @@ For a TLS-terminating Caddy deployment, inspect and reserve the actual source
 peer on your own network, then set
 `SUBSONIC_TRUSTED_PROXY_CIDRS=<CADDY_PEER_CIDR>` with only that exact CIDR; the
 placeholder is not a literal value. Do not guess or allowlist broad RFC1918/ULA
-ranges. Leave the allowlist empty for direct TLS or until the proxy peer is
-known.
+ranges. An empty allowlist is safe only when clients connect directly to the
+app's TLS endpoint. For a TLS-terminating proxy, configure its exact peer CIDR
+before using legacy `p=`, even when the proxy-to-origin hop uses TLS; if that
+peer is not confirmed and configured, use token/salt instead. With TLS to
+origin, an unlisted proxy is indistinguishable from a direct-TLS client to the
+app.
 
 ## 4. Acquire your first artist
 
@@ -510,9 +514,11 @@ passwords are accepted only over verified external HTTPS. Direct HTTP and
 untrusted or unconfigured proxy forwarding are rejected after the request
 arrives, so rejection does not protect a password already sent over cleartext.
 If the client supports token auth, configure the shared `SUBSONIC_PASSWORD` for
-`t=`/`s=` authentication; without it, token requests are refused. For the
-checked-in release topology, use Caddy's HTTPS endpoint; its hop to the app is
-plain HTTP, so keep that proxy-to-app network controlled.
+`t=`/`s=` authentication; enter `hex(MD5(SUBSONIC_PASSWORD))` in a standard
+token client's password field, not the raw shared secret. Without the server
+secret, token requests are refused. For the checked-in release topology, use
+Caddy's HTTPS endpoint; its hop to the app is plain HTTP, so keep that
+proxy-to-app network controlled.
 
 ## 6. Operate
 
