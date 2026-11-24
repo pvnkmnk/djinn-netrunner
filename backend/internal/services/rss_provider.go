@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mmcdole/gofeed"
 	"github.com/pvnkmnk/netrunner/backend/internal/database"
@@ -15,8 +16,12 @@ type RSSProvider struct {
 	httpClient *http.Client
 }
 
-// NewRSSProvider creates a new RSS provider with the given HTTP client.
+// NewRSSProvider creates a new RSS provider with the given HTTP client. A nil
+// client defaults to the strict direct-fetch client.
 func NewRSSProvider(httpClient *http.Client) *RSSProvider {
+	if httpClient == nil {
+		httpClient = newStrictRSSHTTPClient(30 * time.Second)
+	}
 	return &RSSProvider{httpClient: httpClient}
 }
 
@@ -27,7 +32,7 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 	}
 	feed, err := fp.ParseURLWithContext(watchlist.SourceURI, ctx)
 	if err != nil {
-		return nil, "", classifyNetworkError(err, "rss")
+		return nil, "", classifyRequestError(ctx, err, "rss")
 	}
 
 	var allTracks []map[string]string
@@ -37,7 +42,7 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 		// Try to parse "Artist - Title" from item title
 		artist := ""
 		title := item.Title
-		
+
 		parts := strings.SplitN(item.Title, " - ", 2)
 		if len(parts) == 2 {
 			artist = strings.TrimSpace(parts[0])
@@ -54,7 +59,7 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 				coverURL = content[0].Attrs["url"]
 			}
 		}
-		
+
 		// Fallback to item.Image or feed.Image
 		if coverURL == "" && item.Image != nil {
 			coverURL = item.Image.URL

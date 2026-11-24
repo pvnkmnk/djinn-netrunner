@@ -55,8 +55,10 @@ func TestRSSProvider_UsesCustomHTTPClient(t *testing.T) {
 	assert.Equal(t, "Track Alpha", tracks[0]["title"])
 }
 
-func TestRSSProvider_NilClientStillWorks(t *testing.T) {
+func TestRSSProvider_NilClientUsesStrictClient(t *testing.T) {
+	var feedRequests atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		feedRequests.Add(1)
 		w.Header().Set("Content-Type", "application/xml")
 		w.Write([]byte(testRSSFeed))
 	}))
@@ -65,9 +67,51 @@ func TestRSSProvider_NilClientStillWorks(t *testing.T) {
 	p := NewRSSProvider(nil)
 	wl := &database.Watchlist{SourceType: "rss_feed", SourceURI: srv.URL}
 
-	tracks, _, err := p.FetchTracks(context.Background(), wl)
-	require.NoError(t, err)
-	assert.Len(t, tracks, 2)
+	_, _, err := p.FetchTracks(context.Background(), wl)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDisallowedDestination)
+	var providerErr *ProviderError
+	require.ErrorAs(t, err, &providerErr)
+	assert.Equal(t, ErrKindRefused, providerErr.Kind)
+	assert.Zero(t, feedRequests.Load(), "nil-client construction must not fetch a private RSS URL")
+}
+
+func TestRSSProvider_CallerCancellationIsNotNetworkFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	provider := NewRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, req.Context().Err()
+	})})
+
+	_, _, err := provider.FetchTracks(ctx, &database.Watchlist{
+		SourceType: "rss_feed",
+		SourceURI:  "http://feed.example.test/rss",
+	})
+	require.Error(t, err)
+	var providerErr *ProviderError
+	require.ErrorAs(t, err, &providerErr)
+	assert.Equal(t, ErrKindCanceled, providerErr.Kind)
+	assert.NotEqual(t, ErrKindNetwork, providerErr.Kind)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRSSProvider_CallerDeadlineIsNotNetworkFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	provider := NewRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, req.Context().Err()
+	})})
+
+	_, _, err := provider.FetchTracks(ctx, &database.Watchlist{
+		SourceType: "rss_feed",
+		SourceURI:  "http://feed.example.test/rss",
+	})
+	require.Error(t, err)
+	var providerErr *ProviderError
+	require.ErrorAs(t, err, &providerErr)
+	assert.Equal(t, ErrKindDeadline, providerErr.Kind)
+	assert.NotEqual(t, ErrKindNetwork, providerErr.Kind)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 type rssRoundTripperFunc func(*http.Request) (*http.Response, error)

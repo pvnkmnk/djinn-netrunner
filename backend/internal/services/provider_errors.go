@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -25,6 +26,8 @@ const (
 	ErrKindConfig                             // invalid configuration
 	ErrKindUpstream                           // upstream API error (non-transient)
 	ErrKindRefused                            // permanent policy refusal (for example, an SSRF destination block)
+	ErrKindCanceled                           // caller canceled the operation
+	ErrKindDeadline                           // caller context deadline elapsed
 )
 
 func (e *ProviderError) Error() string {
@@ -64,6 +67,10 @@ func classifyNetworkError(err error, provider string) *ProviderError {
 		return NewProviderError(ErrKindRefused,
 			fmt.Sprintf("%s destination refused by policy", provider), err)
 	}
+	if errors.Is(err, context.Canceled) {
+		return NewProviderError(ErrKindCanceled,
+			fmt.Sprintf("%s request canceled", provider), err)
+	}
 
 	var netErr net.Error
 	if errors.As(err, &netErr) {
@@ -95,6 +102,25 @@ func classifyNetworkError(err error, provider string) *ProviderError {
 
 	return NewProviderError(ErrKindNetwork,
 		fmt.Sprintf("%s request failed", provider), err)
+}
+
+// classifyRequestError distinguishes a caller's canceled or expired context
+// from an internal client/network timeout, which remains a transient network error.
+func classifyRequestError(ctx context.Context, err error, provider string) *ProviderError {
+	if errors.Is(err, ErrDisallowedDestination) {
+		return classifyNetworkError(err, provider)
+	}
+
+	switch ctx.Err() {
+	case context.Canceled:
+		return NewProviderError(ErrKindCanceled,
+			fmt.Sprintf("%s request canceled", provider), context.Canceled)
+	case context.DeadlineExceeded:
+		return NewProviderError(ErrKindDeadline,
+			fmt.Sprintf("%s request deadline exceeded", provider), context.DeadlineExceeded)
+	default:
+		return classifyNetworkError(err, provider)
+	}
 }
 
 func isConnectionError(err error) bool {
