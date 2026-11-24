@@ -32,7 +32,6 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 	// Shared proxy-aware client for internal/unrestricted HTTP calls
 	proxyClient := NewProxyAwareHTTPClient(cfg, 30*time.Second)
 	safeProxyClient := NewSafeProxyAwareHTTPClient(cfg, 30*time.Second)
-	rssClient := newStrictRSSHTTPClient(30 * time.Second)
 
 	// Initialize sp_dc auth for Spotify's two-pronged strategy
 	spdc := NewSpDcAuth(proxyClient)
@@ -47,7 +46,7 @@ func NewWatchlistService(db *gorm.DB, spotifyAuth interfaces.SpotifyClientProvid
 	s.RegisterProvider("lastfm_loved", NewLastFMProvider(cfg.LastFMApiKey, safeProxyClient))
 	s.RegisterProvider("lastfm_top", NewLastFMProvider(cfg.LastFMApiKey, safeProxyClient))
 	s.RegisterProvider("listenbrainz_listens", NewListenBrainzProvider(cfg.ListenBrainzToken, safeProxyClient))
-	s.RegisterProvider("rss_feed", NewRSSProvider(rssClient))
+	s.RegisterProvider("rss_feed", NewRSSProvider())
 	s.RegisterProvider("discogs_wantlist", NewDiscogsProvider(cfg.DiscogsToken, safeProxyClient))
 	s.RegisterProvider("local_file", NewFileWatchlistProvider())
 	s.RegisterProvider("local_directory", NewDirectoryWatchlistProvider())

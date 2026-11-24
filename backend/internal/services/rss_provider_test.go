@@ -1,10 +1,14 @@
 package services
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -33,22 +37,39 @@ const testRSSFeed = `<?xml version="1.0" encoding="UTF-8"?>
   </channel>
 </rss>`
 
-func TestRSSProvider_UsesCustomHTTPClient(t *testing.T) {
+func newTestRSSProvider(client *http.Client) *RSSProvider {
+	return newTestRSSProviderWithResolver(client, nil)
+}
+
+func newTestRSSProviderWithResolver(client *http.Client, resolver *net.Resolver) *RSSProvider {
+	timeout := client.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	transport := client.Transport
+	if transport == nil {
+		transport = safeTransport
+	}
+	strictClient := newStrictRSSHTTPClientWithResolver(timeout, transport, resolver)
+	return &RSSProvider{httpClient: withRSSFeedSizeLimit(strictClient)}
+}
+
+func TestRSSProvider_UsesInjectedTransportBehindStrictClient(t *testing.T) {
 	var requestReceived bool
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p := newTestRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		requestReceived = true
-		w.Header().Set("Content-Type", "application/xml")
-		w.Write([]byte(testRSSFeed))
-	}))
-	defer srv.Close()
-
-	p := NewRSSProvider(srv.Client())
-	wl := &database.Watchlist{SourceType: "rss_feed", SourceURI: srv.URL}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/xml"}},
+			Body:       io.NopCloser(strings.NewReader(testRSSFeed)),
+			Request:    req,
+		}, nil
+	})})
+	wl := &database.Watchlist{SourceType: "rss_feed", SourceURI: "http://8.8.8.8/feed.xml"}
 
 	tracks, snap, err := p.FetchTracks(context.Background(), wl)
 	require.NoError(t, err)
-	assert.True(t, requestReceived, "custom HTTP client should have been used")
+	assert.True(t, requestReceived, "the injected test transport should run after strict destination validation")
 	assert.Len(t, tracks, 2)
 	assert.NotEmpty(t, snap)
 	assert.Equal(t, "Artist One", tracks[0]["artist"])
@@ -56,7 +77,7 @@ func TestRSSProvider_UsesCustomHTTPClient(t *testing.T) {
 }
 
 func TestRSSProvider_RejectsDeclaredOversizedResponse(t *testing.T) {
-	provider := NewRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	provider := newTestRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode:    http.StatusOK,
 			Header:        make(http.Header),
@@ -68,7 +89,7 @@ func TestRSSProvider_RejectsDeclaredOversizedResponse(t *testing.T) {
 
 	_, _, err := provider.FetchTracks(context.Background(), &database.Watchlist{
 		SourceType: "rss_feed",
-		SourceURI:  "http://feed.example.test/rss",
+		SourceURI:  "http://8.8.8.8/rss",
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, errRSSFeedTooLarge)
@@ -81,7 +102,7 @@ func TestRSSProvider_RejectsStreamingOversizedResponse(t *testing.T) {
 	feed := `<?xml version="1.0"?><rss version="2.0"><channel><title>` +
 		strings.Repeat("x", maxRSSFeedSize) +
 		`</title></channel></rss>`
-	provider := NewRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	provider := newTestRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode:    http.StatusOK,
 			Header:        make(http.Header),
@@ -93,7 +114,7 @@ func TestRSSProvider_RejectsStreamingOversizedResponse(t *testing.T) {
 
 	_, _, err := provider.FetchTracks(context.Background(), &database.Watchlist{
 		SourceType: "rss_feed",
-		SourceURI:  "http://feed.example.test/rss",
+		SourceURI:  "http://8.8.8.8/rss",
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, errRSSFeedTooLarge)
@@ -105,7 +126,7 @@ func TestRSSProvider_RejectsStreamingOversizedResponse(t *testing.T) {
 func TestRSSProvider_CancellationTakesPrecedenceOverOversizedResponse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	provider := NewRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	provider := newTestRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		cancel()
 		return &http.Response{
 			StatusCode:    http.StatusOK,
@@ -118,13 +139,58 @@ func TestRSSProvider_CancellationTakesPrecedenceOverOversizedResponse(t *testing
 
 	_, _, err := provider.FetchTracks(ctx, &database.Watchlist{
 		SourceType: "rss_feed",
-		SourceURI:  "http://feed.example.test/rss",
+		SourceURI:  "http://8.8.8.8/rss",
 	})
 	require.Error(t, err)
 	var providerErr *ProviderError
 	require.ErrorAs(t, err, &providerErr)
 	assert.Equal(t, ErrKindCanceled, providerErr.Kind)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRSSProvider_RejectsGzipExpansionOverLimitThroughHTTPTransport(t *testing.T) {
+	expanded := []byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>` +
+		strings.Repeat("x", maxRSSFeedSize) +
+		`</title></channel></rss>`)
+	var compressed bytes.Buffer
+	gzipWriter := gzip.NewWriter(&compressed)
+	_, err := gzipWriter.Write(expanded)
+	require.NoError(t, err)
+	require.NoError(t, gzipWriter.Close())
+	require.Greater(t, len(expanded), maxRSSFeedSize)
+	require.Less(t, compressed.Len(), maxRSSFeedSize)
+
+	requestedGzip := atomic.Bool{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedGzip.Store(r.Header.Get("Accept-Encoding") == "gzip")
+		w.Header().Set("Content-Type", "application/rss+xml")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Length", strconv.Itoa(compressed.Len()))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(compressed.Bytes())
+	}))
+	defer srv.Close()
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	localAddress := srv.Listener.Addr().String()
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, localAddress)
+	}
+	defer transport.CloseIdleConnections()
+
+	provider := newTestRSSProvider(&http.Client{Timeout: 5 * time.Second, Transport: transport})
+	_, _, err = provider.FetchTracks(context.Background(), &database.Watchlist{
+		SourceType: "rss_feed",
+		SourceURI:  "http://8.8.8.8/feed.xml",
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, errRSSFeedTooLarge)
+	var providerErr *ProviderError
+	require.ErrorAs(t, err, &providerErr)
+	assert.Equal(t, ErrKindUpstream, providerErr.Kind)
+	assert.True(t, requestedGzip.Load(), "the real HTTP transport should negotiate gzip before the cap sees the expanded body")
 }
 
 func TestRSSProvider_NilClientUsesStrictClient(t *testing.T) {
@@ -136,7 +202,7 @@ func TestRSSProvider_NilClientUsesStrictClient(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewRSSProvider(nil)
+	p := NewRSSProvider()
 	wl := &database.Watchlist{SourceType: "rss_feed", SourceURI: srv.URL}
 
 	_, _, err := p.FetchTracks(context.Background(), wl)
@@ -145,7 +211,7 @@ func TestRSSProvider_NilClientUsesStrictClient(t *testing.T) {
 	var providerErr *ProviderError
 	require.ErrorAs(t, err, &providerErr)
 	assert.Equal(t, ErrKindRefused, providerErr.Kind)
-	assert.Zero(t, feedRequests.Load(), "nil-client construction must not fetch a private RSS URL")
+	assert.Zero(t, feedRequests.Load(), "the provider constructor must not fetch a private RSS URL")
 }
 
 func TestRSSProvider_ZeroValueAndNilReceiverUseStrictClient(t *testing.T) {
@@ -181,13 +247,13 @@ func TestRSSProvider_ZeroValueAndNilReceiverUseStrictClient(t *testing.T) {
 func TestRSSProvider_CallerCancellationIsNotNetworkFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	provider := NewRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	provider := newTestRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		return nil, req.Context().Err()
 	})})
 
 	_, _, err := provider.FetchTracks(ctx, &database.Watchlist{
 		SourceType: "rss_feed",
-		SourceURI:  "http://feed.example.test/rss",
+		SourceURI:  "http://8.8.8.8/rss",
 	})
 	require.Error(t, err)
 	var providerErr *ProviderError
@@ -200,13 +266,13 @@ func TestRSSProvider_CallerCancellationIsNotNetworkFailure(t *testing.T) {
 func TestRSSProvider_CallerDeadlineIsNotNetworkFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 0)
 	defer cancel()
-	provider := NewRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	provider := newTestRSSProvider(&http.Client{Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		return nil, req.Context().Err()
 	})})
 
 	_, _, err := provider.FetchTracks(ctx, &database.Watchlist{
 		SourceType: "rss_feed",
-		SourceURI:  "http://feed.example.test/rss",
+		SourceURI:  "http://8.8.8.8/rss",
 	})
 	require.Error(t, err)
 	var providerErr *ProviderError
@@ -220,6 +286,109 @@ type rssRoundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f rssRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func newStalledRSSResolver() (*net.Resolver, <-chan struct{}) {
+	dialStarted := make(chan struct{}, 1)
+	resolver := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			select {
+			case dialStarted <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	return resolver, dialStarted
+}
+
+func TestRSSProvider_CancelsInflightRequestDNSLookup(t *testing.T) {
+	resolver, dialStarted := newStalledRSSResolver()
+	var roundTrips atomic.Int64
+	provider := newTestRSSProviderWithResolver(&http.Client{
+		Timeout: 5 * time.Second,
+		Transport: rssRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+			roundTrips.Add(1)
+			return nil, io.EOF
+		}),
+	}, resolver)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := provider.FetchTracks(ctx, &database.Watchlist{
+			SourceType: "rss_feed",
+			SourceURI:  "http://stalled.example.test/feed.xml",
+		})
+		done <- err
+	}()
+
+	select {
+	case <-dialStarted:
+		cancel()
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("RSS request did not enter the stalled DNS lookup")
+	}
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		var providerErr *ProviderError
+		require.ErrorAs(t, err, &providerErr)
+		assert.Equal(t, ErrKindCanceled, providerErr.Kind)
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("RSS request did not stop after its DNS lookup was canceled")
+	}
+	assert.Zero(t, roundTrips.Load(), "the feed transport must not run after request DNS cancellation")
+}
+
+func TestRSSProvider_CancelsInflightRedirectDNSLookup(t *testing.T) {
+	resolver, dialStarted := newStalledRSSResolver()
+	const publicFeedURL = "http://8.8.8.8/feed.xml"
+	var requestedURLs []string
+	provider := newTestRSSProviderWithResolver(&http.Client{
+		Timeout: 5 * time.Second,
+		Transport: rssRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			requestedURLs = append(requestedURLs, req.URL.String())
+			return &http.Response{
+				StatusCode: http.StatusFound,
+				Header:     http.Header{"Location": []string{"http://stalled.example.test/private"}},
+				Body:       io.NopCloser(strings.NewReader("")),
+				Request:    req,
+			}, nil
+		}),
+	}, resolver)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := provider.FetchTracks(ctx, &database.Watchlist{
+			SourceType: "rss_feed",
+			SourceURI:  publicFeedURL,
+		})
+		done <- err
+	}()
+
+	select {
+	case <-dialStarted:
+		cancel()
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("RSS redirect did not enter the stalled DNS lookup")
+	}
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		var providerErr *ProviderError
+		require.ErrorAs(t, err, &providerErr)
+		assert.Equal(t, ErrKindCanceled, providerErr.Kind)
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("RSS redirect did not stop after its DNS lookup was canceled")
+	}
+	assert.Equal(t, []string{publicFeedURL}, requestedURLs,
+		"the redirect target must not reach the transport after redirect DNS cancellation")
 }
 
 func TestWatchlistService_RSSSourceIgnoresPrivateTargetBypassAndProxy(t *testing.T) {
@@ -285,7 +454,7 @@ func TestRSSProvider_PublicToPrivateRedirectNeverProxiesPrivateTarget(t *testing
 		response.Header.Set("Location", privateRedirectURL)
 		return response, nil
 	})
-	provider := NewRSSProvider(newStrictRSSHTTPClientWithTransport(5*time.Second, proxy))
+	provider := newTestRSSProvider(&http.Client{Timeout: 5 * time.Second, Transport: proxy})
 	_, _, err := provider.FetchTracks(context.Background(), &database.Watchlist{
 		SourceType: "rss_feed",
 		SourceURI:  publicFeedURL,

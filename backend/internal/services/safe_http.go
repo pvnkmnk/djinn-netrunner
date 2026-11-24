@@ -127,14 +127,22 @@ func isNonGlobalIP(ip net.IP) bool {
 // proxy, where the transport-level safeDialContext only sees the proxy
 // server's address.
 type safeAddressValidator struct {
-	next http.RoundTripper
+	next     http.RoundTripper
+	resolver *net.Resolver
 }
 
 func (v *safeAddressValidator) RoundTrip(req *http.Request) (*http.Response, error) {
-	if err := checkPublicHost(req.Context(), req.URL.Hostname()); err != nil {
+	if err := v.checkHost(req.Context(), req.URL.Hostname()); err != nil {
 		return nil, err
 	}
 	return v.next.RoundTrip(req)
+}
+
+func (v *safeAddressValidator) checkHost(ctx context.Context, host string) error {
+	if v.resolver == nil {
+		return checkPublicHost(ctx, host)
+	}
+	return checkPublicHostWithResolver(ctx, host, v.resolver)
 }
 
 // checkPublicHost resolves host and refuses it if it resolves to a non-global
@@ -446,14 +454,19 @@ func newStrictRSSHTTPClient(timeout time.Duration) *http.Client {
 }
 
 func newStrictRSSHTTPClientWithTransport(timeout time.Duration, next http.RoundTripper) *http.Client {
+	return newStrictRSSHTTPClientWithResolver(timeout, next, nil)
+}
+
+func newStrictRSSHTTPClientWithResolver(timeout time.Duration, next http.RoundTripper, resolver *net.Resolver) *http.Client {
+	validator := &safeAddressValidator{next: next, resolver: resolver}
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: &safeAddressValidator{next: next},
+		Transport: validator,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if err := hopBoundCheck(req, via); err != nil {
 				return err
 			}
-			if err := checkPublicHost(req.Context(), req.URL.Hostname()); err != nil {
+			if err := validator.checkHost(req.Context(), req.URL.Hostname()); err != nil {
 				return fmt.Errorf("redirect target %s: %w", req.URL.Host, err)
 			}
 			return nil

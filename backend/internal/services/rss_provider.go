@@ -17,13 +17,9 @@ type RSSProvider struct {
 	httpClient *http.Client
 }
 
-// NewRSSProvider creates a new RSS provider with the given HTTP client. A nil
-// client defaults to the strict direct-fetch client.
-func NewRSSProvider(httpClient *http.Client) *RSSProvider {
-	if httpClient == nil {
-		httpClient = newStrictRSSHTTPClient(30 * time.Second)
-	}
-	return &RSSProvider{httpClient: withRSSFeedSizeLimit(httpClient)}
+// NewRSSProvider creates an RSS provider with a strict direct-fetch client.
+func NewRSSProvider() *RSSProvider {
+	return &RSSProvider{httpClient: withRSSFeedSizeLimit(newStrictRSSHTTPClient(30 * time.Second))}
 }
 
 func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watchlist) ([]map[string]string, string, error) {
@@ -33,7 +29,7 @@ func (p *RSSProvider) FetchTracks(ctx context.Context, watchlist *database.Watch
 		client = p.httpClient
 	}
 	if client == nil {
-		client = NewRSSProvider(nil).httpClient
+		client = NewRSSProvider().httpClient
 	}
 	fp.Client = client
 	feed, err := fp.ParseURLWithContext(watchlist.SourceURI, ctx)
