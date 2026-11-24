@@ -41,7 +41,7 @@ paths:
   /api/auth/register:
     post:
       tags: [authentication]
-      summary: Register an account without establishing a session
+      summary: Register an account
       operationId: register
       security: []
       requestBody:
@@ -52,7 +52,7 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '201':
-          description: Account created; no session cookie is issued. Use /api/auth/login to establish a session.
+          description: Registration request acknowledged. No session cookie is issued; use /api/auth/login to establish a session.
           content:
             application/json:
               schema:
