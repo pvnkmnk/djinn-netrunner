@@ -353,6 +353,13 @@ controlled. The Caddyfile overwrites `X-Forwarded-Proto` with the external
 scheme, but legacy `p=` is accepted through a proxy only when its raw source peer
 is explicitly listed in `SUBSONIC_TRUSTED_PROXY_CIDRS`.
 
+For a peer in that allowlist, the app requires exactly one
+`X-Forwarded-Proto: https` value to prove the client-facing scheme. This remains
+true if the proxy-to-origin connection itself uses TLS: that socket secures only
+the proxy hop and does not establish whether the client used HTTPS. The proxy
+must overwrite, not append to, `X-Forwarded-Proto`; untrusted peers cannot make a
+cleartext request acceptable by supplying that header.
+
 The checked-in base/release Compose network does not reserve a stable Caddy IP.
 For a TLS-terminating Caddy deployment, inspect and reserve the actual source
 peer on your own network, then set

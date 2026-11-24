@@ -311,6 +311,38 @@ func TestSubsonicLegacyPasswordAcceptsDirectTLS(t *testing.T) {
 	require.NotContains(t, logs.String(), subsonicTLSPassword)
 }
 
+func TestSubsonicTrustedProxyTLSOriginUsesExternalForwardedProto(t *testing.T) {
+	db := setupSubsonicTestDB(t)
+	createTestUserForSubsonic(t, db, subsonicTLSUser, subsonicTLSPassword)
+	cfg := &config.Config{SubsonicTrustedProxyCIDRs: "127.0.0.1/32"}
+	handler := NewSubsonicHandler(db, cfg)
+	server := startSubsonicHTTPTestServer(t, handler, true, nil)
+
+	cases := []struct {
+		name         string
+		forwarded    []string
+		wantAccepted bool
+	}{
+		{name: "external HTTP rejected despite TLS origin hop", forwarded: []string{"http"}},
+		{name: "external HTTPS accepted", forwarded: []string{"https"}, wantAccepted: true},
+		{name: "duplicate values rejected", forwarded: []string{"https", "https"}},
+		{name: "comma-joined values rejected", forwarded: []string{"https, https"}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			values := url.Values{"u": {subsonicTLSUser}, "p": {subsonicTLSPassword}, "f": {"json"}}
+			status, body := subsonicHTTPAuthRequest(t, server, http.MethodGet, values, tt.forwarded...)
+			require.Equal(t, http.StatusOK, status)
+			if tt.wantAccepted {
+				require.Contains(t, body, `"status":"ok"`)
+			} else {
+				require.Contains(t, body, `"status":"failed"`)
+				require.Contains(t, body, "Password authentication requires HTTPS")
+			}
+		})
+	}
+}
+
 func TestSubsonicLegacyPasswordAcceptsExplicitTrustedProxyHTTPS(t *testing.T) {
 	db := setupSubsonicTestDB(t)
 	createTestUserForSubsonic(t, db, subsonicTLSUser, subsonicTLSPassword)

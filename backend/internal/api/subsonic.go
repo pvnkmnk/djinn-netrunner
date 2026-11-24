@@ -325,10 +325,6 @@ func parseSubsonicTrustedProxyCIDRs(raw string) []netip.Prefix {
 }
 
 func (h *SubsonicHandler) isExternalHTTPS(c fiber.Ctx) bool {
-	if c.RequestCtx().IsTLS() {
-		return true
-	}
-
 	remote, err := netip.ParseAddrPort(c.RequestCtx().RemoteAddr().String())
 	if err != nil {
 		return false
@@ -341,15 +337,18 @@ func (h *SubsonicHandler) isExternalHTTPS(c fiber.Ctx) bool {
 			break
 		}
 	}
-	if !trustedPeer {
-		return false
+	if trustedPeer {
+		// A TLS socket from this peer may be only the proxy-to-origin hop. Do not
+		// use Fiber's Scheme(): its trust is broader for other app features. Only
+		// one unambiguous value from this explicitly allowlisted peer proves the
+		// external scheme.
+		forwardedProto := c.Request().Header.PeekAll("X-Forwarded-Proto")
+		return len(forwardedProto) == 1 && strings.EqualFold(string(forwardedProto[0]), "https")
 	}
 
-	// Do not use Fiber's Scheme(): its forwarded-header trust is intentionally
-	// broader for other app features. Only one unambiguous X-Forwarded-Proto
-	// value from the explicitly allowlisted raw socket peer is authoritative here.
-	forwardedProto := c.Request().Header.PeekAll("X-Forwarded-Proto")
-	return len(forwardedProto) == 1 && strings.EqualFold(string(forwardedProto[0]), "https")
+	// Socket TLS proves direct HTTPS only when the peer is not configured as a
+	// trusted proxy whose external scheme must come from its forwarded header.
+	return c.RequestCtx().IsTLS()
 }
 
 func subsonicParamPresent(c fiber.Ctx, name string) bool {

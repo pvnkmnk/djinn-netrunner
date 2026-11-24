@@ -5,6 +5,32 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 2; }
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 2; }
 
+# Validate the production Caddyfile against the edge service's actual bind
+# mounts. This catches missing or mis-targeted imports that a temporary copy
+# used by the behavior test below cannot detect.
+command -v docker >/dev/null 2>&1 || {
+    echo "Docker with Compose v2 is required to validate the production Caddy mounts" >&2
+    exit 2
+}
+docker info >/dev/null 2>&1 || {
+    echo "A working Docker daemon is required to validate the production Caddy mounts" >&2
+    exit 2
+}
+docker compose version >/dev/null 2>&1 || {
+    echo "Docker Compose v2 is required to validate the production Caddy mounts" >&2
+    exit 2
+}
+(
+    cd "$repo_root"
+    POSTGRES_PASSWORD=compose-validation-only \
+    SLSKD_USERNAME=compose-validation-only \
+    SLSKD_PASSWORD=compose-validation-only \
+    SLSKD_API_KEY=compose-validation-0123456789abcdef \
+        docker compose --profile edge run --rm --no-deps caddy \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+)
+echo "Compose-mounted production Caddyfile and access-log import validated."
+
 caddyfile_contents="$(<"$repo_root/ops/caddy/Caddyfile")"
 if [[ "$caddyfile_contents" != *'import ./access-log-format.caddy'* || \
       "$caddyfile_contents" != *'import subsonic_access_log_format'* ]]; then
@@ -105,7 +131,7 @@ chmod 644 "$work_dir/Caddyfile" "$work_dir/access-log-format.caddy"
 if [[ "$use_docker" -eq 1 ]]; then
     docker run --rm --name "$container_name" --network host \
         -v "$work_dir:$work_dir:ro" \
-        caddy:2-alpine run --config "$work_dir/Caddyfile" --adapter caddyfile \
+        --entrypoint caddy caddy:2-alpine run --config "$work_dir/Caddyfile" --adapter caddyfile \
         >"$log_file" 2>&1 &
     caddy_pid=$!
 else

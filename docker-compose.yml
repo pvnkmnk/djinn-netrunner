@@ -120,6 +120,8 @@ services:
     container_name: netrunner-caddy
     volumes:
       - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The Caddyfile imports this sibling file using a relative path.
+      - ./ops/caddy/access-log-format.caddy:/etc/caddy/access-log-format.caddy:ro
       - netrunner-caddy-data:/data
       - netrunner-caddy-config:/config
     ports:

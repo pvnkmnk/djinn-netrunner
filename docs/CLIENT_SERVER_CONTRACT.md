@@ -141,16 +141,17 @@ In production, enabling Subsonic requires a non-empty `SUBSONIC_PASSWORD` and
 startup fails if it is missing. In development, leaving it unset disables token
 authentication; the legacy account-password `p` form remains available only
 over verified HTTPS. Clients should prefer token/salt authentication and use
-HTTPS for all Subsonic traffic. The legacy `p` form is rejected unless the
-request is directly received over TLS or its TLS-terminating proxy is explicitly
-listed in `SUBSONIC_TRUSTED_PROXY_CIDRS` and supplies exactly one
-`X-Forwarded-Proto: https` header. The allowlist accepts comma-separated CIDRs,
-defaults to empty, and is independent of Fiber's broader proxy-trust ranges; a
-private or loopback peer is not trusted for scheme decisions merely because
-other forwarded headers are trusted from it. A TLS-terminating proxy must
-overwrite the forwarded-proto header and operators must list only that proxy's
-peer CIDR. Account-password authentication remains available without the shared
-password, but only over verified HTTPS.
+HTTPS for all Subsonic traffic. The legacy `p` form is accepted for direct TLS
+only when the raw socket peer is not configured as a trusted proxy. A peer in
+`SUBSONIC_TRUSTED_PROXY_CIDRS` must instead supply exactly one
+`X-Forwarded-Proto: https` header, even when the proxy-to-origin socket uses
+TLS; that hop's TLS does not prove the client-facing scheme. The allowlist
+accepts comma-separated CIDRs, defaults to empty, and is independent of Fiber's
+broader proxy-trust ranges; a private or loopback peer is not trusted for scheme
+decisions merely because other forwarded headers are trusted from it. A
+TLS-terminating proxy must overwrite the forwarded-proto header and operators
+must list only that proxy's exact peer CIDR. Account-password authentication
+remains available without the shared password, but only over verified HTTPS.
 
 A legacy account-password request must target HTTPS, for example:
 `https://music.example.com/rest/ping.view?u=you%40example.com&p=REDACTED&v=1.16.1&c=client`
