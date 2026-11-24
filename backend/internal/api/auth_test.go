@@ -26,7 +26,7 @@ func setupTestDBForAuth(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestRegister_ReturnsCreatedWithoutSessionCookie(t *testing.T) {
+func TestRegister_ReturnsSameCreatedResponseWithoutSessionCookie(t *testing.T) {
 	db := setupTestDBForAuth(t)
 	app := fiber.New()
 	app.Post("/register", NewAuthHandler(db).Register)
@@ -39,26 +39,38 @@ func TestRegister_ReturnsCreatedWithoutSessionCookie(t *testing.T) {
 		return
 	}
 
-	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req)
-	if !assert.NoError(t, err) {
-		return
+	var firstResponseBody []byte
+	for attempt := 0; attempt < 2; attempt++ {
+		req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		if !assert.NoError(t, err) {
+			return
+		}
+		assert.Equal(t, http.StatusCreated, resp.StatusCode)
+		assert.Empty(t, resp.Header.Values("Set-Cookie"))
+
+		responseBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if !assert.NoError(t, err) {
+			return
+		}
+		if attempt == 0 {
+			firstResponseBody = append([]byte(nil), responseBody...)
+		} else {
+			assert.Equal(t, firstResponseBody, responseBody, "new and already-registered emails should receive the same response")
+		}
+
+		decoder := json.NewDecoder(bytes.NewReader(responseBody))
+		var response map[string]string
+		if !assert.NoError(t, decoder.Decode(&response)) {
+			return
+		}
+		assert.Equal(t, map[string]string{"status": "ok"}, response)
+
+		var trailing any
+		assert.ErrorIs(t, decoder.Decode(&trailing), io.EOF)
 	}
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusCreated, resp.StatusCode)
-	assert.Empty(t, resp.Header.Values("Set-Cookie"))
-
-	decoder := json.NewDecoder(resp.Body)
-	var response map[string]string
-	if !assert.NoError(t, decoder.Decode(&response)) {
-		return
-	}
-	assert.Equal(t, map[string]string{"status": "ok"}, response)
-
-	var trailing any
-	assert.ErrorIs(t, decoder.Decode(&trailing), io.EOF)
 }
 
 func TestAuthFlow(t *testing.T) {
