@@ -564,9 +564,13 @@ otherwise-good change are the thing to flag before anything else.
   reviews/checks stale. Immediately before merging, refresh required CI, team
   reviews, unresolved threads, inline comments, and PR conversation including
   bot comments. Verify actionable findings and their resolution.
-  Pending/failed required checks or unresolved actionable findings block; a
-  skipped/rate-limited bot run is neither approval nor a standalone blocker
-  under the owner's merge rule. Merge with `--merge`, never squash or rebase.
+  All required team approvals must be recorded on that final head. Pending or
+  failed required checks, missing required team approvals, or unresolved
+  actionable findings block; a skipped/rate-limited bot run is neither approval
+  nor a standalone blocker under the owner's merge rule. Merge with `--merge`,
+  never squash or rebase. Use `gh pr merge <PR> --merge --match-head-commit
+  <reviewed-sha>` so GitHub refuses the merge if the PR head has changed; if it
+  refuses, repeat the head review and check refresh.
   Don't request branch deletion by default. Verify the merged state and merge
   SHA, then read back the linked Linear update without creating duplicate PR
   links.
