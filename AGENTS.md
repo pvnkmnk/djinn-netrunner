@@ -269,6 +269,10 @@ runs reuse the stack, so single-spec iteration is ~4s instead of ~4min.
   key set. WebSocket: `/ws/events`, `/ws/jobs/:job_id`. Subsonic `/rest/*`
   requires the `.view` suffix. Route assertions should read
   `app.GetRoutes()` (filter by method — middleware shows as `USE`).
+- When repinning a protocol/spec artifact, update the version and digest in the
+  generator and all contract/docs copies, search for stale copies, regenerate
+  and verify byte-for-byte output. Coverage claims must identify the actual
+  route/handler and tests/counts; don't overstate what they prove.
 - **The console streams a job the caller picked (DJI-562).** `GET
   /partials/console-jobs` fills `#console-job-picker` with the caller's
   queued and running jobs (an admin sees everyone's, capped at 25), and `POST
@@ -556,13 +560,24 @@ otherwise-good change are the thing to flag before anything else.
   pull --ff-only` carries them across safely. An earlier note here said
   `reset --hard` was safe *because* master only fast-forwards; that is exactly
   the assumption that costs the most when it is wrong.
-- Merge PRs with `gh pr merge N --repo pvnkmnk/djinn-netrunner --squash
-  --delete-branch`. It often prints **nothing** on success (exit 0, empty
-  stdout), and a "Merging…" line can precede a merge that never ran —
-  confirm `gh pr view N --json state,mergeCommit` before assuming a merge
-  landed or re-issuing it. To sync afterwards use
-  `git checkout master && git pull --ff-only`, which carries uncommitted work
-  across — NOT `git reset --hard origin/master`, see above.
+- Review each PR against an exact head SHA; any new commit makes earlier
+  reviews/checks stale. Immediately before merging, refresh required CI, team
+  reviews, unresolved threads, inline comments, and PR conversation including
+  bot comments. Verify actionable findings and their resolution.
+  All required team approvals must be recorded on that final head. Pending or
+  failed required checks, missing required team approvals, or unresolved
+  actionable findings block; a skipped/rate-limited bot run is neither approval
+  nor a standalone blocker under the owner's merge rule. Merge with `--merge`,
+  never squash or rebase. Use `gh pr merge <PR> --merge --match-head-commit
+  <reviewed-sha>` so GitHub refuses the merge if the PR head has changed; if it
+  refuses, repeat the head review and check refresh.
+  Don't request branch deletion by default. Verify the merged state and merge
+  SHA, then read back the linked Linear update without creating duplicate PR
+  links.
+- If a full suite fails on a PR, run the same command on the exact PR SHA and a
+  clean target-base under comparable conditions. Record both SHAs and classify
+  the failure as introduced, pre-existing, or environmental; a focused-test
+  pass alone does not clear the full-suite failure.
 - The `integration` CI job can fail in ~26s with `connection reset by peer`
   pulling Navidrome from Docker Hub — a registry flake that hits docs-only
   commits too. Re-run the workflow instead of debugging the diff.
@@ -1362,13 +1377,23 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   `docker compose exec ops-web netrunner-cli ...` repair steps cannot work.
   Build the CLI for Linux, `docker cp` it in, `chmod +x` as root (the app
   user can't), then run it as the app user.
-- `ALLOW_PRIVATE_TARGETS=true` is mandatory on any compose stack:
-  slskd/Navidrome/Gonic are reached by service name (a private IP), so the
-  SSRF dialer rejects every request with `ssrf: no public IP found for
-  <host>`. Provider APIs stay guarded either way. Note the yt-dlp pre-flight
-  walk (`checkPublicHost`/`resolveRedirectTarget`) is UNCONDITIONAL — the
-  flag only affects the app's service-mesh client, so even on the release path a
-  URL that resolves private is refused before the egress proxy is consulted.
+- Keep fetch clients separated by trust boundary. `ALLOW_PRIVATE_TARGETS` is
+  only for explicitly trusted operator-configured service-mesh clients; never
+  pass that client to user-controlled feed URLs. RSS/Bandcamp feeds use the
+  strict direct-fetch client, ignore `ALLOW_PRIVATE_TARGETS` and `PROXY_URL`,
+  and recheck every redirect. Direct egress is intentional. Keep the
+  yt-dlp/egress-proxy path separate and test its boundary independently. The
+  proxy-drop bug in the old `safe_http.go` branch was fixed by #395; do not
+  describe it as current behavior.
+- For user-controlled URLs, trace the production path through DNS, the actual
+  dial or proxy, every redirect, and response handling. Enforce policy where
+  the destination is actually resolved and reached; a local DNS preflight is
+  not enough when a proxy resolves the target. Security-sensitive client
+  construction must remain strict for nil/zero-value dependencies. Regression
+  tests should prove denied source and redirect targets never reach the proxy,
+  response limits apply after decompression, cancellation/deadlines stop DNS
+  and body work, and policy refusals remain distinct from network failures and
+  timeouts.
 - The egress-proxy sidecar logs to `/var/log/squid/` — **never `stdio:/dev/stdout`**:
   squid drops privileges to `proxy` before opening its logs, and root owns
   stdout, which FATALs. Likewise never point `cache_log` at `/dev/null` — it
@@ -1392,9 +1417,6 @@ library, false)` to `true` passes any test that only asserts the offer is there.
   imports from. Without `SLSKD_DOWNLOADS_DIR=/downloads`, transfers report
   `Completed, Succeeded` while the shared volume stays empty and every
   import fails with `Downloaded file not found`.
-- `ALLOW_PRIVATE_TARGETS` + a proxy is still buggy in `safe_http.go`: the
-  AllowPrivateTargets branch builds a proxied transport then returns a fresh
-  `DefaultTransport` clone, silently dropping the proxy.
 - Never prefix a whole script invocation with `MSYS_NO_PATHCONV=1`: it also
   disables conversion of the script's own Windows paths, so compose resolved
   `../.env.e2e` to a phantom `C:\c\Users\...` and `e2e.sh down` failed. Scope
