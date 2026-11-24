@@ -25,6 +25,36 @@ func setupTestDBForAuth(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestRegister_ReturnsCreatedWithoutSessionCookie(t *testing.T) {
+	db := setupTestDBForAuth(t)
+	app := fiber.New()
+	app.Post("/register", NewAuthHandler(db).Register)
+
+	body, err := json.Marshal(map[string]string{
+		"email":    "register-no-session@example.com",
+		"password": "correct-horse-battery-staple",
+	})
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	assert.Empty(t, resp.Header.Values("Set-Cookie"))
+
+	var response map[string]string
+	if assert.NoError(t, json.NewDecoder(resp.Body).Decode(&response)) {
+		assert.Equal(t, map[string]string{"status": "ok"}, response)
+	}
+}
+
 func TestAuthFlow(t *testing.T) {
 	db := setupTestDBForAuth(t)
 	app := fiber.New()
