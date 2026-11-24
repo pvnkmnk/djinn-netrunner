@@ -54,7 +54,7 @@ plus the format-to-muxer helper. They do not assert ranges, content type,
 authorization or the other error shapes; the protocol delivery contract
 remains unverified beyond these focused branches.
 
-There are nine passing tests named `TestStreamTrack_*` in
+There are eight passing tests named `TestStreamTrack_*` in
 `backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,
 `206` range and the error paths. They test a **different handler** —
 `LibraryHandler.StreamTrack`, registered at `/tracks/:id/stream` — so a name

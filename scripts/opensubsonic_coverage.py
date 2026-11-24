@@ -312,7 +312,7 @@ def main() -> int:
     w("authorization or the other error shapes; the protocol delivery contract")
     w("remains unverified beyond these focused branches.")
     w("")
-    w("There are nine passing tests named `TestStreamTrack_*` in")
+    w("There are eight passing tests named `TestStreamTrack_*` in")
     w("`backend/internal/api/stream_test.go` covering BOLA, admin access, `200`,")
     w("`206` range and the error paths. They test a **different handler** —")
     w("`LibraryHandler.StreamTrack`, registered at `/tracks/:id/stream` — so a name")
