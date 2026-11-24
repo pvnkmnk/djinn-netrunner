@@ -342,7 +342,7 @@ curl -s 'https://music.example.com/rest/ping.view?u=you@example.com&t=TOKEN&s=SA
 curl -s 'https://music.example.com/rest/ping.view?u=you@example.com&p=change-this&v=1.16.1&c=smoke'
 # <subsonicResponse status="ok" version="1.16.1" type="netrunner"></subsonicResponse>
 
-# shared-password token auth: t = md5(md5(SUBSONIC_PASSWORD) + salt)
+# shared-password token auth: t = MD5(hex(MD5(SUBSONIC_PASSWORD)) + salt)
 ```
 
 The handler can reject a `p=` request received over `http://` only after the
